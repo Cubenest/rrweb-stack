@@ -62,3 +62,6 @@ export {
   type ConsoleEvent,
   type ConsoleLevel,
 } from './console';
+
+// Compression helpers (gzip per-batch via fflate)
+export { compress, decompress } from './compression';
