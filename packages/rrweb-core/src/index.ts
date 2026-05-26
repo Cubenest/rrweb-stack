@@ -52,3 +52,13 @@ export {
   type WebRequestEventSource,
   type WebRequestNetworkOptions,
 } from './network';
+
+// Console capture buffer
+export {
+  createConsoleCaptureBuffer,
+  type BasicConsoleLevel,
+  type ConsoleCaptureBuffer,
+  type ConsoleCaptureOptions,
+  type ConsoleEvent,
+  type ConsoleLevel,
+} from './console';
