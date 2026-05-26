@@ -6,6 +6,10 @@ This product includes software developed by:
     @posthog/rrweb 0.0.34 (MIT License)
     @posthog/rrweb-types 0.0.24 (MIT License)
   Forked from upstream rrweb-io/rrweb 2.0.0-alpha.17.
+- rrweb-io (https://github.com/rrweb-io/rrweb) — upstream rrweb plugin:
+    @rrweb/rrweb-plugin-console-record 2.0.0-alpha.20 (MIT License)
+  Used to provide getRecordConsolePlugin because the PostHog fork at
+  0.0.34 doesn't bundle it (it shipped separately since upstream 2.x).
 
 This product is licensed under the Apache License, Version 2.0.
 See the LICENSE file for details.

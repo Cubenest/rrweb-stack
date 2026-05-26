@@ -19,6 +19,7 @@
   "dependencies": {
     "@posthog/rrweb": "0.0.34",
     "@posthog/rrweb-types": "0.0.24",
+    "@rrweb/rrweb-plugin-console-record": "2.0.0-alpha.20",
     "fflate": "^0.8.2"
   },
   "devDependencies": {
