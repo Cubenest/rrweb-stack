@@ -1,0 +1,17 @@
+name: DCO
+
+on:
+  pull_request:
+    branches: [main]
+
+jobs:
+  dco:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Check DCO sign-off
+        uses: tim-actions/dco@2fd0504dc0d27b33f542867c300c60840c6dcb20  # v1.1.0
+        with:
+          commits: ${{ github.event.pull_request.commits }}
