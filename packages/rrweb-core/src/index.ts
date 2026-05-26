@@ -21,3 +21,7 @@ export {
   redactBody,
   COMPAT_SELECTORS,
 } from './masking';
+
+// Throttling defaults + guards
+export { LARGE_DOM_DEFAULTS, applyLargeDomGuards } from './throttling';
+export type { ApplyLargeDomGuardsOptions } from './throttling';
