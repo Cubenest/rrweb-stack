@@ -29,3 +29,14 @@ export type { ApplyLargeDomGuardsOptions } from './throttling';
 // Shadow DOM
 export { traverseShadowRoots } from './shadow-dom';
 export type { ShadowRootInfo } from './shadow-dom';
+
+// Screenshot fallback
+export type { ScreenshotAdapter } from './screenshot';
+export {
+  createCDPScreenshotAdapter,
+  createTabsScreenshotAdapter,
+  type CDPTransport,
+  type CDPScreenshotOptions,
+  type CaptureVisibleTabFn,
+  type TabsScreenshotOptions,
+} from './screenshot';
