@@ -1,0 +1,33 @@
+{
+  "name": "@cubenest/rrweb-core",
+  "version": "0.1.0-alpha.0",
+  "description": "Shared rrweb-based capture substrate for tracelane and peek.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": { "types": "./dist/index.d.ts", "import": "./dist/index.js" }
+  },
+  "files": ["dist", "NOTICE", "README.md"],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run --passWithNoTests"
+  },
+  "dependencies": {
+    "@posthog/rrweb": "0.0.34",
+    "@posthog/rrweb-types": "0.0.24",
+    "fflate": "^0.8.2"
+  },
+  "devDependencies": {
+    "jsdom": "^25.0.1"
+  },
+  "publishConfig": { "access": "public", "provenance": true },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Cubenest/rrweb-stack.git",
+    "directory": "packages/rrweb-core"
+  },
+  "homepage": "https://github.com/Cubenest/rrweb-stack/tree/main/packages/rrweb-core#readme"
+}
