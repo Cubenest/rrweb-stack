@@ -69,3 +69,6 @@ export { compress, decompress } from './compression';
 // IndexedDB persistence helper
 export { createSessionStore } from './persistence';
 export type { SessionChunk, SessionStore, SessionStoreOptions } from './persistence';
+
+// Compatibility matrix
+export { COMPATIBILITY_MATRIX, type CompatEntry } from './compat';
