@@ -40,3 +40,15 @@ export {
   type CaptureVisibleTabFn,
   type TabsScreenshotOptions,
 } from './screenshot';
+
+// Network capture abstraction
+export type { CapturedRequest, CapturedResponse, NetworkCaptureAdapter } from './network';
+export {
+  createCDPNetworkAdapter,
+  createWebRequestNetworkAdapter,
+  type CDPNetworkEventSource,
+  type CDPNetworkOptions,
+  type WebRequestEvent,
+  type WebRequestEventSource,
+  type WebRequestNetworkOptions,
+} from './network';
