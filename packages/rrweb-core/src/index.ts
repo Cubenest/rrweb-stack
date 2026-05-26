@@ -65,3 +65,7 @@ export {
 
 // Compression helpers (gzip per-batch via fflate)
 export { compress, decompress } from './compression';
+
+// IndexedDB persistence helper
+export { createSessionStore } from './persistence';
+export type { SessionChunk, SessionStore, SessionStoreOptions } from './persistence';
