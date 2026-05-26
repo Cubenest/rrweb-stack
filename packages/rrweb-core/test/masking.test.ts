@@ -1,7 +1,13 @@
+// @vitest-environment jsdom
 // Masking primitives — Task 1.3 test suite.
 // Covers positive matches, negative matches, Luhn validation, hard-mask
 // inputs, header case-insensitivity, body truncation, and COMPAT_SELECTORS
 // shape.
+//
+// The `@vitest-environment jsdom` pragma above is required because the
+// repo-root `pnpm test` runs `vitest run` without a config file (the
+// package-level vitest.config.ts only applies when vitest is invoked from
+// inside the package). The pragma scopes jsdom to this file only.
 
 import { describe, expect, test } from 'vitest';
 import {
