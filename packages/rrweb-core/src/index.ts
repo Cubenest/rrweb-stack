@@ -12,3 +12,12 @@ export type {
   customEvent,
   recordOptions,
 } from './rrweb';
+
+// Masking
+export {
+  maskInputValue,
+  maskTextContent,
+  redactNetworkHeaders,
+  redactBody,
+  COMPAT_SELECTORS,
+} from './masking';
