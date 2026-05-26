@@ -25,3 +25,7 @@ export {
 // Throttling defaults + guards
 export { LARGE_DOM_DEFAULTS, applyLargeDomGuards } from './throttling';
 export type { ApplyLargeDomGuardsOptions } from './throttling';
+
+// Shadow DOM
+export { traverseShadowRoots } from './shadow-dom';
+export type { ShadowRootInfo } from './shadow-dom';
