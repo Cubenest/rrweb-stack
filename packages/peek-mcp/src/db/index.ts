@@ -7,7 +7,9 @@ export {
   defaultDbPath,
   openDb,
   type OpenDbOptions,
+  openReadonlyDb,
   peekHomeDir,
+  type ReadonlyDbResult,
   schemaVersion,
 } from './open.js';
 export {
