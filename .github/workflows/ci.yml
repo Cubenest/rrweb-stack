@@ -17,7 +17,10 @@ jobs:
           node-version-file: .nvmrc
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      # Build first so cross-package type declarations (e.g. @cubenest/rrweb-core's
+      # dist/*.d.ts) exist before downstream packages typecheck against the
+      # workspace dependency's published `exports` types.
+      - run: pnpm build
       - run: pnpm lint
       - run: pnpm typecheck
       - run: pnpm test
-      - run: pnpm build
