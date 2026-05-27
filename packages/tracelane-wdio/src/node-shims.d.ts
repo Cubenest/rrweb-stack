@@ -23,6 +23,8 @@ declare module 'node:fs' {
 declare module 'node:path' {
   /** Join path segments with the platform separator and normalize. */
   export function join(...segments: string[]): string;
+  /** Return the directory portion of a path. */
+  export function dirname(path: string): string;
 }
 
 declare module 'node:module' {

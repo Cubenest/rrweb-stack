@@ -6,14 +6,29 @@
 // bundle-source-agnostic (ADR-0006) and expects this source as a plain string,
 // which it `window.eval`s in the page on every (re-)injection.
 //
-// We read it once and cache it. The file sits next to this module's compiled
-// output in `dist/`, so we resolve it relative to `import.meta.url` — robust to
-// wherever the installed package's `dist/` lands on disk.
+// We read it once and cache it. In the published package this module compiles
+// to `dist/inpage-bundle.js`, sitting next to `dist/rrweb-bundle.js`; under
+// vitest the source lives in `src/`, so we also probe a sibling `../dist/`. We
+// derive the module directory from `fileURLToPath(import.meta.url)` directly
+// (not via `new URL(rel, import.meta.url)`) because under the jsdom test env the
+// global `URL` resolves relative inputs against the page origin, not the file.
 
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 let cached: string | undefined;
+
+/** Candidate locations for the built bundle, in priority order. */
+function candidatePaths(): string[] {
+  const moduleDir = dirname(fileURLToPath(import.meta.url));
+  return [
+    // Published layout: dist/inpage-bundle.js → dist/rrweb-bundle.js.
+    join(moduleDir, 'rrweb-bundle.js'),
+    // Source/test layout: src/inpage-bundle.ts → ../dist/rrweb-bundle.js.
+    join(moduleDir, '..', 'dist', 'rrweb-bundle.js'),
+  ];
+}
 
 /**
  * The rrweb in-page bundle source (defines `window.rrweb`). Read from
@@ -24,14 +39,13 @@ let cached: string | undefined;
  */
 export function loadRrwebBundle(): string {
   if (cached !== undefined) return cached;
-  const bundlePath = fileURLToPath(new URL('./rrweb-bundle.js', import.meta.url));
-  try {
-    cached = readFileSync(bundlePath, 'utf8');
-  } catch (cause) {
+  const candidates = candidatePaths();
+  const found = candidates.find((p) => existsSync(p));
+  if (found === undefined) {
     throw new Error(
-      `@tracelane/wdio: in-page rrweb bundle not found at ${bundlePath}. Run the package build (\`pnpm --filter @tracelane/wdio build\`) to generate it.`,
-      { cause },
+      `@tracelane/wdio: in-page rrweb bundle not found (looked in ${candidates.join(', ')}). Run the package build (\`pnpm --filter @tracelane/wdio build\`) to generate it.`,
     );
   }
+  cached = readFileSync(found, 'utf8');
   return cached;
 }

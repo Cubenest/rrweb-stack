@@ -1,0 +1,66 @@
+// Write a self-contained HTML report to disk (ADR-0005 / ADR-0006).
+//
+// Given the captured event stream + metadata, call @tracelane/report's
+// buildReport to produce the offline HTML string, then write it under `outDir`.
+// Files are namespaced by `cid` (the WDIO worker capability id) so parallel
+// workers (`maxInstances > 1`) never collide (ADR-0006 action item #6).
+
+import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
+import type { eventWithTime } from '@cubenest/rrweb-core';
+import { type ReportMeta, buildReport } from '@tracelane/report';
+
+/** Inputs for {@link writeReport}. */
+export interface WriteReportInput {
+  /** Output directory (created if missing). */
+  outDir: string;
+  /** Worker capability id (e.g. `0-0`); namespaces the filename for parallel safety. */
+  cid?: string | undefined;
+  /** Captured rrweb event stream. */
+  events: eventWithTime[];
+  /** Report metadata (spec, title, status, error, browser, ...). */
+  meta: ReportMeta;
+}
+
+/**
+ * Turn an arbitrary spec path / test title into a filesystem-safe slug:
+ * lowercase, non-alphanumerics collapsed to single dashes, trimmed, capped.
+ */
+export function slugify(input: string): string {
+  const slug = input
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+  // Cap length so deeply-nested titles don't blow past filesystem name limits.
+  return (slug || 'report').slice(0, 120);
+}
+
+/**
+ * Build a unique-ish report filename: `<spec>--<title>--<cid>-<ts>.html`. The
+ * timestamp + cid keep retries and parallel workers from overwriting each other.
+ */
+export function reportFileName(meta: ReportMeta, cid?: string): string {
+  // Strip the common test-file suffixes (`.spec.ts`, `.test.mts`, `.e2e.js`, …)
+  // so `test/login.spec.ts` slugifies to a clean `test-login`, not `test-login-spec`.
+  const specPart = meta.spec
+    ? slugify(meta.spec.replace(/(\.(spec|test|e2e|cy))?\.[cm]?[jt]sx?$/, ''))
+    : 'spec';
+  const titlePart = slugify(meta.title);
+  const cidPart = cid ? `${slugify(cid)}-` : '';
+  return `${specPart}--${titlePart}--${cidPart}${Date.now()}.html`;
+}
+
+/**
+ * Build the report HTML and write it under `outDir`, namespaced by `cid`.
+ * Returns the absolute-or-relative path written (as `join` produced it).
+ */
+export function writeReport(input: WriteReportInput): string {
+  const { outDir, cid, events, meta } = input;
+  const html = buildReport(events, meta);
+  if (!existsSync(outDir)) {
+    mkdirSync(outDir, { recursive: true });
+  }
+  const filePath = join(outDir, reportFileName(meta, cid));
+  writeFileSync(filePath, html);
+  return filePath;
+}
