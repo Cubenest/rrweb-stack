@@ -1,0 +1,35 @@
+{
+  "name": "@peekdev/cli",
+  "version": "0.1.0-alpha.0",
+  "description": "peek command-line tool. A thin read-mostly client of the native host's ~/.peek/sessions.db (ADR-0007): status, sessions list/show/export/delete, the `peek init` MCP-client wizard, and `peek audit log`.",
+  "license": "Apache-2.0",
+  "private": true,
+  "type": "module",
+  "bin": { "peek": "./dist/index.js" },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": { "types": "./dist/index.d.ts", "import": "./dist/index.js" }
+  },
+  "files": ["dist", "NOTICE", "README.md"],
+  "scripts": {
+    "build": "tsc -p tsconfig.json && node ./scripts/postbuild.mjs",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run --passWithNoTests"
+  },
+  "dependencies": {
+    "@peekdev/mcp": "workspace:*",
+    "better-sqlite3": "^12.10.0"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.13",
+    "@types/node": "^22.10.0"
+  },
+  "publishConfig": { "access": "public", "provenance": true },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Cubenest/rrweb-stack.git",
+    "directory": "packages/peek-cli"
+  },
+  "homepage": "https://github.com/Cubenest/rrweb-stack/tree/main/packages/peek-cli#readme"
+}
