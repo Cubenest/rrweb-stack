@@ -61,6 +61,9 @@ importers:
       '@cubenest/rrweb-core':
         specifier: workspace:*
         version: link:../rrweb-core
+      '@tracelane/core':
+        specifier: workspace:*
+        version: link:../tracelane-core
       fflate:
         specifier: ^0.8.2
         version: 0.8.3
