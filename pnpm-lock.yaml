@@ -46,6 +46,16 @@ importers:
         specifier: ^25.0.1
         version: 25.0.1
 
+  packages/tracelane-core:
+    dependencies:
+      '@cubenest/rrweb-core':
+        specifier: workspace:*
+        version: link:../rrweb-core
+    devDependencies:
+      jsdom:
+        specifier: ^25.0.1
+        version: 25.0.1
+
 packages:
 
   '@asamuzakjp/css-color@3.2.0':

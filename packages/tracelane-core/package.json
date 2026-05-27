@@ -1,0 +1,32 @@
+{
+  "name": "@tracelane/core",
+  "version": "0.1.0-alpha.0",
+  "description": "Framework-agnostic rrweb recording engine for tracelane. Wraps a per-framework browser object behind a common BrowserExecutor interface.",
+  "license": "Apache-2.0",
+  "private": true,
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": { "types": "./dist/index.d.ts", "import": "./dist/index.js" }
+  },
+  "files": ["dist", "NOTICE", "README.md"],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run --passWithNoTests"
+  },
+  "dependencies": {
+    "@cubenest/rrweb-core": "workspace:*"
+  },
+  "devDependencies": {
+    "jsdom": "^25.0.1"
+  },
+  "publishConfig": { "access": "public", "provenance": true },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Cubenest/rrweb-stack.git",
+    "directory": "packages/tracelane-core"
+  },
+  "homepage": "https://github.com/Cubenest/rrweb-stack/tree/main/packages/tracelane-core#readme"
+}
