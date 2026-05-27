@@ -74,10 +74,12 @@ describe('relay routing — console events stay out of the raw rrweb batch (issu
     rrwebBatch: EventBatcher<unknown>,
     consoleBatch: EventBatcher<unknown>,
   ): void {
-    const consoleEvent = extractConsoleEvent(payload);
-    if (consoleEvent) {
-      consoleBatch.add(consoleEvent);
-      return; // do NOT add the raw console event to rrwebBatch
+    // Mirrors handleRrweb: gate on the SHAPE, not the extraction result, so a
+    // malformed console-plugin event is still dropped from rrwebBatch.
+    if (isConsolePluginEvent(payload)) {
+      const consoleEvent = extractConsoleEvent(payload);
+      if (consoleEvent) consoleBatch.add(consoleEvent);
+      return; // ALWAYS drop the raw console event
     }
     rrwebBatch.add(payload);
   }
@@ -115,6 +117,18 @@ describe('relay routing — console events stay out of the raw rrweb batch (issu
     const consoleBatch = new EventBatcher<unknown>();
     route({ type: 3, data: { source: 0 } }, rrwebBatch, consoleBatch); // incremental snapshot
     expect(rrwebBatch.size).toBe(1);
+    expect(consoleBatch.size).toBe(0);
+  });
+
+  it('a MALFORMED console-plugin event (no data.payload) is dropped, not forwarded raw', () => {
+    const rrwebBatch = new EventBatcher<unknown>();
+    const consoleBatch = new EventBatcher<unknown>();
+    // Passes isConsolePluginEvent (right type + plugin) but extractConsoleEvent
+    // returns null (no data.payload). It must NOT fall through to rrwebBatch —
+    // the "console events never reach the raw stream" invariant holds for ALL
+    // shapes, even ones we can't extract.
+    route({ type: 6, data: { plugin: 'rrweb/console@1' } }, rrwebBatch, consoleBatch);
+    expect(rrwebBatch.size).toBe(0);
     expect(consoleBatch.size).toBe(0);
   });
 });

@@ -13,7 +13,7 @@ import {
   isRrwebMessage,
 } from '../src/recorder/messages';
 import { EventBatcher } from '../src/relay/batch';
-import { extractConsoleEvent } from '../src/relay/console-extract';
+import { extractConsoleEvent, isConsolePluginEvent } from '../src/relay/console-extract';
 import { maskNetMessage } from '../src/relay/mask';
 import { collectShadowReports, getOpenOrClosedShadowRoot } from '../src/relay/shadow';
 
@@ -109,17 +109,23 @@ export default defineContentScript({
 
     // rrweb events: a console-plugin event carries the page's RAW console.log
     // args (data.payload.payload: string[]) — tokens/passwords/JWTs the app
-    // logged. Those go ONLY through the masked consoleBatch path and are NOT
+    // logged. Those go ONLY through the masked consoleBatch path and are NEVER
     // added to rrwebBatch, which the SW ships verbatim via session.append
     // (review issue 1: the raw rrweb console event would otherwise leak
     // unmasked to the native host). The SW reconstructs console data from the
     // masked recorder.events `console` array, never from the raw stream, so
     // dropping the raw console event from rrwebBatch loses nothing.
+    //
+    // The gate is `isConsolePluginEvent` (the SHAPE), not the extraction result:
+    // a malformed console-plugin event (e.g. missing `data.payload`) yields a
+    // null extraction but must STILL be dropped, not fall through to rrwebBatch.
+    // The invariant "console-plugin events never reach rrwebBatch" holds for ALL
+    // shapes — defense-in-depth on the privacy boundary.
     const handleRrweb = (payload: unknown): void => {
-      const consoleEvent = extractConsoleEvent(payload);
-      if (consoleEvent) {
-        if (consoleBatch.add(consoleEvent)) flush();
-        return; // do NOT forward the unmasked raw console event
+      if (isConsolePluginEvent(payload)) {
+        const consoleEvent = extractConsoleEvent(payload);
+        if (consoleEvent && consoleBatch.add(consoleEvent)) flush();
+        return; // ALWAYS drop the raw console event, even if extraction was null
       }
       if (rrwebBatch.add(payload)) flush();
     };
