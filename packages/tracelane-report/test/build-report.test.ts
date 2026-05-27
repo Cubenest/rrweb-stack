@@ -1,3 +1,4 @@
+import vm from 'node:vm';
 import { EventType } from '@cubenest/rrweb-core';
 import type { eventWithTime } from '@cubenest/rrweb-core';
 import { describe, expect, it } from 'vitest';
@@ -5,6 +6,11 @@ import { loadFflateGunzipSource, loadPlayerUmd } from '../src/assets';
 import { buildReport } from '../src/build-report';
 import { decodeEventsBlob } from '../src/embed';
 import type { ReportMeta } from '../src/types';
+
+/** All inline <script> bodies, in document order. */
+function inlineScripts(html: string): string[] {
+  return [...html.matchAll(/<script>([\s\S]*?)<\/script>/g)].map((m) => m[1] ?? '');
+}
 
 function sampleEvents(): eventWithTime[] {
   return [
@@ -72,5 +78,35 @@ describe('buildReport — self-contained HTML (Task 2.9)', () => {
     const html = buildReport(sampleEvents(), evil);
     // No raw closing-script sequence from our injected payload.
     expect(html).not.toContain('</script><script>alert(1)');
+  });
+
+  it('emits four syntactically valid inline scripts (fflate, player, data, bootstrap)', () => {
+    // Guards against an edit silently breaking the in-page JS, which unit tests
+    // of the HTML string otherwise wouldn't catch (we don't render live DOM).
+    const html = buildReport(sampleEvents(), { ...META, error: '</script> oops' });
+    const scripts = inlineScripts(html);
+    expect(scripts).toHaveLength(4);
+    // Each compiles as valid JS.
+    for (const src of scripts) expect(() => new vm.Script(src)).not.toThrow();
+  });
+
+  it('the embedded data-consts script evaluates and preserves the payloads', () => {
+    const html = buildReport(sampleEvents(), { ...META, error: '</script><script>x' });
+    const dataScript = inlineScripts(html)[2] ?? '';
+    const sandbox: Record<string, unknown> = { atob, btoa };
+    vm.createContext(sandbox);
+    new vm.Script(
+      `${dataScript}\n;globalThis.__r = { META, EVENTS_GZ_B64, CONSOLE, NETWORK, MARKDOWN };`,
+    ).runInContext(sandbox);
+    const r = sandbox.__r as {
+      META: ReportMeta;
+      EVENTS_GZ_B64: string;
+      MARKDOWN: string;
+    };
+    expect(r.META.title).toBe(META.title);
+    // The </script> in the error survived as data (breakout neutralised, not lost).
+    expect(r.META.error).toBe('</script><script>x');
+    expect(typeof r.EVENTS_GZ_B64).toBe('string');
+    expect(typeof r.MARKDOWN).toBe('string');
   });
 });
