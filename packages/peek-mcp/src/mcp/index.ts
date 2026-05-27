@@ -14,22 +14,24 @@ export async function runMcpServer(options: CreatePeekMcpServerOptions = {}): Pr
   const peek = createPeekMcpServer(options);
   const transport = new StdioServerTransport();
 
-  // Release the read-only DB handle when the client disconnects.
-  const close = (): void => peek.close();
-  transport.onclose = close;
-
-  await peek.server.connect(transport);
-
-  // `connect` returns once the transport is started; the process then stays
-  // alive on the open stdio streams until the client closes them. Await a
-  // promise that resolves on transport close so the caller's `await` blocks
-  // for the server's lifetime.
-  await new Promise<void>((resolve) => {
+  // Resolve when the client disconnects (stdin EOF). McpServer.connect
+  // (Protocol.connect) PRESERVES and chains a pre-existing transport.onclose:
+  // it captures the current handler and invokes it before its own internal
+  // teardown. So we set it ONCE here, before connect — setting it again after
+  // connect would clobber the SDK's chained cleanup. The read-only DB handle is
+  // released in the same callback.
+  const closed = new Promise<void>((resolve) => {
     transport.onclose = () => {
-      close();
+      peek.close();
       resolve();
     };
   });
+
+  await peek.server.connect(transport);
+
+  // `connect` returns once the transport is started; the process stays alive on
+  // the open stdio streams until the client closes them. Block for that.
+  await closed;
 }
 
 export {
