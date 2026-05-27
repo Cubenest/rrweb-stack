@@ -1,5 +1,6 @@
 import type { eventWithTime } from '@cubenest/rrweb-core';
 import type { BrowserExecutor } from './browser-executor';
+import { type Mode, resolveMode } from './mode';
 import {
   type ConsolePluginOptions,
   DEFAULT_CONSOLE_PLUGIN_OPTIONS,
@@ -28,6 +29,25 @@ export interface RecorderOptions {
   cooldownMs?: number;
   /** Options forwarded to the in-page console plugin. */
   consolePluginOptions?: ConsolePluginOptions;
+  /**
+   * Capture mode (ADR-0005). Default `'failed'`. The `TRACELANE_MODE` env var
+   * overrides this at {@link Recorder.finalize} time.
+   */
+  mode?: Mode;
+}
+
+/** Outcome handed to {@link Recorder.finalize}. */
+export interface TestOutcome {
+  /** Whether the test passed. */
+  passed: boolean;
+}
+
+/** Decision returned by {@link Recorder.finalize}. */
+export interface FinalizeResult {
+  /** Whether a report should be built for this test (ADR-0005). */
+  shouldBuildReport: boolean;
+  /** The events to build the report from (empty when discarded). */
+  events: eventWithTime[];
 }
 
 export interface Recorder {
@@ -44,6 +64,14 @@ export interface Recorder {
   drain(): Promise<eventWithTime[]>;
   /** Stop polling and perform a final drain. */
   stop(): Promise<void>;
+  /**
+   * End the capture (ADR-0005): stop polling, drain any pending in-page events,
+   * then apply the mode policy. In `'failed'` mode a passing test discards the
+   * buffer and reports nothing; a failing test (or `'all'` mode) keeps the
+   * buffer and signals that a report should be built. `TRACELANE_MODE` overrides
+   * the configured mode here.
+   */
+  finalize(outcome: TestOutcome): Promise<FinalizeResult>;
   /** The merged Node-side event buffer (live reference). */
   getBuffer(): eventWithTime[];
 }
@@ -62,6 +90,7 @@ export function createRecorder(options: RecorderOptions): Recorder {
     drainIntervalMs = DEFAULT_DRAIN_INTERVAL_MS,
     cooldownMs = DEFAULT_COOLDOWN_MS,
     consolePluginOptions = DEFAULT_CONSOLE_PLUGIN_OPTIONS,
+    mode: configMode,
   } = options;
 
   const buffer: eventWithTime[] = [];
@@ -129,11 +158,24 @@ export function createRecorder(options: RecorderOptions): Recorder {
     await drain();
   }
 
+  async function finalize(outcome: TestOutcome): Promise<FinalizeResult> {
+    await stop();
+    const mode = resolveMode(configMode);
+    const shouldBuildReport = mode === 'all' || !outcome.passed;
+    if (!shouldBuildReport) {
+      // Discard: passing test in 'failed' mode keeps near-zero artifact cost.
+      buffer.length = 0;
+      return { shouldBuildReport: false, events: [] };
+    }
+    return { shouldBuildReport: true, events: buffer };
+  }
+
   return {
     start,
     reinject,
     drain,
     stop,
+    finalize,
     getBuffer: () => buffer,
   };
 }
