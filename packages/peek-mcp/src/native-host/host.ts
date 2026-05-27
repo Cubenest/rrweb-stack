@@ -1,5 +1,6 @@
 // Native messaging host runner (ADR-0007). Spawned by the browser over stdio
-// when invoked as `peek-mcp --native-host`. It owns ~/.peek/sessions.db and
+// (via the manifest's `path`, with the calling extension's origin as an
+// argument) or manually with `--native-host`. It owns ~/.peek/sessions.db and
 // reads length-prefixed JSON messages from the extension.
 //
 // Phase 3a wires the transport + DB open and a minimal handshake so the channel
@@ -17,12 +18,21 @@ export interface NativeHostHandle {
   close(): void;
 }
 
+export interface NativeHostOptions {
+  /**
+   * The `chrome-extension://<id>/` origin Chrome/Edge passed when spawning the
+   * host — identifies which extension connected. Captured now for the
+   * audit_log in Phase 3d; surfaced in the `host.hello` reply.
+   */
+  readonly callerOrigin?: string;
+}
+
 /**
  * Start the native messaging host: open the DB (running migrations) and begin
  * decoding inbound messages from `process.stdin`. Unknown message types get a
  * structured error reply rather than crashing the host.
  */
-export function startNativeHost(): NativeHostHandle {
+export function startNativeHost(options: NativeHostOptions = {}): NativeHostHandle {
   const db = openDb();
 
   const done = readMessages((message) => {
@@ -52,6 +62,7 @@ export function startNativeHost(): NativeHostHandle {
       await writeMessage({
         type: 'host.hello.ok',
         schemaVersion: schemaVersion(db),
+        ...(options.callerOrigin !== undefined ? { callerOrigin: options.callerOrigin } : {}),
       });
       return;
     }
