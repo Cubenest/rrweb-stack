@@ -11,3 +11,12 @@ export const NATIVE_HOST_ID = 'com.cubenest.peek';
 
 /** `chrome.storage.sync` key holding the array of user-enabled origins. */
 export const ENABLED_ORIGINS_KEY = 'peek:enabledOrigins';
+
+/**
+ * Filename of the MAIN-world rrweb recorder IIFE in the extension package root
+ * (a `web_accessible_resource`, see wxt.config.ts). Injected into per-site
+ * enabled tabs via `chrome.scripting.executeScript({ world: 'MAIN', files: […]
+ * })` (Task 3.19). Built by scripts/build-recorder.mjs in the `build:done`
+ * hook — NOT a WXT entrypoint (must be a classic IIFE, P2 PRD §A.2).
+ */
+export const RECORDER_FILE = 'rrweb-recorder.js';

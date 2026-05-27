@@ -1,4 +1,6 @@
+import { join } from 'node:path';
 import { defineConfig } from 'wxt';
+import { buildRecorder } from './scripts/build-recorder.mjs';
 
 // peek Chrome MV3 extension — WXT generates `manifest.json` from this config
 // plus the entrypoint files in `entrypoints/`. Do NOT hand-write manifest.json.
@@ -66,6 +68,26 @@ export default defineConfig({
     ],
     content_security_policy: {
       extension_pages: "script-src 'self' 'wasm-unsafe-eval'; object-src 'self';",
+    },
+  },
+  hooks: {
+    // Build the MAIN-world rrweb recorder as a self-contained IIFE AFTER WXT's
+    // Vite build finishes (Task 3.19, P2 PRD §A.2). It is deliberately NOT a
+    // WXT/Vite entrypoint: Vite emits ES modules and CRXJS loads content
+    // scripts via dynamic import + chrome.runtime.getURL, neither of which
+    // works in a `world: 'MAIN'` script (crxjs discussion #643). esbuild
+    // (`format: 'iife'`) inlines every transitive dep of @cubenest/rrweb-core
+    // into one classic script with no import/export. The manifest already
+    // reserves `rrweb-recorder.js` in web_accessible_resources; this writes the
+    // file the SW injects via chrome.scripting.executeScript.
+    //
+    // assert-recorder-iife.mjs (CI + `pnpm build`) re-builds and enforces the
+    // IIFE invariant independently of this hook.
+    'build:done': async (wxt) => {
+      const outDir = wxt.config.outDir;
+      const outFile = join(outDir, 'rrweb-recorder.js');
+      await buildRecorder(outFile);
+      wxt.logger.info(`[peek] MAIN-world recorder IIFE → ${outFile}`);
     },
   },
 });

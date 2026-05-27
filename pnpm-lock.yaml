@@ -46,6 +46,9 @@ importers:
 
   packages/peek-extension:
     dependencies:
+      '@cubenest/rrweb-core':
+        specifier: workspace:*
+        version: link:../rrweb-core
       react:
         specifier: ^18.3.1
         version: 18.3.1
@@ -68,6 +71,9 @@ importers:
       '@wxt-dev/module-react':
         specifier: ^1.2.2
         version: 1.2.2(vite@6.4.2(@types/node@22.19.19)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.22.3))(wxt@0.20.26(@types/node@22.19.19)(jiti@2.7.0)(lightningcss@1.32.0)(rolldown@1.0.2)(rollup@4.60.4)(tsx@4.22.3))
+      esbuild:
+        specifier: ^0.28.0
+        version: 0.28.0
       vite:
         specifier: ^6.4.2
         version: 6.4.2(@types/node@22.19.19)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.22.3)
