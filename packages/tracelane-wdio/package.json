@@ -1,0 +1,46 @@
+{
+  "name": "@tracelane/wdio",
+  "version": "0.1.0-alpha.0",
+  "description": "WebdriverIO Service that records rrweb sessions and writes a self-contained HTML report on failed tests. The user-facing tracelane integration for WDIO.",
+  "license": "Apache-2.0",
+  "private": true,
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": { "types": "./dist/index.d.ts", "import": "./dist/index.js" },
+    "./hooks": { "types": "./dist/hooks.d.ts", "import": "./dist/hooks.js" }
+  },
+  "files": ["dist", "NOTICE", "README.md"],
+  "scripts": {
+    "build": "tsc -p tsconfig.json && node scripts/build-rrweb-bundle.mjs",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run --passWithNoTests",
+    "test:e2e": "node scripts/build-rrweb-bundle.mjs && wdio run ./e2e/wdio.conf.ts"
+  },
+  "dependencies": {
+    "@tracelane/core": "workspace:*",
+    "@tracelane/report": "workspace:*"
+  },
+  "peerDependencies": {
+    "@wdio/types": "^9.0.0",
+    "webdriverio": "^9.0.0"
+  },
+  "devDependencies": {
+    "@cubenest/rrweb-core": "workspace:*",
+    "@wdio/cli": "^9.0.0",
+    "@wdio/local-runner": "^9.0.0",
+    "@wdio/mocha-framework": "^9.0.0",
+    "@wdio/spec-reporter": "^9.0.0",
+    "@wdio/types": "^9.0.0",
+    "esbuild": "^0.28.0",
+    "webdriverio": "^9.0.0"
+  },
+  "publishConfig": { "access": "public", "provenance": true },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Cubenest/rrweb-stack.git",
+    "directory": "packages/tracelane-wdio"
+  },
+  "homepage": "https://github.com/Cubenest/rrweb-stack/tree/main/packages/tracelane-wdio#readme"
+}
