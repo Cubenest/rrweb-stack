@@ -1,0 +1,10 @@
+@peekdev/mcp
+Copyright 2026 Cubenest
+
+This product includes software developed by:
+- WiseLibs — better-sqlite3 (MIT License)
+- Anthropic — @modelcontextprotocol/sdk (MIT License)
+- Colin McDonnell — zod (MIT License)
+
+This product is licensed under the Apache License, Version 2.0.
+See the LICENSE file for details.
