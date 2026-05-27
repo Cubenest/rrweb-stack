@@ -1,0 +1,6 @@
+{
+  "$comment": "Extension IDs whose chrome-extension:// origin is allowed to message the peek native host (ADR-0007). Wildcards are forbidden by Chrome, so every supported store + the dev-mode unpacked-load ID is listed explicitly and all three go into the SAME manifest's allowed_origins (the Edge 'first registry location wins' gotcha — see P2 PRD §A7). Pre-publish, `dev` is the unpacked-load ID printed at chrome://extensions; replace `chromeWebStore` and `edgeAddons` with the assigned IDs once the products land in their stores.",
+  "chromeWebStore": "PLACEHOLDER_CHROME_WEB_STORE_ID",
+  "edgeAddons": "PLACEHOLDER_EDGE_ADDONS_ID",
+  "dev": "PLACEHOLDER_DEV_UNPACKED_ID"
+}
