@@ -14,15 +14,19 @@ import type { WdioBrowser } from '../src/wdio-executor';
 
 const bundleBuilt = existsSync(join(__dirname, '..', 'dist', 'rrweb-bundle.js'));
 
-function mockBrowser(): WdioBrowser & { capabilities: Record<string, string> } {
+type MockBrowser = WdioBrowser & { capabilities: Record<string, string> };
+
+function mockBrowser(opts: { cdpWorks?: boolean } = {}): MockBrowser {
   return {
     capabilities: { browserName: 'chrome', browserVersion: '124.0.0.0' },
     // Run the page-script fn in-process against jsdom's window.
     execute: vi.fn(async (fn: (...a: unknown[]) => unknown, ...args: unknown[]) => fn(...args)),
     executeAsync: vi.fn(async () => undefined),
-    // No CDP in unit tests — the session degrades to rrweb-only capture.
+    // By default no CDP in unit tests — the session degrades to rrweb-only
+    // capture; pass { cdpWorks: true } to simulate a CDP-capable session.
     cdp: vi.fn(async () => {
-      throw new Error('no cdp in unit test');
+      if (!opts.cdpWorks) throw new Error('no cdp in unit test');
+      return undefined;
     }),
     on: vi.fn(() => undefined),
   };
@@ -32,22 +36,38 @@ function seedPageBuffer(events: unknown[]): void {
   (window as unknown as { __tracelane__events?: unknown[] }).__tracelane__events = events;
 }
 
+function resetPageState(): void {
+  const w = window as unknown as Record<string, unknown>;
+  w.__tracelane__events = undefined;
+  w.__tracelane__inited = undefined;
+  w.__tracelane__sessionId = undefined;
+  w.__tracelane__stop = undefined;
+}
+
+/** The console-plugin options the recorder's init script was called with, if any. */
+function consoleOptionsFromExecuteCalls(browser: MockBrowser): unknown {
+  // runInit() calls execute(tracelaneInitScript, cooldownMs:number, consoleOptions).
+  const calls = (browser.execute as ReturnType<typeof vi.fn>).mock.calls;
+  const initCall = calls.find((c) => typeof c[1] === 'number' && c.length >= 3);
+  return initCall?.[2];
+}
+
 describe.skipIf(!bundleBuilt)('TraceLaneSession — afterTest report-write decision', () => {
   let outDir: string;
+  let warnSpy: ReturnType<typeof vi.spyOn>;
 
   beforeEach(() => {
     outDir = join(tmpdir(), `tl-session-${Date.now()}-${Math.random().toString(36).slice(2)}`);
-    // Reset any in-page recorder state between tests.
-    const w = window as unknown as Record<string, unknown>;
-    w.__tracelane__events = undefined;
-    w.__tracelane__inited = undefined;
-    w.__tracelane__sessionId = undefined;
-    w.__tracelane__stop = undefined;
+    resetPageState();
+    // These tests use the throwing-cdp mock, so the session warns once about
+    // degraded network capture (covered by its own suite); silence the noise.
+    warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
   });
 
   afterEach(() => {
     rmSync(outDir, { recursive: true, force: true });
     vi.unstubAllEnvs();
+    warnSpy.mockRestore();
   });
 
   it('failed mode: a passing test writes no report and discards the buffer', async () => {
@@ -132,5 +152,167 @@ describe.skipIf(!bundleBuilt)('TraceLaneSession — afterTest report-write decis
     const html = readFileSync(path, 'utf8');
     expect(html).toContain('chrome');
     expect(html).toContain('124.0.0.0');
+  });
+});
+
+describe.skipIf(!bundleBuilt)('TraceLaneSession — capture.console toggle (#1)', () => {
+  let warnSpy: ReturnType<typeof vi.spyOn>;
+
+  beforeEach(() => {
+    resetPageState();
+    warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+  });
+
+  afterEach(() => {
+    warnSpy.mockRestore();
+  });
+
+  it('disables console capture by passing { level: [] } to the recorder', async () => {
+    const session = new TraceLaneSession({ capture: { console: false } }, 'mocha', '0-0');
+    const browser = mockBrowser();
+    await session.onBefore(browser);
+    await session.onBeforeTest('a test', 'test/x.spec.ts');
+    // The recorder's in-page init was called with an empty console level list,
+    // so the rrweb console plugin patches nothing.
+    expect(consoleOptionsFromExecuteCalls(browser)).toEqual({ level: [] });
+  });
+
+  it('leaves console capture on (no { level: [] }) by default', async () => {
+    const session = new TraceLaneSession({}, 'mocha', '0-0');
+    const browser = mockBrowser();
+    await session.onBefore(browser);
+    await session.onBeforeTest('a test', 'test/x.spec.ts');
+    // Default: the session forwards no console override, so core applies its
+    // defaults (which include the standard console levels).
+    expect(consoleOptionsFromExecuteCalls(browser)).not.toEqual({ level: [] });
+  });
+
+  it('forwards an explicit consolePluginOptions when console capture is on', async () => {
+    const custom = { level: ['error'] };
+    const session = new TraceLaneSession({ consolePluginOptions: custom }, 'mocha', '0-0');
+    const browser = mockBrowser();
+    await session.onBefore(browser);
+    await session.onBeforeTest('a test', 'test/x.spec.ts');
+    expect(consoleOptionsFromExecuteCalls(browser)).toEqual(custom);
+  });
+});
+
+describe.skipIf(!bundleBuilt)('TraceLaneSession — network capture degrade (#2)', () => {
+  let outDir: string;
+  let warnSpy: ReturnType<typeof vi.spyOn>;
+
+  beforeEach(() => {
+    outDir = join(tmpdir(), `tl-net-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+    resetPageState();
+    warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+  });
+
+  afterEach(() => {
+    rmSync(outDir, { recursive: true, force: true });
+    warnSpy.mockRestore();
+  });
+
+  async function runTestCycle(session: TraceLaneSession, n: number): Promise<void> {
+    await session.onBeforeTest(`test ${n}`, 'test/x.spec.ts');
+    seedPageBuffer([
+      { type: 4, data: { href: 'https://app.test', width: 800, height: 600 }, timestamp: 1 },
+    ]);
+    await session.onAfterTest({ passed: true, duration: 1 });
+  }
+
+  it('attempts CDP attach only once across many tests when CDP is unavailable', async () => {
+    const session = new TraceLaneSession({ mode: 'all', outDir }, 'mocha', '0-0');
+    const browser = mockBrowser({ cdpWorks: false });
+    await session.onBefore(browser);
+    await runTestCycle(session, 1);
+    await runTestCycle(session, 2);
+    await runTestCycle(session, 3);
+    // cdp('Network','enable') was attempted exactly once, not once per test.
+    const cdpCalls = (browser.cdp as ReturnType<typeof vi.fn>).mock.calls.filter(
+      (c) => c[0] === 'Network' && c[1] === 'enable',
+    );
+    expect(cdpCalls).toHaveLength(1);
+  });
+
+  it('warns exactly once that network capture is unavailable', async () => {
+    const session = new TraceLaneSession({ mode: 'all', outDir }, 'mocha', '0-0');
+    const browser = mockBrowser({ cdpWorks: false });
+    await session.onBefore(browser);
+    await runTestCycle(session, 1);
+    await runTestCycle(session, 2);
+    expect(warnSpy).toHaveBeenCalledTimes(1);
+    expect(warnSpy).toHaveBeenCalledWith(
+      '[tracelane/wdio] network capture unavailable (CDP not attached); degrading to rrweb+console only.',
+    );
+  });
+
+  it('attaches CDP once and does not warn when CDP is available', async () => {
+    const session = new TraceLaneSession({ mode: 'all', outDir }, 'mocha', '0-0');
+    const browser = mockBrowser({ cdpWorks: true });
+    await session.onBefore(browser);
+    await runTestCycle(session, 1);
+    await runTestCycle(session, 2);
+    const cdpCalls = (browser.cdp as ReturnType<typeof vi.fn>).mock.calls.filter(
+      (c) => c[0] === 'Network' && c[1] === 'enable',
+    );
+    expect(cdpCalls).toHaveLength(1);
+    expect(warnSpy).not.toHaveBeenCalled();
+  });
+
+  it('skips network capture entirely when capture.network is false', async () => {
+    const session = new TraceLaneSession(
+      { mode: 'all', outDir, capture: { network: false } },
+      'mocha',
+      '0-0',
+    );
+    const browser = mockBrowser({ cdpWorks: false });
+    await session.onBefore(browser);
+    await runTestCycle(session, 1);
+    const cdpCalls = (browser.cdp as ReturnType<typeof vi.fn>).mock.calls.filter(
+      (c) => c[0] === 'Network' && c[1] === 'enable',
+    );
+    expect(cdpCalls).toHaveLength(0);
+    expect(warnSpy).not.toHaveBeenCalled();
+  });
+});
+
+describe.skipIf(!bundleBuilt)('TraceLaneSession — no teardown drain (#5)', () => {
+  let outDir: string;
+  let warnSpy: ReturnType<typeof vi.spyOn>;
+
+  beforeEach(() => {
+    outDir = join(tmpdir(), `tl-teardown-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+    resetPageState();
+    warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+  });
+
+  afterEach(() => {
+    rmSync(outDir, { recursive: true, force: true });
+    warnSpy.mockRestore();
+  });
+
+  it('onAfter() after a completed test does not issue another in-page drain', async () => {
+    const session = new TraceLaneSession({ mode: 'failed', outDir }, 'mocha', '0-0');
+    const browser = mockBrowser();
+    await session.onBefore(browser);
+    await session.onBeforeTest('a passing test', 'test/x.spec.ts');
+    seedPageBuffer([{ type: 3, data: {}, timestamp: 1 }]);
+    await session.onAfterTest({ passed: true, duration: 1 });
+
+    // The recorder was finalized + dropped by onAfterTest; teardown has nothing
+    // to stop, so it must not call browser.execute again.
+    const callsBefore = (browser.execute as ReturnType<typeof vi.fn>).mock.calls.length;
+    await session.onAfter();
+    const callsAfter = (browser.execute as ReturnType<typeof vi.fn>).mock.calls.length;
+    expect(callsAfter).toBe(callsBefore);
+  });
+
+  it('onAfter() with no started test (only onBefore) is a safe no-op', async () => {
+    const session = new TraceLaneSession({ mode: 'failed', outDir }, 'mocha', '0-0');
+    const browser = mockBrowser();
+    await session.onBefore(browser);
+    // No onBeforeTest -> no recorder was ever created.
+    await session.onAfter();
+    expect((browser.execute as ReturnType<typeof vi.fn>).mock.calls).toHaveLength(0);
   });
 });

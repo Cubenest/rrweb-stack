@@ -69,6 +69,9 @@ export const config: Options.Testrunner = {
       {
         mode: 'failed',
         outDir,
+        // network: true intentionally exercises the graceful-degrade path (no
+        // devtools-service registered) — CDP attach fails once, then capture
+        // continues as rrweb + console only.
         capture: { rrweb: true, network: true, console: true },
       },
     ],

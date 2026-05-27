@@ -10,22 +10,9 @@
 
 import type { Frameworks, Services } from '@wdio/types';
 import type { TraceLaneOptions } from './options';
+import { type TestLike, scenarioIdentity, testIdentity } from './test-identity';
 import { TraceLaneSession } from './tracelane-session';
 import type { WdioBrowser } from './wdio-executor';
-
-/** A WDIO `Test`/`Suite`-shaped object (we read `title`/`file`). */
-interface TestLike {
-  title?: string;
-  fullTitle?: string;
-  file?: string;
-  parent?: string;
-}
-
-/** Pull a human title + spec path out of a WDIO Test/Suite object. */
-function testIdentity(test: TestLike): { title: string; spec?: string } {
-  const title = test.fullTitle ?? test.title ?? 'unknown test';
-  return test.file ? { title, spec: test.file } : { title };
-}
 
 /**
  * The tracelane WebdriverIO Service. Implements the worker + launcher hooks from
@@ -85,9 +72,8 @@ export default class TraceLaneService implements Services.ServiceInstance {
 
   /** Cucumber: scenario start (runtime-only hook; mirrors `beforeTest`). */
   async beforeScenario(world: unknown, _context?: unknown): Promise<void> {
-    const pickle = (world as { pickle?: { name?: string; uri?: string } }).pickle;
-    const title = pickle?.name ?? 'unknown scenario';
-    await this.session.onBeforeTest(title, pickle?.uri);
+    const { title, spec } = scenarioIdentity(world);
+    await this.session.onBeforeTest(title, spec);
   }
 
   /** Cucumber: scenario end (runtime-only hook; mirrors `afterTest`). */

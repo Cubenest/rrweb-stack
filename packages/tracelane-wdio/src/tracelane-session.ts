@@ -6,7 +6,12 @@
 // "the same logic exported as plain hook functions"). The session owns the
 // recorder, the current-test metadata, and the report-write decision.
 
-import { type Mode, type Recorder, createRecorder } from '@tracelane/core';
+import {
+  type ConsolePluginOptions,
+  type Mode,
+  type Recorder,
+  createRecorder,
+} from '@tracelane/core';
 import type { ReportMeta } from '@tracelane/report';
 import { type Framework, normalizeResult } from './framework-result';
 import { loadRrwebBundle } from './inpage-bundle';
@@ -39,6 +44,7 @@ export class TraceLaneSession {
   private readonly outDir: string;
   private readonly captureRrweb: boolean;
   private readonly captureNetwork: boolean;
+  private readonly captureConsole: boolean;
   private framework: Framework | string | undefined;
   private cid: string | undefined;
 
@@ -46,6 +52,8 @@ export class TraceLaneSession {
   private recorder: Recorder | undefined;
   private current: CurrentTest | undefined;
   private networkAttached = false;
+  /** Set once CDP attach has failed, to stop the per-test retry storm (#2). */
+  private networkUnavailable = false;
 
   constructor(options: TraceLaneOptions = {}, framework?: string, cid?: string) {
     this.options = options;
@@ -53,6 +61,7 @@ export class TraceLaneSession {
     // Capture channels default on (P1 PRD §M.1).
     this.captureRrweb = options.capture?.rrweb !== false;
     this.captureNetwork = options.capture?.network !== false;
+    this.captureConsole = options.capture?.console !== false;
     this.framework = framework;
     this.cid = cid;
   }
@@ -68,16 +77,30 @@ export class TraceLaneSession {
   }
 
   /**
-   * `before` hook: stash the live browser and build the recorder. The recorder
-   * isn't started here — capture begins per test in `beforeTest` so passing
-   * tests in `failed` mode never pay the injection cost beyond a single test.
+   * `before` hook: stash the live browser. The recorder is created lazily
+   * per-test in `onBeforeTest` (not here), so no recorder lingers between tests
+   * and worker teardown never drains an unstarted recorder (#5).
    */
   async onBefore(browser: SessionBrowser): Promise<void> {
     this.browser = browser;
-    if (!this.captureRrweb) return;
-    const executor = createWdioExecutor(browser);
+  }
+
+  /**
+   * Resolve the console-plugin options: when `capture.console === false`, pass
+   * `{ level: [] }` so the rrweb console plugin patches no `console.*` methods
+   * and installs no error/rejection listeners — i.e. console capture is off
+   * (#1). Otherwise forward any user-supplied `consolePluginOptions` (the core
+   * recorder applies its defaults when none are given).
+   */
+  private resolveConsolePluginOptions(): ConsolePluginOptions | undefined {
+    if (!this.captureConsole) return { level: [] };
+    return this.options.consolePluginOptions;
+  }
+
+  /** Build a fresh recorder for the live browser (one per test; #5). */
+  private createRecorderForCurrentTest(browser: SessionBrowser): Recorder {
     const recorderOptions: Parameters<typeof createRecorder>[0] = {
-      executor,
+      executor: createWdioExecutor(browser),
       rrwebBundle: loadRrwebBundle(),
     };
     if (this.options.drainIntervalMs !== undefined) {
@@ -86,31 +109,46 @@ export class TraceLaneSession {
     if (this.options.cooldownMs !== undefined) {
       recorderOptions.cooldownMs = this.options.cooldownMs;
     }
-    if (this.options.consolePluginOptions !== undefined) {
-      recorderOptions.consolePluginOptions = this.options.consolePluginOptions;
+    const consolePluginOptions = this.resolveConsolePluginOptions();
+    if (consolePluginOptions !== undefined) {
+      recorderOptions.consolePluginOptions = consolePluginOptions;
     }
     if (this.options.mode !== undefined) {
       recorderOptions.mode = this.options.mode as Mode;
     }
-    this.recorder = createRecorder(recorderOptions);
+    return createRecorder(recorderOptions);
   }
 
   /** `beforeTest`/`beforeScenario`: record the test identity and start capture. */
   async onBeforeTest(title: string, spec?: string): Promise<void> {
     this.current = spec ? { title, spec } : { title };
-    if (!this.recorder || !this.browser) return;
+    if (!this.captureRrweb || !this.browser) return;
+    // Create + start a fresh recorder for this test (#5). A passing test in
+    // `failed` mode discards its buffer at finalize; no recorder survives the
+    // test, so teardown never re-drains.
+    this.recorder = this.createRecorderForCurrentTest(this.browser);
     await this.recorder.start();
-    // Attach CDP network capture once per session (the CDP connection and the
-    // page console outlive individual tests).
-    if (this.captureNetwork && !this.networkAttached) {
+    await this.maybeAttachNetworkCapture();
+  }
+
+  /**
+   * Attach CDP network capture once per session. After the first failure (no
+   * devtools-service / non-Chrome / Selenium Grid), set a sentinel so every
+   * subsequent test skips the attempt instead of retrying forever, and warn
+   * exactly once (#2).
+   */
+  private async maybeAttachNetworkCapture(): Promise<void> {
+    if (!this.captureNetwork || this.networkAttached || this.networkUnavailable) return;
+    if (!this.browser) return;
+    try {
+      await attachNetworkCapture(createWdioExecutor(this.browser));
       this.networkAttached = true;
-      try {
-        await attachNetworkCapture(createWdioExecutor(this.browser));
-      } catch {
-        // CDP unavailable (no devtools-service / non-Chrome): degrade to
-        // rrweb-only capture rather than failing the test.
-        this.networkAttached = false;
-      }
+    } catch {
+      // Give up for the rest of the session and say so once.
+      this.networkUnavailable = true;
+      console.warn(
+        '[tracelane/wdio] network capture unavailable (CDP not attached); degrading to rrweb+console only.',
+      );
     }
   }
 
@@ -123,21 +161,21 @@ export class TraceLaneSession {
   /**
    * `afterTest`/`afterScenario`: normalize the framework result, ask the
    * recorder for the report decision (ADR-0005), and write the HTML on a build.
-   * Returns the path written, or undefined when no report was produced.
+   * Returns the path written, or undefined when no report was produced. Drops
+   * the recorder afterward so the next test starts fresh and teardown has
+   * nothing to drain (#5).
    */
   async onAfterTest(resultA: unknown, resultB?: unknown): Promise<string | undefined> {
     const normalized = normalizeResult(this.framework, resultA, resultB);
-    if (!this.recorder) {
+    const recorder = this.recorder;
+    this.recorder = undefined;
+    if (!recorder) {
       this.current = undefined;
       return undefined;
     }
-    const { shouldBuildReport, events } = await this.recorder.finalize({
+    const { shouldBuildReport, events } = await recorder.finalize({
       passed: normalized.passed,
     });
-    // Rebuild a fresh recorder so the next test starts with an empty buffer.
-    this.recorder = undefined;
-    const browser = this.browser;
-    if (browser) await this.onBefore(browser);
 
     if (!shouldBuildReport) {
       this.current = undefined;
@@ -150,9 +188,17 @@ export class TraceLaneSession {
     return path;
   }
 
-  /** `afterSuite`/`after`: stop polling so no timer leaks past the worker. */
+  /**
+   * `afterSuite`/`after`: stop the active recorder so no poll timer leaks past
+   * the worker. In the normal flow `onAfterTest` already finalized + dropped the
+   * recorder, so this is a no-op; it only fires if a test started but never
+   * reached `afterTest` (#5 — never drains an unstarted recorder).
+   */
   async onAfter(): Promise<void> {
-    if (this.recorder) await this.recorder.stop();
+    if (this.recorder) {
+      await this.recorder.stop();
+      this.recorder = undefined;
+    }
   }
 
   /** Compose the report metadata from the current test + browser capabilities. */

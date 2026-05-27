@@ -52,6 +52,18 @@ describe('attachNetworkCapture', () => {
     );
   });
 
+  it('routes a 400 response (exact boundary, >= 400)', async () => {
+    const m = mockExecutor();
+    await attachNetworkCapture(m.executor);
+    m.fire({ response: { url: 'https://api.test/bad-request', status: 400 } });
+    expect(m.execute).toHaveBeenCalledWith(
+      expect.any(Function),
+      'https://api.test/bad-request',
+      400,
+      'GET',
+    );
+  });
+
   it('ignores a 200 response (below the 400 threshold)', async () => {
     const m = mockExecutor();
     await attachNetworkCapture(m.executor);

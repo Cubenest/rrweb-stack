@@ -13,6 +13,7 @@
 
 import type { Frameworks } from '@wdio/types';
 import type { TraceLaneOptions } from './options';
+import { type TestLike, scenarioIdentity, testIdentity } from './test-identity';
 import { TraceLaneSession } from './tracelane-session';
 import type { WdioBrowser } from './wdio-executor';
 
@@ -37,23 +38,16 @@ export interface TraceLaneHooks {
   afterSuite(suite: Frameworks.Suite): void;
   after(result: number, capabilities: unknown, specs: string[]): Promise<void>;
   onComplete(exitCode: number, config: unknown, capabilities: unknown, results: unknown): void;
-}
-
-/** A WDIO `Test`/`Suite`-shaped object (we read `title`/`file`). */
-interface TestLike {
-  title?: string;
-  fullTitle?: string;
-  file?: string;
-}
-
-function testIdentity(test: TestLike): { title: string; spec?: string } {
-  const title = test.fullTitle ?? test.title ?? 'unknown test';
-  return test.file ? { title, spec: test.file } : { title };
+  /** Cucumber scenario start (mirrors the Service; #3). */
+  beforeScenario(world: unknown, context?: unknown): Promise<void>;
+  /** Cucumber scenario end (mirrors the Service; #3). */
+  afterScenario(world: unknown, result?: unknown): Promise<void>;
 }
 
 /**
  * Build a set of WDIO hook functions wired to one TraceLaneSession (P1 PRD §M.2).
- * Returns the same logic the Service runs — just as standalone hooks.
+ * Returns the same logic the Service runs — just as standalone hooks, including
+ * the Cucumber `beforeScenario`/`afterScenario` pair (#3).
  */
 export function traceLaneHooks(options: TraceLaneHookOptions = {}): TraceLaneHooks {
   const session = new TraceLaneSession(options, options.framework ?? 'mocha');
@@ -83,5 +77,12 @@ export function traceLaneHooks(options: TraceLaneHookOptions = {}): TraceLaneHoo
       await session.onAfter();
     },
     onComplete(_exitCode, _config, _capabilities, _results) {},
+    async beforeScenario(world, _context) {
+      const { title, spec } = scenarioIdentity(world);
+      await session.onBeforeTest(title, spec);
+    },
+    async afterScenario(world, result) {
+      await session.onAfterTest(world, result);
+    },
   };
 }

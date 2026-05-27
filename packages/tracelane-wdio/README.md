@@ -56,7 +56,7 @@ pnpm add -D @tracelane/wdio webdriverio @wdio/cli @wdio/local-runner @wdio/mocha
 | `outDir` | `string` | `'./tracelane-reports'` | Report output directory (created if missing). |
 | `capture.rrweb` | `boolean` | `true` | Record the rrweb session. |
 | `capture.network` | `boolean` | `true` | Route failed responses (`status >= 400`) into the console timeline via CDP. |
-| `capture.console` | `boolean` | `true` | Capture `console.*` via the rrweb console plugin. |
+| `capture.console` | `boolean` | `true` | Capture `console.*` via the rrweb console plugin. Setting this `false` also drops the `[tracelane.net]` network-error lines, since `capture.network` surfaces them through `console.error`. |
 | `drainIntervalMs` | `number` | `5000` | Node-side drain poll interval. |
 | `cooldownMs` | `number` | `250` | Re-injection cooldown guard (suppresses double-init on hash/HMR navigation). |
 | `allure` | `boolean` | `false` | Reserved for the v1.1 Allure shim. No-op in v1. |

@@ -23,7 +23,7 @@ function mockBrowser(): WdioBrowser & { capabilities: Record<string, string> } {
 }
 
 describe('traceLaneHooks — surface', () => {
-  it('returns the full documented hook surface (P1 PRD §M.2)', () => {
+  it('returns the full documented hook surface incl. Cucumber hooks (P1 PRD §M.2, #3)', () => {
     const hooks = traceLaneHooks({ mode: 'failed' });
     for (const name of [
       'beforeSession',
@@ -35,6 +35,8 @@ describe('traceLaneHooks — surface', () => {
       'afterSuite',
       'after',
       'onComplete',
+      'beforeScenario',
+      'afterScenario',
     ] as const) {
       expect(typeof hooks[name]).toBe('function');
     }
@@ -51,6 +53,7 @@ describe('traceLaneHooks — surface', () => {
 
 describe.skipIf(!bundleBuilt)('traceLaneHooks — capture flow', () => {
   let outDir: string;
+  let warnSpy: ReturnType<typeof vi.spyOn>;
 
   beforeEach(() => {
     outDir = join(tmpdir(), `tl-hooks-${Date.now()}-${Math.random().toString(36).slice(2)}`);
@@ -59,10 +62,14 @@ describe.skipIf(!bundleBuilt)('traceLaneHooks — capture flow', () => {
     w.__tracelane__inited = undefined;
     w.__tracelane__sessionId = undefined;
     w.__tracelane__stop = undefined;
+    // The mock browser has no CDP, so the session warns once about degraded
+    // network capture; silence it here (asserted in the session's own suite).
+    warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
   });
 
   afterEach(() => {
     rmSync(outDir, { recursive: true, force: true });
+    warnSpy.mockRestore();
   });
 
   it('writes a report on a failing test via the bound hooks', async () => {
@@ -79,6 +86,24 @@ describe.skipIf(!bundleBuilt)('traceLaneHooks — capture flow', () => {
       duration: 12,
       error: new Error('boom'),
     } as never);
+    expect(existsSync(outDir)).toBe(true);
+  });
+
+  it('writes a report on a failing Cucumber scenario via beforeScenario/afterScenario (#3)', async () => {
+    const hooks = traceLaneHooks({ mode: 'failed', outDir, framework: 'cucumber' });
+    const browser = mockBrowser();
+    hooks.beforeSession({}, {}, [], '3-0');
+    await hooks.before({}, [], browser as unknown as WebdriverIO.Browser);
+    await hooks.beforeScenario({
+      pickle: { name: 'checkout flow', uri: 'features/checkout.feature' },
+    });
+    (window as unknown as { __tracelane__events?: unknown[] }).__tracelane__events = [
+      { type: 4, data: { href: 'https://app.test', width: 800, height: 600 }, timestamp: 1 },
+    ];
+    await hooks.afterScenario(
+      { result: { status: 'FAILED', message: 'step failed' } },
+      { passed: false, error: 'step failed' },
+    );
     expect(existsSync(outDir)).toBe(true);
   });
 });
