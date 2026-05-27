@@ -8,5 +8,5 @@
 // are re-exported so consumers can declare-and-pass without reaching
 // into `./store` directly.
 
-export { createSessionStore } from './store';
-export type { SessionChunk, SessionStore, SessionStoreOptions } from './types';
+export { createSessionStore } from './store.js';
+export type { SessionChunk, SessionStore, SessionStoreOptions } from './types.js';

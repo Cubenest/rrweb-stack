@@ -7,8 +7,8 @@
 
 import { EventType, IncrementalSource, MouseInteractions } from '@cubenest/rrweb-core';
 import type { eventWithTime } from '@cubenest/rrweb-core';
-import type { ConsoleEntry, NetworkEntry } from './panels';
-import type { ReportMeta } from './types';
+import type { ConsoleEntry, NetworkEntry } from './panels.js';
+import type { ReportMeta } from './types.js';
 
 /** Max console messages included in the prompt (P1 PRD §F.3: "last 30"). */
 export const MAX_CONSOLE_MESSAGES = 30;

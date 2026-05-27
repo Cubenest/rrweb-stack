@@ -12,10 +12,10 @@
 // default, discoverable surface.
 
 import type { Frameworks } from '@wdio/types';
-import type { TraceLaneOptions } from './options';
-import { type TestLike, scenarioIdentity, testIdentity } from './test-identity';
-import { TraceLaneSession } from './tracelane-session';
-import type { WdioBrowser } from './wdio-executor';
+import type { TraceLaneOptions } from './options.js';
+import { type TestLike, scenarioIdentity, testIdentity } from './test-identity.js';
+import { TraceLaneSession } from './tracelane-session.js';
+import type { WdioBrowser } from './wdio-executor.js';
 
 /** Options for {@link traceLaneHooks}. Same shape as the Service options. */
 export interface TraceLaneHookOptions extends TraceLaneOptions {

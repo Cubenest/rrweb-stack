@@ -16,12 +16,12 @@
 
 import type { eventWithTime } from '@cubenest/rrweb-core';
 import { pruneToSizeBudget } from '@tracelane/core';
-import { encodeEventsBlob } from './embed';
-import { buildMarkdown, extractActionLog } from './markdown';
-import { resolveCiMetadata } from './metadata';
-import { extractConsole, extractNetwork } from './panels';
-import { renderReportHtml } from './template';
-import type { ReportMeta } from './types';
+import { encodeEventsBlob } from './embed.js';
+import { buildMarkdown, extractActionLog } from './markdown.js';
+import { resolveCiMetadata } from './metadata.js';
+import { extractConsole, extractNetwork } from './panels.js';
+import { renderReportHtml } from './template.js';
+import type { ReportMeta } from './types.js';
 
 /** Options for {@link buildReport}. */
 export interface BuildReportOptions {

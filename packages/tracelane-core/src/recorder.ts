@@ -1,13 +1,13 @@
 import type { eventWithTime } from '@cubenest/rrweb-core';
-import type { BrowserExecutor } from './browser-executor';
-import { type Mode, resolveMode } from './mode';
+import type { BrowserExecutor } from './browser-executor.js';
+import { type Mode, resolveMode } from './mode.js';
 import {
   type ConsolePluginOptions,
   DEFAULT_CONSOLE_PLUGIN_OPTIONS,
   tracelaneDrainScript,
   tracelaneInitScript,
   tracelaneNavScript,
-} from './page-script';
+} from './page-script.js';
 
 /** Default re-injection cooldown in ms (ADR-0006). */
 export const DEFAULT_COOLDOWN_MS = 250;

@@ -17,5 +17,5 @@ export {
   createConsoleCaptureBuffer,
   type ConsoleCaptureBuffer,
   type ConsoleCaptureOptions,
-} from './buffer';
-export type { BasicConsoleLevel, ConsoleEvent, ConsoleLevel } from './types';
+} from './buffer.js';
+export type { BasicConsoleLevel, ConsoleEvent, ConsoleLevel } from './types.js';

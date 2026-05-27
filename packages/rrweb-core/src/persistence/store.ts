@@ -36,7 +36,7 @@
 //     supported list; `ArrayBuffer` would also work, but `Uint8Array`
 //     is what `compress()` returns, so we avoid a useless view shuffle.
 
-import type { SessionChunk, SessionStore, SessionStoreOptions } from './types';
+import type { SessionChunk, SessionStore, SessionStoreOptions } from './types.js';
 
 const DEFAULT_DB_NAME = '@cubenest/rrweb-core';
 const DEFAULT_STORE_NAME = 'session-chunks';

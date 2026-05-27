@@ -1,6 +1,6 @@
 // Input-element value masking.
 
-import { elementMatchesAnyMaskClass } from './selectors';
+import { elementMatchesAnyMaskClass } from './selectors.js';
 
 /**
  * Hard-masked input types — always returned as asterisks regardless of

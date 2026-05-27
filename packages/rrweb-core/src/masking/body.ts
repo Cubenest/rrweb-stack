@@ -1,6 +1,6 @@
 // Network/payload body redaction.
 
-import { applyRegexBank } from './regex';
+import { applyRegexBank } from './regex.js';
 
 const DEFAULT_MAX_LENGTH_BYTES = 1024 * 1024; // 1 MB
 const TRUNCATION_SUFFIX = (more: number): string => `... [TRUNCATED ${more} more bytes]`;

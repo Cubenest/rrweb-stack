@@ -25,7 +25,7 @@
 // and should be handled by the recorder's `recordCrossOriginIframes`
 // pathway, not by us.
 
-import type { ShadowRootInfo } from './types';
+import type { ShadowRootInfo } from './types.js';
 
 /** Default `maxDepth` — pathological apps have been observed nesting ~8 deep. */
 const DEFAULT_MAX_DEPTH = 16;

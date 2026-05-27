@@ -10,15 +10,15 @@
 // `WebRequestEventSource`) and option types are re-exported so consumers
 // can declare-and-pass without importing internal paths.
 
-export type { CapturedRequest, CapturedResponse, NetworkCaptureAdapter } from './types';
+export type { CapturedRequest, CapturedResponse, NetworkCaptureAdapter } from './types.js';
 export {
   createCDPNetworkAdapter,
   type CDPNetworkEventSource,
   type CDPNetworkOptions,
-} from './cdp';
+} from './cdp.js';
 export {
   createWebRequestNetworkAdapter,
   type WebRequestEvent,
   type WebRequestEventSource,
   type WebRequestNetworkOptions,
-} from './web-request';
+} from './web-request.js';

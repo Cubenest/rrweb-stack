@@ -5,5 +5,5 @@
 // type. The traversal options interface stays internal — callers pass an
 // inline object literal and TS infers the shape.
 
-export { traverseShadowRoots } from './traverse';
-export type { ShadowRootInfo } from './types';
+export { traverseShadowRoots } from './traverse.js';
+export type { ShadowRootInfo } from './types.js';

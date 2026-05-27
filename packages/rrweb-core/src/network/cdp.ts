@@ -22,8 +22,8 @@
 // which is why CDP defaults to NOT retaining them. Products turn it on
 // when they want the bodies and accept the memory tax.
 
-import { redactBody, redactNetworkHeaders } from '../masking';
-import type { CapturedRequest, CapturedResponse, NetworkCaptureAdapter } from './types';
+import { redactBody, redactNetworkHeaders } from '../masking/index.js';
+import type { CapturedRequest, CapturedResponse, NetworkCaptureAdapter } from './types.js';
 
 /**
  * Structural shape of the CDP event source. The product-side wrapper

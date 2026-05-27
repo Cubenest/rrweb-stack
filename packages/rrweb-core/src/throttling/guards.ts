@@ -17,8 +17,8 @@
 // None of the guards mutate their input events; they return new objects
 // (shallow + relevant nested clone) so the caller's references stay clean.
 
-import { EventType, IncrementalSource } from '../rrweb';
-import type { customEvent, eventWithTime } from '../rrweb';
+import { EventType, IncrementalSource } from '../rrweb.js';
+import type { customEvent, eventWithTime } from '../rrweb.js';
 
 // ────────────────────────────────────────────────────────────────────────────
 // Data-URL placeholder

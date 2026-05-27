@@ -44,9 +44,9 @@
 // ignores it — better to lose one buggy event than risk a recursive
 // flood from a defensive log line. Tests cover this contract.
 
-import { EventType, getRecordConsolePlugin } from '../rrweb';
-import type { eventWithTime } from '../rrweb';
-import type { ConsoleEvent, ConsoleLevel } from './types';
+import { EventType, getRecordConsolePlugin } from '../rrweb.js';
+import type { eventWithTime } from '../rrweb.js';
+import type { ConsoleEvent, ConsoleLevel } from './types.js';
 
 /** Vendor's plugin name string — emitted as `event.data.plugin`. */
 const CONSOLE_PLUGIN_NAME = 'rrweb/console@1';

@@ -19,14 +19,14 @@
 // callback fires once (consumers wire this to rrweb's teardown if they want
 // a true stop).
 
-import type { customEvent, eventWithTime, recordOptions } from '../rrweb';
-import { LARGE_DOM_DEFAULTS } from './defaults';
+import type { customEvent, eventWithTime, recordOptions } from '../rrweb.js';
+import { LARGE_DOM_DEFAULTS } from './defaults.js';
 import {
   type MutationGuardHooks,
   applyDataUrlGuard,
   applyEventSizeGuard,
   applyMutationGuard,
-} from './guards';
+} from './guards.js';
 
 /**
  * Options for `applyLargeDomGuards`. Everything is optional — the function

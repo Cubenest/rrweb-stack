@@ -6,11 +6,11 @@
 // panel containers, and the in-page bootstrap script. The large vendored assets
 // (player UMD/CSS, fflate UMD) and the data payloads are passed in.
 
-import { loadFflateGunzipSource, loadPlayerCss, loadPlayerUmd } from './assets';
-import { escapeHtml, serializeForScript } from './html';
-import { renderMetaHeader } from './metadata';
-import type { ConsoleEntry, NetworkEntry } from './panels';
-import type { ReportMeta } from './types';
+import { loadFflateGunzipSource, loadPlayerCss, loadPlayerUmd } from './assets.js';
+import { escapeHtml, serializeForScript } from './html.js';
+import { renderMetaHeader } from './metadata.js';
+import type { ConsoleEntry, NetworkEntry } from './panels.js';
+import type { ReportMeta } from './types.js';
 
 /** Everything `renderReportHtml` needs; build-report.ts prepares it. */
 export interface ReportTemplateData {

@@ -1,6 +1,6 @@
 // Text-node content masking.
 
-import { applyRegexBank } from './regex';
+import { applyRegexBank } from './regex.js';
 
 /**
  * Apply the PII regex bank to a text-node's content. Used when capturing

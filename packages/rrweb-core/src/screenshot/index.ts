@@ -6,14 +6,14 @@
 // transport-shape and option types are re-exported so consumers can
 // declare-and-pass without importing internal paths.
 
-export type { ScreenshotAdapter } from './types';
+export type { ScreenshotAdapter } from './types.js';
 export {
   createCDPScreenshotAdapter,
   type CDPTransport,
   type CDPScreenshotOptions,
-} from './cdp';
+} from './cdp.js';
 export {
   createTabsScreenshotAdapter,
   type CaptureVisibleTabFn,
   type TabsScreenshotOptions,
-} from './tabs';
+} from './tabs.js';

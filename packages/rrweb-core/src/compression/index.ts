@@ -19,7 +19,7 @@
 //   • No custom dictionaries.
 
 import { gunzipSync, gzipSync, strFromU8, strToU8 } from 'fflate';
-import type { eventWithTime } from '../rrweb';
+import type { eventWithTime } from '../rrweb.js';
 
 /**
  * Per-batch gzip compression of an rrweb event array.

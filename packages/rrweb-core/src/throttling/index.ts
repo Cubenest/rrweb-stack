@@ -7,7 +7,7 @@
 // SVG placeholder constant stay internal — they're composed by
 // `applyLargeDomGuards` and not intended for direct consumption.
 
-export { LARGE_DOM_DEFAULTS } from './defaults';
-export type { LargeDomDefaults } from './defaults';
-export { applyLargeDomGuards } from './apply';
-export type { ApplyLargeDomGuardsOptions } from './apply';
+export { LARGE_DOM_DEFAULTS } from './defaults.js';
+export type { LargeDomDefaults } from './defaults.js';
+export { applyLargeDomGuards } from './apply.js';
+export type { ApplyLargeDomGuardsOptions } from './apply.js';

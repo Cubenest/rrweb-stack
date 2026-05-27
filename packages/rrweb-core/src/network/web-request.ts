@@ -20,8 +20,8 @@
 // surface what the transport gives us, and `responseBody` is always
 // undefined here.
 
-import { redactBody, redactNetworkHeaders } from '../masking';
-import type { CapturedRequest, CapturedResponse, NetworkCaptureAdapter } from './types';
+import { redactBody, redactNetworkHeaders } from '../masking/index.js';
+import type { CapturedRequest, CapturedResponse, NetworkCaptureAdapter } from './types.js';
 
 /**
  * The chrome.webRequest event family we depend on, narrowed to just the

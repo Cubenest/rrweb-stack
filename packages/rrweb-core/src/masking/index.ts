@@ -4,10 +4,10 @@
 // (lines 691-693): the four functions below plus `COMPAT_SELECTORS`. The
 // internals (regex bank, individual matchers, helpers) stay internal.
 
-export { maskInputValue } from './inputs';
-export { maskTextContent } from './text';
-export { redactNetworkHeaders } from './headers';
-export { redactBody } from './body';
-export type { RedactBodyOptions } from './body';
-export { COMPAT_SELECTORS } from './selectors';
-export type { CompatSelectorFamily } from './selectors';
+export { maskInputValue } from './inputs.js';
+export { maskTextContent } from './text.js';
+export { redactNetworkHeaders } from './headers.js';
+export { redactBody } from './body.js';
+export type { RedactBodyOptions } from './body.js';
+export { COMPAT_SELECTORS } from './selectors.js';
+export type { CompatSelectorFamily } from './selectors.js';

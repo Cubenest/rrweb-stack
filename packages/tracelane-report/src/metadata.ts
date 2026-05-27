@@ -7,8 +7,8 @@
 //   • renderMetaHeader — the <header class="meta"> markup (spec, title, status,
 //     duration, browser, viewport, commit, build URL), HTML-escaped.
 
-import { escapeHtml } from './html';
-import type { ReportMeta } from './types';
+import { escapeHtml } from './html.js';
+import type { ReportMeta } from './types.js';
 
 /** Read an env var without a hard `@types/node` dependency (platform-light). */
 function readEnv(name: string): string | undefined {

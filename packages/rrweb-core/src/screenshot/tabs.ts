@@ -16,8 +16,8 @@
 // (2) callers often want to wrap the call with permission checks or
 // telemetry; (3) tests stay synchronous-fixture-friendly.
 
-import { decodeBase64 } from './base64';
-import type { ScreenshotAdapter } from './types';
+import { decodeBase64 } from './base64.js';
+import type { ScreenshotAdapter } from './types.js';
 
 /**
  * Structural shape of `chrome.tabs.captureVisibleTab`. The Chrome API

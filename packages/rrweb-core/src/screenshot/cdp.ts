@@ -18,8 +18,8 @@
 // caller schedules captures (typically 0.2-1 Hz per ADR-0002's screenshot
 // fallback note), and a single in-flight rejection propagates verbatim.
 
-import { decodeBase64 } from './base64';
-import type { ScreenshotAdapter } from './types';
+import { decodeBase64 } from './base64.js';
+import type { ScreenshotAdapter } from './types.js';
 
 /**
  * Structural shape of a CDP transport — typically a thin wrapper around

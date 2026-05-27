@@ -9,10 +9,10 @@
 // `traceLaneHooks` factory (hooks.ts) share one implementation.
 
 import type { Frameworks, Services } from '@wdio/types';
-import type { TraceLaneOptions } from './options';
-import { type TestLike, scenarioIdentity, testIdentity } from './test-identity';
-import { TraceLaneSession } from './tracelane-session';
-import type { WdioBrowser } from './wdio-executor';
+import type { TraceLaneOptions } from './options.js';
+import { type TestLike, scenarioIdentity, testIdentity } from './test-identity.js';
+import { TraceLaneSession } from './tracelane-session.js';
+import type { WdioBrowser } from './wdio-executor.js';
 
 /**
  * The tracelane WebdriverIO Service. Implements the worker + launcher hooks from
