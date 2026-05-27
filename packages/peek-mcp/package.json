@@ -9,7 +9,12 @@
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "exports": {
-    ".": { "types": "./dist/index.d.ts", "import": "./dist/index.js" }
+    ".": { "types": "./dist/index.d.ts", "import": "./dist/index.js" },
+    "./db": { "types": "./dist/db/index.d.ts", "import": "./dist/db/index.js" },
+    "./native-host": {
+      "types": "./dist/native-host/index.d.ts",
+      "import": "./dist/native-host/index.js"
+    }
   },
   "files": [
     "dist",
