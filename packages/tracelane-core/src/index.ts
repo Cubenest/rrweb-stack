@@ -1,3 +1,4 @@
 // Public API surface for @tracelane/core.
-// Populated incrementally across Tasks 2.2-2.6.
-export {};
+
+// BrowserExecutor — the framework-agnostic driver surface adapters implement.
+export type { BrowserExecutor } from './browser-executor';
