@@ -1,8 +1,27 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { renderMetaHeader, resolveCiMetadata } from '../src/metadata';
 import type { ReportMeta } from '../src/types';
 
 const BASE: ReportMeta = { title: 'a test', status: 'failed' };
+
+// CI provenance env vars this module reads. Cleared before each test so the
+// host environment (GitHub Actions sets GITHUB_* on the runner!) can't leak in
+// and change what resolveCiMetadata detects. Each test then stubs only the vars
+// it is asserting on.
+const PROVENANCE_ENV = [
+  'GITHUB_SHA',
+  'CI_COMMIT_SHA',
+  'GITHUB_SERVER_URL',
+  'GITHUB_REPOSITORY',
+  'GITHUB_RUN_ID',
+  'CI_JOB_URL',
+  'CI_PIPELINE_URL',
+  'BUILD_URL',
+];
+
+beforeEach(() => {
+  for (const name of PROVENANCE_ENV) vi.stubEnv(name, '');
+});
 
 afterEach(() => {
   vi.unstubAllEnvs();
@@ -15,7 +34,6 @@ describe('resolveCiMetadata — CI provenance (Task 2.11)', () => {
   });
 
   it('fills commitSha from CI_COMMIT_SHA (GitLab) when GITHUB_SHA is unset', () => {
-    vi.stubEnv('GITHUB_SHA', '');
     vi.stubEnv('CI_COMMIT_SHA', 'gitlabsha');
     expect(resolveCiMetadata(BASE).commitSha).toBe('gitlabsha');
   });
@@ -43,12 +61,7 @@ describe('resolveCiMetadata — CI provenance (Task 2.11)', () => {
   });
 
   it('leaves fields undefined when nothing is available', () => {
-    vi.stubEnv('GITHUB_SHA', '');
-    vi.stubEnv('CI_COMMIT_SHA', '');
-    vi.stubEnv('GITHUB_RUN_ID', '');
-    vi.stubEnv('CI_JOB_URL', '');
-    vi.stubEnv('CI_PIPELINE_URL', '');
-    vi.stubEnv('BUILD_URL', '');
+    // beforeEach already cleared every provenance var.
     const resolved = resolveCiMetadata(BASE);
     expect(resolved.commitSha).toBeUndefined();
     expect(resolved.buildUrl).toBeUndefined();
