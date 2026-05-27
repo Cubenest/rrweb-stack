@@ -3,7 +3,25 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { eventWithTime } from '@cubenest/rrweb-core';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { reportFileName, slugify, writeReport } from '../src/report-writer';
+import { reportFileName, slugify, specSlug, writeReport } from '../src/report-writer';
+
+describe('specSlug', () => {
+  it('keeps only the basename of a relative spec path', () => {
+    expect(specSlug('test/specs/login.spec.ts')).toBe('login');
+  });
+
+  it('keeps only the basename of an absolute spec path (the E2E case)', () => {
+    expect(specSlug('/repo/packages/wdio/e2e/test/specs/smoke.e2e.ts')).toBe('smoke');
+  });
+
+  it('handles Windows-style separators', () => {
+    expect(specSlug('C:\\repo\\test\\Checkout.test.tsx')).toBe('checkout');
+  });
+
+  it('strips a plain .ts extension when there is no spec/test suffix', () => {
+    expect(specSlug('flows/onboarding.ts')).toBe('onboarding');
+  });
+});
 
 describe('slugify', () => {
   it('lowercases and collapses non-alphanumerics to single dashes', () => {
@@ -24,12 +42,13 @@ describe('slugify', () => {
 });
 
 describe('reportFileName', () => {
-  it('combines spec + title + cid and ends in .html', () => {
+  it('combines the spec basename + title + cid and ends in .html', () => {
     const name = reportFileName(
       { title: 'logs in', status: 'failed', spec: 'test/login.spec.ts' },
       '0-1',
     );
-    expect(name).toMatch(/^test-login--logs-in--0-1-\d+\.html$/);
+    // The spec basename (login.spec.ts) loses its dir + suffix -> `login`.
+    expect(name).toMatch(/^login--logs-in--0-1-\d+\.html$/);
   });
 
   it('omits the cid segment when no cid is given', () => {

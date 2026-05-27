@@ -81,7 +81,7 @@ describe.skipIf(!bundleBuilt)('TraceLaneSession — afterTest report-write decis
     // Filename is namespaced by spec, title, and cid.
     const files = readdirSync(outDir);
     expect(files).toHaveLength(1);
-    expect(files[0]).toMatch(/test-fail--a-failing-test--0-0-\d+\.html/);
+    expect(files[0]).toMatch(/fail--a-failing-test--0-0-\d+\.html/);
   });
 
   it('all mode: a passing test still writes a report', async () => {

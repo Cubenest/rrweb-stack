@@ -23,4 +23,32 @@ jobs:
       - run: pnpm build
       - run: pnpm lint
       - run: pnpm typecheck
+      # `pnpm test` is vitest-only across all packages — it never launches a
+      # browser, so the main pipeline stays green without Chrome. The browser
+      # E2E lives in the separate `e2e-wdio` job below.
       - run: pnpm test
+
+  # @tracelane/wdio browser smoke (Task 2.17). Separate, non-blocking job so a
+  # Chrome/chromedriver hiccup can't fail the required `ci` gate. The smoke spec
+  # fails on purpose; the run passes when a < 25 MB .html report was written
+  # (asserted in e2e/wdio.conf.ts onComplete + e2e/run.mjs exit mapping).
+  e2e-wdio:
+    runs-on: ubuntu-latest
+    # Do not fail the overall workflow if the browser E2E is flaky/unavailable.
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      # ubuntu-latest ships Chrome; pin it explicitly so the run is reproducible
+      # and chromedriver auto-management has a known browser to match.
+      - uses: browser-actions/setup-chrome@v1
+        with:
+          chrome-version: stable
+      - run: pnpm install --frozen-lockfile
+      # The recorder bundle + workspace deps must be built before the E2E.
+      - run: pnpm build
+      - run: pnpm --filter @tracelane/wdio test:e2e

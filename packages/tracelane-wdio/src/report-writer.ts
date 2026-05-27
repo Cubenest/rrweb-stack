@@ -40,14 +40,21 @@ export function slugify(input: string): string {
  * timestamp + cid keep retries and parallel workers from overwriting each other.
  */
 export function reportFileName(meta: ReportMeta, cid?: string): string {
-  // Strip the common test-file suffixes (`.spec.ts`, `.test.mts`, `.e2e.js`, …)
-  // so `test/login.spec.ts` slugifies to a clean `test-login`, not `test-login-spec`.
-  const specPart = meta.spec
-    ? slugify(meta.spec.replace(/(\.(spec|test|e2e|cy))?\.[cm]?[jt]sx?$/, ''))
-    : 'spec';
+  const specPart = meta.spec ? specSlug(meta.spec) : 'spec';
   const titlePart = slugify(meta.title);
   const cidPart = cid ? `${slugify(cid)}-` : '';
   return `${specPart}--${titlePart}--${cidPart}${Date.now()}.html`;
+}
+
+/**
+ * Slug for the spec segment: take the file's basename (so an absolute path like
+ * `/repo/test/login.spec.ts` doesn't bloat the filename), then strip the common
+ * test-file suffixes (`.spec.ts`, `.test.mts`, `.e2e.js`, …) so it slugifies to
+ * a clean `login`, not `login-spec`.
+ */
+export function specSlug(spec: string): string {
+  const base = spec.replace(/^.*[/\\]/, '');
+  return slugify(base.replace(/(\.(spec|test|e2e|cy))?\.[cm]?[jt]sx?$/, ''));
 }
 
 /**

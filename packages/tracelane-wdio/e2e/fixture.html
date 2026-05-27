@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>tracelane wdio smoke fixture</title>
+    <style>
+      body {
+        font-family: system-ui, sans-serif;
+        margin: 2rem;
+        background: #0b1020;
+        color: #e6edf3;
+      }
+      button {
+        font-size: 1rem;
+        padding: 0.5rem 1rem;
+        margin-top: 1rem;
+      }
+      #log {
+        margin-top: 1rem;
+        font-family: monospace;
+      }
+    </style>
+  </head>
+  <body>
+    <h1 id="title">tracelane smoke</h1>
+    <p>A fixture page the smoke test interacts with so the recorder captures DOM mutations, a console message, and a failed network request.</p>
+    <button id="go">Trigger activity</button>
+    <div id="log"></div>
+    <script>
+      // Emit a console line (captured by the rrweb console plugin) and a failed
+      // network request (captured by CDP -> routed into console.error) on click.
+      document.getElementById('go').addEventListener('click', async () => {
+        console.log('tracelane-smoke: button clicked');
+        const log = document.getElementById('log');
+        const item = document.createElement('div');
+        item.textContent = 'clicked at ' + new Date().toISOString();
+        log.appendChild(item);
+        try {
+          // 404 on purpose so the CDP network-capture path has something to log.
+          await fetch('/tracelane-smoke/definitely-missing-endpoint');
+        } catch {
+          /* network error is expected in the smoke fixture */
+        }
+      });
+    </script>
+  </body>
+</html>

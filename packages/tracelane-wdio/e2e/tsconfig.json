@@ -1,0 +1,11 @@
+{
+  // Editor-only config for the opt-in E2E (it is NOT part of `pnpm typecheck`,
+  // which scopes to `src/**/*`). WDIO loads these TS files via tsx, which
+  // transpiles without type-checking — so this just powers IDE intellisense.
+  "extends": "../../../tsconfig.base.json",
+  "compilerOptions": {
+    "types": ["@wdio/globals/types", "@wdio/mocha-framework"],
+    "noEmit": true
+  },
+  "include": ["./**/*.ts"]
+}
