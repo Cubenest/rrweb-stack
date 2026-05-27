@@ -26,7 +26,13 @@ export function startNativeHost(): NativeHostHandle {
   const db = openDb();
 
   const done = readMessages((message) => {
-    void handleMessage(message);
+    // A reply-write failure (e.g. the browser closed the port mid-reply) must
+    // not become an unhandled rejection that tears down the host.
+    handleMessage(message).catch((err) => {
+      console.error(
+        `native host: failed handling message — ${err instanceof Error ? err.message : String(err)}`,
+      );
+    });
   });
 
   return {
