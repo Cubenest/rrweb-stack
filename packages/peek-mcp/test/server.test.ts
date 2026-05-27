@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
@@ -273,6 +273,29 @@ describe('peek MCP server: graceful no-DB', () => {
         arguments: { sessionId: 's_nope' },
       });
       expect(textOf(res as never)).toContain("No session found with id 's_nope'");
+    } finally {
+      await close();
+    }
+  });
+
+  it('a corrupt event blob yields a clean tool error, not a crash', async () => {
+    const { dbPath, eventsDir } = seedStore(dir, [loginSession()]);
+    // Overwrite the session's blob with garbage so decompress fails.
+    writeFileSync(join(eventsDir, 's_login.rrweb.gz'), Buffer.from([0x1f, 0x8b, 0xff, 0x00, 0x01]));
+    const { client, close } = await connectClient({ dbPath, eventsDir });
+    try {
+      // An event-using tool surfaces the decode failure as a clean text result.
+      const res = await client.callTool({
+        name: 'get_dom_snapshot',
+        arguments: { sessionId: 's_login', ts: 1200 },
+      });
+      expect(textOf(res as never)).toContain('Failed to decode the event blob');
+      // A SQL-only tool is unaffected by the corrupt blob.
+      const errs = await client.callTool({
+        name: 'get_session_console_errors',
+        arguments: { sessionId: 's_login' },
+      });
+      expect(parseJson(errs as never)).toHaveLength(1);
     } finally {
       await close();
     }

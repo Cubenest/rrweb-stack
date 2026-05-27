@@ -18,11 +18,22 @@ export interface GenerateReproOptions {
   readonly endTs?: number;
   /** Test title (defaults to a session-derived label). */
   readonly title?: string;
+  /** Max actions to emit (default 200); keeps the latest N, the rest noted. */
+  readonly maxActions?: number;
 }
+
+/** Default ceiling on emitted actions — caps the output size (PRD §B token budget). */
+const DEFAULT_MAX_ACTIONS = 200;
 
 /** Single-quote-escape a value for embedding in a generated JS string literal. */
 function jsString(value: string): string {
-  return `'${value.replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/\n/g, '\\n')}'`;
+  // Order matters: backslash first, then quote, then the line terminators —
+  // a bare \r or \n in a single-quoted literal is a strict-mode syntax error.
+  return `'${value
+    .replace(/\\/g, '\\\\')
+    .replace(/'/g, "\\'")
+    .replace(/\n/g, '\\n')
+    .replace(/\r/g, '\\r')}'`;
 }
 
 /** Map one user action to a Playwright statement, or undefined to skip it. */
@@ -54,8 +65,13 @@ export function generatePlaywrightRepro(
   const startTs = options.startTs ?? Number.NEGATIVE_INFINITY;
   const endTs = options.endTs ?? Number.POSITIVE_INFINITY;
   const title = options.title ?? 'peek recorded session';
+  const maxActions = options.maxActions ?? DEFAULT_MAX_ACTIONS;
 
-  const actions = extractUserActions(events).filter((a) => a.ts >= startTs && a.ts <= endTs);
+  const allInWindow = extractUserActions(events).filter((a) => a.ts >= startTs && a.ts <= endTs);
+  // Cap output: keep the LATEST N actions (most relevant to reproduce recent
+  // behavior), noting the truncation so the agent knows the repro is partial.
+  const truncated = allInWindow.length > maxActions;
+  const actions = truncated ? allInWindow.slice(allInWindow.length - maxActions) : allInWindow;
 
   const lines: string[] = [];
   lines.push(`import { test, expect } from '@playwright/test';`);
@@ -64,6 +80,10 @@ export function generatePlaywrightRepro(
 
   if (actions.length === 0) {
     lines.push('  // No user actions were recorded in this window.');
+  } else if (truncated) {
+    lines.push(
+      `  // truncated: showing last ${maxActions} of ${allInWindow.length} actions (narrow startTs/endTs for the rest)`,
+    );
   }
 
   for (const action of actions) {

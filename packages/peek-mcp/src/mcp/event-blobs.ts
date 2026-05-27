@@ -11,6 +11,20 @@ import { isAbsolute, join } from 'node:path';
 import { decompress, type eventWithTime } from '@cubenest/rrweb-core';
 import { peekHomeDir } from '../db/open.js';
 
+/**
+ * A blob exists on disk but couldn't be decoded — a corrupt/truncated gzip
+ * frame or a payload that doesn't deserialize to an event array. Distinct from
+ * "no blob" (which is a normal empty result): a present-but-broken blob is a
+ * real, attributable failure the tool surfaces clearly rather than silently
+ * treating as zero events.
+ */
+export class SessionEventsError extends Error {
+  constructor(message: string, options?: { cause?: unknown }) {
+    super(message, options);
+    this.name = 'SessionEventsError';
+  }
+}
+
 /** Absolute base directory for the gzipped per-session event blobs. */
 export function rrwebEventsDir(): string {
   return join(peekHomeDir(), 'rrweb-events');
@@ -46,6 +60,15 @@ export function loadSessionEvents(
     return [];
   }
   const bytes = readFileSync(abs);
-  // readFileSync returns a Node Buffer; decompress wants a Uint8Array view.
-  return decompress(new Uint8Array(bytes.buffer, bytes.byteOffset, bytes.byteLength));
+  try {
+    // readFileSync returns a Node Buffer; decompress wants a Uint8Array view.
+    // decompress throws (fflate gzip error / non-array payload) on a corrupt or
+    // truncated blob — translate that into a clear, attributable error.
+    return decompress(new Uint8Array(bytes.buffer, bytes.byteOffset, bytes.byteLength));
+  } catch (err) {
+    throw new SessionEventsError(
+      `Failed to decode the event blob at '${blobPath}' (corrupt or truncated recording).`,
+      { cause: err },
+    );
+  }
 }

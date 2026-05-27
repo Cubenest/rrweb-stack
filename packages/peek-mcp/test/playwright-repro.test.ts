@@ -82,4 +82,39 @@ describe('generatePlaywrightRepro', () => {
     const script = generatePlaywrightRepro(events);
     expect(script).toContain('// No user actions were recorded in this window.');
   });
+
+  it('escapes carriage returns so the generated literal stays single-line (M1)', () => {
+    freshIds();
+    const input = el('input', { attributes: { name: 'note' } });
+    const root = documentWith([input]);
+    const events = [fullSnapshot(root, 1000), inputEvent(input.id, 'a\r\nb', 1100)];
+    const script = generatePlaywrightRepro(events);
+    // The fill statement must contain escaped \r and \n, no raw line terminators.
+    const fillLine = script.split('\n').find((l) => l.includes('page.fill'));
+    expect(fillLine).toBe(`  await page.fill('input[name="note"]', 'a\\r\\nb');`);
+  });
+
+  it('caps output to the latest N actions with a truncation note (I1)', () => {
+    freshIds();
+    const button = el('button', { attributes: { id: 'b' } });
+    const root = documentWith([button]);
+    const events: ReturnType<typeof clickEvent>[] = [fullSnapshot(root, 1000)];
+    for (let i = 1; i <= 250; i += 1) events.push(clickEvent(button.id, 1000 + i));
+
+    const script = generatePlaywrightRepro(events, { maxActions: 200 });
+    const clickLines = script.split('\n').filter((l) => l.includes('page.click'));
+    expect(clickLines).toHaveLength(200);
+    expect(script).toContain('// truncated: showing last 200 of 250 actions');
+    // The kept actions are the LATEST 200 (ts 1051..1250); the earliest is dropped.
+    expect(script).not.toContain('// truncated: showing last 200 of 250 actions\n  // ');
+  });
+
+  it('does not emit a truncation note when under the cap', () => {
+    freshIds();
+    const button = el('button', { attributes: { id: 'b' } });
+    const root = documentWith([button]);
+    const events = [fullSnapshot(root, 1000), clickEvent(button.id, 1100)];
+    const script = generatePlaywrightRepro(events, { maxActions: 200 });
+    expect(script).not.toContain('truncated');
+  });
 });

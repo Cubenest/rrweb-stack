@@ -23,17 +23,29 @@ interface IndexedNode {
  */
 export type NodeIndex = ReadonlyMap<number, IndexedNode>;
 
-/** Build a {@link NodeIndex} from a FullSnapshot's root serialized node. */
+/**
+ * Max DOM nesting depth the offline walkers descend before stopping. Real
+ * browser DOMs are nowhere near this deep; the bound exists because this code
+ * ingests UNTRUSTED recordings — a crafted ~10k-deep tree would otherwise blow
+ * the call stack. Shared so the index builders and the serializer agree.
+ */
+export const MAX_DOM_DEPTH = 1000;
+
+/**
+ * Build a {@link NodeIndex} from a FullSnapshot's root serialized node. Nodes
+ * deeper than {@link MAX_DOM_DEPTH} are skipped (not indexed) rather than
+ * overflowing the stack on an adversarial blob.
+ */
 export function indexNodes(root: serializedNodeWithId): NodeIndex {
   const index = new Map<number, IndexedNode>();
-  const walk = (node: serializedNodeWithId, parentId: number | null): void => {
+  const walk = (node: serializedNodeWithId, parentId: number | null, depth: number): void => {
     index.set(node.id, { node, parentId });
-    const children = nodeChildren(node);
-    for (const child of children) {
-      walk(child, node.id);
+    if (depth >= MAX_DOM_DEPTH) return;
+    for (const child of nodeChildren(node)) {
+      walk(child, node.id, depth + 1);
     }
   };
-  walk(root, null);
+  walk(root, null, 0);
   return index;
 }
 
@@ -130,9 +142,10 @@ function cssAttrValue(value: string): string {
  */
 export function isStableToken(token: string): boolean {
   if (token.length === 0 || token.length > 40) return false;
-  // emotion / styled-components generated classes.
-  if (/^css-[a-z0-9]{5,}$/i.test(token)) return false;
-  if (/^sc-[a-zA-Z0-9]{6,}$/.test(token)) return false;
+  // emotion / styled-components generated classes. Thresholds kept low so short
+  // generated suffixes (e.g. `css-abc`, `sc-aBcd`) are rejected too.
+  if (/^css-[a-z0-9]{3,}$/i.test(token)) return false;
+  if (/^sc-[a-zA-Z0-9]{4,}$/.test(token)) return false;
   // CSS-modules `Name_hash` / `Name__hash` suffixes.
   if (/_{1,2}[a-zA-Z0-9]{5,}$/.test(token)) return false;
   // A long run that's mostly hex digits → likely a content hash.

@@ -37,20 +37,28 @@ function isoToMs(iso: string | null | undefined): number {
   return Number.isNaN(ms) ? 0 : ms;
 }
 
-function errorCountFor(db: Database, sessionId: string): number {
-  const consoleErrors = (
+/** Accurate `COUNT(*)` of error-level console rows for a session. */
+export function countConsoleErrors(db: Database, sessionId: string): number {
+  return (
     db
       .prepare("SELECT COUNT(*) AS c FROM console_events WHERE session_id = ? AND level = 'error'")
       .get(sessionId) as { c: number }
   ).c;
-  const networkErrors = (
+}
+
+/** Accurate `COUNT(*)` of failed/notable network rows (status >= 400 or net error). */
+export function countNetworkErrors(db: Database, sessionId: string): number {
+  return (
     db
       .prepare(
         'SELECT COUNT(*) AS c FROM network_events WHERE session_id = ? AND (status >= 400 OR error_text IS NOT NULL)',
       )
       .get(sessionId) as { c: number }
   ).c;
-  return consoleErrors + networkErrors;
+}
+
+function errorCountFor(db: Database, sessionId: string): number {
+  return countConsoleErrors(db, sessionId) + countNetworkErrors(db, sessionId);
 }
 
 function toSummaryRow(db: Database, r: RawSession): SessionSummaryRow {

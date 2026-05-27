@@ -33,7 +33,13 @@ import {
   type serializedNodeWithId,
   type textMutation,
 } from './rrweb-types.js';
-import { type NodeIndex, indexNodes, nodeChildren, selectorFor } from './selector.js';
+import {
+  MAX_DOM_DEPTH,
+  type NodeIndex,
+  indexNodes,
+  nodeChildren,
+  selectorFor,
+} from './selector.js';
 
 /** A single extracted user action with the data a repro / explanation needs. */
 export interface UserAction {
@@ -155,11 +161,12 @@ function foldAddsIntoIndex(
 ): void {
   if (!index || !adds) return;
   for (const add of adds) {
-    const register = (node: serializedNodeWithId, parentId: number | null): void => {
+    const register = (node: serializedNodeWithId, parentId: number | null, depth: number): void => {
       index.set(node.id, { node, parentId });
-      for (const child of nodeChildren(node)) register(child, node.id);
+      if (depth >= MAX_DOM_DEPTH) return;
+      for (const child of nodeChildren(node)) register(child, node.id, depth + 1);
     };
-    register(add.node, add.parentId);
+    register(add.node, add.parentId, 0);
   }
 }
 
@@ -216,15 +223,18 @@ export function reconstructDomAt(
     data: { node: serializedNodeWithId };
   };
 
-  // Deep clone so we can mutate without touching the caller's events.
-  const root = structuredClone(baseEvent.data.node) as MutableNode;
+  // Deep clone so we can mutate without touching the caller's events. Use a
+  // depth-bounded clone (not structuredClone, which recurses and overflows the
+  // stack on an adversarial deeply-nested tree before any of our guards run).
+  const root = cloneNodeBounded(baseEvent.data.node, 0);
   const byId = new Map<number, MutableNode>();
   const parentOf = new Map<number, number>();
-  (function indexMutable(node: MutableNode, parentId: number | null): void {
+  (function indexMutable(node: MutableNode, parentId: number | null, depth: number): void {
     byId.set(node.id, node);
     if (parentId !== null) parentOf.set(node.id, parentId);
-    for (const child of nodeChildren(node)) indexMutable(child as MutableNode, node.id);
-  })(root, null);
+    if (depth >= MAX_DOM_DEPTH) return;
+    for (const child of nodeChildren(node)) indexMutable(child as MutableNode, node.id, depth + 1);
+  })(root, null, 0);
 
   let mutationsApplied = 0;
   for (let i = baseIdx + 1; i < events.length; i += 1) {
@@ -252,6 +262,25 @@ export function reconstructDomAt(
   };
 }
 
+/**
+ * Depth-bounded deep clone of a serialized node. Stops cloning children past
+ * {@link MAX_DOM_DEPTH} (the truncated node keeps its own scalar fields but
+ * loses descendants), so it never overflows the stack on an adversarial
+ * deeply-nested subtree — unlike `structuredClone`, which recurses internally.
+ * Attribute objects are shallow-copied (flat string maps, never nested).
+ */
+function cloneNodeBounded(node: serializedNodeWithId, depth: number): MutableNode {
+  const src = node as MutableNode;
+  const clone: MutableNode = { ...src };
+  if (src.attributes) clone.attributes = { ...src.attributes };
+  const children = nodeChildren(node);
+  if (children.length > 0) {
+    clone.childNodes =
+      depth >= MAX_DOM_DEPTH ? [] : children.map((c) => cloneNodeBounded(c, depth + 1));
+  }
+  return clone;
+}
+
 /** Apply a single mutation event to the in-memory serialized tree. */
 function applyMutation(
   m: mutationData,
@@ -272,7 +301,7 @@ function applyMutation(
     const parent = byId.get(a.parentId);
     if (!parent) continue;
     if (!Array.isArray(parent.childNodes)) parent.childNodes = [];
-    const clone = structuredClone(a.node) as MutableNode;
+    const clone = cloneNodeBounded(a.node, 0);
     // Insert before `nextId` when present, else append.
     if (a.nextId !== null && a.nextId !== undefined) {
       const at = parent.childNodes.findIndex((c) => c.id === a.nextId);
@@ -281,12 +310,13 @@ function applyMutation(
     } else {
       parent.childNodes.push(clone);
     }
-    // Register the added subtree.
-    (function register(node: MutableNode, parentId: number): void {
+    // Register the added subtree (depth-bounded against adversarial nesting).
+    (function register(node: MutableNode, parentId: number, depth: number): void {
       byId.set(node.id, node);
       parentOf.set(node.id, parentId);
-      for (const child of nodeChildren(node)) register(child as MutableNode, node.id);
-    })(clone, parent.id);
+      if (depth >= MAX_DOM_DEPTH) return;
+      for (const child of nodeChildren(node)) register(child as MutableNode, node.id, depth + 1);
+    })(clone, parent.id, 0);
   }
 
   for (const at of m.attributes ?? ([] as attributeMutation[])) {
@@ -328,13 +358,19 @@ function findBySelector(
   return undefined;
 }
 
-/** Render a serialized node tree to an HTML-ish string (lightweight, not spec-perfect). */
+/**
+ * Render a serialized node tree to an HTML-ish string (lightweight, not
+ * spec-perfect). Stops descending past {@link MAX_DOM_DEPTH} — emitting a
+ * truncation marker instead of recursing — so an adversarial deeply-nested
+ * recording can't overflow the stack (this code ingests untrusted blobs).
+ */
 export function serializeNode(node: serializedNodeWithId, depth = 0): string {
   const n = node as MutableNode;
   switch (node.type) {
     case NodeType.Document: {
+      if (depth >= MAX_DOM_DEPTH) return '<!-- [truncated: max depth] -->';
       return nodeChildren(node)
-        .map((c) => serializeNode(c, depth))
+        .map((c) => serializeNode(c, depth + 1))
         .join('');
     }
     case NodeType.DocumentType: {
@@ -352,10 +388,13 @@ export function serializeNode(node: serializedNodeWithId, depth = 0): string {
       const el = node as unknown as { tagName: string };
       const tag = el.tagName.toLowerCase();
       const attrs = renderAttributes(n.attributes ?? {});
+      if (VOID_ELEMENTS.has(tag)) return `<${tag}${attrs}>`;
+      if (depth >= MAX_DOM_DEPTH) {
+        return `<${tag}${attrs}><!-- [truncated: max depth] --></${tag}>`;
+      }
       const children = nodeChildren(node)
         .map((c) => serializeNode(c, depth + 1))
         .join('');
-      if (VOID_ELEMENTS.has(tag)) return `<${tag}${attrs}>`;
       return `<${tag}${attrs}>${children}</${tag}>`;
     }
     default:

@@ -3,8 +3,10 @@ import {
   extractUserActions,
   queryDomHistory,
   reconstructDomAt,
+  serializeNode,
   userActionsBeforeError,
 } from '../src/mcp/event-walker.js';
+import { MAX_DOM_DEPTH } from '../src/mcp/selector.js';
 import {
   clickEvent,
   doc,
@@ -202,5 +204,77 @@ describe('queryDomHistory', () => {
     const root = documentWith([el('div')]);
     const events = [fullSnapshot(root, 1000)];
     expect(queryDomHistory(events, '#nope')).toEqual([]);
+  });
+});
+
+describe('adversarial robustness', () => {
+  it('extractUserActions on a stream with NO FullSnapshot returns clean (no crash)', () => {
+    freshIds();
+    // A click with no preceding FullSnapshot — index is undefined, selector
+    // unresolvable; should fall back to node#id, not throw.
+    const events = [metaNav('https://x', 1000), clickEvent(7, 1100)];
+    const actions = extractUserActions(events);
+    expect(actions.map((a) => a.type)).toEqual(['navigate', 'click']);
+    expect(actions[1]?.selector).toBeUndefined();
+    expect(actions[1]?.summary).toBe('click node#7');
+  });
+
+  it('reconstructDomAt on a stream with NO FullSnapshot returns undefined', () => {
+    freshIds();
+    const events = [
+      metaNav('https://x', 1000),
+      mutationEvent({ attributes: [{ id: 1, attributes: { class: 'x' } }] }, 1100),
+    ];
+    expect(reconstructDomAt(events, 2000)).toBeUndefined();
+  });
+
+  it('skips mutation adds with a dangling parentId during DOM reconstruction, no throw', () => {
+    freshIds();
+    const root = documentWith([el('div', { attributes: { id: 'present' } })]);
+    const orphan = el('span', { attributes: { id: 'orphan' } });
+    const events = [
+      fullSnapshot(root, 1000),
+      // parentId 999999 is not in the snapshot — reconstruction must skip the
+      // add (no parent to attach to) rather than throw or attach to nothing.
+      mutationEvent({ adds: [{ parentId: 999999, nextId: null, node: orphan }] }, 1100),
+    ];
+    const snap = reconstructDomAt(events, 2000);
+    expect(snap).toBeDefined();
+    expect(snap?.html).toContain('id="present"');
+    expect(snap?.html).not.toContain('id="orphan"');
+    // The action walker tolerates the same dangling add + a later click without
+    // throwing; the added node's own attributes are known so its selector still
+    // resolves (selection doesn't require the parent to be present).
+    const actions = extractUserActions([...events, clickEvent(orphan.id, 1200)]);
+    const click = actions.find((a) => a.type === 'click');
+    expect(click).toBeDefined();
+    expect(click?.selector).toBe('#orphan');
+  });
+
+  it('serializeNode truncates a deeply-nested tree at the depth guard rather than overflowing', () => {
+    freshIds();
+    // Build a chain ~3x deeper than the guard. Recursing this without a bound
+    // would overflow the stack on most engines.
+    const depth = MAX_DOM_DEPTH * 3;
+    let node = el('div', { attributes: { class: 'leaf' }, children: [text('bottom')] });
+    for (let i = 0; i < depth; i += 1) {
+      node = el('div', { children: [node] });
+    }
+    const html = serializeNode(node);
+    expect(html).toContain('[truncated: max depth]');
+    // It must NOT have descended all the way to the leaf text.
+    expect(html).not.toContain('bottom');
+  });
+
+  it('reconstructDomAt does not overflow on a deeply-nested FullSnapshot', () => {
+    freshIds();
+    let inner = el('div', { children: [text('deep')] });
+    for (let i = 0; i < MAX_DOM_DEPTH * 3; i += 1) inner = el('div', { children: [inner] });
+    const root = documentWith([inner]);
+    const events = [fullSnapshot(root, 1000)];
+    // The assertion is simply that this returns without a RangeError.
+    const snap = reconstructDomAt(events, 1000);
+    expect(snap).toBeDefined();
+    expect(snap?.html).toContain('[truncated: max depth]');
   });
 });

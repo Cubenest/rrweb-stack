@@ -16,6 +16,11 @@ describe('isStableToken', () => {
     expect(isStableToken('Card__a1b2c3')).toBe(false);
   });
 
+  it('rejects short generated emotion/styled suffixes too (M3 lowered thresholds)', () => {
+    expect(isStableToken('css-abc')).toBe(false); // css-{3,}
+    expect(isStableToken('sc-aBcd')).toBe(false); // sc-{4,}
+  });
+
   it('rejects long content-hash-looking tokens and overlong tokens', () => {
     expect(isStableToken('a1b2c3d4e5f6')).toBe(false);
     expect(isStableToken('x'.repeat(50))).toBe(false);

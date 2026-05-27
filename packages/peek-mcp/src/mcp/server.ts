@@ -16,7 +16,7 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { Database } from 'better-sqlite3';
 import { z } from 'zod';
 import { openReadonlyDb } from '../db/open.js';
-import { loadSessionEvents } from './event-blobs.js';
+import { SessionEventsError, loadSessionEvents } from './event-blobs.js';
 import { queryDomHistory, reconstructDomAt, userActionsBeforeError } from './event-walker.js';
 import { generatePlaywrightRepro } from './playwright-repro.js';
 import {
@@ -105,13 +105,25 @@ export function createPeekMcpServer(options: CreatePeekMcpServerOptions = {}): P
     return db;
   }
 
-  /** Load a session's decoded event stream (empty when no blob / missing). */
-  function eventsFor(sessionId: string): ReturnType<typeof loadSessionEvents> {
+  /**
+   * Load a session's decoded event stream. Returns `{ ok:true, events }` (empty
+   * when no blob / missing), or `{ ok:false, message }` when the blob exists but
+   * is corrupt — the event-using tools surface that as a clean error result
+   * rather than letting the throw bubble out as an opaque internal error.
+   */
+  function eventsFor(
+    sessionId: string,
+  ): { ok: true; events: ReturnType<typeof loadSessionEvents> } | { ok: false; message: string } {
     const handle = getDb();
-    if (!handle) return [];
+    if (!handle) return { ok: true, events: [] };
     const ref = getSessionBlobRef(handle, sessionId);
-    if (!ref) return [];
-    return loadSessionEvents(ref.blobPath, options.eventsDir);
+    if (!ref) return { ok: true, events: [] };
+    try {
+      return { ok: true, events: loadSessionEvents(ref.blobPath, options.eventsDir) };
+    } catch (err) {
+      if (err instanceof SessionEventsError) return { ok: false, message: err.message };
+      throw err;
+    }
   }
 
   const refreshRootsScope: PeekMcpServer['refreshRootsScope'] = async (timeoutMs) => {
@@ -171,7 +183,15 @@ export function createPeekMcpServer(options: CreatePeekMcpServerOptions = {}): P
                 (r) => r.origin !== null && rootsScope?.allowedOrigins?.includes(r.origin),
               )
             : rows;
-        return jsonResult(scoped);
+        // Clip free-text fields for budget consistency with the other tools.
+        return jsonResult(
+          scoped.map((r) => ({
+            ...r,
+            origin: clip(r.origin, 100),
+            url: clip(r.url, 300),
+            title: clip(r.title, 200),
+          })),
+        );
       },
     );
 
@@ -189,7 +209,9 @@ export function createPeekMcpServer(options: CreatePeekMcpServerOptions = {}): P
         if (!handle) return textResult(NO_DB_MESSAGE);
         const row = getSessionSummaryRow(handle, sessionId);
         if (!row) return textResult(`No session found with id '${sessionId}'.`);
-        const summary = buildSessionSummary(handle, row, eventsFor(sessionId));
+        const ev = eventsFor(sessionId);
+        if (!ev.ok) return textResult(ev.message);
+        const summary = buildSessionSummary(handle, row, ev.events);
         return jsonResult(summary);
       },
     );
@@ -280,7 +302,9 @@ export function createPeekMcpServer(options: CreatePeekMcpServerOptions = {}): P
         if (errorTs === undefined) {
           return textResult(`No console error with id ${errorId} in session '${sessionId}'.`);
         }
-        const actions = userActionsBeforeError(eventsFor(sessionId), errorTs, window);
+        const ev = eventsFor(sessionId);
+        if (!ev.ok) return textResult(ev.message);
+        const actions = userActionsBeforeError(ev.events, errorTs, window);
         return jsonResult({ errorId, errorTs, actions });
       },
     );
@@ -303,7 +327,9 @@ export function createPeekMcpServer(options: CreatePeekMcpServerOptions = {}): P
         if (!handle) return textResult(NO_DB_MESSAGE);
         const row = getSessionSummaryRow(handle, sessionId);
         if (!row) return textResult(`No session found with id '${sessionId}'.`);
-        const script = generatePlaywrightRepro(eventsFor(sessionId), {
+        const ev = eventsFor(sessionId);
+        if (!ev.ok) return textResult(ev.message);
+        const script = generatePlaywrightRepro(ev.events, {
           title: row.title ?? `peek session ${sessionId}`,
           ...(startTs !== undefined ? { startTs } : {}),
           ...(endTs !== undefined ? { endTs } : {}),
@@ -329,7 +355,9 @@ export function createPeekMcpServer(options: CreatePeekMcpServerOptions = {}): P
       ({ sessionId, ts, selector }) => {
         const handle = getDb();
         if (!handle) return textResult(NO_DB_MESSAGE);
-        const snap = reconstructDomAt(eventsFor(sessionId), ts, selector);
+        const ev = eventsFor(sessionId);
+        if (!ev.ok) return textResult(ev.message);
+        const snap = reconstructDomAt(ev.events, ts, selector);
         if (!snap) {
           return textResult(
             `No DOM snapshot available at ts ${ts} for session '${sessionId}' (no full snapshot at or before that time).`,
@@ -361,7 +389,9 @@ export function createPeekMcpServer(options: CreatePeekMcpServerOptions = {}): P
       ({ sessionId, selector, op, limit }) => {
         const handle = getDb();
         if (!handle) return textResult(NO_DB_MESSAGE);
-        const changes = queryDomHistory(eventsFor(sessionId), selector, {
+        const ev = eventsFor(sessionId);
+        if (!ev.ok) return textResult(ev.message);
+        const changes = queryDomHistory(ev.events, selector, {
           limit,
           ...(op !== undefined ? { op } : {}),
         });
