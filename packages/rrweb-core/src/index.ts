@@ -5,12 +5,26 @@ export {
   EventType,
   IncrementalSource,
   MouseInteractions,
+  NodeType,
 } from './rrweb.js';
 
 export type {
   eventWithTime,
   customEvent,
   recordOptions,
+  // Serialized-DOM + incremental event shapes for offline stream walking
+  // (consumed by @peekdev/mcp's read tools).
+  serializedNodeWithId,
+  incrementalData,
+  incrementalSnapshotEvent,
+  fullSnapshotEvent,
+  metaEvent,
+  mouseInteractionData,
+  inputData,
+  mutationData,
+  addedNodeMutation,
+  attributeMutation,
+  textMutation,
 } from './rrweb.js';
 
 // Masking

@@ -18,9 +18,28 @@ export {
 
 export { getRecordConsolePlugin } from '@rrweb/rrweb-plugin-console-record';
 
+// NodeType is a real (numeric) enum in the wire format, re-exported as a value
+// so consumers walking serialized snapshots (e.g. @peekdev/mcp's event walker)
+// can branch on Document/Element/Text without redeclaring the constants.
+export { NodeType } from '@posthog/rrweb-types';
+
 export type {
   eventWithTime,
   customEvent,
+  // Serialized-DOM shapes for reconstructing/inspecting snapshots offline.
+  serializedNodeWithId,
+  // Incremental event shapes the event walker interprets (clicks, inputs,
+  // mutations, navigation/meta).
+  incrementalData,
+  incrementalSnapshotEvent,
+  fullSnapshotEvent,
+  metaEvent,
+  mouseInteractionData,
+  inputData,
+  mutationData,
+  addedNodeMutation,
+  attributeMutation,
+  textMutation,
 } from '@posthog/rrweb-types';
 
 // recordOptions lives in @posthog/rrweb (the engine package), not rrweb-types

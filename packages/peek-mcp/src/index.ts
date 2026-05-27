@@ -9,12 +9,12 @@
 //     handle), with NO `--native-host` flag. We detect that origin argument so
 //     the installed manifest works with zero platform-specific shell wrappers
 //     (this supersedes the PRD §A7 `native-host.sh` example).
-//   - `peek-mcp` (default): run the stdio MCP server AI tools spawn.
+//   - `peek-mcp` (default): run the stdio MCP server AI tools spawn (Phase 3c).
 //
-// The MCP server itself is implemented in Phase 3c; this dispatcher keeps the
-// surface stable so the manifest path and `npx -y @peekdev/mcp` invocations are
-// already correct.
+// This dispatcher keeps the surface stable so the manifest path and
+// `npx -y @peekdev/mcp` invocations are already correct.
 
+import { runMcpServer } from './mcp/index.js';
 import { startNativeHost } from './native-host/host.js';
 
 /** Matches the `chrome-extension://<id>/` origin Chrome/Edge pass when spawning a host. */
@@ -52,9 +52,8 @@ async function main(): Promise<void> {
     return;
   }
 
-  // Phase 3c fills in the MCP stdio server here.
-  console.error('peek-mcp: MCP stdio server is implemented in Phase 3c.');
-  process.exitCode = 0;
+  // MCP stdio server (ADR-0011): runs until the client closes stdin.
+  await runMcpServer();
 }
 
 main().catch((err) => {
