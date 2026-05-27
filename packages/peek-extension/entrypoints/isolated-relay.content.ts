@@ -13,7 +13,8 @@ import {
   isRrwebMessage,
 } from '../src/recorder/messages';
 import { EventBatcher } from '../src/relay/batch';
-import { maskConsoleArgs, maskNetMessage } from '../src/relay/mask';
+import { extractConsoleEvent } from '../src/relay/console-extract';
+import { maskNetMessage } from '../src/relay/mask';
 import { collectShadowReports, getOpenOrClosedShadowRoot } from '../src/relay/shadow';
 
 /**
@@ -106,12 +107,19 @@ export default defineContentScript({
       }
     };
 
-    // rrweb events: split the console-plugin events out (so the SW can populate
-    // console_events) and mask their args; forward everything else opaque.
+    // rrweb events: a console-plugin event carries the page's RAW console.log
+    // args (data.payload.payload: string[]) — tokens/passwords/JWTs the app
+    // logged. Those go ONLY through the masked consoleBatch path and are NOT
+    // added to rrwebBatch, which the SW ships verbatim via session.append
+    // (review issue 1: the raw rrweb console event would otherwise leak
+    // unmasked to the native host). The SW reconstructs console data from the
+    // masked recorder.events `console` array, never from the raw stream, so
+    // dropping the raw console event from rrwebBatch loses nothing.
     const handleRrweb = (payload: unknown): void => {
       const consoleEvent = extractConsoleEvent(payload);
       if (consoleEvent) {
         if (consoleBatch.add(consoleEvent)) flush();
+        return; // do NOT forward the unmasked raw console event
       }
       if (rrwebBatch.add(payload)) flush();
     };
@@ -176,31 +184,3 @@ export default defineContentScript({
     });
   },
 });
-
-/**
- * Extract a console event from an rrweb event IF it is a console-plugin event
- * (EventType.Plugin === 6, plugin name "rrweb/console@1"), masking its args.
- * Returns null for any other event shape. Defensive about the payload shape —
- * it comes over `postMessage` from the page's realm.
- */
-function extractConsoleEvent(payload: unknown): RelayConsoleEvent | null {
-  if (typeof payload !== 'object' || payload === null) return null;
-  const ev = payload as {
-    type?: unknown;
-    timestamp?: unknown;
-    data?: { plugin?: unknown; payload?: { level?: unknown; payload?: unknown } };
-  };
-  // EventType.Plugin === 6.
-  if (ev.type !== 6) return null;
-  const data = ev.data;
-  if (!data || data.plugin !== 'rrweb/console@1') return null;
-  const inner = data.payload;
-  if (!inner) return null;
-  const level = typeof inner.level === 'string' ? inner.level : 'log';
-  const rawArgs = Array.isArray(inner.payload) ? inner.payload.map((a) => String(a)) : [];
-  return {
-    ts: typeof ev.timestamp === 'number' ? ev.timestamp : Date.now(),
-    level,
-    args: maskConsoleArgs(rawArgs),
-  };
-}

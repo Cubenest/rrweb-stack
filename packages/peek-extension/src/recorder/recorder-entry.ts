@@ -25,6 +25,7 @@
 import { getRecordConsolePlugin, record } from '@cubenest/rrweb-core';
 import { PEEK_NET_SOURCE, PEEK_RRWEB_SOURCE } from './messages.js';
 import {
+  bodyToString,
   buildFetchRequest,
   buildFetchResponse,
   buildNetError,
@@ -32,21 +33,30 @@ import {
   headersToObject,
 } from './net-capture.js';
 
-// Re-`window.eval`'d / re-injected on every navigation; keep it idempotent so a
-// double-inject (e.g. a racing executeScript) never double-patches fetch or
-// starts two recorders in one realm.
+// Re-injected on every navigation; keep it idempotent so a double-inject (a
+// racing executeScript into the same realm) never double-patches fetch/XHR or
+// starts two recorders. The guard must survive ACROSS separate injections (each
+// is a fresh script execution → a fresh closure), so a closure boolean alone is
+// insufficient — it must be realm-persistent. We anchor it on `window` but
+// define it NON-CONFIGURABLE / NON-WRITABLE so a hostile page can't `delete` or
+// overwrite it to force double-injection (review issue 5).
 const GUARD = '__peekRecorderInstalled';
 
-declare global {
-  interface Window {
-    [GUARD]?: boolean;
-  }
-}
-
 (function installPeekRecorder(): void {
-  const w = window as Window & { [GUARD]?: boolean };
-  if (w[GUARD]) return;
-  w[GUARD] = true;
+  const w = window as unknown as Record<string, unknown>;
+  if (w[GUARD] === true) return;
+  try {
+    Object.defineProperty(window, GUARD, {
+      value: true,
+      configurable: false,
+      writable: false,
+      enumerable: false,
+    });
+  } catch {
+    // If the property already exists non-configurable (shouldn't, given the
+    // check above) defineProperty throws — treat as "already installed".
+    return;
+  }
 
   // The ONLY escape hatch from this closure. A private function, never exposed
   // on `window` — the page cannot intercept buffered events through a global.
@@ -135,9 +145,19 @@ declare global {
   }
 
   // --- XHR wrap (§A.10) ---------------------------------------------------
-  interface PeekXhr extends XMLHttpRequest {
-    __peek?: { id: string; method: string; url: string; headers: Record<string, string> };
+  // Per-instance capture metadata (id, method, url, PRE-masking request
+  // headers) is held in a WeakMap PRIVATE to this IIFE closure — NOT as an
+  // expando on the XHR instance. An expando (`xhr.__peek`) would let any page
+  // script holding the XHR reference read the raw `Authorization` header before
+  // the ISOLATED relay masks it (review issue 3). The WeakMap also lets entries
+  // be GC'd with their XHR. `headers` here are raw; redaction is the relay's.
+  interface PeekXhrMeta {
+    id: string;
+    method: string;
+    url: string;
+    headers: Record<string, string>;
   }
+  const xhrMeta = new WeakMap<XMLHttpRequest, PeekXhrMeta>();
   const X = XMLHttpRequest.prototype;
   const origOpen = X.open;
   const origSend = X.send;
@@ -147,36 +167,37 @@ declare global {
   // signatures carry optional trailing args (open: async/user/password) we must
   // pass through verbatim. The originals return void, so we don't `return`.
   X.open = function peekOpen(
-    this: PeekXhr,
+    this: XMLHttpRequest,
     method: string,
     url: string | URL,
     ...rest: unknown[]
   ): void {
-    this.__peek = {
+    xhrMeta.set(this, {
       id: uuid(),
       method: (method || 'GET').toUpperCase(),
       url: typeof url === 'string' ? url : String(url),
       headers: {},
-    };
+    });
     (origOpen as (...a: unknown[]) => void).call(this, method, url, ...rest);
   } as typeof X.open;
 
   X.setRequestHeader = function peekSetHeader(
-    this: PeekXhr,
+    this: XMLHttpRequest,
     name: string,
     value: string,
     ...rest: unknown[]
   ): void {
-    if (this.__peek) this.__peek.headers[name] = value;
+    const meta = xhrMeta.get(this);
+    if (meta) meta.headers[name] = value;
     (origSetHeader as (...a: unknown[]) => void).call(this, name, value, ...rest);
   } as typeof X.setRequestHeader;
 
   X.send = function peekSend(
-    this: PeekXhr,
+    this: XMLHttpRequest,
     body?: Document | XMLHttpRequestBodyInit | null,
     ...rest: unknown[]
   ): void {
-    const meta = this.__peek;
+    const meta = xhrMeta.get(this);
     if (meta) {
       try {
         postNet({
@@ -187,7 +208,9 @@ declare global {
           method: meta.method,
           url: meta.url,
           headers: meta.headers,
-          ...(body != null ? { requestBody: capBody(String(body)) } : {}),
+          // Use bodyToString (typed shapes → "[Blob 4096B]" etc.) for parity
+          // with the fetch path, not String(body) → "[object Blob]" (issue 4).
+          ...(body != null ? { requestBody: bodyToString(body) ?? '' } : {}),
         });
       } catch {
         /* ignore */

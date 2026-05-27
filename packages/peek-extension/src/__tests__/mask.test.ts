@@ -45,6 +45,45 @@ describe('maskNetMessage — header redaction', () => {
   });
 });
 
+describe('maskNetMessage — URL query-param redaction (review issue 2)', () => {
+  it('redacts query-param VALUES while keeping keys + path', () => {
+    const rec: NetMessage = {
+      kind: 'request',
+      id: 'u1',
+      ts: 1,
+      url: 'https://api.test/v1/users?access_token=sk-live-secret&page=2',
+    };
+    const out = maskNetMessage(rec);
+    expect(out.url).not.toContain('sk-live-secret');
+    expect(out.url).not.toContain('page=2'); // even non-secret values are redacted
+    // Keys + path retained for observability.
+    expect(out.url).toContain('access_token=%3C%3CREDACTED%3E%3E');
+    expect(out.url).toContain('https://api.test/v1/users');
+    expect(out.url).toContain('page=');
+  });
+
+  it('leaves a query-less URL untouched', () => {
+    const rec: NetMessage = { kind: 'request', id: 'u2', ts: 1, url: 'https://api.test/v1/ping' };
+    expect(maskNetMessage(rec).url).toBe('https://api.test/v1/ping');
+  });
+
+  it('strips the query from an unparseable URL (fail closed)', () => {
+    const rec: NetMessage = { kind: 'request', id: 'u3', ts: 1, url: '/relative/path?token=abc' };
+    expect(maskNetMessage(rec).url).toBe('/relative/path');
+  });
+
+  it('does not mutate the input record url', () => {
+    const rec: NetMessage = {
+      kind: 'request',
+      id: 'u4',
+      ts: 1,
+      url: 'https://x.test/?token=s3cret',
+    };
+    maskNetMessage(rec);
+    expect(rec.url).toBe('https://x.test/?token=s3cret');
+  });
+});
+
 describe('maskNetMessage — body redaction (PII regex bank)', () => {
   it('redacts a JWT in a request body', () => {
     const jwt =

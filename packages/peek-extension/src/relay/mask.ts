@@ -34,6 +34,10 @@ import type { NetMessage } from '../recorder/messages.js';
 export function maskNetMessage(rec: NetMessage): NetMessage {
   const out: NetMessage = { ...rec };
 
+  if (typeof rec.url === 'string') {
+    out.url = maskUrl(rec.url);
+  }
+
   if (rec.headers) {
     try {
       out.headers = redactNetworkHeaders(rec.headers);
@@ -51,6 +55,28 @@ export function maskNetMessage(rec: NetMessage): NetMessage {
   }
 
   return out;
+}
+
+/**
+ * Redact query-PARAMETER VALUES while keeping the path + which params existed
+ * (review issue 2). URLs routinely carry secrets in the query string
+ * (`?access_token=sk-live-…`, `?api_key=`, `?token=`, `?session=`). Keeping the
+ * keys + path preserves debugging value ("which params were sent") without
+ * leaking the secret. Fails closed: if the URL won't parse, drop the query
+ * entirely rather than forward it raw.
+ */
+function maskUrl(url: string): string {
+  try {
+    const u = new URL(url);
+    for (const key of [...u.searchParams.keys()]) {
+      u.searchParams.set(key, '<<REDACTED>>');
+    }
+    return u.href;
+  } catch {
+    // Unparseable (relative URL, malformed) — strip the query to be safe.
+    const q = url.indexOf('?');
+    return q === -1 ? url : url.slice(0, q);
+  }
 }
 
 /** Run `redactBody`, failing closed to a marker rather than leaking raw text. */
