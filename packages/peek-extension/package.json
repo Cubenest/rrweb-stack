@@ -1,0 +1,29 @@
+{
+  "name": "@peekdev/extension",
+  "version": "0.1.0-alpha.0",
+  "description": "peek Chrome MV3 extension: side panel UI, per-site activation, MAIN-world rrweb recorder, and the native-messaging bridge that keeps the service worker alive (ADR-0008, ADR-0009). Loaded unpacked by alpha testers; not published to npm.",
+  "license": "Apache-2.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "wxt",
+    "build": "wxt build",
+    "zip": "wxt zip",
+    "typecheck": "wxt prepare && tsc --noEmit",
+    "test": "vitest run --passWithNoTests",
+    "postinstall": "wxt prepare"
+  },
+  "dependencies": {
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  },
+  "devDependencies": {
+    "@types/chrome": "^0.1.42",
+    "@types/react": "^18.3.29",
+    "@types/react-dom": "^18.3.7",
+    "@webext-core/fake-browser": "^1.5.0",
+    "@wxt-dev/module-react": "^1.2.2",
+    "vite": "^6.4.2",
+    "wxt": "^0.20.26"
+  }
+}

@@ -1,0 +1,30 @@
+{
+  // WXT generates `.wxt/tsconfig.json` (via `wxt prepare`) with the module +
+  // JSX settings Vite needs: `moduleResolution: "Bundler"`, extensionless
+  // imports allowed, `jsx: "react-jsx"`, and the auto-import / entrypoint type
+  // globs. We extend THAT rather than the repo's `tsconfig.base.json`.
+  //
+  // Divergence from the repo NodeNext base (intentional, documented):
+  //   - The rest of the monorepo uses `module/moduleResolution: NodeNext`,
+  //     which forces explicit `.js` extensions on relative imports. That rule
+  //     exists so bare-Node ESM packages resolve at runtime. This package is
+  //     bundled by Vite (WXT), which resolves extensionless imports fine, so
+  //     the NodeNext extension rule does not apply here. We layer the base's
+  //     *strictness* flags below to keep parity on the parts that matter.
+  "extends": "./.wxt/tsconfig.json",
+  "compilerOptions": {
+    // React 17+ automatic JSX runtime (no `import React` needed in every TSX).
+    // The @wxt-dev/module-react plugin wires this for the Vite build; we set it
+    // explicitly here so `tsc --noEmit` typechecks the .tsx entrypoints too.
+    "jsx": "react-jsx",
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "noImplicitOverride": true,
+    "noFallthroughCasesInSwitch": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "exactOptionalPropertyTypes": true,
+    "forceConsistentCasingInFileNames": true
+  },
+  "include": ["entrypoints", "src", "wxt.config.ts"]
+}

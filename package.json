@@ -23,6 +23,10 @@
     "lefthook": "^1.10.10"
   },
   "pnpm": {
-    "onlyBuiltDependencies": ["better-sqlite3"]
+    "onlyBuiltDependencies": ["better-sqlite3"],
+    "overrides": {
+      "vite-node": "^3.2.4",
+      "@vitejs/plugin-react": "^5.0.4"
+    }
   }
 }

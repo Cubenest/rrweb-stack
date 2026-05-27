@@ -1,6 +1,8 @@
 node_modules/
 dist/
 build/
+.output/
+.wxt/
 *.tsbuildinfo
 .turbo/
 .next/
