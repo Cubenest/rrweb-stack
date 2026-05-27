@@ -2,11 +2,14 @@ import { describe, expect, it } from 'vitest';
 import {
   CLIENTS,
   type ClientId,
+  PEEK_BLOCK_SNIPPET,
   PEEK_MCP_BLOCK,
   clientConfigPath,
+  containsJsonComments,
   detectClients,
   hasPeekServer,
   mergePeekConfig,
+  serializeConfig,
 } from '../src/lib/init-config.js';
 
 const HOME = '/home/dev';
@@ -116,5 +119,44 @@ describe('hasPeekServer', () => {
     expect(hasPeekServer({ mcpServers: {} })).toBe(false);
     expect(hasPeekServer({ mcpServers: { github: {} } })).toBe(false);
     expect(hasPeekServer('nope')).toBe(false);
+  });
+});
+
+describe('containsJsonComments', () => {
+  it('detects line comments', () => {
+    expect(containsJsonComments('{\n  // peek server\n  "mcpServers": {}\n}')).toBe(true);
+  });
+
+  it('detects block comments', () => {
+    expect(containsJsonComments('{ /* note */ "mcpServers": {} }')).toBe(true);
+  });
+
+  it('is false for plain JSON', () => {
+    expect(containsJsonComments('{ "mcpServers": { "peek": {} } }')).toBe(false);
+  });
+
+  it('does not false-positive on // inside string values (e.g. URLs)', () => {
+    expect(containsJsonComments('{ "url": "https://example.com/x" }')).toBe(false);
+  });
+
+  it('does not false-positive on an escaped quote followed by a slash', () => {
+    expect(containsJsonComments('{ "a": "he said \\"hi\\"//x" }')).toBe(false);
+  });
+});
+
+describe('serializeConfig', () => {
+  it('pretty-prints with a trailing newline', () => {
+    const out = serializeConfig({ mcpServers: {} });
+    expect(out.endsWith('\n')).toBe(true);
+    expect(JSON.parse(out)).toEqual({ mcpServers: {} });
+  });
+});
+
+describe('PEEK_BLOCK_SNIPPET', () => {
+  it('is the parseable peek mcpServers block', () => {
+    const parsed = JSON.parse(PEEK_BLOCK_SNIPPET);
+    expect(parsed).toEqual({
+      mcpServers: { peek: { command: 'npx', args: ['-y', '@peekdev/mcp'] } },
+    });
   });
 });

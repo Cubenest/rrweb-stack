@@ -161,3 +161,46 @@ export function hasPeekServer(existing: unknown): boolean {
   if (typeof servers !== 'object' || servers === null || Array.isArray(servers)) return false;
   return PEEK_SERVER_KEY in (servers as Record<string, unknown>);
 }
+
+/**
+ * Detect line (`//`) or block (slash-star) comments OUTSIDE string literals —
+ * i.e. JSONC. VS Code's `.vscode/mcp.json` is JSONC and `JSON.parse` chokes on
+ * comments, so the shell uses this to emit an actionable message instead of a
+ * cryptic "Unexpected token /". String contents are skipped so a value like
+ * `"https://..."` does NOT count as a comment.
+ */
+export function containsJsonComments(raw: string): boolean {
+  let inString = false;
+  for (let i = 0; i < raw.length; i++) {
+    const ch = raw[i];
+    if (inString) {
+      if (ch === '\\') {
+        i++; // skip the escaped char
+        continue;
+      }
+      if (ch === '"') inString = false;
+      continue;
+    }
+    if (ch === '"') {
+      inString = true;
+      continue;
+    }
+    if (ch === '/' && (raw[i + 1] === '/' || raw[i + 1] === '*')) return true;
+  }
+  return false;
+}
+
+/**
+ * The `mcpServers.peek` block as a pretty-printed JSON snippet, for the
+ * "add this manually" message path (e.g. JSONC configs we won't rewrite).
+ */
+export const PEEK_BLOCK_SNIPPET: string = JSON.stringify(
+  { mcpServers: { [PEEK_SERVER_KEY]: { ...PEEK_MCP_BLOCK, args: [...PEEK_MCP_BLOCK.args] } } },
+  null,
+  2,
+);
+
+/** Serialize a merged config for writing (2-space indent + trailing newline). */
+export function serializeConfig(config: Record<string, unknown>): string {
+  return `${JSON.stringify(config, null, 2)}\n`;
+}

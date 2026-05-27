@@ -6,9 +6,8 @@
 // defers to (it dry-runs unless PEEK_INSTALL_NATIVE_HOST is set; here the user
 // affirmatively opts in, so we call the installer directly with realSink).
 
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
-import { dirname } from 'node:path';
 import { parseArgs } from 'node:util';
 import {
   type InstallTarget,
@@ -20,34 +19,61 @@ import {
   realSink,
   resolveInstallTargets,
 } from '@peekdev/mcp/native-host';
+import { atomicWriteFileSync } from '../lib/fs-atomic.js';
 import {
   type DetectedClient,
+  PEEK_BLOCK_SNIPPET,
+  containsJsonComments,
   detectClients,
   hasPeekServer,
   mergePeekConfig,
+  serializeConfig,
 } from '../lib/init-config.js';
 import { confirm, multiSelect } from '../lib/prompt.js';
 
 const SUPPORTED: readonly SupportedPlatform[] = ['darwin', 'linux', 'win32'];
 
-/** Read + parse a client config file, or undefined if absent/empty. Throws on invalid JSON. */
+/** Thrown by `readConfig` when the file is JSONC (comments) — we won't rewrite it. */
+class JsoncConfigError extends Error {
+  constructor() {
+    super('config contains comments (JSONC)');
+    this.name = 'JsoncConfigError';
+  }
+}
+
+/**
+ * Read + parse a client config file, or undefined if absent/empty. Throws
+ * `JsoncConfigError` if the file is JSONC (comments) so the caller can route to
+ * the "add the block manually" path rather than corrupt it; throws on other
+ * invalid JSON.
+ */
 function readConfig(path: string): unknown {
   if (!existsSync(path)) return undefined;
   const raw = readFileSync(path, 'utf8').trim();
   if (raw.length === 0) return undefined;
+  if (containsJsonComments(raw)) throw new JsoncConfigError();
   return JSON.parse(raw);
 }
 
-/** Write a client's merged MCP config, creating parent dirs. Returns true on success. */
-function writeClientConfig(client: DetectedClient): { ok: boolean; error?: string } {
+type WriteOutcome =
+  | { ok: true }
+  | { ok: false; jsonc: true }
+  | { ok: false; jsonc: false; error: string };
+
+/** Merge the peek block into a client's config and write it atomically. */
+function writeClientConfig(client: DetectedClient): WriteOutcome {
+  let existing: unknown;
   try {
-    const existing = readConfig(client.configPath);
-    const merged = mergePeekConfig(existing);
-    mkdirSync(dirname(client.configPath), { recursive: true });
-    writeFileSync(client.configPath, `${JSON.stringify(merged, null, 2)}\n`, 'utf8');
+    existing = readConfig(client.configPath);
+  } catch (err) {
+    if (err instanceof JsoncConfigError) return { ok: false, jsonc: true };
+    return { ok: false, jsonc: false, error: err instanceof Error ? err.message : String(err) };
+  }
+  try {
+    atomicWriteFileSync(client.configPath, serializeConfig(mergePeekConfig(existing)));
     return { ok: true };
   } catch (err) {
-    return { ok: false, error: err instanceof Error ? err.message : String(err) };
+    return { ok: false, jsonc: false, error: err instanceof Error ? err.message : String(err) };
   }
 }
 
@@ -91,6 +117,19 @@ async function configureClients(homeDir: string, cwd: string): Promise<void> {
     if (res.ok) {
       process.stdout.write(
         `  ${already ? 'Updated' : 'Wrote'} ${client.label}: ${client.configPath}\n`,
+      );
+    } else if (res.jsonc) {
+      // JSONC (comments): don't rewrite — JSON.stringify would strip the
+      // comments. Tell the user exactly what to add.
+      const snippet = PEEK_BLOCK_SNIPPET.split('\n')
+        .map((l) => `      ${l}`)
+        .join('\n');
+      process.stdout.write(
+        [
+          `  ! ${client.label}: ${client.configPath} contains comments (JSONC); not modified.`,
+          '    Add the peek server manually:',
+          `${snippet}\n`,
+        ].join('\n'),
       );
     } else {
       process.stdout.write(`  ✗ ${client.label}: ${client.configPath} — ${res.error}\n`);

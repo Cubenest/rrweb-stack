@@ -177,16 +177,25 @@ function runDelete(argv: string[]): number {
   const db = open();
   try {
     if (olderThan !== undefined) {
-      let cutoffMs: number;
+      let cutoffIso: string;
       try {
-        cutoffMs = cutoffBefore(olderThan);
+        const cutoffMs = cutoffBefore(olderThan);
+        // parseDuration accepts any integer, so a huge duration (e.g. `17200000w`)
+        // yields a finite-but-out-of-range cutoff; `new Date(...).toISOString()`
+        // would throw RangeError. Guard before converting (the JS Date floor is
+        // -8.64e15 ms) so the failure is a clean message, not a stack trace.
+        if (!Number.isFinite(cutoffMs) || cutoffMs < -8_640_000_000_000_000) {
+          process.stderr.write(`peek sessions delete: duration '${olderThan}' is too large\n`);
+          return 1;
+        }
+        cutoffIso = new Date(cutoffMs).toISOString();
       } catch (err) {
         process.stderr.write(
           `peek sessions delete: ${err instanceof Error ? err.message : String(err)}\n`,
         );
         return 1;
       }
-      const removed = deleteSessionsOlderThan(db, new Date(cutoffMs).toISOString());
+      const removed = deleteSessionsOlderThan(db, cutoffIso);
       process.stdout.write(`Deleted ${removed} session(s) older than ${olderThan}.\n`);
       return 0;
     }
