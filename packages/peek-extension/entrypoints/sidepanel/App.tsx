@@ -23,6 +23,10 @@ export function App(): React.JSX.Element {
   const { tabId, url, title } = useActiveTab();
   const origin = originFromUrl(url);
   const [enabled, setEnabled] = useState(false);
+  // "Just this tab" (activeTab) grant feedback. Keyed on the active tab, so it
+  // resets when the user switches tabs (an activeTab grant is per-tab and does
+  // not carry over). The persisted origin grant uses `enabled` instead.
+  const [tabEnabled, setTabEnabled] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -41,6 +45,13 @@ export function App(): React.JSX.Element {
     };
   }, [url]);
 
+  // A per-tab (activeTab) grant does not survive a tab switch; clear the
+  // "active for this tab" feedback whenever the active tab changes.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: reset is keyed on tabId only.
+  useEffect(() => {
+    setTabEnabled(false);
+  }, [tabId]);
+
   const onActivate = useCallback(
     async (scope: 'tab' | 'origin') => {
       setError(null);
@@ -48,6 +59,7 @@ export function App(): React.JSX.Element {
       try {
         const result = await requestActivation(url, scope);
         if (scope === 'origin') setEnabled(result.granted);
+        if (scope === 'tab') setTabEnabled(result.granted);
         // NOTE (3d-2): on grant, kick off dynamic MAIN-world rrweb injection
         // for `tabId` here. Deliberately not wired in this chunk.
       } catch (err) {
@@ -70,6 +82,7 @@ export function App(): React.JSX.Element {
         origin={origin}
         title={title}
         enabled={enabled}
+        tabEnabled={tabEnabled}
         busy={busy}
         error={error}
         onActivate={onActivate}

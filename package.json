@@ -24,6 +24,7 @@
   },
   "pnpm": {
     "onlyBuiltDependencies": ["better-sqlite3"],
+    "//overrides": "WXT 0.20 (peek-extension) needs Vite 6 (vite-node@3, @vitejs/plugin-react@5) but the repo's vitest@2 rides Vite 5. These overrides pin WXT's transitive deps to the Vite-6 line so its plugin `filter` API works, without a repo-wide vitest bump. Remove once the repo moves to vitest@3 / Vite 6.",
     "overrides": {
       "vite-node": "^3.2.4",
       "@vitejs/plugin-react": "^5.0.4"

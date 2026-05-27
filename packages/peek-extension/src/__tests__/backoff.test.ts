@@ -38,8 +38,12 @@ describe('backoffSequence', () => {
 
   it('starts at the floor and ends at the cap', () => {
     const seq = backoffSequence();
-    expect(seq[0]).toBe(INITIAL_BACKOFF_MS);
-    expect(seq[seq.length - 1]).toBe(MAX_BACKOFF_MS);
+    const first = seq.at(0);
+    const last = seq.at(-1);
+    expect(first).toBeDefined();
+    expect(last).toBeDefined();
+    expect(first).toBe(INITIAL_BACKOFF_MS);
+    expect(last).toBe(MAX_BACKOFF_MS);
   });
 });
 

@@ -39,6 +39,9 @@ export default defineBackground({
     let nativePort: chrome.runtime.Port | null = null;
     let reconnectBackoff = INITIAL_BACKOFF_MS;
     let hostState: NativeHostState = 'disconnected';
+    // Single pending reconnect timer. Holding the handle lets us collapse all
+    // disconnect/wake races into ONE pending reconnect (see scheduleReconnect).
+    let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
 
     function handleHostMessage(message: unknown): void {
       // Native-host → extension messages. Wired in 3d-3 (action results,
@@ -48,6 +51,14 @@ export default defineBackground({
     }
 
     function connectNative(): void {
+      // Idempotency guard: the SW opens the port from three places that can
+      // fire close together on a single browser start — the top-level call
+      // (every wake), onStartup, and onInstalled. Without this guard each would
+      // open a SECOND port (relaunching the native peek-mcp binary) and orphan
+      // the previous one, whose later onDisconnect would clobber `nativePort`.
+      // One live port at a time.
+      if (nativePort !== null) return;
+
       try {
         nativePort = chrome.runtime.connectNative(NATIVE_HOST_ID);
       } catch (err) {
@@ -59,10 +70,14 @@ export default defineBackground({
       }
       hostState = 'connected';
       reconnectBackoff = INITIAL_BACKOFF_MS;
-      nativePort.onMessage.addListener(handleHostMessage);
-      nativePort.onDisconnect.addListener(() => {
+      const port = nativePort;
+      port.onMessage.addListener(handleHostMessage);
+      port.onDisconnect.addListener(() => {
         // Per Chrome docs: reconnect from the onDisconnect handler, else the
-        // SW terminates once timers complete and persistence is lost.
+        // SW terminates once timers complete and persistence is lost. Only act
+        // if THIS port is still the active one (a stale orphan's late
+        // disconnect must not null out a newer port).
+        if (nativePort !== port) return;
         console.warn('[peek] native host disconnected:', chrome.runtime.lastError);
         nativePort = null;
         scheduleReconnect();
@@ -71,8 +86,14 @@ export default defineBackground({
 
     function scheduleReconnect(): void {
       hostState = 'reconnecting';
+      // Collapse races: cancel any pending reconnect before arming a new one so
+      // multiple disconnects can never queue a storm of independent timers.
+      if (reconnectTimer !== null) clearTimeout(reconnectTimer);
       const delay = jitter(reconnectBackoff);
-      setTimeout(connectNative, delay);
+      reconnectTimer = setTimeout(() => {
+        reconnectTimer = null;
+        connectNative();
+      }, delay);
       reconnectBackoff = nextBackoffMs(reconnectBackoff);
     }
 

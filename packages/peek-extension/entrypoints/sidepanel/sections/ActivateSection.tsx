@@ -13,13 +13,15 @@ export interface ActivateSectionProps {
   title: string | undefined;
   /** Whether the origin already has persisted "all tabs" consent. */
   enabled: boolean;
+  /** Whether "Just this tab" (activeTab) was granted for the current tab. */
+  tabEnabled: boolean;
   busy: boolean;
   error: string | null;
   onActivate: (scope: 'tab' | 'origin') => void | Promise<void>;
 }
 
 export function ActivateSection(props: ActivateSectionProps): React.JSX.Element {
-  const { origin, title, enabled, busy, error, onActivate } = props;
+  const { origin, title, enabled, tabEnabled, busy, error, onActivate } = props;
 
   return (
     <section className="peek-section" aria-labelledby="peek-activate-heading">
@@ -39,6 +41,17 @@ export function ActivateSection(props: ActivateSectionProps): React.JSX.Element 
           </p>
           {/* STOP & DELETE + Pause controls land with the recorder (3d-2/3d-3). */}
           <p className="peek-muted">Recording controls arrive in a later build.</p>
+        </div>
+      ) : tabEnabled ? (
+        <div className="peek-enabled">
+          <p>
+            Recording active for <strong>this tab</strong> ({origin}).
+          </p>
+          <p className="peek-muted">
+            One-time access (activeTab). To remember <strong>{origin}</strong> across tabs and
+            devices, choose &ldquo;All tabs on this domain&rdquo; next time. Recording controls
+            arrive in a later build.
+          </p>
         </div>
       ) : (
         <div className="peek-activate">

@@ -34,8 +34,23 @@ export default defineConfig({
       'nativeMessaging',
       'offscreen',
       'webRequest',
-      'debugger',
     ],
+    // `debugger` is OPTIONAL, not static (deliberate reconciliation: ADR-0010's
+    // opt-in intent wins over §A.5's literal static list). ADR-0010 keeps
+    // chrome.debugger OFF by default — a static `debugger` permission shows
+    // every install "This extension may monitor and control all your browser
+    // activity", for a feature that's off by default. Chunk 3d-3 (Task 3.26)
+    // requests it from the Deep-capture toggle's user gesture via
+    // `chrome.permissions.request({ permissions: ['debugger'] })`, the same
+    // gesture-time pattern used for optional_host_permissions.
+    //
+    // WXT's bundled `ManifestOptionalPermission` type excludes `debugger` (a
+    // stale restriction — Chrome MV3 DOES allow `debugger` in
+    // `optional_permissions` and grants it at runtime via
+    // `chrome.permissions.request`). The @ts-expect-error is scoped to this one
+    // line and will start failing (prompting cleanup) if WXT fixes the type.
+    // @ts-expect-error -- 'debugger' is valid in MV3 optional_permissions; WXT's type omits it.
+    optional_permissions: ['debugger'],
     action: {
       default_title: 'peek',
     },
