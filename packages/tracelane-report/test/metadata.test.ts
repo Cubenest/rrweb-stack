@@ -117,4 +117,32 @@ describe('renderMetaHeader (Task 2.11)', () => {
     expect(renderMetaHeader({ ...FULL, durationMs: 850 })).toContain('850 ms');
     expect(renderMetaHeader({ ...FULL, durationMs: 95_000 })).toContain('1m 35s');
   });
+
+  it('does not render a javascript: build URL as a clickable link', () => {
+    const html = renderMetaHeader({
+      title: 't',
+      status: 'failed',
+      buildUrl: 'javascript:alert(1)',
+    });
+    // No anchor pointing at the javascript: scheme.
+    expect(html).not.toMatch(/<a\s+href="javascript:/i);
+    expect(html).not.toContain('<a href="javascript:alert(1)"');
+    // The value still appears (escaped) as plain text so the report is honest.
+    expect(html).toContain('javascript:alert(1)');
+  });
+
+  it('renders an http(s) build URL as a clickable link', () => {
+    const html = renderMetaHeader({ title: 't', status: 'failed', buildUrl: 'https://ci/run/1' });
+    expect(html).toContain('<a href="https://ci/run/1">https://ci/run/1</a>');
+  });
+
+  it('shows a non-http(s) build URL (e.g. data:) as text, not a link', () => {
+    const html = renderMetaHeader({
+      title: 't',
+      status: 'failed',
+      buildUrl: 'data:text/html,<b>x',
+    });
+    expect(html).not.toMatch(/<a\s+href="data:/i);
+    expect(html).toContain('data:text/html,&lt;b&gt;x');
+  });
 });

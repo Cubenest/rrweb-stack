@@ -7,7 +7,7 @@
 // (player UMD/CSS, fflate UMD) and the data payloads are passed in.
 
 import { loadFflateGunzipSource, loadPlayerCss, loadPlayerUmd } from './assets';
-import { serializeForScript } from './html';
+import { escapeHtml, serializeForScript } from './html';
 import { renderMetaHeader } from './metadata';
 import type { ConsoleEntry, NetworkEntry } from './panels';
 import type { ReportMeta } from './types';
@@ -158,7 +158,7 @@ export function renderReportHtml(data: ReportTemplateData): string {
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>${escapeTitle(title)}</title>
+<title>${escapeHtml(title)}</title>
 <style>${loadPlayerCss()}</style>
 <style>${SHELL_CSS}</style>
 </head>
@@ -179,12 +179,4 @@ ${banner}
 <script>${BOOTSTRAP}</script>
 </body>
 </html>`;
-}
-
-/** Title goes into <title> text — escape the structural characters. */
-function escapeTitle(value: string): string {
-  return value
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/&(?![a-z#])/g, '&amp;');
 }

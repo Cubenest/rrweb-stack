@@ -14,7 +14,7 @@
 
 declare module 'node:fs' {
   /** Read a file synchronously and return its UTF-8 decoded contents. */
-  export function readFileSync(path: string, encoding: 'utf8'): string;
+  export function readFileSync(path: string | URL, encoding: 'utf8'): string;
 }
 
 declare module 'node:module' {
@@ -25,4 +25,11 @@ declare module 'node:module' {
   }
   /** Build a `require` rooted at `filename` (typically `import.meta.url`). */
   export function createRequire(filename: string | URL): NodeRequire;
+}
+
+declare module 'node:url' {
+  /** Convert a file path to a `file:` URL (for safe relative resolution). */
+  export function pathToFileURL(path: string): URL;
+  /** Convert a `file:` URL back to a platform path string. */
+  export function fileURLToPath(url: string | URL): string;
 }

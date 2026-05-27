@@ -13,6 +13,7 @@
 
 import { readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
 // A CJS-style require rooted at this module's location, so `require.resolve`
 // finds the dependencies through the normal node_modules resolution that pnpm
@@ -28,7 +29,9 @@ function readAsset(specifier: string): string {
  * (fflate exports only `.` / `./browser` / `./node`, so
  * `require.resolve('fflate/umd/index.js')` is blocked). We resolve the always-
  * exported `package.json`, read its `unpkg` (the declared CDN/UMD entry), and
- * join. Avoids depending on `node:path` for one trivial join.
+ * resolve it against the package directory's `file:` URL — `new URL` normalizes
+ * the relative path (no manual string join), and a containment check rejects a
+ * `unpkg` value that would escape the package directory.
  */
 function readUmdViaUnpkg(packageName: string): string {
   const pkgJsonPath = localRequire.resolve(`${packageName}/package.json`);
@@ -37,9 +40,15 @@ function readUmdViaUnpkg(packageName: string): string {
   if (typeof unpkg !== 'string') {
     throw new Error(`${packageName}: package.json has no "unpkg" UMD entry to inline`);
   }
-  const dir = pkgJsonPath.slice(0, pkgJsonPath.lastIndexOf('/'));
-  const rel = unpkg.replace(/^\.?\//, '');
-  return readFileSync(`${dir}/${rel}`, 'utf8');
+  // Resolve `unpkg` relative to the package.json file URL (its last segment is
+  // replaced), then re-derive a normalized path.
+  const pkgDirUrl = pathToFileURL(pkgJsonPath.slice(0, pkgJsonPath.lastIndexOf('/') + 1));
+  const assetPath = fileURLToPath(new URL(unpkg, pkgDirUrl));
+  const pkgDirPath = fileURLToPath(pkgDirUrl);
+  if (!assetPath.startsWith(pkgDirPath)) {
+    throw new Error(`${packageName}: "unpkg" entry escapes the package directory`);
+  }
+  return readFileSync(assetPath, 'utf8');
 }
 
 /**

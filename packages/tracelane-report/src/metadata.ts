@@ -62,6 +62,22 @@ function row(term: string, value: string): string {
   return `<dt>${escapeHtml(term)}</dt><dd>${value}</dd>`;
 }
 
+/**
+ * Whether `url` is safe to use as an `href`. Only http(s) — blocks `javascript:`,
+ * `data:`, `vbscript:` etc. The build URL is sourced from CI env vars
+ * (CI_JOB_URL / BUILD_URL), which a hostile or misconfigured CI could set, so a
+ * crafted `javascript:` value must never become a clickable link in the saved
+ * report's origin. (HTML-escaping alone doesn't help — `javascript:alert(1)`
+ * has none of the escaped characters.)
+ */
+function isSafeUrl(url: string): boolean {
+  try {
+    return /^https?:$/i.test(new URL(url).protocol);
+  } catch {
+    return false;
+  }
+}
+
 /** Render the metadata header markup (P1 PRD §F.1). */
 export function renderMetaHeader(meta: ReportMeta): string {
   const rows: string[] = [];
@@ -76,8 +92,11 @@ export function renderMetaHeader(meta: ReportMeta): string {
   }
   if (meta.commitSha) rows.push(row('Commit', `<code>${escapeHtml(meta.commitSha)}</code>`));
   if (meta.buildUrl) {
-    const safe = escapeHtml(meta.buildUrl);
-    rows.push(row('Build', `<a href="${safe}">${safe}</a>`));
+    const escaped = escapeHtml(meta.buildUrl);
+    // Only render a clickable link for http(s); a non-http(s) URL (e.g. a
+    // crafted `javascript:`) is shown as escaped text with no href.
+    const value = isSafeUrl(meta.buildUrl) ? `<a href="${escaped}">${escaped}</a>` : escaped;
+    rows.push(row('Build', value));
   }
 
   const error = meta.error ? `<div class="error">${escapeHtml(meta.error)}</div>` : '';

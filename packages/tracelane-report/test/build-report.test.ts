@@ -35,9 +35,16 @@ const META: ReportMeta = {
 
 /** Pull the embedded EVENTS_GZ_B64 string literal back out of the HTML. */
 function extractBlob(html: string): string {
-  const m = html.match(/const EVENTS_GZ_B64\s*=\s*"([A-Za-z0-9+/]*={0,2})"/);
+  // Capture the FULL quoted value (any non-quote chars), then assert it is
+  // strict base64 — so if the encoder ever emitted URL-safe base64 (-/_) this
+  // throws loudly instead of silently matching a truncated prefix (false green).
+  const m = html.match(/const EVENTS_GZ_B64\s*=\s*"([^"]*)"/);
   if (!m || m[1] === undefined) throw new Error('EVENTS_GZ_B64 not found in report HTML');
-  return m[1];
+  const blob = m[1];
+  if (!/^[A-Za-z0-9+/]*={0,2}$/.test(blob)) {
+    throw new Error(`EVENTS_GZ_B64 is not strict base64: ${blob.slice(0, 32)}…`);
+  }
+  return blob;
 }
 
 describe('buildReport — self-contained HTML (Task 2.9)', () => {
@@ -46,6 +53,21 @@ describe('buildReport — self-contained HTML (Task 2.9)', () => {
     expect(html.startsWith('<!doctype html>')).toBe(true);
     expect(html).toContain('</html>');
     expect(html).toContain('<section id="player"');
+  });
+
+  it('builds a valid report from zero events without throwing', () => {
+    // Realistic: a test that crashes before rrweb records anything. Exercises
+    // the zero-event path through pruneToSizeBudget / extractConsole /
+    // extractNetwork / encodeEventsBlob all at once.
+    const minimalMeta: ReportMeta = { title: 'crashed early', status: 'failed' };
+    let html = '';
+    expect(() => {
+      html = buildReport([], minimalMeta);
+    }).not.toThrow();
+    expect(html.startsWith('<!doctype html>')).toBe(true);
+    expect(html).toContain('crashed early');
+    // The empty blob still round-trips to an empty array.
+    expect(decodeEventsBlob(extractBlob(html))).toEqual([]);
   });
 
   it('embeds the events as a base64-gzip blob that round-trips to the input', () => {
@@ -92,7 +114,10 @@ describe('buildReport — self-contained HTML (Task 2.9)', () => {
 
   it('the embedded data-consts script evaluates and preserves the payloads', () => {
     const html = buildReport(sampleEvents(), { ...META, error: '</script><script>x' });
-    const dataScript = inlineScripts(html)[2] ?? '';
+    // Select by content (not position) so a change in <script> ordering can't
+    // silently point this at the wrong block.
+    const dataScript = inlineScripts(html).find((s) => s.includes('const META'));
+    if (dataScript === undefined) throw new Error('data-consts script not found');
     const sandbox: Record<string, unknown> = { atob, btoa };
     vm.createContext(sandbox);
     new vm.Script(
