@@ -1,0 +1,34 @@
+{
+  "name": "@tracelane/report",
+  "version": "0.1.0-alpha.0",
+  "description": "Self-contained, offline HTML report builder for tracelane. Embeds the rrweb player and a gzipped event blob into a single .html file.",
+  "license": "Apache-2.0",
+  "private": true,
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": { "types": "./dist/index.d.ts", "import": "./dist/index.js" }
+  },
+  "files": ["dist", "NOTICE", "README.md"],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run --passWithNoTests"
+  },
+  "dependencies": {
+    "@cubenest/rrweb-core": "workspace:*",
+    "fflate": "^0.8.2",
+    "rrweb-player": "1.0.0-alpha.4"
+  },
+  "devDependencies": {
+    "jsdom": "^25.0.1"
+  },
+  "publishConfig": { "access": "public", "provenance": true },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Cubenest/rrweb-stack.git",
+    "directory": "packages/tracelane-report"
+  },
+  "homepage": "https://github.com/Cubenest/rrweb-stack/tree/main/packages/tracelane-report#readme"
+}

@@ -56,6 +56,22 @@ importers:
         specifier: ^25.0.1
         version: 25.0.1
 
+  packages/tracelane-report:
+    dependencies:
+      '@cubenest/rrweb-core':
+        specifier: workspace:*
+        version: link:../rrweb-core
+      fflate:
+        specifier: ^0.8.2
+        version: 0.8.3
+      rrweb-player:
+        specifier: 1.0.0-alpha.4
+        version: 1.0.0-alpha.4
+    devDependencies:
+      jsdom:
+        specifier: ^25.0.1
+        version: 25.0.1
+
 packages:
 
   '@asamuzakjp/css-color@3.2.0':
@@ -524,6 +540,9 @@ packages:
 
   '@rrweb/utils@2.0.0-alpha.20':
     resolution: {integrity: sha512-MTQOmhPRe39C0fYaCnnVYOufQsyGzwNXpUStKiyFSfGLUJrzuwhbRoUAKR5w6W2j5XuA0bIz3ZDIBztkquOhLw==}
+
+  '@tsconfig/svelte@1.0.13':
+    resolution: {integrity: sha512-5lYJP45Xllo4yE/RUBccBT32eBlRDbqN8r1/MIvQbKxW3aFqaYPCNgm8D5V20X4ShHcwvYWNlKg3liDh1MlBoA==}
 
   '@types/css-font-loading-module@0.0.7':
     resolution: {integrity: sha512-nl09VhutdjINdWyXxHWN/w9zlNCfr60JUqJbd24YXUuCwgeL0TpFSdElCwb6cxfB6ybE19Gjj4g0jsgkXxKv1Q==}
@@ -1095,6 +1114,9 @@ packages:
 
   rrweb-cssom@0.8.0:
     resolution: {integrity: sha512-guoltQEx+9aMf2gDZ0s62EcV8lsXR+0w8915TC3ITdn2YueuNjdAYh/levpU9nFaoChh9RUS5ZdQMrKfVEN9tw==}
+
+  rrweb-player@1.0.0-alpha.4:
+    resolution: {integrity: sha512-Wlmn9GZ5Fdqa37vd3TzsYdLl/JWEvXNUrLCrYpnOwEgmY409HwVIvvA5aIo7k582LoKgdRCsB87N+f0oWAR0Kg==}
 
   rrweb-snapshot@2.0.0-alpha.20:
     resolution: {integrity: sha512-YTNf9YVeaGRo/jxY3FKBge2c/Ojd/KTHmuWloUSB+oyPXuY73ZeeG873qMMmhIpqEn7hn7aBF1eWEQmP7wjf8A==}
@@ -1747,6 +1769,8 @@ snapshots:
 
   '@rrweb/utils@2.0.0-alpha.20': {}
 
+  '@tsconfig/svelte@1.0.13': {}
+
   '@types/css-font-loading-module@0.0.7': {}
 
   '@types/estree@1.0.8': {}
@@ -2325,6 +2349,11 @@ snapshots:
   rrweb-cssom@0.7.1: {}
 
   rrweb-cssom@0.8.0: {}
+
+  rrweb-player@1.0.0-alpha.4:
+    dependencies:
+      '@tsconfig/svelte': 1.0.13
+      rrweb: 2.0.0-alpha.20
 
   rrweb-snapshot@2.0.0-alpha.20:
     dependencies:
