@@ -115,3 +115,47 @@ describe('isOriginEnabled', () => {
     expect(await isOriginEnabled('chrome://x', area)).toBe(false);
   });
 });
+
+describe('concurrent writers (carry-in [4] — multi-writer safety)', () => {
+  // A storage area whose get/set resolve on a microtask delay, so concurrent
+  // read-modify-write calls would interleave (read→read→write→write) WITHOUT
+  // the serialization lock — the classic lost-update race. The lock must make
+  // them apply sequentially so every addition survives.
+  function slowArea(): StorageAreaLike {
+    let store: Record<string, unknown> = {};
+    const tick = (): Promise<void> => new Promise((r) => setTimeout(r, 1));
+    return {
+      async get(keys) {
+        await tick();
+        if (typeof keys === 'string') return { [keys]: store[keys] };
+        return { ...store };
+      },
+      async set(items) {
+        await tick();
+        store = { ...store, ...items };
+      },
+    };
+  }
+
+  it('does not lose updates when two adds race on the same area', async () => {
+    const slow = slowArea();
+    // Fire two adds without awaiting between them — they race.
+    await Promise.all([
+      addEnabledOrigin('https://a.com', slow),
+      addEnabledOrigin('https://b.com', slow),
+    ]);
+    // Without the lock, one write clobbers the other and only one origin lands.
+    expect(await getEnabledOrigins(slow)).toEqual(['https://a.com', 'https://b.com']);
+  });
+
+  it('serializes a burst of adds + a remove deterministically', async () => {
+    const slow = slowArea();
+    await Promise.all([
+      addEnabledOrigin('https://a.com', slow),
+      addEnabledOrigin('https://b.com', slow),
+      addEnabledOrigin('https://c.com', slow),
+    ]);
+    await removeEnabledOrigin('https://b.com', slow);
+    expect(await getEnabledOrigins(slow)).toEqual(['https://a.com', 'https://c.com']);
+  });
+});

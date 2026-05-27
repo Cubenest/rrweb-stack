@@ -20,10 +20,19 @@ export function useActiveTab(): ActiveTab {
 
   useEffect(() => {
     let cancelled = false;
+    // Carry-in [9]: rapid navigations / tab switches fire onActivated +
+    // onUpdated in bursts, each starting a `chrome.tabs.query`. Those promises
+    // can resolve out of order — an earlier-but-slower query would otherwise
+    // overwrite a newer one's result, leaving stale tab state (now that
+    // recording is URL-driven, stale state means injecting into the wrong tab).
+    // A monotonic token makes the LATEST refresh win: a stale resolver sees its
+    // token is no longer current and drops its result.
+    let latest = 0;
 
     async function refresh(): Promise<void> {
+      const token = ++latest;
       const [active] = await chrome.tabs.query({ active: true, currentWindow: true });
-      if (cancelled) return;
+      if (cancelled || token !== latest) return;
       setTab({ tabId: active?.id, url: active?.url, title: active?.title });
     }
 

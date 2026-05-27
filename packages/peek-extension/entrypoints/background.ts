@@ -1,12 +1,18 @@
 import { defineBackground } from 'wxt/utils/define-background';
+import { isOriginEnabled } from '../src/activation/storage';
 import { INITIAL_BACKOFF_MS, jitter, nextBackoffMs } from '../src/background/backoff';
-import { NATIVE_HOST_ID } from '../src/constants';
 import {
-  type Cmd,
-  type CmdResponse,
-  EMPTY_RECORDER_STATS,
-  type NativeHostState,
-} from '../src/messaging/protocol';
+  type NativeOutbound,
+  consoleAppend,
+  networkAppend,
+  sessionAppend,
+  shadowReport,
+} from '../src/background/native-protocol';
+import { SessionRegistry } from '../src/background/session';
+import { RecorderStatsStore } from '../src/background/stats';
+import { NATIVE_HOST_ID } from '../src/constants';
+import type { Cmd, CmdResponse, NativeHostState, RelayAck } from '../src/messaging/protocol';
+import { injectRecorder } from '../src/recorder/inject';
 
 /**
  * Background service worker (ADR-0009).
@@ -28,10 +34,12 @@ import {
  * back, at which point the backoff reconnect re-establishes the port.
  *
  * Chunk boundaries:
- *   - 3d-1 (this chunk): the keep-alive anchor + side-panel behavior + a
- *     message router stub.
- *   - 3d-2: handle recorder relay messages, track per-tab RecorderStats.
- *   - 3d-3: native-host request/response for action execution + audit.
+ *   - 3d-1: the keep-alive anchor + side-panel behavior + a message router stub.
+ *   - 3d-2 (this chunk): inject the MAIN-world recorder on per-site-enabled
+ *     tabs; receive ISOLATED-relay batches, fold per-tab RecorderStats, forward
+ *     them over the native port to peek-mcp.
+ *   - 3d-3: permission-level gating of forwarding + native-host request/response
+ *     for action execution + audit.
  */
 export default defineBackground({
   type: 'module',
@@ -43,11 +51,34 @@ export default defineBackground({
     // disconnect/wake races into ONE pending reconnect (see scheduleReconnect).
     let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
 
+    // Per-tab capture state (3d-2). Lives only in this SW instance; if the SW is
+    // torn down the counts reset — acceptable, the side panel re-polls and the
+    // native host owns durable state.
+    const stats = new RecorderStatsStore();
+    const sessions = new SessionRegistry();
+
     function handleHostMessage(message: unknown): void {
-      // Native-host → extension messages. Wired in 3d-3 (action results,
-      // ack/nack). For now we only need the read activity to reset the SW
-      // idle timer, which receiving a message already does.
+      // Native-host → extension messages. Action results / ack-nack are wired
+      // in 3d-3. For now receiving anything already resets the SW idle timer,
+      // which is the keep-alive guarantee we rely on.
       void message;
+    }
+
+    /**
+     * Forward a body to the native host. Best-effort: if the port is down the
+     * batch is dropped (the relay's data is best-effort; the keep-alive
+     * reconnect will restore the port). Never throws into a message handler.
+     */
+    function forwardToHost(body: NativeOutbound): boolean {
+      const port = nativePort;
+      if (!port) return false;
+      try {
+        port.postMessage(body);
+        return true;
+      } catch (err) {
+        console.warn('[peek] native port postMessage failed:', err);
+        return false;
+      }
     }
 
     function connectNative(): void {
@@ -110,6 +141,43 @@ export default defineBackground({
     // Top-level call so the port is (re)opened on every SW wake.
     connectNative();
 
+    // --- MAIN-world recorder injection on enabled tabs (Task 3.19) ---------
+    // The ISOLATED relay is a static content script (auto-runs at
+    // document_start on granted origins). The MAIN-world recorder is injected
+    // here when an enabled tab finishes (or starts) loading. We inject on
+    // `status === 'loading'` with a committed URL so it lands close to
+    // document_start; `injectImmediately` does the rest. isOriginEnabled gates
+    // on the user's persisted per-site consent (ADR-0008).
+    async function maybeInject(tabId: number, url: string | undefined): Promise<void> {
+      if (!url) return;
+      try {
+        if (!(await isOriginEnabled(url))) return;
+      } catch {
+        return; // storage read failed — skip, try again on the next event
+      }
+      const result = await injectRecorder(tabId);
+      if (!result.ok) {
+        // Common + benign: the tab navigated away, or the host permission was
+        // revoked between the check and the inject. Log at debug volume.
+        console.debug('[peek] recorder inject skipped:', result.error);
+      }
+    }
+
+    chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
+      // Inject as early as the URL is committed. Guard on `loading` so we don't
+      // re-inject on every minor update; the recorder's own idempotency guard
+      // (window.__peekRecorderInstalled) covers a double-fire.
+      if (changeInfo.status === 'loading' && tab.url) {
+        void maybeInject(tabId, tab.url);
+      }
+    });
+
+    // --- Tab teardown ------------------------------------------------------
+    chrome.tabs.onRemoved.addListener((tabId) => {
+      stats.clear(tabId);
+      sessions.clear(tabId);
+    });
+
     // --- Message router ----------------------------------------------------
     chrome.runtime.onMessage.addListener(
       (message: Cmd, sender, sendResponse: (response: unknown) => void) => {
@@ -126,10 +194,25 @@ export default defineBackground({
             return false;
           }
           case 'getRecorderStats': {
-            // Placeholder until the recorder relay lands (3d-2): always zero.
-            const response: CmdResponse<{ type: 'getRecorderStats'; tabId: number }> =
-              EMPTY_RECORDER_STATS;
+            const response: CmdResponse<{ type: 'getRecorderStats'; tabId: number }> = stats.get(
+              message.tabId,
+            );
             sendResponse(response);
+            return false;
+          }
+          case 'recorder.events': {
+            handleRelayEvents(message, sender);
+            sendResponse(ackOk());
+            return false;
+          }
+          case 'recorder.net': {
+            handleRelayNet(message, sender);
+            sendResponse(ackOk());
+            return false;
+          }
+          case 'recorder.shadow': {
+            handleRelayShadow(message, sender);
+            sendResponse(ackOk());
             return false;
           }
           default:
@@ -137,5 +220,55 @@ export default defineBackground({
         }
       },
     );
+
+    // --- Relay batch handlers (ISOLATED relay → SW → native host) ----------
+    // The relay already MASKED these (the privacy boundary is upstream, in the
+    // content script). Here we fold per-tab stats for the side panel and
+    // forward to the native host. `sender.tab?.id` is the trusted tab id (the
+    // relay can't forge it — Chrome stamps it). A message with no tab id can't
+    // be a relay content script; ignore it.
+    //
+    // 3d-3 NOTE: permission-level gating slots in right here — gate the
+    // forwardToHost() calls (and/or stats folding) on the per-origin level the
+    // SW will read. For this chunk, recording forwards whenever a site is
+    // enabled.
+
+    function handleRelayEvents(
+      message: Extract<Cmd, { type: 'recorder.events' }>,
+      sender: chrome.runtime.MessageSender,
+    ): void {
+      const tabId = sender.tab?.id;
+      if (tabId === undefined) return;
+      stats.addEvents(tabId, message.events.length, message.console.length);
+      const ref = sessions.ensure(tabId, { url: sender.tab?.url, title: sender.tab?.title });
+      if (message.events.length > 0) forwardToHost(sessionAppend(ref, message.events));
+      if (message.console.length > 0) forwardToHost(consoleAppend(ref, message.console));
+    }
+
+    function handleRelayNet(
+      message: Extract<Cmd, { type: 'recorder.net' }>,
+      sender: chrome.runtime.MessageSender,
+    ): void {
+      const tabId = sender.tab?.id;
+      if (tabId === undefined) return;
+      const requests = message.records.filter((r) => r.kind === 'request').length;
+      stats.addNetwork(tabId, requests);
+      const ref = sessions.ensure(tabId, { url: sender.tab?.url, title: sender.tab?.title });
+      if (message.records.length > 0) forwardToHost(networkAppend(ref, message.records));
+    }
+
+    function handleRelayShadow(
+      message: Extract<Cmd, { type: 'recorder.shadow' }>,
+      sender: chrome.runtime.MessageSender,
+    ): void {
+      const tabId = sender.tab?.id;
+      if (tabId === undefined) return;
+      const ref = sessions.ensure(tabId, { url: sender.tab?.url, title: sender.tab?.title });
+      if (message.reports.length > 0) forwardToHost(shadowReport(ref, message.reports));
+    }
+
+    function ackOk(): RelayAck {
+      return { ok: true };
+    }
   },
 });

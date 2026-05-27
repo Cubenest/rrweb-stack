@@ -26,6 +26,37 @@ function syncArea(): StorageAreaLike {
   return chrome.storage.sync as unknown as StorageAreaLike;
 }
 
+/**
+ * Carry-in [4] — multi-writer safety. `addEnabledOrigin` / `removeEnabledOrigin`
+ * are read-modify-write: read the list, mutate, write it back. The side panel
+ * and the SW (which now reacts to navigations) are independent contexts that
+ * can run these concurrently; interleaved read→read→write→write loses one
+ * update (last write wins, clobbering the other's change).
+ *
+ * `chrome.storage` exposes no atomic compare-and-set, so we serialize the
+ * critical section through a per-area promise chain — an async mutex. Writes to
+ * a given area run one-at-a-time, in submission order; reads are not gated
+ * (they're naturally consistent against the serialized writes). Keyed per area
+ * via a WeakMap so independent test areas don't contend, while the single
+ * production `chrome.storage.sync` shares one chain.
+ */
+const writeChains = new WeakMap<StorageAreaLike, Promise<unknown>>();
+
+function withWriteLock<T>(area: StorageAreaLike, critical: () => Promise<T>): Promise<T> {
+  const prev = writeChains.get(area) ?? Promise.resolve();
+  // Run `critical` after the previous write settles (success OR failure — a
+  // failed write must not wedge the chain). The chain tracks completion only.
+  const next = prev.then(critical, critical);
+  writeChains.set(
+    area,
+    next.then(
+      () => undefined,
+      () => undefined,
+    ),
+  );
+  return next;
+}
+
 /** Normalise + de-dupe + sort an arbitrary stored value into a clean origin list. */
 function sanitize(value: unknown): string[] {
   if (!Array.isArray(value)) return [];
@@ -58,11 +89,15 @@ export async function addEnabledOrigin(
   if (!normalized) {
     throw new Error(`refusing to persist non-http(s) origin: ${origin}`);
   }
-  const current = await getEnabledOrigins(area);
-  if (current.includes(normalized)) return current;
-  const updated = [...current, normalized].sort();
-  await area.set({ [ENABLED_ORIGINS_KEY]: updated });
-  return updated;
+  // Serialized read-modify-write (carry-in [4]) so a concurrent writer can't
+  // clobber this addition.
+  return withWriteLock(area, async () => {
+    const current = await getEnabledOrigins(area);
+    if (current.includes(normalized)) return current;
+    const updated = [...current, normalized].sort();
+    await area.set({ [ENABLED_ORIGINS_KEY]: updated });
+    return updated;
+  });
 }
 
 /** Remove consent for an origin (revocation UX, ADR-0008 action item #6). Returns the updated list. */
@@ -71,12 +106,14 @@ export async function removeEnabledOrigin(
   area: StorageAreaLike = syncArea(),
 ): Promise<string[]> {
   const normalized = originFromUrl(origin);
-  const current = await getEnabledOrigins(area);
-  if (!normalized) return current;
-  const updated = current.filter((o) => o !== normalized);
-  if (updated.length === current.length) return current;
-  await area.set({ [ENABLED_ORIGINS_KEY]: updated });
-  return updated;
+  if (!normalized) return getEnabledOrigins(area);
+  return withWriteLock(area, async () => {
+    const current = await getEnabledOrigins(area);
+    const updated = current.filter((o) => o !== normalized);
+    if (updated.length === current.length) return current;
+    await area.set({ [ENABLED_ORIGINS_KEY]: updated });
+    return updated;
+  });
 }
 
 /** Whether the given URL's origin is in the persisted enabled-origins list. */
