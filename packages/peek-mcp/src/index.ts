@@ -43,8 +43,12 @@ async function main(): Promise<void> {
   if (mode === 'native-host') {
     const callerOrigin = callingExtensionOrigin(argv);
     const host = startNativeHost(callerOrigin !== undefined ? { callerOrigin } : {});
-    await host.done;
-    host.close();
+    try {
+      await host.done;
+    } finally {
+      // Always release the SQLite handle, even if the stream errored.
+      host.close();
+    }
     return;
   }
 

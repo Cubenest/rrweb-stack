@@ -1,3 +1,6 @@
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import Database from 'better-sqlite3';
 import { afterEach, describe, expect, it } from 'vitest';
 import {
@@ -103,11 +106,39 @@ describe('migrations runner', () => {
 });
 
 describe('openDb', () => {
-  it('opens an in-memory DB with migrations applied and WAL/foreign-key pragmas honored', () => {
+  it('opens an in-memory DB with migrations applied and foreign keys on', () => {
+    // Note: WAL is asserted separately on a temp-file DB — an in-memory DB
+    // cannot use WAL (journal_mode silently stays `memory`).
     const db = openDb({ path: ':memory:' });
     expect(schemaVersion(db)).toBe(1);
     expect(tableNames(db)).toEqual(expect.arrayContaining(EXPECTED_TABLES));
     expect(db.pragma('foreign_keys', { simple: true }) as number).toBe(1);
+    db.close();
+  });
+
+  it('opens a file-backed DB in WAL journal mode', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'peek-wal-'));
+    const dbPath = join(dir, 'sessions.db');
+    const db = openDb({ path: dbPath });
+    try {
+      expect(String(db.pragma('journal_mode', { simple: true })).toLowerCase()).toBe('wal');
+      expect(schemaVersion(db)).toBe(1);
+    } finally {
+      db.close();
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe('schemaVersion read-only contract', () => {
+  it('returns 0 and does NOT create _migrations on an uninitialized DB', () => {
+    const db = new Database(':memory:');
+    expect(schemaVersion(db)).toBe(0);
+    // The bookkeeping table must not have been created as a side effect.
+    const created = db
+      .prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = '_migrations'")
+      .get();
+    expect(created).toBeUndefined();
     db.close();
   });
 });

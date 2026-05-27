@@ -95,9 +95,16 @@ export function runMigrations(
   return applied;
 }
 
-/** Current schema version (highest applied migration), or 0 if none. */
+/**
+ * Current schema version (highest applied migration), or 0 if migrations have
+ * never run. Read-only: unlike {@link runMigrations} it does not create the
+ * `_migrations` table — querying the version must not mutate an uninitialized DB.
+ */
 export function schemaVersion(db: Database): number {
-  ensureMigrationsTable(db);
+  const exists = db
+    .prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = '_migrations'")
+    .get();
+  if (!exists) return 0;
   const row = db.prepare('SELECT MAX(version) AS v FROM _migrations').get() as {
     v: number | null;
   };

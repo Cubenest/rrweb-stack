@@ -53,15 +53,24 @@ export function writeMessage(value: unknown, out: Writable = process.stdout): Pr
  * `onMessage` callback. Enforces the 4 GB ext -> host cap on the declared
  * length before buffering the body.
  */
+export interface MessageDecoderOptions {
+  /** Max declared frame length before the ext -> host cap guard throws. */
+  readonly maxBytes?: number;
+  /** Invoked when a frame body fails to JSON-parse; the frame is then skipped. */
+  readonly onError?: (error: Error) => void;
+}
+
 export class MessageDecoder {
   #buffer: Buffer = Buffer.alloc(0);
   #expectedLength: number | null = null;
   readonly #onMessage: (message: unknown) => void;
   readonly #maxBytes: number;
+  readonly #onError: ((error: Error) => void) | undefined;
 
-  constructor(onMessage: (message: unknown) => void, maxBytes: number = MAX_EXT_TO_HOST_BYTES) {
+  constructor(onMessage: (message: unknown) => void, options: MessageDecoderOptions = {}) {
     this.#onMessage = onMessage;
-    this.#maxBytes = maxBytes;
+    this.#maxBytes = options.maxBytes ?? MAX_EXT_TO_HOST_BYTES;
+    this.#onError = options.onError;
   }
 
   /** Append a chunk and drain any complete messages it now contains. */
@@ -87,7 +96,18 @@ export class MessageDecoder {
       const body = this.#buffer.subarray(0, this.#expectedLength);
       this.#buffer = this.#buffer.subarray(this.#expectedLength);
       this.#expectedLength = null;
-      this.#onMessage(JSON.parse(body.toString('utf8')));
+
+      // A single malformed frame must not kill the host loop: skip it (the
+      // frame was already consumed above, so the stream stays correctly aligned
+      // for the next length-prefixed message) and report it via onError.
+      let parsed: unknown;
+      try {
+        parsed = JSON.parse(body.toString('utf8'));
+      } catch (err) {
+        this.#onError?.(err instanceof Error ? err : new Error(String(err)));
+        continue;
+      }
+      this.#onMessage(parsed);
     }
   }
 
@@ -97,16 +117,29 @@ export class MessageDecoder {
   }
 }
 
+export interface ReadMessagesOptions {
+  /** Stream to read from (default `process.stdin`). */
+  readonly input?: Readable;
+  /** Invoked when a malformed frame is skipped (does not reject the promise). */
+  readonly onError?: (error: Error) => void;
+}
+
 /**
  * Read framed messages from a stream (default `process.stdin`), invoking
  * `onMessage` for each. Resolves when the stream ends; rejects on a stream
- * error or a frame that violates the size cap.
+ * error or a frame that violates the size cap. A frame whose body fails to
+ * JSON-parse is skipped (reported via `onError`) rather than terminating the
+ * stream — a single malformed message from the extension must not kill the host.
  */
 export function readMessages(
   onMessage: (message: unknown) => void,
-  input: Readable = process.stdin,
+  options: ReadMessagesOptions = {},
 ): Promise<void> {
-  const decoder = new MessageDecoder(onMessage);
+  const input = options.input ?? process.stdin;
+  const decoder = new MessageDecoder(
+    onMessage,
+    options.onError !== undefined ? { onError: options.onError } : {},
+  );
   return new Promise((resolve, reject) => {
     input.on('data', (chunk: Buffer) => {
       try {

@@ -35,15 +35,23 @@ export interface NativeHostOptions {
 export function startNativeHost(options: NativeHostOptions = {}): NativeHostHandle {
   const db = openDb();
 
-  const done = readMessages((message) => {
-    // A reply-write failure (e.g. the browser closed the port mid-reply) must
-    // not become an unhandled rejection that tears down the host.
-    handleMessage(message).catch((err) => {
-      console.error(
-        `native host: failed handling message — ${err instanceof Error ? err.message : String(err)}`,
-      );
-    });
-  });
+  const done = readMessages(
+    (message) => {
+      // A reply-write failure (e.g. the browser closed the port mid-reply) must
+      // not become an unhandled rejection that tears down the host.
+      handleMessage(message).catch((err) => {
+        console.error(
+          `native host: failed handling message — ${err instanceof Error ? err.message : String(err)}`,
+        );
+      });
+    },
+    {
+      // A malformed frame is skipped by the decoder, not fatal — log it.
+      onError: (err) => {
+        console.error(`native host: skipped malformed frame — ${err.message}`);
+      },
+    },
+  );
 
   return {
     done,

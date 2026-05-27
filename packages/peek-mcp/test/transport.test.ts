@@ -84,10 +84,32 @@ describe('MessageDecoder', () => {
   it('throws when a declared length exceeds the ext->host cap', () => {
     const received: unknown[] = [];
     // Tiny cap so we can trigger the guard without allocating 4 GB.
-    const decoder = new MessageDecoder((m) => received.push(m), 8);
+    const decoder = new MessageDecoder((m) => received.push(m), { maxBytes: 8 });
     const header = Buffer.allocUnsafe(LENGTH_PREFIX_BYTES);
     header.writeUInt32LE(9, 0); // 9 > cap of 8
     expect(() => decoder.push(header)).toThrow(/exceeds the .*ext->host cap/);
+  });
+
+  it('skips a malformed-JSON frame and still decodes the next valid frame', () => {
+    const received: unknown[] = [];
+    const errors: Error[] = [];
+    const decoder = new MessageDecoder((m) => received.push(m), {
+      onError: (e) => errors.push(e),
+    });
+
+    // Hand-build a frame with a valid length header but a non-JSON body.
+    const badBody = Buffer.from('{not valid json', 'utf8');
+    const badHeader = Buffer.allocUnsafe(LENGTH_PREFIX_BYTES);
+    badHeader.writeUInt32LE(badBody.length, 0);
+    const badFrame = Buffer.concat([badHeader, badBody]);
+
+    // Deliver the bad frame followed by a good one in the same stream.
+    const stream = Buffer.concat([badFrame, encodeMessage({ recovered: true })]);
+    expect(() => decoder.push(stream)).not.toThrow();
+
+    expect(errors).toHaveLength(1);
+    expect(received).toEqual([{ recovered: true }]); // next valid frame still processed
+    expect(decoder.pending).toBe(0); // stream stayed correctly aligned
   });
 
   it('exposes the 4 GB ext->host cap default', () => {
@@ -99,7 +121,7 @@ describe('writeMessage / readMessages round-trip over a stream', () => {
   it('round-trips values through a PassThrough stream', async () => {
     const stream = new PassThrough();
     const received: unknown[] = [];
-    const done = readMessages((m) => received.push(m), stream);
+    const done = readMessages((m) => received.push(m), { input: stream });
 
     await writeMessage({ a: 1 }, stream);
     await writeMessage({ b: [2, 3], nested: { c: true } }, stream);
@@ -107,6 +129,27 @@ describe('writeMessage / readMessages round-trip over a stream', () => {
 
     await done;
     expect(received).toEqual([{ a: 1 }, { b: [2, 3], nested: { c: true } }]);
+  });
+
+  it('skips a malformed frame mid-stream without rejecting the promise', async () => {
+    const stream = new PassThrough();
+    const received: unknown[] = [];
+    const errors: Error[] = [];
+    const done = readMessages((m) => received.push(m), {
+      input: stream,
+      onError: (e) => errors.push(e),
+    });
+
+    const badBody = Buffer.from('not json at all', 'utf8');
+    const badHeader = Buffer.allocUnsafe(4);
+    badHeader.writeUInt32LE(badBody.length, 0);
+    stream.write(Buffer.concat([badHeader, badBody]));
+    await writeMessage({ after: 'bad' }, stream);
+    stream.end();
+
+    await expect(done).resolves.toBeUndefined();
+    expect(errors).toHaveLength(1);
+    expect(received).toEqual([{ after: 'bad' }]);
   });
 
   it('writeMessage emits a correctly framed buffer to the stream', async () => {
