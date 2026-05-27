@@ -5,6 +5,7 @@ import {
   DEFAULT_CONSOLE_PLUGIN_OPTIONS,
   tracelaneDrainScript,
   tracelaneInitScript,
+  tracelaneNavScript,
 } from './page-script';
 
 /** Default re-injection cooldown in ms (ADR-0006). */
@@ -32,6 +33,13 @@ export interface RecorderOptions {
 export interface Recorder {
   /** Inject the rrweb bundle, install the in-page buffer, and start polling. */
   start(): Promise<void>;
+  /**
+   * Re-inject after a navigation (ADR-0006). The in-page cooldown guard
+   * suppresses double-init on hash-only / HMR navigations; when a real re-init
+   * takes effect (the monotonic session id advances) a `tracelane.nav` boundary
+   * event is appended. Returns `true` if a re-init actually happened.
+   */
+  reinject(url: string): Promise<boolean>;
   /** Read+clear the page buffer, merge into the Node buffer, return the batch. */
   drain(): Promise<eventWithTime[]>;
   /** Stop polling and perform a final drain. */
@@ -59,14 +67,37 @@ export function createRecorder(options: RecorderOptions): Recorder {
   const buffer: eventWithTime[] = [];
   let pollTimer: ReturnType<typeof setInterval> | undefined;
   let started = false;
+  // Last session id we've observed from the page; advances only when an init
+  // actually takes effect (i.e. wasn't suppressed by the cooldown guard).
+  let lastSessionId = 0;
 
-  async function inject(): Promise<void> {
-    await executor.execute(injectBundleScript as (...args: unknown[]) => void, rrwebBundle);
-    await executor.execute(
+  /** Run the init script in-page and return the active session id. */
+  async function runInit(): Promise<number> {
+    return executor.execute(
       tracelaneInitScript as (...args: unknown[]) => number,
       cooldownMs,
       consolePluginOptions,
     );
+  }
+
+  async function inject(): Promise<void> {
+    await executor.execute(injectBundleScript as (...args: unknown[]) => void, rrwebBundle);
+    lastSessionId = await runInit();
+  }
+
+  async function reinject(url: string): Promise<boolean> {
+    // Re-eval the bundle (the page may have been torn down by navigation), then
+    // re-run init. The cooldown guard inside the init script decides whether a
+    // fresh recorder actually starts.
+    await executor.execute(injectBundleScript as (...args: unknown[]) => void, rrwebBundle);
+    const sessionId = await runInit();
+    if (sessionId <= lastSessionId) {
+      // Suppressed by cooldown — no navigation boundary to record.
+      return false;
+    }
+    lastSessionId = sessionId;
+    await executor.execute(tracelaneNavScript as (...args: unknown[]) => void, url, Date.now());
+    return true;
   }
 
   async function drain(): Promise<eventWithTime[]> {
@@ -100,6 +131,7 @@ export function createRecorder(options: RecorderOptions): Recorder {
 
   return {
     start,
+    reinject,
     drain,
     stop,
     getBuffer: () => buffer,

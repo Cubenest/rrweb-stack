@@ -97,3 +97,15 @@ export function tracelaneDrainScript(): unknown[] {
   w.__tracelane__events = [];
   return out;
 }
+
+/**
+ * Append a `tracelane.nav` boundary marker (ADR-0006 / PRD §D.5) via rrweb's
+ * canonical custom-event API so the merged stream still has a navigation marker
+ * the player can render. No-op if rrweb isn't present.
+ */
+export function tracelaneNavScript(url: string, ts: number): void {
+  const w = window as unknown as {
+    rrweb?: { record?: { addCustomEvent?: (tag: string, payload: unknown) => void } };
+  };
+  w.rrweb?.record?.addCustomEvent?.('tracelane.nav', { url, ts });
+}
