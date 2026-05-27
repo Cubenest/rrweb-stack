@@ -11,3 +11,7 @@ export type { ConsolePluginOptions } from './page-script';
 // Capture mode switch (ADR-0005).
 export { DEFAULT_MODE, resolveMode } from './mode';
 export type { Mode } from './mode';
+
+// 25 MB report-size guard with FullSnapshot-preserving prune (ADR-0005).
+export { MAX_REPORT_BYTES, PRUNE_EVENT_TAG, pruneToSizeBudget, serializedSize } from './size-guard';
+export type { PruneEventPayload, PruneResult } from './size-guard';
