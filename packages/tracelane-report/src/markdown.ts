@@ -5,8 +5,7 @@
 // user-action log just before the failure. Built at report-build time and
 // embedded as the `MARKDOWN` const the copy button writes to the clipboard.
 
-import { IncrementalSource, MouseInteractions } from '@cubenest/rrweb-core';
-import { EventType } from '@cubenest/rrweb-core';
+import { EventType, IncrementalSource, MouseInteractions } from '@cubenest/rrweb-core';
 import type { eventWithTime } from '@cubenest/rrweb-core';
 import type { ConsoleEntry, NetworkEntry } from './panels';
 import type { ReportMeta } from './types';
