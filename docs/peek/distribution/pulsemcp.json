@@ -1,0 +1,43 @@
+{
+  "$comment": "Pre-fill for PulseMCP server registration (Task 3.30). DRAFT — DO NOT SUBMIT until Phase 5 launch. PulseMCP's primary discovery path is automated scraping of npm packages with the `mcp` keyword (per the distribution doc: 'PulseMCP scrapes daily from npm with the mcp keyword'). They also accept manual submissions via https://www.pulsemcp.com/submit which require the fields below. Confirm the exact submission form at submission time.",
+  "name": "peek",
+  "slug": "peek",
+  "npm_package": "@peekdev/mcp",
+  "github_repository": "https://github.com/Cubenest/rrweb-stack",
+  "homepage": "https://github.com/Cubenest/rrweb-stack/tree/main/packages/peek-mcp",
+  "short_description": "Bring your real authenticated browser session to AI coding agents. Local-first MCP server + Chrome extension.",
+  "long_description": "peek lets AI coding assistants see (and optionally drive) the user's actual logged-in browser. A Chrome MV3 extension records the session (rrweb DOM + console + network metadata, with PII masking) and ships it through a native-messaging stdio bridge to a local MCP server (`peek-mcp`). All data stays on the user's machine — sessions are persisted to a local SQLite database at `~/.peek/sessions.db`. Per-origin opt-in, five permission levels (Off → YOLO), and a destructive-action blocklist gate every action the agent can take.\n\nUse cases: debugging a flaky login flow with Claude Code, asking Cursor to reproduce a bug a teammate saw, having Cline scaffold a Playwright test from a session you just recorded, letting Windsurf walk through an admin dashboard you have access to but the agent does not.\n\nSee the privacy policy at docs/peek/PRIVACY_POLICY.md.",
+  "license": "Apache-2.0",
+  "transport": "stdio",
+  "language": "TypeScript",
+  "category": "developer-tools",
+  "tags": [
+    "browser",
+    "rrweb",
+    "session-recording",
+    "chrome-extension",
+    "local-first",
+    "privacy",
+    "session-replay"
+  ],
+  "install_instructions": {
+    "claude_desktop": "Add `peek` to `claude_desktop_config.json` -> `mcpServers`: `{ \"command\": \"npx\", \"args\": [\"-y\", \"@peekdev/mcp\"] }`",
+    "claude_code": "claude mcp add peek -- npx -y @peekdev/mcp",
+    "cursor": "Add to `.cursor/mcp.json` -> `mcpServers`: `{ \"command\": \"npx\", \"args\": [\"-y\", \"@peekdev/mcp\"] }`",
+    "extension": "Install the companion Chrome extension via the Chrome Web Store (link added at Phase 5 launch) — peek-mcp requires it to capture sessions."
+  },
+  "tools": [
+    "peek_sessions_list",
+    "peek_session_get",
+    "peek_execute_action",
+    "peek_request_authorization"
+  ],
+  "screenshots": [
+    "$TODO add screenshots/peek-sidepanel.png + screenshots/peek-session-view.png once the alpha UI freezes (Phase 3e is the prep chunk; UI screenshots come in Phase 4)."
+  ],
+  "TODO_VERIFY": [
+    "PulseMCP may require a 'gallery image' (1280×640 PNG) — produce alongside the CWS submission assets.",
+    "PulseMCP filters out 'low quality implementations' per their own stats page; the listing should explicitly mention the OSS license + tests + the published audit trail to clear that filter.",
+    "Confirm field names against the live submission form before Phase 5 (their form has evolved across 2024-2026)."
+  ]
+}
