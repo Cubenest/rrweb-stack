@@ -28,8 +28,7 @@
     "jsdom": "^25.0.1"
   },
   "publishConfig": {
-    "access": "public",
-    "provenance": true
+    "access": "public"
   },
   "repository": {
     "type": "git",
