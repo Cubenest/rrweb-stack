@@ -1,6 +1,6 @@
 {
   "name": "@peekdev/cli",
-  "version": "0.1.0-alpha.2",
+  "version": "0.1.0-alpha.3",
   "description": "peek command-line tool. A thin read-mostly client of the native host's ~/.peek/sessions.db (ADR-0007): status, sessions list/show/export/delete, the `peek init` MCP-client wizard, and `peek audit log`.",
   "license": "Apache-2.0",
   "type": "module",

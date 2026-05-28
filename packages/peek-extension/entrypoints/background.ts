@@ -1,6 +1,6 @@
 import { defineBackground } from 'wxt/utils/define-background';
 import { originFromUrl } from '../src/activation/origin';
-import { isOriginEnabled } from '../src/activation/storage';
+import { diffAddedOrigins, isOriginEnabled } from '../src/activation/storage';
 import { INITIAL_BACKOFF_MS, jitter, nextBackoffMs } from '../src/background/backoff';
 import {
   type NativeOutbound,
@@ -11,7 +11,7 @@ import {
 } from '../src/background/native-protocol';
 import { SessionRegistry } from '../src/background/session';
 import { RecorderStatsStore } from '../src/background/stats';
-import { NATIVE_HOST_ID } from '../src/constants';
+import { ENABLED_ORIGINS_KEY, NATIVE_HOST_ID } from '../src/constants';
 import {
   DEEP_CAPTURE_ORIGINS_KEY,
   DeepCaptureManager,
@@ -320,26 +320,68 @@ export default defineBackground({
       }
     });
 
-    // React to side-panel toggle changes immediately. Two responsibilities:
-    //  1. (ENABLE) Sync the active tab so a fresh-enable starts capturing now.
-    //  2. (DISABLE) For every origin just REMOVED, detach EVERY tab of that
-    //     origin — not only the active one. Otherwise a user with 3 background
-    //     tabs of the just-disabled origin keeps capturing response bodies in
-    //     those tabs until they activate one. That's a privacy regression
-    //     (the toggle must revoke immediately, not lazily).
+    /**
+     * P-11 fix (2026-05-28 QA walk): when the side panel enables a NEW
+     * origin, inject the MAIN-world recorder into every already-open tab of
+     * that origin immediately. Previously the recorder was only injected
+     * on `chrome.tabs.onUpdated{status:'loading'}` — meaning enabling a
+     * site required a reload before counters started moving and before any
+     * events reached the native host. `maybeInject` is internally
+     * idempotent (the in-page guard prevents double-init) and `injectRecorder`
+     * already returns a safe result on tabs the SW can't reach, so a
+     * defensive query over all matching tabs is correct here.
+     */
+    async function injectIntoEnabledOrigin(origin: string): Promise<void> {
+      let tabs: chrome.tabs.Tab[];
+      try {
+        // Match origin's URL prefix; chrome.tabs.query takes a URL pattern.
+        tabs = await chrome.tabs.query({ url: `${origin}/*` });
+      } catch (err) {
+        console.debug('[peek] tabs.query for added origin failed:', err);
+        return;
+      }
+      for (const tab of tabs) {
+        if (tab.id === undefined) continue;
+        void maybeInject(tab.id, tab.url);
+      }
+    }
+
+    // React to side-panel toggle changes immediately. Three responsibilities:
+    //  1. (DEEP-CAPTURE ENABLE) Sync the active tab so a fresh-enable starts
+    //     Deep capture now.
+    //  2. (DEEP-CAPTURE DISABLE) For every origin just REMOVED from Deep
+    //     capture, detach EVERY tab of that origin — not only the active one.
+    //     Otherwise a user with 3 background tabs of the just-disabled origin
+    //     keeps capturing response bodies in those tabs until they activate
+    //     one (privacy regression).
+    //  3. (ACTIVATION ENABLE — P-11) When `peek:enabledOrigins` gains a new
+    //     entry, inject the MAIN-world recorder into every already-open tab
+    //     of that origin so live counters and capture both start without
+    //     waiting for the user to reload.
     chrome.storage.onChanged.addListener((changes, area) => {
       if (area !== 'sync') return;
+
+      // (3) ACTIVATION ENABLE — inject into already-open tabs of newly-added
+      // origins so the user sees live capture without reloading (P-11).
+      const enabledChange = changes[ENABLED_ORIGINS_KEY];
+      if (enabledChange) {
+        const added = diffAddedOrigins(enabledChange.oldValue, enabledChange.newValue);
+        for (const origin of added) {
+          void injectIntoEnabledOrigin(origin);
+        }
+      }
+
       const change = changes[DEEP_CAPTURE_ORIGINS_KEY];
       if (!change) return;
 
-      // (1) ENABLE half — re-sync the active tab.
+      // (1) DEEP-CAPTURE ENABLE — re-sync the active tab.
       void chrome.tabs.query({ active: true, lastFocusedWindow: true }).then(([active]) => {
         if (active?.id !== undefined) {
           void syncDeepCaptureForTab(active.id, active.url);
         }
       });
 
-      // (2) DISABLE half — detach every tab of every removed origin.
+      // (2) DEEP-CAPTURE DISABLE — detach every tab of every removed origin.
       const removed = diffRemovedOrigins(change.oldValue, change.newValue);
       if (removed.length === 0) return;
       const mgr = deepCapture;

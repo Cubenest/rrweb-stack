@@ -152,7 +152,15 @@ export class TraceLaneSession {
     }
   }
 
-  /** WDIO `beforeCommand('url', ...)`: re-inject the recorder after navigation. */
+  /**
+   * WDIO `afterCommand('url', ...)`: re-inject the recorder AFTER the
+   * navigation has landed (T-9 fix). The Service / hooks factory used to
+   * call this from `beforeCommand`, but that fired before the navigation —
+   * the page was about to be torn down, and the freshly-re-injected rrweb
+   * + the `__tracelane__events` buffer were both wiped by the load. Now we
+   * inject on the NEW page so events flow from the first FullSnapshot
+   * forward.
+   */
   async onUrl(url: string): Promise<void> {
     if (!this.recorder) return;
     await this.recorder.reinject(url);

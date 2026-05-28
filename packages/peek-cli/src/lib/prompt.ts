@@ -79,3 +79,48 @@ export async function confirm(message: string, defaultYes = true): Promise<boole
     rl.close();
   }
 }
+
+/**
+ * Free-form text prompt with optional validation + retry. Returns the trimmed
+ * input — or undefined if the user submits an empty line and `allowEmpty` is
+ * true (the caller can interpret empty as "skip").
+ *
+ * `validate` returns `null` for OK or a message string to print as the reason
+ * and re-ask. Used by `peek init` to capture the unpacked-extension ID with a
+ * Chrome-shape check (P-10 fix, 2026-05-28 QA walk).
+ */
+export async function promptText(
+  message: string,
+  options: {
+    validate?: (raw: string) => string | null;
+    allowEmpty?: boolean;
+  } = {},
+): Promise<string | undefined> {
+  const { validate, allowEmpty = false } = options;
+  const rl = createInterface({ input: process.stdin, output: process.stdout });
+  try {
+    // Re-ask on validation failure until the user enters a valid value (or an
+    // empty line when allowed). Bounded to a small constant so a non-TTY pipe
+    // can't lock the wizard if it keeps streaming garbage.
+    for (let attempt = 0; attempt < 5; attempt += 1) {
+      const raw = (await ask(rl, message)).trim();
+      if (raw.length === 0) {
+        if (allowEmpty) return undefined;
+        process.stdout.write('  (empty input not allowed; please try again)\n');
+        continue;
+      }
+      if (validate) {
+        const err = validate(raw);
+        if (err !== null) {
+          process.stdout.write(`  ${err}\n`);
+          continue;
+        }
+      }
+      return raw;
+    }
+    process.stdout.write('  (too many invalid attempts; skipping)\n');
+    return undefined;
+  } finally {
+    rl.close();
+  }
+}

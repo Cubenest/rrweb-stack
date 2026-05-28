@@ -19,6 +19,7 @@ import {
   realSink,
   resolveInstallTargets,
 } from '@peekdev/mcp/native-host';
+import { chromeExtensionOrigin, validateChromeExtensionId } from '../lib/extension-id.js';
 import { atomicWriteFileSync } from '../lib/fs-atomic.js';
 import {
   type DetectedClient,
@@ -29,7 +30,7 @@ import {
   mergePeekConfig,
   serializeConfig,
 } from '../lib/init-config.js';
-import { confirm, multiSelect } from '../lib/prompt.js';
+import { confirm, multiSelect, promptText } from '../lib/prompt.js';
 
 const SUPPORTED: readonly SupportedPlatform[] = ['darwin', 'linux', 'win32'];
 
@@ -157,6 +158,40 @@ async function registerNativeHost(platform: SupportedPlatform, homeDir: string):
       `Could not load extension IDs (${err instanceof Error ? err.message : String(err)}); skipping native-host registration.\n`,
     );
     return;
+  }
+
+  // P-10 (2026-05-28 QA walk): the shipped extension-ids.json carries
+  // `PLACEHOLDER_*` strings for every slot until the extension is in the
+  // Chrome Web Store / Edge Add-ons, and `allowedOrigins()` (correctly) drops
+  // those. With nothing else to fill in, the written manifest ends up with
+  // `"allowed_origins": []` and Chrome silently blocks
+  // `chrome.runtime.connectNative()` — zero sessions ever reach the host.
+  //
+  // The fix: prompt for the locally-loaded extension's ID (the per-machine
+  // 32-char a–p string Chrome assigns to an unpacked extension), validate
+  // its shape, and override extensionIds.dev with the captured value before
+  // building the manifest. An empty submission is OK — only sensible for a
+  // user loading the published CWS build, where the chromeWebStore slot is
+  // populated and the `dev` placeholder doesn't matter.
+  process.stdout.write(
+    [
+      '',
+      'Paste your unpacked extension ID (from chrome://extensions/, Developer mode toggle ON).',
+      "Leave empty to skip — only do this if you're loading the published CWS build.",
+      '',
+    ].join('\n'),
+  );
+  const captured = await promptText('Extension ID: ', {
+    validate: validateChromeExtensionId,
+    allowEmpty: true,
+  });
+  if (captured) {
+    extensionIds = { ...extensionIds, dev: captured };
+    process.stdout.write(`allowed_origins includes: ${chromeExtensionOrigin(captured)}\n`);
+  } else {
+    process.stdout.write(
+      'No extension ID provided — `allowed_origins` will only include published IDs (if any).\n',
+    );
   }
 
   const allTargets = resolveInstallTargets(platform, homeDir);
