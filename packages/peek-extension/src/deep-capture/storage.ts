@@ -98,6 +98,26 @@ export async function enableDeepCapture(
   });
 }
 
+/**
+ * Compute origins that were in `oldValue` (a `string[]`) but are no longer in
+ * `newValue` — i.e. the just-disabled set on a `peek:deepCaptureOrigins`
+ * change. Defensive against the storage event's loose typing: a missing /
+ * non-array field is treated as an empty list. Pure + side-effect-free.
+ *
+ * The SW's `chrome.storage.onChanged` handler uses this to figure out which
+ * tabs need an immediate `chrome.debugger.detach` (privacy: a toggle-off must
+ * revoke every tab of the disabled origin, not just the active one).
+ */
+export function diffRemovedOrigins(oldValue: unknown, newValue: unknown): readonly string[] {
+  const before = Array.isArray(oldValue)
+    ? oldValue.filter((s): s is string => typeof s === 'string')
+    : [];
+  const after = new Set(
+    Array.isArray(newValue) ? newValue.filter((s): s is string => typeof s === 'string') : [],
+  );
+  return before.filter((o) => !after.has(o));
+}
+
 /** Remove Deep capture for an origin (the "off" half of the toggle). */
 export async function disableDeepCapture(
   originOrUrl: string,

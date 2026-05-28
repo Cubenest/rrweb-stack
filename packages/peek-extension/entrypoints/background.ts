@@ -16,6 +16,7 @@ import {
   DEEP_CAPTURE_ORIGINS_KEY,
   DeepCaptureManager,
   buildChromeDebuggerSurface,
+  diffRemovedOrigins,
   isDeepCaptureEnabled,
 } from '../src/deep-capture';
 import type { Cmd, CmdResponse, NativeHostState, RelayAck } from '../src/messaging/protocol';
@@ -319,15 +320,40 @@ export default defineBackground({
       }
     });
 
-    // React to side-panel toggle changes immediately for the active tab.
+    // React to side-panel toggle changes immediately. Two responsibilities:
+    //  1. (ENABLE) Sync the active tab so a fresh-enable starts capturing now.
+    //  2. (DISABLE) For every origin just REMOVED, detach EVERY tab of that
+    //     origin — not only the active one. Otherwise a user with 3 background
+    //     tabs of the just-disabled origin keeps capturing response bodies in
+    //     those tabs until they activate one. That's a privacy regression
+    //     (the toggle must revoke immediately, not lazily).
     chrome.storage.onChanged.addListener((changes, area) => {
       if (area !== 'sync') return;
-      if (!(DEEP_CAPTURE_ORIGINS_KEY in changes)) return;
+      const change = changes[DEEP_CAPTURE_ORIGINS_KEY];
+      if (!change) return;
+
+      // (1) ENABLE half — re-sync the active tab.
       void chrome.tabs.query({ active: true, lastFocusedWindow: true }).then(([active]) => {
         if (active?.id !== undefined) {
           void syncDeepCaptureForTab(active.id, active.url);
         }
       });
+
+      // (2) DISABLE half — detach every tab of every removed origin.
+      const removed = diffRemovedOrigins(change.oldValue, change.newValue);
+      if (removed.length === 0) return;
+      const mgr = deepCapture;
+      if (mgr === null) return; // manager never built — nothing attached anyway
+      for (const origin of removed) {
+        void mgr.detachOrigin(origin, async (tabId) => {
+          try {
+            const tab = await chrome.tabs.get(tabId);
+            return tab.url;
+          } catch {
+            return undefined; // tab is gone — let detach-on-close handle it
+          }
+        });
+      }
     });
 
     // --- Tab teardown ------------------------------------------------------

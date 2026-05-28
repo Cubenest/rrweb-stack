@@ -23,6 +23,7 @@
  * users see — actual end-to-end with the live CDP is Phase 3e E2E).
  */
 
+import { originFromUrl } from '../activation/origin.js';
 import type { NetMessage } from '../recorder/messages.js';
 import { maskNetMessage } from '../relay/mask.js';
 
@@ -113,6 +114,38 @@ export class DeepCaptureManager {
   async detachAll(): Promise<void> {
     const ids = [...this.#attached.keys()];
     await Promise.all(ids.map((id) => this.detach(id)));
+  }
+
+  /**
+   * Detach every attached tab whose URL has the given origin. Used by the SW
+   * when the user disables Deep capture for an origin — the toggle MUST revoke
+   * immediately for ALL tabs of that origin, not just the active one. Otherwise
+   * background tabs continue capturing response bodies until the user activates
+   * them (a privacy regression).
+   *
+   * @param origin the bare origin (`https://example.com`) just removed from the
+   *   persisted opt-in list.
+   * @param resolveUrl async resolver from tabId → current URL (the SW wires
+   *   `chrome.tabs.get`). Returns `undefined` if the tab is gone / inaccessible
+   *   — those tabs are skipped (detach-on-close handles them separately).
+   * @returns the tabIds that were detached.
+   */
+  async detachOrigin(
+    origin: string,
+    resolveUrl: (tabId: number) => Promise<string | undefined>,
+  ): Promise<readonly number[]> {
+    const candidates = [...this.#attached.keys()];
+    const urls = await Promise.all(candidates.map((id) => resolveUrl(id).catch(() => undefined)));
+    const toDetach: number[] = [];
+    for (let i = 0; i < candidates.length; i++) {
+      const url = urls[i];
+      if (!url) continue;
+      if (originFromUrl(url) !== origin) continue;
+      // biome-ignore lint/style/noNonNullAssertion: paired with urls[i] above
+      toDetach.push(candidates[i]!);
+    }
+    await Promise.all(toDetach.map((id) => this.detach(id)));
+    return toDetach;
   }
 
   // ---- internals -----------------------------------------------------------

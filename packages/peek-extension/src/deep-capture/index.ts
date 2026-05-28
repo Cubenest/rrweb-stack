@@ -16,6 +16,7 @@ export {
 export {
   DEEP_CAPTURE_ORIGINS_KEY,
   type StorageAreaLike,
+  diffRemovedOrigins,
   disableDeepCapture,
   enableDeepCapture,
   getDeepCaptureOrigins,

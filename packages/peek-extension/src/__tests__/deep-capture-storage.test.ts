@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
   DEEP_CAPTURE_ORIGINS_KEY,
   type StorageAreaLike,
+  diffRemovedOrigins,
   disableDeepCapture,
   enableDeepCapture,
   getDeepCaptureOrigins,
@@ -68,5 +69,38 @@ describe('Deep capture origin store', () => {
 
   it('isDeepCaptureEnabled returns false for a non-http(s) URL', async () => {
     expect(await isDeepCaptureEnabled('chrome://extensions', area)).toBe(false);
+  });
+});
+
+describe('diffRemovedOrigins (storage.onChanged diff)', () => {
+  it('returns origins present in oldValue but absent from newValue', () => {
+    expect(
+      diffRemovedOrigins(['https://a.com', 'https://b.com', 'https://c.com'], ['https://b.com']),
+    ).toEqual(['https://a.com', 'https://c.com']);
+  });
+
+  it('returns [] when newValue is a superset (an enable event)', () => {
+    expect(diffRemovedOrigins(['https://a.com'], ['https://a.com', 'https://b.com'])).toEqual([]);
+  });
+
+  it('treats undefined / non-array oldValue as empty', () => {
+    expect(diffRemovedOrigins(undefined, [])).toEqual([]);
+    expect(diffRemovedOrigins('garbage', ['https://a.com'])).toEqual([]);
+  });
+
+  it('treats undefined / non-array newValue as empty (every old origin counts as removed)', () => {
+    expect(diffRemovedOrigins(['https://a.com', 'https://b.com'], undefined)).toEqual([
+      'https://a.com',
+      'https://b.com',
+    ]);
+  });
+
+  it('ignores non-string entries in either side', () => {
+    expect(
+      diffRemovedOrigins(
+        ['https://a.com', 42 as unknown as string, null as unknown as string],
+        ['https://a.com'],
+      ),
+    ).toEqual([]);
   });
 });

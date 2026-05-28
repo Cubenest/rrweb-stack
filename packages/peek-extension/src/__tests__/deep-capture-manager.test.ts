@@ -136,6 +136,64 @@ describe('DeepCaptureManager — attach lifecycle', () => {
     expect(mgr.attachedTabs).toEqual([]);
     expect(fk.detaches.map((d) => d.tabId).sort()).toEqual([1, 2, 3]);
   });
+
+  // Privacy: a toggle-off must revoke immediately for every tab of the
+  // disabled origin, not just the active one. Without this, background tabs of
+  // the disabled origin keep capturing response bodies until the user
+  // activates one.
+  it('detachOrigin() detaches every attached tab whose URL matches that origin', async () => {
+    const fk = fakeDebugger();
+    const mgr = new DeepCaptureManager({ debugger: fk.surface, onBody: () => undefined });
+    await mgr.attach(10);
+    await mgr.attach(11);
+    await mgr.attach(20);
+
+    const urlByTab: Record<number, string> = {
+      10: 'https://example.com/a',
+      11: 'https://example.com/b',
+      20: 'https://other.com/c',
+    };
+    const detached = await mgr.detachOrigin(
+      'https://example.com',
+      async (tabId) => urlByTab[tabId],
+    );
+
+    expect([...detached].sort()).toEqual([10, 11]);
+    expect([...mgr.attachedTabs].sort()).toEqual([20]);
+    expect(fk.detaches.map((d) => d.tabId).sort()).toEqual([10, 11]);
+  });
+
+  it('detachOrigin() skips tabs whose URL is now unresolvable (closed/gone)', async () => {
+    const fk = fakeDebugger();
+    const mgr = new DeepCaptureManager({ debugger: fk.surface, onBody: () => undefined });
+    await mgr.attach(30);
+    await mgr.attach(31);
+
+    const detached = await mgr.detachOrigin('https://example.com', async (tabId) => {
+      if (tabId === 30) return 'https://example.com/x';
+      throw new Error('tab gone');
+    });
+    expect([...detached]).toEqual([30]);
+    expect(mgr.attachedTabs).toEqual([31]); // 31 is left alone (URL unknown)
+  });
+
+  it('detachOrigin() leaves OTHER origins attached and does nothing on a no-match origin', async () => {
+    const fk = fakeDebugger();
+    const mgr = new DeepCaptureManager({ debugger: fk.surface, onBody: () => undefined });
+    await mgr.attach(40);
+    await mgr.attach(41);
+    const urlByTab: Record<number, string> = {
+      40: 'https://a.test/',
+      41: 'https://b.test/',
+    };
+    const detached = await mgr.detachOrigin(
+      'https://nothing.test',
+      async (tabId) => urlByTab[tabId],
+    );
+    expect(detached).toEqual([]);
+    expect([...mgr.attachedTabs].sort()).toEqual([40, 41]);
+    expect(fk.detaches).toEqual([]);
+  });
 });
 
 describe('DeepCaptureManager — response body capture', () => {
