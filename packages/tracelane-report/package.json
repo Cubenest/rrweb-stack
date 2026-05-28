@@ -32,7 +32,7 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/Cubenest/rrweb-stack.git",
+    "url": "https://github.com/Cubenest/rrweb-stack",
     "directory": "packages/tracelane-report"
   },
   "homepage": "https://github.com/Cubenest/rrweb-stack/tree/main/packages/tracelane-report#readme"
