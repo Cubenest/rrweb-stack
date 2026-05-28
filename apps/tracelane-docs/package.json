@@ -1,0 +1,22 @@
+{
+  "name": "tracelane-docs",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Docs site for tracelane — the OSS WDIO/Playwright/Cypress test-recorder. Astro static site.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "scripts": {
+    "dev": "ASTRO_TELEMETRY_DISABLED=1 astro dev",
+    "build": "ASTRO_TELEMETRY_DISABLED=1 astro build",
+    "preview": "ASTRO_TELEMETRY_DISABLED=1 astro preview",
+    "typecheck": "ASTRO_TELEMETRY_DISABLED=1 astro check",
+    "test": "echo 'no tests' && exit 0"
+  },
+  "dependencies": {
+    "astro": "^5.18.2"
+  },
+  "devDependencies": {
+    "@astrojs/check": "^0.9.4",
+    "typescript": "^5.7.2"
+  }
+}

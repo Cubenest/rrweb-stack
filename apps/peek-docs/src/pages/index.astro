@@ -1,0 +1,88 @@
+---
+import Layout from '../layouts/Layout.astro';
+---
+
+<Layout title="peek — local-first browser companion for AI coding agents">
+  <h1>peek</h1>
+  <p class="tagline">See what your AI agent sees &mdash; without sending it to anyone&apos;s cloud.</p>
+
+  <div class="badges">
+    <span class="badge">Apache 2.0</span>
+    <span class="badge">alpha</span>
+    <span class="badge">local-first</span>
+    <span class="badge">MCP</span>
+  </div>
+
+  <p>
+    <strong>peek</strong> is an open-source browser companion: a Chrome extension
+    plus a stdio <a href="https://modelcontextprotocol.io" rel="noopener">MCP</a>
+    server plus a small CLI. It records your real, authenticated browser session
+    to a local SQLite database and exposes that session as MCP tools to AI coding
+    agents like <strong>Claude Code</strong>, <strong>Cursor</strong>,
+    <strong>Cline</strong>, and <strong>Windsurf</strong>.
+  </p>
+
+  <p>
+    Everything stays on your machine. No telemetry, no remote endpoints, no
+    third-party SDKs &mdash; the browser talks to the local host over Chrome
+    native messaging (stdio), and the database lives at <code>~/.peek/sessions.db</code>.
+  </p>
+
+  <div class="btn-row">
+    <a class="cta" href="/getting-started">Getting started &rarr;</a>
+    <a class="cta secondary" href="https://github.com/Cubenest/rrweb-stack/tree/main/packages/peek-mcp" rel="noopener">View on GitHub</a>
+  </div>
+
+  <h2>What it does</h2>
+  <div class="feature-grid">
+    <div class="feature">
+      <h3>Per-site, opt-in capture</h3>
+      <p>No <code>&lt;all_urls&gt;</code> permission. You enable peek per origin in the side panel; it records nothing until you do.</p>
+    </div>
+    <div class="feature">
+      <h3>Five-level permission model</h3>
+      <p>From Level 1 (observe-only, default) to Level 4 (YOLO, time-boxed) &mdash; per origin. Destructive actions always prompt, even at YOLO.</p>
+    </div>
+    <div class="feature">
+      <h3>Local SQLite store</h3>
+      <p>Sessions, console events, network metadata, and audit logs live in <code>~/.peek/sessions.db</code>. Delete or export with the <code>peek</code> CLI.</p>
+    </div>
+    <div class="feature">
+      <h3>Opt-in Deep capture</h3>
+      <p>Toggle Deep capture per origin to record response bodies via <code>chrome.debugger</code>. Bodies are masked and capped at 256&nbsp;KB.</p>
+    </div>
+    <div class="feature">
+      <h3>MCP read tools for agents</h3>
+      <p>List, fetch, and search sessions. Inspect console + network. Replay recent rrweb frames. All over standard MCP &mdash; works with any MCP-aware client.</p>
+    </div>
+    <div class="feature">
+      <h3>Level-3 write tools (opt-in)</h3>
+      <p><code>execute_action</code> and <code>request_authorization</code> let an agent take one-shot UI actions &mdash; gated by per-action user confirmation in the side panel.</p>
+    </div>
+  </div>
+
+  <h2>Packages</h2>
+  <ul>
+    <li><code>@peekdev/mcp</code> &mdash; the native host + stdio MCP server. <a href="https://www.npmjs.com/package/@peekdev/mcp" rel="noopener">npm</a></li>
+    <li><code>@peekdev/cli</code> &mdash; <code>peek init</code>, <code>peek status</code>, sessions list/show/export/delete, audit log. <a href="https://www.npmjs.com/package/@peekdev/cli" rel="noopener">npm</a></li>
+    <li><code>@peekdev/extension</code> &mdash; the Chrome MV3 extension. Loaded unpacked during alpha &mdash; the Chrome Web Store listing is Phase 5.</li>
+  </ul>
+
+  <h2>Privacy</h2>
+  <p>
+    peek is local-first by design. Nothing leaves your machine. The full
+    data-handling policy is on <a href="/privacy">the privacy page</a> &mdash; it
+    is also the canonical policy used for the Chrome Web Store listing.
+  </p>
+
+  <div class="callout">
+    <strong>Alpha note.</strong> The Chrome extension is loaded unpacked today
+    (see <a href="/getting-started">Getting started</a>). The Chrome Web Store
+    listing is part of Phase&nbsp;5; once published, the &ldquo;Install&rdquo; step will
+    collapse to a single button.
+  </div>
+
+  <p style="color: var(--fg-muted); font-size: 0.9rem; margin-top: 2rem;">
+    Repository: <a href="https://github.com/Cubenest/rrweb-stack" rel="noopener">github.com/Cubenest/rrweb-stack</a>.
+  </p>
+</Layout>

@@ -1,0 +1,104 @@
+---
+import Layout from '../layouts/Layout.astro';
+---
+
+<Layout title="Privacy policy &middot; peek">
+  <h1>Privacy policy</h1>
+  <p class="tagline">Local-first. Nothing leaves your machine.</p>
+
+  <p style="color: var(--fg-muted); font-size: 0.9rem;">Last updated: 2026-05-28.</p>
+
+  <p>
+    peek is a local-first developer tool. The Chrome extension captures your real
+    browser session and ships it through a <strong>native-messaging stdio
+    bridge</strong> to a <strong>local</strong> MCP server (<code>peek-mcp</code>).
+    No remote endpoints, no telemetry, no analytics, no third-party SDKs.
+  </p>
+  <p>
+    This page is the canonical privacy policy used for the Chrome Web Store
+    listing. The source markdown lives at
+    <a href="https://github.com/Cubenest/rrweb-stack/blob/main/docs/peek/PRIVACY_POLICY.md" rel="noopener"><code>docs/peek/PRIVACY_POLICY.md</code></a>.
+  </p>
+
+  <h2>What peek processes</h2>
+  <ul>
+    <li><strong>DOM + interaction events</strong> &mdash; a masked rrweb session. PII heuristics mask form values and inputs with <code>password</code> / <code>email</code> / autocomplete tokens before forwarding.</li>
+    <li><strong>Console events</strong> &mdash; <code>console.log</code>/<code>info</code>/<code>warn</code>/<code>error</code>/<code>debug</code> arguments, with the same masking.</li>
+    <li><strong>Network metadata</strong> &mdash; request URL (path masked), method, status, timing, initiator. Bodies are <em>not</em> captured at this level.</li>
+    <li><strong>Network bodies (opt-in &ldquo;Deep capture&rdquo; only)</strong> &mdash; when you toggle Deep capture for a specific origin, the extension attaches <code>chrome.debugger</code> to that tab and records response bodies. Bodies are masked and capped at 256&nbsp;KB.</li>
+    <li><strong>Shadow-DOM reports</strong> &mdash; counts of closed shadow roots peek could not recurse into (diagnostic only &mdash; no contents).</li>
+  </ul>
+
+  <p>peek <strong>does not</strong> record:</p>
+  <ul>
+    <li>Sites you have not explicitly enabled. There is no <code>&lt;all_urls&gt;</code> host permission.</li>
+    <li>Background tabs you are not actively recording.</li>
+    <li>Any traffic outside the tab origins you opt in to.</li>
+  </ul>
+
+  <h2>Where the data goes</h2>
+  <ol>
+    <li><strong>Browser extension</strong> &mdash; masks events in the page (ISOLATED-world content script) before passing them to the service worker.</li>
+    <li><strong>Service worker</strong> &mdash; forwards events to the local native host via <code>chrome.runtime.connectNative(&apos;com.peekdev.host&apos;)</code>. stdio pipe; no sockets, no localhost HTTP, no DNS.</li>
+    <li><strong><code>peek-mcp</code> native host</strong> &mdash; persists events to a local SQLite database at <code>~/.peek/sessions.db</code> (POSIX) or <code>%APPDATA%\\peek\\sessions.db</code> (Windows). Large event chunks are gzipped to <code>~/.peek/rrweb-events/</code>.</li>
+    <li><strong>AI coding agents</strong> &mdash; when you point Claude Code / Cursor / Cline / Windsurf at the <code>peek-mcp</code> MCP server, the agent reads sessions from the local SQLite database. Reads are gated by the permission model below.</li>
+  </ol>
+
+  <p>No cloud sync. No telemetry endpoint. No third-party data sharing.</p>
+
+  <h2>Permission model</h2>
+  <p>Per-origin, 5 levels. Default is <strong>Level&nbsp;1 &mdash; Observe only</strong>.</p>
+  <ul>
+    <li><strong>Level 0 &mdash; Off:</strong> recording suppressed; tool surface disabled for the origin.</li>
+    <li><strong>Level 1 &mdash; Observe (default):</strong> read recorded sessions only.</li>
+    <li><strong>Level 2 &mdash; Suggest:</strong> read + propose actions (no execution).</li>
+    <li><strong>Level 3 &mdash; Confirm:</strong> read + execute one-shot actions with per-action user confirmation.</li>
+    <li><strong>Level 4 &mdash; YOLO:</strong> read + execute without per-action prompts (60-min, tab-scoped). Destructive-action terms still prompt.</li>
+  </ul>
+  <p>
+    <strong>Destructive-action blocklist override</strong> &mdash; even at Level 4 YOLO,
+    targets matching &ldquo;delete&rdquo;, &ldquo;remove&rdquo;, &ldquo;drop&rdquo;,
+    &ldquo;uninstall&rdquo;, &ldquo;transfer&rdquo;, &ldquo;send&rdquo;,
+    &ldquo;pay&rdquo;, etc. require explicit confirmation.
+  </p>
+  <p>
+    <strong>Deep capture</strong> &mdash; separately gated. Requires (a) the optional
+    <code>debugger</code> Chrome permission, requested at user-gesture time, and
+    (b) per-origin opt-in via the &ldquo;Deep capture&rdquo; toggle. Disabling Deep
+    capture for an origin detaches the debugger from <em>every</em> tab on that
+    origin immediately.
+  </p>
+
+  <h2>User controls</h2>
+  <ul>
+    <li><strong>Per-site Enable / Disable</strong> in the side panel.</li>
+    <li><strong>Deep capture toggle</strong> &mdash; separate, per-origin. Off by default.</li>
+    <li><strong>Permission level</strong> &mdash; set per origin. Default Level 1.</li>
+    <li><strong>Delete a session</strong> &mdash; <code>peek delete &lt;session-id&gt;</code> or remove rows from <code>~/.peek/sessions.db</code> directly.</li>
+    <li><strong>Delete all data</strong> &mdash; <code>rm -rf ~/.peek/</code> (POSIX) or remove <code>%APPDATA%\\peek\\</code> (Windows).</li>
+    <li><strong>Audit log</strong> &mdash; every action dispatched through the <code>execute_action</code> MCP tool is recorded to <code>~/.peek/audit.log</code> (mode 0600).</li>
+    <li><strong>Pause</strong> &mdash; set permission level to 0 (Off) on an origin to suppress recording without losing the per-origin opt-in.</li>
+  </ul>
+
+  <h2>Open source</h2>
+  <p>
+    peek is Apache 2.0. The privacy posture above can be verified by reading the
+    source &mdash; particularly the masking in
+    <code>packages/peek-extension/src/relay/mask.ts</code>, the native port in
+    <code>packages/peek-extension/entrypoints/background.ts</code>, and the
+    stdin/stdout handler in <code>packages/peek-mcp/src/native-host/</code>.
+  </p>
+  <p>
+    No build phase, no installer, and no runtime path makes network calls to any
+    host outside <code>chrome.runtime.connectNative(&apos;com.peekdev.host&apos;)</code>.
+  </p>
+
+  <h2>Contact &amp; changes</h2>
+  <p>
+    For questions or to report a privacy issue, open an issue on the
+    <a href="https://github.com/Cubenest/rrweb-stack/issues" rel="noopener">repository</a>
+    or email <a href="mailto:harish.kumar@capillarytech.com">harish.kumar@capillarytech.com</a>.
+    Material changes to this policy bump the date at the top and are noted in
+    the repository&apos;s <code>CHANGELOG</code>.
+  </p>
+</Layout>

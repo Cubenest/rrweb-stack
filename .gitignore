@@ -7,6 +7,8 @@ build/
 .turbo/
 .next/
 .vercel/
+# Astro (apps/*-docs) — generated content-types + build cache.
+.astro/
 .DS_Store
 .idea/
 .vscode/*
