@@ -1,0 +1,66 @@
+{
+  "$comment": "Pre-fill for Smithery MCP server registration (Task 3.30). DRAFT — DO NOT SUBMIT until Phase 5 launch. The Smithery server schema lives at https://smithery.ai/docs/build/project-config and is captured in `smithery.yaml` at the root of an MCP server repo. This file holds the same fields in JSON form so the agent that lands the submission PR can transcribe them verbatim. Verify field names against the latest Smithery schema before submitting — Smithery has changed schema versions in the past (v1 → v2 transition documented in their changelog).",
+  "name": "peek",
+  "displayName": "peek",
+  "description": "Bring your real authenticated browser session to AI coding agents. Local-first MCP server backed by a Chrome MV3 extension that records rrweb + console + network into a local SQLite database. No telemetry, no cloud — sessions stay on the user's machine.",
+  "homepage": "https://github.com/Cubenest/rrweb-stack/tree/main/packages/peek-mcp",
+  "repository": "https://github.com/Cubenest/rrweb-stack",
+  "license": "Apache-2.0",
+  "author": "Cubenest",
+  "category": "developer-tools",
+  "tags": ["browser", "rrweb", "session-recording", "chrome-extension", "local-first", "privacy"],
+  "transport": "stdio",
+  "runtime": "node",
+  "install": {
+    "npm": "@peekdev/mcp",
+    "command": "npx",
+    "args": ["-y", "@peekdev/mcp"]
+  },
+  "configuration": {
+    "claude_desktop": {
+      "mcpServers": {
+        "peek": {
+          "command": "npx",
+          "args": ["-y", "@peekdev/mcp"]
+        }
+      }
+    },
+    "cursor": {
+      ".cursor/mcp.json": {
+        "mcpServers": {
+          "peek": {
+            "command": "npx",
+            "args": ["-y", "@peekdev/mcp"]
+          }
+        }
+      }
+    },
+    "claude_code": {
+      "command": "claude mcp add peek -- npx -y @peekdev/mcp"
+    }
+  },
+  "tools": [
+    {
+      "name": "peek_sessions_list",
+      "description": "List recorded browser sessions in the local SQLite database."
+    },
+    {
+      "name": "peek_session_get",
+      "description": "Fetch a recorded session by id — DOM events, console, network metadata, optional masked bodies."
+    },
+    {
+      "name": "peek_execute_action",
+      "description": "Dispatch a UI action to a recorded site, gated by the per-origin permission model (Level 0-4) and the destructive-action blocklist."
+    },
+    {
+      "name": "peek_request_authorization",
+      "description": "Request user confirmation in the extension's side panel before executing a sensitive action."
+    }
+  ],
+  "TODO_VERIFY": [
+    "Smithery may require a `mcpVersion` field aligned with the @modelcontextprotocol/sdk version we ship.",
+    "Smithery may require a `pricing` field (typically `free` for OSS).",
+    "Confirm `category` against Smithery's enumerated list at submission time (developer-tools is most likely correct).",
+    "Smithery may require a public Chrome Web Store URL for the companion extension — add once the CWS listing is live (Phase 4-5)."
+  ]
+}
