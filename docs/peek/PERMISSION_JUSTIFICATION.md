@@ -1,0 +1,68 @@
+# peek — Chrome Web Store Permission Justifications
+
+This is the literal Chrome Web Store submission text for the per-permission
+**"Purpose"** field. Source of truth for the declared permissions is
+[`packages/peek-extension/wxt.config.ts`](../../packages/peek-extension/wxt.config.ts);
+this table must stay in sync with that manifest.
+
+## Single-purpose statement
+
+peek's single purpose: **let a developer record their authenticated browser
+session on opted-in sites and expose that recording to local AI coding
+assistants via a stdio MCP bridge.** All recording, storage, and replay
+happen on the user's machine.
+
+## Host permissions
+
+| Field | Value | Justification |
+|---|---|---|
+| `host_permissions` | `[]` (empty) | peek deliberately requests **no static host permissions**. The install card shows no "Read and change your data on all websites" warning. See ADR-0008. |
+| `optional_host_permissions` | `https://*/*`, `http://*/*` | Recording must be opt-in per site. The broad pattern lives in `optional_host_permissions` and is requested **from a user gesture** in the side panel via `chrome.permissions.request({ origins: [origin] })` — once per site the user enables. Narrower alternatives (e.g. only `https://*/*`) would break recording on local dev servers, which is a primary use case. |
+
+## Permissions (static)
+
+These are declared in `manifest.permissions` and granted at install time.
+
+| Permission | Use case | Why narrower won't work |
+|---|---|---|
+| `activeTab` | Inject the rrweb recorder into the user-clicked tab without holding a broad host permission. Used by `chrome.scripting.executeScript` when the side panel's "Enable" button is clicked. | Without `activeTab`, every "Enable on this site" click would require a full origin grant up front, which fails on click handlers that navigate immediately (e.g. SPA routing). `activeTab` covers the gesture-bound case where the user has just clicked the toolbar action. |
+| `scripting` | Programmatic `chrome.scripting.executeScript` for MAIN-world rrweb injection. The rrweb engine must run in the page's MAIN world to access the real DOM. | A static `<script>` content script runs only in ISOLATED world (no access to the page's `window` / `document` mutations). `world: 'MAIN'` execution requires `chrome.scripting`. |
+| `storage` | Persist per-site opt-in state, per-origin permission level (0-4), Deep-capture per-origin toggle, and side-panel UI state via `chrome.storage.sync` / `chrome.storage.session`. | No narrower API exists. `localStorage` is per-origin and unavailable in the service worker. |
+| `alarms` | Periodic cleanup of stale sessions (1× / 30 min) and reconnect backoff for the native port. | `setTimeout` is unreliable in MV3 service workers (workers terminate after 30 s idle; timers are lost). `chrome.alarms` is the documented MV3-safe pattern. |
+| `tabs` | Read `tab.url` / `tab.title` to (a) gate recorder injection on per-origin opt-in, (b) display "Recording: example.com" in the side panel, (c) detach the debugger from **every** tab of an origin when Deep capture is disabled (privacy enforcement, not lazy). | The narrower `activeTab` does not surface `tab.url` for non-active tabs, which is required for the Deep-capture privacy-revocation path. |
+| `sidePanel` | The peek UI is a side panel. It needs to stay open while the user reads code in their AI tool and decides whether to approve a proposed action ("Claude wants to click *Submit*"). Popups close on blur, so they cannot host the action-authorization UX. | `chrome.action` popup closes on focus loss. The action-authorization flow requires a persistent surface; only `sidePanel` provides that without host permissions (see ADR-0008 + the Chrome DevRel side-panel privacy-win note in P2 PRD §A.5). |
+| `nativeMessaging` | The service worker connects to a local stdio host (`peek-mcp --native-host`) via `chrome.runtime.connectNative('com.peekdev.host')`. The connection serves a dual purpose: (a) keeps the MV3 SW alive (Chrome's documented native-port keep-alive anchor), and (b) ships captured events to the local SQLite database **without** opening any sockets or DNS lookups. | A localhost HTTP server would require a host permission for `http://localhost:*/*`, plus would expose peek to DNS-rebinding attacks (the modelcontextprotocol/typescript-sdk docs flag this as the canonical risk of loopback transports). `nativeMessaging` is the documented Chrome pattern for stdio-only host integration. |
+| `offscreen` | DOM-needing work the service worker cannot perform itself (parsing HAR snippets, decoding `Blob`s for body capture). Offscreen documents are MV3's documented replacement for the MV2 background DOM. | The service worker has no `document`. Alternatives — content scripts, hidden tabs — either require additional host permissions or surface a visible UI to the user. |
+| `webRequest` | Non-blocking observation of headers, status, timing, and initiator on tabs the user has opted in to. Read-only (`onBeforeRequest`, `onHeadersReceived`, `onCompleted`, `onErrorOccurred`). | Page-side `fetch` / `XHR` instrumentation (which peek also does, in MAIN world) cannot see service-worker-initiated traffic or cross-origin redirects' final URLs. `webRequest` fills exactly that gap. **`webRequestBlocking` is NOT requested** — peek only observes; it does not modify or block requests. |
+
+## Optional permissions (runtime)
+
+These are declared in `manifest.optional_permissions` and requested only when
+the user opts in to specific features.
+
+| Permission | Use case | Why narrower won't work |
+|---|---|---|
+| `debugger` | "Deep capture" mode — records HTTP response bodies (and request bodies, headers, and timing) via the Chrome DevTools Protocol `Network` domain. **Off by default.** Requested via `chrome.permissions.request({ permissions: ['debugger'] })` from the side panel's "Enable Deep capture" toggle (a user gesture). Disabling Deep capture on an origin detaches the debugger from every tab of that origin immediately. | `chrome.webRequest` (already declared) cannot return response bodies in MV3 by design. `chrome.debugger` is the only Chrome API that exposes response bodies. The "[extension name] started debugging this browser" banner that Chrome shows when the debugger attaches is documented and cannot be suppressed; we surface this in the toggle's confirmation copy. |
+
+## Cross-references
+
+- **ADR-0008** — per-site activation, no `<all_urls>` in host_permissions.
+- **ADR-0009** — native-messaging port as MV3 SW keep-alive anchor.
+- **ADR-0010** — five-level permission model + Deep-capture opt-in.
+- **P2 PRD §A.5** — original permission justification source.
+- **Privacy policy** — [`PRIVACY_POLICY.md`](./PRIVACY_POLICY.md).
+
+## Auditing the manifest
+
+To verify the live manifest matches this document, build the extension and
+inspect the emitted manifest:
+
+```sh
+pnpm --filter @peekdev/extension build
+cat packages/peek-extension/.output/chrome-mv3/manifest.json
+```
+
+The `permissions`, `optional_permissions`, `host_permissions`, and
+`optional_host_permissions` arrays must match the rows above exactly. CI
+should fail if they drift; if you change `wxt.config.ts`, update this table
+in the same commit.
