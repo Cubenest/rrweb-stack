@@ -19,7 +19,11 @@ import {
   realSink,
   resolveInstallTargets,
 } from '@peekdev/mcp/native-host';
-import { chromeExtensionOrigin, validateChromeExtensionId } from '../lib/extension-id.js';
+import {
+  chromeExtensionOrigin,
+  extractDevId,
+  validateChromeExtensionId,
+} from '../lib/extension-id.js';
 import { atomicWriteFileSync } from '../lib/fs-atomic.js';
 import {
   type DetectedClient,
@@ -138,6 +142,32 @@ async function configureClients(homeDir: string, cwd: string): Promise<void> {
   }
 }
 
+/**
+ * P-13 (2026-05-28 QA walk): read the first existing native-host manifest from
+ * the candidate targets so a re-run of `peek init` can offer to reuse the
+ * previously-captured dev extension ID. Returns the parsed JSON (or
+ * `undefined` if no target had a readable manifest); the caller passes the
+ * result to `extractDevId` and decides what to do.
+ *
+ * Windows targets have `registryKey` instead of `manifestPath`; reading the
+ * registry would need a `reg.exe query` shell-out — out of scope here. The
+ * common case (darwin/linux) is plain JSON on disk; on win32 we fall through
+ * to a fresh prompt, which is acceptable.
+ */
+function readExistingManifest(targets: readonly InstallTarget[]): unknown | undefined {
+  for (const target of targets) {
+    const path = target.manifestPath;
+    if (!path) continue;
+    if (!existsSync(path)) continue;
+    try {
+      return JSON.parse(readFileSync(path, 'utf8'));
+    } catch {
+      // Try the next target on parse failure (truncated/corrupt manifest).
+    }
+  }
+  return undefined;
+}
+
 async function registerNativeHost(platform: SupportedPlatform, homeDir: string): Promise<void> {
   const proceed = await confirm(
     '\nRegister the native messaging host now? (writes a manifest into your browser dirs, with your consent)',
@@ -173,28 +203,48 @@ async function registerNativeHost(platform: SupportedPlatform, homeDir: string):
   // building the manifest. An empty submission is OK — only sensible for a
   // user loading the published CWS build, where the chromeWebStore slot is
   // populated and the `dev` placeholder doesn't matter.
-  process.stdout.write(
-    [
-      '',
-      'Paste your unpacked extension ID (from chrome://extensions/, Developer mode toggle ON).',
-      "Leave empty to skip — only do this if you're loading the published CWS build.",
-      '',
-    ].join('\n'),
-  );
-  const captured = await promptText('Extension ID: ', {
-    validate: validateChromeExtensionId,
-    allowEmpty: true,
-  });
+  //
+  // P-13 (2026-05-28 QA walk): on re-runs, read the existing manifest's
+  // `allowed_origins` and offer to reuse any previously-captured dev ID
+  // instead of re-prompting from scratch. Confirms B.4 idempotency.
+  const allTargets = resolveInstallTargets(platform, homeDir);
+  const existingDevId = extractDevId(readExistingManifest(allTargets));
+  let captured: string | undefined;
+  if (existingDevId) {
+    const reuse = await confirm(
+      `\nFound previously-saved extension ID: ${existingDevId}\nReuse this ID?`,
+      true,
+    );
+    if (reuse) {
+      captured = existingDevId;
+      process.stdout.write(`Reusing: ${chromeExtensionOrigin(existingDevId)}\n`);
+    }
+  }
+  if (captured === undefined) {
+    process.stdout.write(
+      [
+        '',
+        'Paste your unpacked extension ID (from chrome://extensions/, Developer mode toggle ON).',
+        "Leave empty to skip — only do this if you're loading the published CWS build.",
+        '',
+      ].join('\n'),
+    );
+    captured = await promptText('Extension ID: ', {
+      validate: validateChromeExtensionId,
+      allowEmpty: true,
+    });
+    if (captured) {
+      process.stdout.write(`allowed_origins includes: ${chromeExtensionOrigin(captured)}\n`);
+    } else {
+      process.stdout.write(
+        'No extension ID provided — `allowed_origins` will only include published IDs (if any).\n',
+      );
+    }
+  }
   if (captured) {
     extensionIds = { ...extensionIds, dev: captured };
-    process.stdout.write(`allowed_origins includes: ${chromeExtensionOrigin(captured)}\n`);
-  } else {
-    process.stdout.write(
-      'No extension ID provided — `allowed_origins` will only include published IDs (if any).\n',
-    );
   }
 
-  const allTargets = resolveInstallTargets(platform, homeDir);
   const chosen = await multiSelect<InstallTarget>(
     'Register native messaging host for:',
     allTargets.map((t) => ({

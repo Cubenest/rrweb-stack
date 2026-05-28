@@ -49,3 +49,29 @@ export function validateChromeExtensionId(raw: string): string | null {
 export function chromeExtensionOrigin(id: string): string {
   return `chrome-extension://${id}/`;
 }
+
+/**
+ * P-13 (2026-05-28 QA walk) — pull the previously-saved unpacked extension ID
+ * out of an existing native-host manifest's `allowed_origins`. Returns the
+ * first 32-char a–p ID found (origins are written in the order
+ * chromeWebStore / edgeAddons / dev, but the published-store slots ship as
+ * `PLACEHOLDER_*` strings that `allowedOrigins()` drops, so anything actually
+ * present is by definition the user's dev ID).
+ *
+ * Pure — accepts any value, returns `undefined` for non-objects, malformed
+ * arrays, missing fields, or origin strings that don't match the expected
+ * `chrome-extension://<a-p×32>/` shape. The caller's idempotency check then
+ * skips the prompt and reuses the captured ID.
+ */
+export function extractDevId(manifest: unknown): string | undefined {
+  if (manifest === null || typeof manifest !== 'object') return undefined;
+  const ao = (manifest as { allowed_origins?: unknown }).allowed_origins;
+  if (!Array.isArray(ao)) return undefined;
+  const pattern = /^chrome-extension:\/\/([a-p]{32})\/$/;
+  for (const origin of ao) {
+    if (typeof origin !== 'string') continue;
+    const m = pattern.exec(origin);
+    if (m) return m[1];
+  }
+  return undefined;
+}

@@ -1,6 +1,10 @@
 import { buildManifest } from '@peekdev/mcp/native-host';
 import { describe, expect, it } from 'vitest';
-import { chromeExtensionOrigin, validateChromeExtensionId } from '../src/lib/extension-id.js';
+import {
+  chromeExtensionOrigin,
+  extractDevId,
+  validateChromeExtensionId,
+} from '../src/lib/extension-id.js';
 
 // P-10 (2026-05-28 QA walk): the wizard now captures the unpacked-extension
 // ID and overrides extensionIds.dev before buildManifest is called. These
@@ -58,6 +62,70 @@ describe('chromeExtensionOrigin — origin string', () => {
     expect(chromeExtensionOrigin('abcdefghijklmnopabcdefghijklmnop')).toBe(
       'chrome-extension://abcdefghijklmnopabcdefghijklmnop/',
     );
+  });
+});
+
+describe('extractDevId — P-13 idempotency read-back', () => {
+  it('returns the 32-char a–p ID from a valid chrome-extension origin', () => {
+    const m = { allowed_origins: ['chrome-extension://abcdefghijklmnopabcdefghijklmnop/'] };
+    expect(extractDevId(m)).toBe('abcdefghijklmnopabcdefghijklmnop');
+  });
+
+  it('picks the first valid ID when multiple origins are present', () => {
+    const m = {
+      allowed_origins: [
+        'chrome-extension://aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/',
+        'chrome-extension://bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb/',
+      ],
+    };
+    expect(extractDevId(m)).toBe('aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa');
+  });
+
+  it('returns undefined for empty allowed_origins (the original P-10 bug state)', () => {
+    expect(extractDevId({ allowed_origins: [] })).toBeUndefined();
+  });
+
+  it('returns undefined when allowed_origins is missing or wrong shape', () => {
+    expect(extractDevId({})).toBeUndefined();
+    expect(extractDevId({ allowed_origins: null })).toBeUndefined();
+    expect(extractDevId({ allowed_origins: 'chrome-extension://abc/' })).toBeUndefined();
+  });
+
+  it('returns undefined for non-objects (null, undefined, primitives, arrays)', () => {
+    expect(extractDevId(null)).toBeUndefined();
+    expect(extractDevId(undefined)).toBeUndefined();
+    expect(extractDevId('not an object')).toBeUndefined();
+    expect(extractDevId(42)).toBeUndefined();
+    expect(extractDevId(['arr'])).toBeUndefined();
+  });
+
+  it('skips non-string entries in the array', () => {
+    const m = {
+      allowed_origins: [
+        null,
+        42,
+        { weird: 'object' },
+        'chrome-extension://pppppppppppppppppppppppppppppppp/',
+      ],
+    };
+    expect(extractDevId(m)).toBe('pppppppppppppppppppppppppppppppp');
+  });
+
+  it('rejects origin strings that do not match the strict pattern', () => {
+    // Missing trailing slash
+    expect(
+      extractDevId({ allowed_origins: ['chrome-extension://abcdefghijklmnopabcdefghijklmnop'] }),
+    ).toBeUndefined();
+    // Wrong length
+    expect(extractDevId({ allowed_origins: ['chrome-extension://shortid/'] })).toBeUndefined();
+    // Out-of-alphabet character
+    expect(
+      extractDevId({ allowed_origins: ['chrome-extension://zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz/'] }),
+    ).toBeUndefined();
+    // Uppercase
+    expect(
+      extractDevId({ allowed_origins: ['chrome-extension://ABCDEFGHIJKLMNOPABCDEFGHIJKLMNOP/'] }),
+    ).toBeUndefined();
   });
 });
 
