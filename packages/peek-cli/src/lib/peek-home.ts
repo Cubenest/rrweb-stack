@@ -11,3 +11,14 @@ export { defaultDbPath, peekHomeDir };
 export function auditLogPath(): string {
   return join(peekHomeDir(), 'audit.log');
 }
+
+/**
+ * Base directory for gzipped rrweb event chunks (ADR-0007): `~/.peek/rrweb-events/`.
+ * Each session has a subdirectory `<sessionId>/` with one `<seq>.json.gz` per
+ * append batch. Mirrors `rrwebEventsDir()` in peek-mcp's `mcp/event-blobs.ts`;
+ * the path layout is the public contract between writer (native host) and
+ * reader/cleaner (this CLI).
+ */
+export function rrwebEventsDir(): string {
+  return join(peekHomeDir(), 'rrweb-events');
+}
