@@ -1,4 +1,4 @@
-import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, rmSync, statSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
@@ -153,6 +153,43 @@ describe('appendAuditEntry / recordAuditEntry', () => {
     // And the redaction took effect on the second entry.
     expect(JSON.parse(lines[1] ?? '').args.text).toBe('<<REDACTED>>');
   });
+
+  it.skipIf(process.platform === 'win32')(
+    'creates the audit log with mode 0o600 on first write (POSIX only)',
+    () => {
+      const path = join(workdir, 'audit.log');
+      // Write twice — first creates with 0o600, second is a plain append.
+      appendAuditEntry(
+        {
+          ts: '2025-01-01T00:00:00.000Z',
+          tool: 'execute_action',
+          args: { type: 'reload' },
+          approver: 'user',
+          client: 'cursor',
+          sessionId: 's_first',
+          result: 'ok',
+        },
+        { path },
+      );
+      appendAuditEntry(
+        {
+          ts: '2025-01-01T00:00:01.000Z',
+          tool: 'execute_action',
+          args: { type: 'reload' },
+          approver: 'user',
+          client: 'cursor',
+          sessionId: 's_second',
+          result: 'ok',
+        },
+        { path },
+      );
+      const stat = statSync(path);
+      expect(stat.mode & 0o777).toBe(0o600);
+      // And both lines made it.
+      const lines = readFileSync(path, 'utf8').split('\n').filter(Boolean);
+      expect(lines).toHaveLength(2);
+    },
+  );
 
   it('appendAuditEntry is additive across many writes (append-only)', () => {
     const path = join(workdir, 'audit.log');

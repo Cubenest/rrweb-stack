@@ -19,7 +19,7 @@
 // which is robust against host restarts / crashes mid-write. The line is
 // flushed before the function resolves.
 
-import { appendFileSync, mkdirSync } from 'node:fs';
+import { appendFileSync, existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { peekHomeDir } from '../db/open.js';
 import { type Action, redactActionForAudit } from '../mcp/action-schema.js';
@@ -111,10 +111,19 @@ export interface AuditWriteOptions {
  * I/O failure — the host's caller catches + downgrades to a console.error so a
  * write-failure on the audit log can't tear down an action request mid-flight,
  * but the throw is propagated so tests can assert on it.
+ *
+ * The audit log contains URL paths, DOM selectors, MCP-client identity, and
+ * session IDs. On a multi-user POSIX system we want owner-only access, so on
+ * first write we seed the file with mode `0o600`. If the file already exists
+ * we don't touch its mode — the user may have set their own. Windows ignores
+ * the `mode` argument silently; that's acceptable here.
  */
 export function appendAuditEntry(entry: AuditEntry, options: AuditWriteOptions = {}): void {
   const path = options.path ?? auditLogPath();
   mkdirSync(dirname(path), { recursive: true });
+  if (!existsSync(path)) {
+    writeFileSync(path, '', { mode: 0o600 });
+  }
   appendFileSync(path, serializeAuditEntry(entry), { encoding: 'utf8' });
 }
 
