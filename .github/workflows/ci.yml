@@ -52,3 +52,27 @@ jobs:
       # The recorder bundle + workspace deps must be built before the E2E.
       - run: pnpm build
       - run: pnpm --filter @tracelane/wdio test:e2e
+
+  # peek extension Playwright persistent-context smoke (Task 3.29). Separate,
+  # non-blocking job — a Playwright/chromium download flake or a Chromium
+  # extension-loading quirk can't fail the required `ci` gate. The smoke
+  # asserts the unpacked MV3 extension loads + the native-host stdio loop
+  # ingests into SQLite (see packages/peek-extension/e2e/smoke.spec.ts).
+  e2e-peek:
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      # Build extension (writes .output/chrome-mv3) + peek-mcp (writes dist/index.js).
+      - run: pnpm build
+      # Install Playwright's bundled chromium (NOT chromium_headless_shell —
+      # the headless shell doesn't load MV3 extensions; the spec sets
+      # channel: 'chromium' to use the full build).
+      - run: pnpm --filter @peekdev/extension exec playwright install --with-deps chromium
+      - run: pnpm --filter @peekdev/extension test:e2e

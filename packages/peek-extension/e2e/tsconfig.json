@@ -1,0 +1,15 @@
+{
+  // E2E smoke is run by Playwright's TS loader, not by the package's WXT
+  // `tsc --noEmit` (the e2e/ tree is outside the main tsconfig's `include`).
+  // This tsconfig exists so editors/LSPs resolve types in smoke.spec.ts and so
+  // a future `pnpm --filter @peekdev/extension typecheck:e2e` script (if we
+  // ever need one) has a config to point at.
+  "extends": "../../../tsconfig.base.json",
+  "compilerOptions": {
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "noEmit": true,
+    "types": ["node"]
+  },
+  "include": ["./**/*.ts"]
+}
