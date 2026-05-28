@@ -77,6 +77,8 @@ export function effectiveDestructiveTerms(policy?: DestructivePolicy): readonly 
     const t = normalizeTerm(raw);
     if (t) set.add(t);
   }
+  // Order: add then remove → user's remove[] wins ties with their add[].
+  // Rationale: explicit opt-out should override accidental re-additions.
   for (const raw of policy?.remove ?? []) {
     const t = normalizeTerm(raw);
     if (t) set.delete(t);

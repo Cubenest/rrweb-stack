@@ -52,6 +52,8 @@ export interface DestructivePolicyDelta {
 }
 
 /** A {origin → action types} allow-list (per P2 PRD §E.3 example). */
+// Reserved for Phase 3e site-scoped allow-list gating (see PRD §E.3 + ADR-0010).
+// Currently parsed + validated but no consumer reads it for gating decisions.
 export interface AllowListBySite {
   readonly [originPattern: string]: readonly string[];
 }

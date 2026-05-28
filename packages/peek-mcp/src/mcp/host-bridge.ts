@@ -31,6 +31,9 @@
 import { RequestRegistry, type RequestRegistryDeps } from '../native-host/request-registry.js';
 import type { Action } from './action-schema.js';
 
+// 5 minutes — longer than any plausible Level-3 banner-decision window.
+const DEFAULT_BRIDGE_TIMEOUT_MS = 5 * 60_000;
+
 /** Input the MCP tool handler hands the bridge. */
 export interface HostActionRequest {
   /** 'execute_action' | 'request_authorization' — picks audit shape + UX. */
@@ -117,7 +120,9 @@ export class RegistryBackedHostBridge implements HostBridge {
   }
 
   async request(req: HostActionRequest): Promise<HostActionResponse> {
-    const { id, response } = this.#registry.create<HostActionResponse>(req.timeoutMs ?? 5 * 60_000);
+    const { id, response } = this.#registry.create<HostActionResponse>(
+      req.timeoutMs ?? DEFAULT_BRIDGE_TIMEOUT_MS,
+    );
     this.pending.push({ id, req });
     return response;
   }
