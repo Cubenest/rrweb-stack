@@ -90,7 +90,7 @@ export function App(): React.JSX.Element {
 
       <EventCountSection tabId={tabId} />
 
-      <PermissionLevelSection />
+      <PermissionLevelSection origin={origin} />
 
       <AuditLogSection />
 
