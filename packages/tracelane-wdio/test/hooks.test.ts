@@ -30,7 +30,11 @@ describe('traceLaneHooks — surface', () => {
       'before',
       'beforeSuite',
       'beforeTest',
-      'beforeCommand',
+      // T-9 fix (2026-05-28): re-inject hook moved from beforeCommand to
+      // afterCommand. The factory deliberately no longer exposes
+      // beforeCommand — re-injection MUST happen after the navigation has
+      // landed on the new page.
+      'afterCommand',
       'afterTest',
       'afterSuite',
       'after',

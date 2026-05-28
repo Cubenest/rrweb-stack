@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
   type StorageAreaLike,
   addEnabledOrigin,
+  diffAddedOrigins,
   getEnabledOrigins,
   isOriginEnabled,
   removeEnabledOrigin,
@@ -157,5 +158,45 @@ describe('concurrent writers (carry-in [4] — multi-writer safety)', () => {
     ]);
     await removeEnabledOrigin('https://b.com', slow);
     expect(await getEnabledOrigins(slow)).toEqual(['https://a.com', 'https://c.com']);
+  });
+});
+
+// P-11 (2026-05-28): the SW now subscribes to `chrome.storage.onChanged` for
+// `peek:enabledOrigins` and injects the MAIN-world recorder into already-open
+// tabs of newly-enabled origins. diffAddedOrigins is the pure half of that
+// wiring — these tests pin its contract so the inject-on-enable behavior is
+// robust to junk payloads and stays compatible with the SW listener.
+describe('diffAddedOrigins', () => {
+  it('returns the origins present in newValue but not in oldValue', () => {
+    expect(
+      diffAddedOrigins(['https://a.com'], ['https://a.com', 'https://b.com', 'https://c.com']),
+    ).toEqual(['https://b.com', 'https://c.com']);
+  });
+
+  it('returns [] when nothing was added', () => {
+    expect(diffAddedOrigins(['https://a.com'], ['https://a.com'])).toEqual([]);
+    // Removal-only diff: nothing was added.
+    expect(diffAddedOrigins(['https://a.com', 'https://b.com'], ['https://a.com'])).toEqual([]);
+  });
+
+  it('handles undefined / non-array oldValue (initial write)', () => {
+    expect(diffAddedOrigins(undefined, ['https://x.com'])).toEqual(['https://x.com']);
+    expect(diffAddedOrigins(null, ['https://x.com'])).toEqual(['https://x.com']);
+    expect(diffAddedOrigins('garbage', ['https://x.com'])).toEqual(['https://x.com']);
+  });
+
+  it('returns [] when newValue is not an array (defensive)', () => {
+    expect(diffAddedOrigins(['https://a.com'], undefined)).toEqual([]);
+    expect(diffAddedOrigins(['https://a.com'], null)).toEqual([]);
+    expect(diffAddedOrigins(['https://a.com'], 'garbage')).toEqual([]);
+  });
+
+  it('drops non-string entries on both sides', () => {
+    expect(
+      diffAddedOrigins(
+        ['https://a.com', 42, null],
+        ['https://a.com', { junk: true }, 'https://b.com'],
+      ),
+    ).toEqual(['https://b.com']);
   });
 });

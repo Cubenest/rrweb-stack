@@ -126,3 +126,24 @@ export async function isOriginEnabled(
   const enabled = await getEnabledOrigins(area);
   return enabled.includes(origin);
 }
+
+/**
+ * Diff the `peek:enabledOrigins` storage values from a `chrome.storage.onChanged`
+ * event and return the origins that were newly added (post-fix - 2026-05-28).
+ *
+ * Used by the SW to inject the MAIN-world recorder into already-open tabs of
+ * a freshly-enabled origin without waiting for the user to reload (P-11): the
+ * recorder used to be injected only on `chrome.tabs.onUpdated{ status:
+ * 'loading' }`, so enabling a site meant counters stayed at zero until the
+ * next reload. Defensive against non-array / non-string entries because
+ * `chrome.storage` callers can write arbitrary payloads.
+ */
+export function diffAddedOrigins(oldValue: unknown, newValue: unknown): readonly string[] {
+  const before = new Set(
+    Array.isArray(oldValue) ? oldValue.filter((s): s is string => typeof s === 'string') : [],
+  );
+  const after = Array.isArray(newValue)
+    ? newValue.filter((s): s is string => typeof s === 'string')
+    : [];
+  return after.filter((o) => !before.has(o));
+}

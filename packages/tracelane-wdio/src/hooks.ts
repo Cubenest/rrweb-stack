@@ -33,7 +33,14 @@ export interface TraceLaneHooks {
   before(capabilities: unknown, specs: string[], browser: WebdriverIO.Browser): Promise<void>;
   beforeSuite(suite: Frameworks.Suite): void;
   beforeTest(test: Frameworks.Test, context?: unknown): Promise<void>;
-  beforeCommand(commandName: string, args: unknown[]): Promise<void>;
+  /**
+   * Post-command hook. Re-injects the recorder AFTER a `url(...)` returns
+   * (T-9 fix, 2026-05-28 QA walk) — re-injecting before the navigation lands
+   * on a doomed page that's about to be torn down, leaving no recorder on
+   * the new page. The full Service / hooks pair was previously wired to
+   * `beforeCommand`; that was the bug.
+   */
+  afterCommand(commandName: string, args: unknown[], result: unknown, error?: Error): Promise<void>;
   afterTest(test: Frameworks.Test, context: unknown, result: Frameworks.TestResult): Promise<void>;
   afterSuite(suite: Frameworks.Suite): void;
   after(result: number, capabilities: unknown, specs: string[]): Promise<void>;
@@ -64,10 +71,13 @@ export function traceLaneHooks(options: TraceLaneHookOptions = {}): TraceLaneHoo
       const { title, spec } = testIdentity(test as TestLike);
       await session.onBeforeTest(title, spec);
     },
-    async beforeCommand(commandName, args) {
-      if (commandName === 'url' && typeof args[0] === 'string') {
-        await session.onUrl(args[0]);
-      }
+    async afterCommand(commandName, args, _result, error) {
+      // T-9 fix (2026-05-28): re-inject only after a successful url() returns.
+      // `beforeCommand` fires before the navigation, so injecting there
+      // lands rrweb on a page that's about to be torn down.
+      if (commandName !== 'url' || typeof args[0] !== 'string') return;
+      if (error !== undefined) return;
+      await session.onUrl(args[0]);
     },
     async afterTest(_test, _context, result) {
       await session.onAfterTest(result);

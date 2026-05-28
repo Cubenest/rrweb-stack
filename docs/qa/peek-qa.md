@@ -62,8 +62,8 @@ After enabling example.com (D.2), do some clicks + open devtools to fire a few `
 |---|---|---|---|
 | E.1 | `peek status` shows non-zero | `peek status`. **Expected:** sessions count > 0 OR shows a non-empty DB. | |
 | E.2 | `peek sessions list` shows the session | `peek sessions list`. **Expected:** at least one row, with the example.com URL and a recent timestamp. | |
-| E.3 | `peek sessions show <id>` | `peek sessions show <the-id>`. **Expected:** session metadata (url, title, started_at, event count, console count, network count). | |
-| E.4 | DB direct inspect | `sqlite3 ~/.peek/sessions.db 'SELECT id, url, started_at FROM sessions ORDER BY started_at DESC LIMIT 5;'`. Row exists. | |
+| E.3 | `peek sessions show <id>` | `peek sessions show <the-id>`. **Expected:** session metadata (url, title, created_at, event count, console count, network count). | |
+| E.4 | DB direct inspect | `sqlite3 ~/.peek/sessions.db 'SELECT id, url, created_at FROM sessions ORDER BY created_at DESC LIMIT 5;'`. Row exists. | |
 | E.5 | events_chunks non-empty | `sqlite3 ~/.peek/sessions.db 'SELECT COUNT(*) FROM events_chunks;'`. Non-zero. | |
 | E.6 | Chunk blobs on disk | `ls ~/.peek/rrweb-events/<sessionId>/`. **Expected:** one or more `<seq>.json.gz` files. (Path layout per Task 3.4 / 3.27.) | |
 | E.7 | console_events table | `sqlite3 ~/.peek/sessions.db 'SELECT COUNT(*) FROM console_events;'`. Non-zero if you fired `console.log`s on example.com. | |

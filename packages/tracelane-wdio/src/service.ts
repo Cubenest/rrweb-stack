@@ -8,7 +8,7 @@
 // All real work is delegated to a single TraceLaneSession so the Service and the
 // `traceLaneHooks` factory (hooks.ts) share one implementation.
 
-import type { Frameworks, Services } from '@wdio/types';
+import type { Capabilities, Frameworks, Options, Services } from '@wdio/types';
 import type { TraceLaneOptions } from './options.js';
 import { type TestLike, scenarioIdentity, testIdentity } from './test-identity.js';
 import { TraceLaneSession } from './tracelane-session.js';
@@ -20,6 +20,17 @@ import type { WdioBrowser } from './wdio-executor.js';
  * `afterScenario`) are declared as plain methods since `@wdio/types` doesn't put
  * them on `ServiceInstance` (they only exist at runtime under the Cucumber
  * framework).
+ *
+ * The constructor signature deliberately matches `Services.ServiceClass`:
+ *   `new (options: WebdriverIO.ServiceOption,
+ *         capabilities: ResolvedTestrunnerCapabilities,
+ *         config: Options.Testrunner): ServiceInstance`
+ * (T-4 fix, 2026-05-28 QA walk). Earlier intersection-typing on `options` was
+ * not enough — the `capabilities` and `config` parameters had to ALSO be
+ * compatible with the interface, otherwise registering the class as
+ * `services: [[TraceLaneService, { ... }]]` raised the "not assignable to
+ * ServiceClass" error in the user's wdio.conf.ts. With the full triple in
+ * place the tuple form typechecks without `@ts-expect-error`.
  */
 export default class TraceLaneService implements Services.ServiceInstance {
   private readonly session: TraceLaneSession;
@@ -27,13 +38,13 @@ export default class TraceLaneService implements Services.ServiceInstance {
   /**
    * WDIO instantiates the Service with `(options, capabilities, config)`. We
    * read `config.framework` so the result-shape switch (P1 PRD §A.2) picks the
-   * right normalization, and `config.outputDir`-adjacent options come from the
-   * `options` arg.
+   * right normalization. `capabilities` is accepted for ServiceClass
+   * compatibility but unused (the live browser arrives in the `before` hook).
    */
   constructor(
     options: TraceLaneOptions & WebdriverIO.ServiceOption = {},
-    _capabilities?: unknown,
-    config?: { framework?: string },
+    _capabilities?: Capabilities.ResolvedTestrunnerCapabilities,
+    config?: Options.Testrunner,
   ) {
     this.session = new TraceLaneSession(options, config?.framework);
   }
@@ -81,11 +92,32 @@ export default class TraceLaneService implements Services.ServiceInstance {
     await this.session.onAfterTest(world, result);
   }
 
-  /** Re-inject the recorder after a `url(...)` navigation (ADR-0006). */
-  async beforeCommand(commandName: string, args: unknown[]): Promise<void> {
-    if (commandName === 'url' && typeof args[0] === 'string') {
-      await this.session.onUrl(args[0]);
-    }
+  /**
+   * Re-inject the recorder AFTER a `url(...)` navigation (ADR-0006, T-9 fix).
+   *
+   * WDIO's `beforeCommand` fires before the command executes; if we re-inject
+   * there, the page is about to be torn down and Chrome's load of the new URL
+   * destroys the just-injected rrweb instance + the `__tracelane__events`
+   * buffer. By the time the test starts interacting nothing is recording.
+   *
+   * `afterCommand` fires after WDIO returns from `url(...)`, which only
+   * happens once Chrome has navigated and the document has loaded. Injecting
+   * here lands rrweb on the NEW page, where it can observe DOM mutations,
+   * console output, and fetches.
+   *
+   * Errors from the command itself (e.g. a malformed URL) skip re-injection —
+   * if the navigation failed, the page never changed and the existing
+   * recorder (if any) is still attached to the old page; this is a no-op.
+   */
+  async afterCommand(
+    commandName: string,
+    args: unknown[],
+    _result: unknown,
+    error?: Error,
+  ): Promise<void> {
+    if (commandName !== 'url' || typeof args[0] !== 'string') return;
+    if (error !== undefined) return;
+    await this.session.onUrl(args[0]);
   }
 
   /** No-op in v1; present for the documented hook surface (ADR-0004). */

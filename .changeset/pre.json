@@ -12,5 +12,5 @@
     "peek-docs": "0.0.0",
     "tracelane-docs": "0.0.0"
   },
-  "changesets": ["phase4c-qa-fixes", "rrweb-core-esm-fix"]
+  "changesets": ["phase4c-loop2-alpha3", "phase4c-qa-fixes", "rrweb-core-esm-fix"]
 }
