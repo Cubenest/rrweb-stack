@@ -10,6 +10,7 @@
 // (no CLI framework dependency); this top-level dispatcher just routes on the
 // first positional so each subcommand owns its own option schema.
 
+import { realpathSync } from 'node:fs';
 import { runAudit } from './commands/audit.js';
 import { runInit } from './commands/init.js';
 import { runSessions } from './commands/sessions.js';
@@ -75,7 +76,15 @@ async function main(): Promise<void> {
 // module is imported (tests, or another package consuming `run`). Guarded the
 // same way as @peekdev/mcp's entry so an ESM `import` has no side effects.
 const invokedDirectly =
-  process.argv[1] !== undefined && import.meta.url === `file://${process.argv[1]}`;
+  process.argv[1] !== undefined &&
+  (import.meta.url === `file://${process.argv[1]}` ||
+    (() => {
+      try {
+        return import.meta.url === `file://${realpathSync(process.argv[1])}`;
+      } catch {
+        return false;
+      }
+    })());
 if (invokedDirectly) {
   main().catch((err) => {
     process.stderr.write(

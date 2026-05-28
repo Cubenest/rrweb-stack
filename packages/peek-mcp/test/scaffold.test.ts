@@ -1,7 +1,11 @@
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { EventType } from '@cubenest/rrweb-core';
 import Database from 'better-sqlite3';
 import { describe, expect, it } from 'vitest';
 import { callingExtensionOrigin, resolveMode } from '../src/index.js';
+import { SERVER_NAME, SERVER_VERSION } from '../src/mcp/server.js';
 import { loadExtensionIds } from '../src/native-host/config.js';
 
 describe('scaffold: workspace + native deps resolve', () => {
@@ -23,6 +27,16 @@ describe('scaffold: workspace + native deps resolve', () => {
     expect(ids).toHaveProperty('chromeWebStore');
     expect(ids).toHaveProperty('edgeAddons');
     expect(ids).toHaveProperty('dev');
+  });
+
+  // Regression: SERVER_VERSION used to be hardcoded `'0.1.0-alpha.0'` and drifted
+  // out of sync when the package bumped to alpha.1. Now read at runtime via
+  // createRequire — assert it always matches package.json so a future revert is caught.
+  it('SERVER_VERSION matches package.json (no hardcode drift)', () => {
+    const pkgPath = join(fileURLToPath(import.meta.url), '..', '..', 'package.json');
+    const pkg = JSON.parse(readFileSync(pkgPath, 'utf8')) as { name: string; version: string };
+    expect(SERVER_VERSION).toBe(pkg.version);
+    expect(SERVER_NAME).toBe('peek-mcp');
   });
 });
 

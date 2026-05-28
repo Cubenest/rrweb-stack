@@ -8,7 +8,9 @@
     "@cubenest/rrweb-core": "0.1.0-alpha.0",
     "@tracelane/core": "0.1.0-alpha.0",
     "@tracelane/report": "0.1.0-alpha.0",
-    "@tracelane/wdio": "0.1.0-alpha.0"
+    "@tracelane/wdio": "0.1.0-alpha.0",
+    "peek-docs": "0.0.0",
+    "tracelane-docs": "0.0.0"
   },
-  "changesets": ["rrweb-core-esm-fix"]
+  "changesets": ["phase4c-qa-fixes", "rrweb-core-esm-fix"]
 }
