@@ -12,6 +12,7 @@
 // Either way the script logs what it wrote / would write and where, so the
 // install side-effects are always visible to the user (Task 3.4 requirement).
 
+import { realpathSync } from 'node:fs';
 import { hostBinaryPath, loadExtensionIds } from './native-host/config.js';
 import { type InstallResult, installManifests } from './native-host/installer.js';
 import {
@@ -77,7 +78,15 @@ export function runPostinstall(): void {
 // Run when invoked directly (postinstall / manual). Guarded so importing this
 // module for tests does not trigger the side-effect path.
 const invokedDirectly =
-  process.argv[1] !== undefined && import.meta.url === `file://${process.argv[1]}`;
+  process.argv[1] !== undefined &&
+  (import.meta.url === `file://${process.argv[1]}` ||
+    (() => {
+      try {
+        return import.meta.url === `file://${realpathSync(process.argv[1])}`;
+      } catch {
+        return false;
+      }
+    })());
 if (invokedDirectly) {
   try {
     runPostinstall();

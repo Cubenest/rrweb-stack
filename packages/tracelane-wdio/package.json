@@ -1,6 +1,6 @@
 {
   "name": "@tracelane/wdio",
-  "version": "0.1.0-alpha.1",
+  "version": "0.1.0-alpha.2",
   "description": "WebdriverIO Service that records rrweb sessions and writes a self-contained HTML report on failed tests. The user-facing tracelane integration for WDIO.",
   "license": "Apache-2.0",
   "type": "module",

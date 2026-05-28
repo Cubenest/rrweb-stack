@@ -12,10 +12,18 @@
 //   • Every tool returns compact JSON text + ids for drill-in, respecting the
 //     §B3 token budgets (counts not dumps; truncated fields; capped lists).
 
+import { createRequire } from 'node:module';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { Database } from 'better-sqlite3';
 import { z } from 'zod';
 import { openReadonlyDb } from '../db/open.js';
+
+// Read version at runtime from this package's package.json so the MCP
+// `serverInfo.version` reply always matches what npm shipped. The relative
+// path is from the compiled dist/mcp/server.js → ../../package.json.
+const _require = createRequire(import.meta.url);
+const _pkg = _require('../../package.json') as { version: string };
+export const SERVER_VERSION = _pkg.version;
 import {
   type AuditResult,
   type AuditTool,
@@ -115,7 +123,7 @@ export interface CreatePeekMcpServerOptions {
  */
 export function createPeekMcpServer(options: CreatePeekMcpServerOptions = {}): PeekMcpServer {
   const server = new McpServer(
-    { name: SERVER_NAME, version: '0.1.0-alpha.0' },
+    { name: SERVER_NAME, version: SERVER_VERSION },
     { instructions: SERVER_INSTRUCTIONS },
   );
 

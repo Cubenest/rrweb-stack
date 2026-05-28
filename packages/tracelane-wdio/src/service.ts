@@ -31,7 +31,7 @@ export default class TraceLaneService implements Services.ServiceInstance {
    * `options` arg.
    */
   constructor(
-    options: TraceLaneOptions = {},
+    options: TraceLaneOptions & WebdriverIO.ServiceOption = {},
     _capabilities?: unknown,
     config?: { framework?: string },
   ) {

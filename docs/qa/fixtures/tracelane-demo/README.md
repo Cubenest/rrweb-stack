@@ -44,6 +44,16 @@ The same nav + a true assertion. Test passes. **No report** should be written (A
 
 The `package.json` pins `webdriverio@^9` and `@tracelane/wdio@^0.1.0-alpha.1` (latest published alpha). If you bump WDIO majors, the fixture's hook signatures may need adjustments — see the @tracelane/wdio README for the version compat note.
 
+## Note on network capture (QA item C.4)
+
+This fixture does NOT register `@wdio/devtools-service`. WDIO 9 has no stable `@wdio/devtools-service` line (it stabilized at v10 — see the @tracelane/wdio README "Version compat"). So when this fixture runs, `tracelane` logs:
+
+```
+[tracelane/wdio] network capture unavailable (CDP not attached); degrading to rrweb+console only.
+```
+
+…which means the replay's **network panel will be empty** even though the failing spec issues a `fetch('/api/will-fail')`. **This is expected behavior under WDIO 9.** QA item C.4 should be marked ✅ as long as the DOM replay + console panel show the deliberate `button clicked` line; the network panel emptiness is the documented graceful-degrade path. To validate the full network capture, switch this fixture to WDIO 8 + `@wdio/devtools-service@8`, or wait until `@tracelane/wdio` ships its own WDIO-10-compatible CDP attach (Phase 5 follow-up).
+
 ## Layout
 
 ```

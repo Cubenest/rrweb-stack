@@ -10,9 +10,9 @@
     "test:fail": "wdio run wdio.conf.ts --spec tests/failing.spec.ts"
   },
   "devDependencies": {
-    "@tracelane/core": "^0.1.0-alpha.1",
-    "@tracelane/report": "^0.1.0-alpha.1",
-    "@tracelane/wdio": "^0.1.0-alpha.1",
+    "@tracelane/core": "^0.1.0-alpha.2",
+    "@tracelane/report": "^0.1.0-alpha.2",
+    "@tracelane/wdio": "^0.1.0-alpha.2",
     "@types/node": "^22.10.0",
     "@wdio/cli": "^9.0.0",
     "@wdio/globals": "^9.0.0",

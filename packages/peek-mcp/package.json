@@ -1,6 +1,6 @@
 {
   "name": "@peekdev/mcp",
-  "version": "0.1.0-alpha.1",
+  "version": "0.1.0-alpha.2",
   "description": "peek native messaging host + stdio MCP server. Owns ~/.peek/sessions.db (better-sqlite3) and bridges the browser extension, CLI, and AI tools to a single local source of truth (ADR-0007).",
   "license": "Apache-2.0",
   "type": "module",
@@ -25,6 +25,7 @@
   },
   "files": [
     "dist",
+    "scripts/postinstall-guard.mjs",
     "src/db/migrations",
     "src/native-host/extension-ids.json",
     "NOTICE",
