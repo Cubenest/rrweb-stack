@@ -178,14 +178,19 @@ test('layer 1: extension loads in persistent context and exposes a service worke
   };
 
   // The privacy posture invariants — these must hold or PRIVACY_POLICY.md is
-  // a lie. host_permissions empty, broad pattern lives in OPTIONAL only,
-  // debugger is OPTIONAL only (off by default).
+  // a lie. host_permissions empty, broad pattern lives in OPTIONAL only.
+  // `debugger` is in static `permissions` (P-14: Chrome 121+ banned it from
+  // optional_permissions); behavior is still gated OFF by default via the
+  // per-origin Deep capture toggle in the side panel.
   expect(manifest.host_permissions, 'host_permissions stays empty (ADR-0008)').toEqual([]);
   expect(manifest.optional_host_permissions, 'broad pattern is opt-in only').toContain(
     'https://*/*',
   );
-  expect(manifest.permissions, 'static debugger NOT requested').not.toContain('debugger');
-  expect(manifest.optional_permissions, 'debugger is opt-in').toContain('debugger');
+  expect(manifest.permissions, 'debugger declared statically (Chrome 121+)').toContain('debugger');
+  expect(
+    manifest.optional_permissions ?? [],
+    'optional_permissions empty post-debugger-move',
+  ).not.toContain('debugger');
 
   // The MAIN-world recorder bundle is reachable (page.request.get rejects
   // the chrome-extension: scheme; navigating works because Chromium itself

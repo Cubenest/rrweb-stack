@@ -60,10 +60,11 @@ export function DeepCaptureSection({ origin }: DeepCaptureSectionProps): React.J
     setError(null);
     setBusy(true);
     try {
-      // The `debugger` permission is in optional_permissions; it MUST be
-      // requested from a click gesture (this onClick handler). On denial
-      // chrome.permissions.request resolves with `false` — surface that to
-      // the user as a polite no-op, not an error.
+      // P-14 (2026-05-28): `debugger` is now in static `permissions` (Chrome
+      // 121+ banned it from optional_permissions). `chrome.permissions.request`
+      // for an already-granted permission resolves with `true` immediately and
+      // shows no dialog — left as defense-in-depth in case a future Chrome
+      // revision moves it back to optional, or some packaging path strips it.
       const granted = await chrome.permissions.request({ permissions: ['debugger'] });
       if (!granted) {
         setBusy(false);
