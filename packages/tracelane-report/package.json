@@ -3,7 +3,6 @@
   "version": "0.1.0-alpha.1",
   "description": "Self-contained, offline HTML report builder for tracelane. Embeds the rrweb player and a gzipped event blob into a single .html file.",
   "license": "Apache-2.0",
-  "private": true,
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
