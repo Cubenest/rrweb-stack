@@ -57,28 +57,18 @@ import Layout from '../layouts/Layout.astro';
 `}</code></pre>
 
   <div class="callout">
-    <strong>Or let the CLI do it.</strong> Install <code>@peekdev/cli</code> and run
-    <code>peek init</code> &mdash; it detects installed AI clients and writes the right
-    config for each:
+    <strong>Or let the CLI do it all.</strong> Install <code>@peekdev/cli</code> and run
+    <code>peek init</code> &mdash; it detects installed AI clients, writes the right
+    MCP config for each, <em>and</em> registers the native messaging host with your
+    browsers (macOS: <code>~/Library/Application Support/Google/Chrome/NativeMessagingHosts/</code>;
+    Linux: <code>~/.config/google-chrome/NativeMessagingHosts/</code>; Windows:
+    a registry key under <code>HKCU\\Software\\Google\\Chrome\\NativeMessagingHosts</code>).
+    Consent-prompted; you choose which browsers to register.
     <pre style="margin-top: 0.5rem;"><code>npm install -g @peekdev/cli
 peek init</code></pre>
   </div>
 
-  <h2>3. Install the native messaging host</h2>
-  <p>
-    For the Chrome extension to talk to <code>peek-mcp</code>, register the native
-    messaging manifest. The CLI handles this for you:
-  </p>
-  <pre><code>peek install</code></pre>
-  <p>
-    This writes the native-messaging manifest under your browser&apos;s
-    <code>NativeMessagingHosts</code> directory (macOS:
-    <code>~/Library/Application Support/Google/Chrome/NativeMessagingHosts/</code>;
-    Linux: <code>~/.config/google-chrome/NativeMessagingHosts/</code>; Windows:
-    a registry key under <code>HKCU\\Software\\Google\\Chrome\\NativeMessagingHosts</code>).
-  </p>
-
-  <h2>4. Load the Chrome extension (alpha)</h2>
+  <h2>3. Load the Chrome extension (alpha)</h2>
   <p>
     Until the Chrome Web Store listing is live (Phase 5), load the extension
     unpacked from a local build:
@@ -96,7 +86,7 @@ pnpm --filter @peekdev/extension build
     <li>Select <code>packages/peek-extension/.output/chrome-mv3/</code>.</li>
   </ol>
 
-  <h2>5. Enable peek on a site</h2>
+  <h2>4. Enable peek on a site</h2>
   <ul>
     <li>Open the side panel from the toolbar.</li>
     <li>Click <strong>Enable on this site</strong>. peek requests per-origin host permission from your user gesture and starts recording.</li>
@@ -104,7 +94,7 @@ pnpm --filter @peekdev/extension build
     <li>(Optional) Set the per-origin <strong>permission level</strong> in the side panel. Default is Level 1 (observe-only).</li>
   </ul>
 
-  <h2>6. Ask your agent</h2>
+  <h2>5. Ask your agent</h2>
   <p>
     With the MCP server connected, ask your AI client things like:
   </p>
