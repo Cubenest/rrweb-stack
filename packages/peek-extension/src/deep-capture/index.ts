@@ -6,12 +6,15 @@
 
 export { buildChromeDebuggerSurface } from './chrome-debugger.js';
 export {
+  BODY_TRUNCATION_MARKER,
   CDP_PROTOCOL_VERSION,
+  capBody,
   type DebuggeeTab,
   DeepCaptureManager,
   type DeepCaptureManagerDeps,
   type DebuggerSurface,
   type ForwardBody,
+  MAX_BODY_BYTES,
 } from './manager.js';
 export {
   DEEP_CAPTURE_ORIGINS_KEY,

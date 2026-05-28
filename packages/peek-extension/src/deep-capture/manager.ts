@@ -47,6 +47,20 @@ export interface DebuggerSurface {
 /** CDP version we attach with (1.3 is the stable supported one). */
 export const CDP_PROTOCOL_VERSION = '1.3';
 
+/**
+ * Hard cap on the persisted Deep-capture body length (bytes of UTF-16 code
+ * units — JS string `.length`). 256 KB is a pragmatic ceiling: large enough
+ * to keep the common JSON-API responses intact for replay; small enough that
+ * a long-running session with multi-MB downloads (CSV exports, media manifest
+ * blobs) doesn't balloon `~/.peek/sessions.db` immediately. Bodies above this
+ * limit are truncated post-mask (so the truncation can't cut through a
+ * redaction marker mid-string) and tagged with {@link BODY_TRUNCATION_MARKER}.
+ */
+export const MAX_BODY_BYTES = 256 * 1024;
+
+/** Marker appended to a body that was truncated at {@link MAX_BODY_BYTES}. */
+export const BODY_TRUNCATION_MARKER = '<<BODY_TRUNCATED@256KB>>';
+
 /** Hook the manager calls when it has a (masked) body to forward. */
 export type ForwardBody = (tabId: number, record: NetMessage) => void;
 
@@ -178,8 +192,23 @@ export class DeepCaptureManager {
       responseBody: body?.base64Encoded ? '<<BASE64_BODY_DROPPED>>' : body?.body,
     };
     const masked = maskNetMessage(raw);
+    // Cap the body length AFTER masking — truncating pre-mask risks cutting
+    // through a redaction marker (so a half-redacted token could slip out).
+    if (typeof masked.responseBody === 'string') {
+      masked.responseBody = capBody(masked.responseBody);
+    }
     this.#deps.onBody(tabId, masked);
   }
+}
+
+/**
+ * Truncate `body` to {@link MAX_BODY_BYTES} when it exceeds the cap, appending
+ * {@link BODY_TRUNCATION_MARKER} so the reader can tell the body was cut.
+ * Bodies at or below the cap are returned unchanged. Exported for tests.
+ */
+export function capBody(body: string): string {
+  if (body.length <= MAX_BODY_BYTES) return body;
+  return body.slice(0, MAX_BODY_BYTES) + BODY_TRUNCATION_MARKER;
 }
 
 interface ParsedResponseReceived {

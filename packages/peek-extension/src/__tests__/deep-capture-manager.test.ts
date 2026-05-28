@@ -6,10 +6,13 @@
 
 import { describe, expect, it } from 'vitest';
 import {
+  BODY_TRUNCATION_MARKER,
   CDP_PROTOCOL_VERSION,
   type DebuggeeTab,
   type DebuggerSurface,
   DeepCaptureManager,
+  MAX_BODY_BYTES,
+  capBody,
 } from '../deep-capture/manager';
 import type { NetMessage } from '../recorder/messages';
 
@@ -275,5 +278,74 @@ describe('DeepCaptureManager — response body capture', () => {
     expect(bodies).toHaveLength(0); // body fetch failed; nothing forwarded
     // Manager is still attached and listening.
     expect(mgr.attachedTabs).toEqual([9]);
+  });
+
+  // Body-size cap (256 KB) — keeps ~/.peek/sessions.db from ballooning on a
+  // multi-MB response. Truncation is applied AFTER masking so it can't cut
+  // through a redaction marker mid-string.
+  it('forwards a sub-cap body (~100 KB) UNMODIFIED', async () => {
+    const fk = fakeDebugger();
+    const bodies: Array<{ tabId: number; record: NetMessage }> = [];
+    const mgr = new DeepCaptureManager({
+      debugger: fk.surface,
+      onBody: (tabId, record) => bodies.push({ tabId, record }),
+    });
+    await mgr.attach(9);
+    const small = 'a'.repeat(100 * 1024); // 100 KB
+    fk.responseBodyForRequest('req-small', small);
+    fk.emit({ tabId: 9 }, 'Network.responseReceived', {
+      requestId: 'req-small',
+      response: { url: 'https://api.test/small', status: 200 },
+    });
+    await new Promise((r) => setTimeout(r, 0));
+    expect(bodies).toHaveLength(1);
+    expect(bodies[0]?.record.responseBody).toBe(small);
+    expect(bodies[0]?.record.responseBody?.endsWith(BODY_TRUNCATION_MARKER)).toBe(false);
+  });
+
+  it('truncates an over-cap body (~500 KB) to MAX_BODY_BYTES + BODY_TRUNCATION_MARKER', async () => {
+    const fk = fakeDebugger();
+    const bodies: Array<{ tabId: number; record: NetMessage }> = [];
+    const mgr = new DeepCaptureManager({
+      debugger: fk.surface,
+      onBody: (tabId, record) => bodies.push({ tabId, record }),
+    });
+    await mgr.attach(9);
+    const large = 'b'.repeat(500 * 1024); // 500 KB
+    fk.responseBodyForRequest('req-large', large);
+    fk.emit({ tabId: 9 }, 'Network.responseReceived', {
+      requestId: 'req-large',
+      response: { url: 'https://api.test/large', status: 200 },
+    });
+    await new Promise((r) => setTimeout(r, 0));
+    expect(bodies).toHaveLength(1);
+    const body = bodies[0]?.record.responseBody;
+    expect(body).toBeDefined();
+    // biome-ignore lint/style/noNonNullAssertion: existence checked above
+    expect(body!.endsWith(BODY_TRUNCATION_MARKER)).toBe(true);
+    // biome-ignore lint/style/noNonNullAssertion: existence checked above
+    expect(body!.length).toBe(MAX_BODY_BYTES + BODY_TRUNCATION_MARKER.length);
+  });
+});
+
+describe('capBody (body-size cap helper)', () => {
+  it('returns sub-cap input unchanged', () => {
+    const body = 'x'.repeat(100 * 1024);
+    expect(capBody(body)).toBe(body);
+  });
+
+  it('returns a body at exactly MAX_BODY_BYTES unchanged', () => {
+    const body = 'y'.repeat(MAX_BODY_BYTES);
+    expect(capBody(body)).toBe(body);
+  });
+
+  it('truncates over-cap input to MAX_BODY_BYTES + marker', () => {
+    const body = 'z'.repeat(500 * 1024);
+    const out = capBody(body);
+    expect(out.endsWith(BODY_TRUNCATION_MARKER)).toBe(true);
+    expect(out.length).toBe(MAX_BODY_BYTES + BODY_TRUNCATION_MARKER.length);
+    // The first MAX_BODY_BYTES chars are the prefix of the input (i.e. we did
+    // NOT replace them with the marker, only appended it).
+    expect(out.slice(0, MAX_BODY_BYTES)).toBe(body.slice(0, MAX_BODY_BYTES));
   });
 });
