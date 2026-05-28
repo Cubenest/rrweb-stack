@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>peek e2e fixture</title>
+  </head>
+  <body>
+    <h1>peek smoke fixture</h1>
+    <p>This page deliberately emits console + network + DOM activity so the
+      smoke test can assert peek captured something.</p>
+
+    <button id="click-me" type="button">Click me</button>
+    <div id="result"></div>
+
+    <script>
+      // Console activity — peek's console plugin should pick these up.
+      console.log('[peek-fixture] page loaded');
+      console.info('[peek-fixture] info line');
+      console.warn('[peek-fixture] warn line');
+
+      // A fetch to a non-resolving URL — peek's network capture should see the
+      // request/error metadata. We intentionally point at an unrouted .invalid
+      // TLD so the resolver fails locally without requiring a server.
+      fetch('https://peek-smoke.invalid/echo')
+        .catch((err) => console.error('[peek-fixture] fetch errored as expected:', String(err)));
+
+      // DOM activity on click — drives an rrweb interaction event.
+      document.getElementById('click-me').addEventListener('click', () => {
+        document.getElementById('result').textContent = 'clicked at ' + Date.now();
+        console.log('[peek-fixture] button click handled');
+      });
+
+      // Mark a global so the test can assert the script ran.
+      window.__peekFixtureReady = true;
+    </script>
+  </body>
+</html>

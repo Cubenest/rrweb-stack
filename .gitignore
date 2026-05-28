@@ -14,6 +14,10 @@ build/
 !.vscode/extensions.json
 coverage/
 *.log
+# Playwright (peek-extension/e2e/) — `test:e2e` writes these on every run.
+test-results/
+playwright-report/
+.playwright/
 .env
 .env.*
 !.env.example

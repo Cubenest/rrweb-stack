@@ -12,6 +12,7 @@
     "zip": "wxt zip",
     "typecheck": "wxt prepare && tsc --noEmit",
     "test": "vitest run --passWithNoTests",
+    "test:e2e": "playwright test -c e2e/playwright.config.ts",
     "postinstall": "wxt prepare"
   },
   "dependencies": {
@@ -20,11 +21,15 @@
     "react-dom": "^18.3.1"
   },
   "devDependencies": {
+    "@playwright/test": "^1.49.1",
+    "@types/better-sqlite3": "^7.6.13",
+    "@types/node": "^22.10.0",
     "@types/chrome": "^0.1.42",
     "@types/react": "^18.3.29",
     "@types/react-dom": "^18.3.7",
     "@webext-core/fake-browser": "^1.5.0",
     "@wxt-dev/module-react": "^1.2.2",
+    "better-sqlite3": "^12.10.0",
     "esbuild": "^0.28.0",
     "jsdom": "^25.0.1",
     "vite": "^6.4.2",

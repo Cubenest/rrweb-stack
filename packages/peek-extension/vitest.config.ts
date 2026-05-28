@@ -15,5 +15,10 @@ export default defineConfig({
   test: {
     environment: 'node',
     setupFiles: ['./src/__tests__/setup.ts'],
+    // Exclude the Playwright e2e tree (Task 3.29). Vitest's default glob would
+    // otherwise pick up `e2e/smoke.spec.ts`, which uses Playwright's `test`
+    // export (not vitest's) and spawns a real Chromium — never what `pnpm test`
+    // wants. Playwright finds the spec via `e2e/playwright.config.ts` instead.
+    exclude: ['**/node_modules/**', '**/dist/**', '**/.output/**', 'e2e/**'],
   },
 });
