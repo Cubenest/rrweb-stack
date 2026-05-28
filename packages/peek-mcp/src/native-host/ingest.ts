@@ -299,12 +299,14 @@ function ingestConsoleAppend(
     return { type: 'console.append.ok', sessionId: msg.sessionId, count: 0 };
   }
 
-  ensureSessionRow(ctx.db, msg.sessionId, msg.url, msg.title);
-
   const insert = ctx.db.prepare(
     'INSERT INTO console_events (session_id, ts_ms, level, message, url) VALUES (?, ?, ?, ?, ?)',
   );
+  // ensureSessionRow runs INSIDE the per-batch transaction so a child-insert
+  // failure (disk full, NOT NULL violation, FK error) rolls back the parent
+  // upsert too — otherwise a failed batch leaves an empty `sessions` row.
   const tx = ctx.db.transaction((rows: readonly IncomingConsoleEvent[]) => {
+    ensureSessionRow(ctx.db, msg.sessionId, msg.url, msg.title);
     for (const ev of rows) {
       const ts = typeof ev.ts === 'number' ? ev.ts : Date.now();
       const level = typeof ev.level === 'string' && ev.level.length > 0 ? ev.level : 'log';
@@ -340,8 +342,6 @@ function ingestNetworkAppend(
     return { type: 'network.append.ok', sessionId: msg.sessionId, count: 0 };
   }
 
-  ensureSessionRow(ctx.db, msg.sessionId, msg.url, msg.title);
-
   // Deep capture (ADR-0010): the relay-side mask runs `redactBody` BEFORE the
   // body arrives here, so we just persist the already-masked string. Unset
   // fields land as SQL NULL (not the literal "undefined" / empty string).
@@ -350,7 +350,11 @@ function ingestNetworkAppend(
        (session_id, ts_ms, method, url, status, status_text, request_id, resource_type, duration_ms, error_text, request_body_redacted, response_body_redacted)
      VALUES (?, ?, ?, ?, ?, NULL, ?, ?, NULL, ?, ?, ?)`,
   );
+  // ensureSessionRow runs INSIDE the per-batch transaction so a child-insert
+  // failure (disk full, NOT NULL violation, FK error) rolls back the parent
+  // upsert too — otherwise a failed batch leaves an empty `sessions` row.
   const tx = ctx.db.transaction((rows: readonly IncomingNetRecord[]) => {
+    ensureSessionRow(ctx.db, msg.sessionId, msg.url, msg.title);
     for (const rec of rows) {
       const ts = typeof rec.ts === 'number' ? rec.ts : Date.now();
       const method =

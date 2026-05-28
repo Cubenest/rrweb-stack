@@ -497,3 +497,61 @@ describe('error envelopes never crash the host', () => {
     ).not.toThrow();
   });
 });
+
+// Spec review fix: ensureSessionRow runs INSIDE the per-batch transaction so a
+// child-insert failure rolls back the parent upsert too. Otherwise a batch
+// that fails (disk full, NOT NULL violation, FK error) would leave an orphan
+// empty `sessions` row. Simulated here with a BEFORE-INSERT trigger that
+// raises an error on the child table, then we assert the parent row is gone.
+describe('ensureSessionRow rolls back when the child batch fails', () => {
+  it('console.append: a failing child insert leaves NO sessions row', () => {
+    // Install a trigger that aborts every child insert.
+    db.exec(
+      "CREATE TRIGGER console_block BEFORE INSERT ON console_events BEGIN SELECT RAISE(ABORT, 'simulated child-insert failure'); END;",
+    );
+    const reply = ingest(
+      {
+        type: 'console.append',
+        sessionId: 's_rollback_console',
+        url: 'https://x.test/',
+        events: [{ ts: 1, level: 'log', args: ['x'] }],
+      },
+      ctx,
+    );
+    // ingest() catches and returns a structured err — it must not throw.
+    expect((reply as { type: string }).type).toMatch(/\.err$/);
+    // Parent upsert rolled back: no row in sessions.
+    const row = db
+      .prepare('SELECT COUNT(*) AS c FROM sessions WHERE id = ?')
+      .get('s_rollback_console') as { c: number };
+    expect(row.c).toBe(0);
+  });
+
+  it('network.append: a failing child insert leaves NO sessions row', () => {
+    db.exec(
+      "CREATE TRIGGER network_block BEFORE INSERT ON network_events BEGIN SELECT RAISE(ABORT, 'simulated child-insert failure'); END;",
+    );
+    const reply = ingest(
+      {
+        type: 'network.append',
+        sessionId: 's_rollback_network',
+        url: 'https://x.test/',
+        records: [
+          {
+            kind: 'request',
+            id: 'r1',
+            ts: 1000,
+            method: 'GET',
+            url: 'https://api.test/v1/things',
+          },
+        ],
+      },
+      ctx,
+    );
+    expect((reply as { type: string }).type).toMatch(/\.err$/);
+    const row = db
+      .prepare('SELECT COUNT(*) AS c FROM sessions WHERE id = ?')
+      .get('s_rollback_network') as { c: number };
+    expect(row.c).toBe(0);
+  });
+});
