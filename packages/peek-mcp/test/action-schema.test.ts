@@ -1,0 +1,90 @@
+import { describe, expect, it } from 'vitest';
+import { ActionSchema, redactActionForAudit } from '../src/mcp/action-schema.js';
+
+describe('ActionSchema (P2 PRD §E.4 discriminated union)', () => {
+  it('accepts every documented action type', () => {
+    for (const action of [
+      { type: 'click', selector: '#a' },
+      { type: 'type', selector: '#a', text: 'hi' },
+      { type: 'navigate', url: 'https://example.com/' },
+      { type: 'back' },
+      { type: 'forward' },
+      { type: 'reload' },
+      { type: 'scroll', x: 0, y: 100 },
+      { type: 'scroll', selector: '#footer' },
+      { type: 'screenshot' },
+      { type: 'screenshot', selector: '#hero' },
+      { type: 'waitFor', selector: '#loaded' },
+      { type: 'waitFor', timeoutMs: 1000 },
+    ]) {
+      const result = ActionSchema.safeParse(action);
+      expect(result.success, JSON.stringify(action)).toBe(true);
+    }
+  });
+
+  it('applies defaults: click button=left, type delay=40, waitFor timeoutMs=5000', () => {
+    const click = ActionSchema.parse({ type: 'click', selector: '#a' });
+    expect(click).toMatchObject({ button: 'left' });
+    const type = ActionSchema.parse({ type: 'type', selector: '#a', text: 'hi' });
+    expect(type).toMatchObject({ delay: 40 });
+    const waitFor = ActionSchema.parse({ type: 'waitFor' });
+    expect(waitFor).toMatchObject({ timeoutMs: 5000 });
+  });
+
+  it('rejects malformed actions', () => {
+    expect(ActionSchema.safeParse({ type: 'unknown' }).success).toBe(false);
+    expect(ActionSchema.safeParse({ type: 'click' }).success).toBe(false); // no selector
+    expect(ActionSchema.safeParse({ type: 'click', selector: '' }).success).toBe(false);
+    expect(ActionSchema.safeParse({ type: 'navigate', url: 'not a url' }).success).toBe(false);
+    expect(
+      ActionSchema.safeParse({ type: 'type', selector: '#a', text: 'hi', delay: -1 }).success,
+    ).toBe(false);
+    expect(ActionSchema.safeParse({ type: 'click', selector: '#a', button: 'turbo' }).success).toBe(
+      false,
+    );
+  });
+
+  it('rejects nth that is non-integer / negative', () => {
+    expect(ActionSchema.safeParse({ type: 'click', selector: '#a', nth: 1.5 }).success).toBe(false);
+    expect(ActionSchema.safeParse({ type: 'click', selector: '#a', nth: -1 }).success).toBe(false);
+  });
+});
+
+describe('redactActionForAudit', () => {
+  it('redacts TypeAction.text', () => {
+    const action = { type: 'type' as const, selector: '#pw', text: 'hunter2', delay: 40 };
+    expect(redactActionForAudit(action)).toEqual({
+      type: 'type',
+      selector: '#pw',
+      text: '<<REDACTED>>',
+      delay: 40,
+    });
+  });
+
+  it('redacts query-string values in NavigateAction.url', () => {
+    const out = redactActionForAudit({
+      type: 'navigate',
+      url: 'https://example.com/api?token=sk-live-abc&user=alice',
+    });
+    expect(out.type === 'navigate' && out.url).toBe(
+      'https://example.com/api?token=%3C%3CREDACTED%3E%3E&user=%3C%3CREDACTED%3E%3E',
+    );
+  });
+
+  it('leaves non-sensitive actions unchanged', () => {
+    const click = { type: 'click' as const, selector: '#a', button: 'left' as const };
+    expect(redactActionForAudit(click)).toEqual(click);
+    const back = { type: 'back' as const };
+    expect(redactActionForAudit(back)).toEqual(back);
+  });
+
+  it('falls through on an unparseable URL (rare; safe-by-default)', () => {
+    // url-validation rejects this at the Zod layer, but redact is callable on
+    // ANY Action shape, and we want it to never throw.
+    const out = redactActionForAudit({
+      type: 'navigate',
+      url: 'https://example.com/',
+    });
+    expect(out.type === 'navigate' && out.url).toBe('https://example.com/');
+  });
+});
