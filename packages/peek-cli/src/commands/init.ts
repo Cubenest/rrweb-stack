@@ -6,7 +6,7 @@
 // defers to (it dry-runs unless PEEK_INSTALL_NATIVE_HOST is set; here the user
 // affirmatively opts in, so we call the installer directly with realSink).
 
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { parseArgs } from 'node:util';
 import {
@@ -34,6 +34,8 @@ import {
   mergePeekConfig,
   serializeConfig,
 } from '../lib/init-config.js';
+import { wrapperContent, wrapperPath } from '../lib/native-host-wrapper.js';
+import { peekHomeDir } from '../lib/peek-home.js';
 import { confirm, multiSelect, promptText } from '../lib/prompt.js';
 
 const SUPPORTED: readonly SupportedPlatform[] = ['darwin', 'linux', 'win32'];
@@ -259,7 +261,24 @@ async function registerNativeHost(platform: SupportedPlatform, homeDir: string):
     return;
   }
 
-  const manifest = buildManifest(hostBinaryPath(), extensionIds);
+  // P-16 (2026-05-28 QA walk): write a tiny shell wrapper at ~/.peek/ that
+  // hardcodes `process.execPath`, then point the manifest at the wrapper
+  // instead of the raw .js. Chrome spawns the manifest's `path` via the GUI
+  // launcher's $PATH, NOT the shell's — on macOS with both a legacy
+  // /usr/local/bin/node (v14, x86_64) and a current /opt/homebrew/bin/node
+  // (arm64), the system PATH resolves `#!/usr/bin/env node` to the older
+  // binary and `better-sqlite3.node` dlopen-fails with an architecture
+  // mismatch, crashing the host before Chrome reads any output. The wrapper
+  // is the standard fix for Node-based native messaging hosts.
+  const home = peekHomeDir();
+  mkdirSync(home, { recursive: true });
+  const wrapper = wrapperPath(home, platform);
+  writeFileSync(wrapper, wrapperContent(process.execPath, hostBinaryPath(), platform), {
+    mode: 0o755,
+  });
+  process.stdout.write(`  ✔ Wrote native-host wrapper: ${wrapper}\n`);
+
+  const manifest = buildManifest(wrapper, extensionIds);
   const results = installManifests([...chosen], manifest, { sink: realSink });
   for (const r of results) {
     const where = r.manifestPath ?? r.registryKey ?? '(unknown)';
