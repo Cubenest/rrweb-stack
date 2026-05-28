@@ -7,7 +7,10 @@
 // §B3) so `peek sessions export --format json` and the MCP `get_session_*`
 // tools are interchangeable for an AI consumer.
 
+import { rmSync } from 'node:fs';
+import { join } from 'node:path';
 import type { Database } from 'better-sqlite3';
+import { rrwebEventsDir } from './peek-home.js';
 
 /** A row of the `sessions` table, as the CLI presents it. */
 export interface SessionRow {
@@ -225,17 +228,47 @@ export function getSessionDetail(db: Database, id: string): SessionDetail | unde
   };
 }
 
-/** Delete one session by id. Child rows cascade (ON DELETE CASCADE). Returns rows removed (0 or 1). */
-export function deleteSession(db: Database, id: string): number {
+/**
+ * Delete one session by id. Child rows cascade (ON DELETE CASCADE). Also
+ * removes the per-session chunk directory under {@link rrwebEventsDir} — K.4
+ * fix (2026-05-28 QA walk): the DB cascade alone left gzipped blobs on disk
+ * forever. Returns rows removed (0 or 1). `rrwebBaseDir` defaults to
+ * `~/.peek/rrweb-events/`; tests override it with a tmpdir.
+ */
+export function deleteSession(
+  db: Database,
+  id: string,
+  rrwebBaseDir: string = rrwebEventsDir(),
+): number {
   const info = db.prepare('DELETE FROM sessions WHERE id = ?').run(id);
+  if (info.changes > 0) {
+    rmSync(join(rrwebBaseDir, id), { recursive: true, force: true });
+  }
   return info.changes;
 }
 
 /**
- * Delete every session whose `updated_at` is strictly before the ISO cutoff.
- * Returns the number of sessions removed (child rows cascade).
+ * Delete every session whose `updated_at` is strictly before the ISO cutoff
+ * AND the corresponding per-session chunk directories on disk. SELECT-then-
+ * DELETE wraps in a transaction so the on-disk cleanup matches what was
+ * actually removed from the DB even if a concurrent write lands between the
+ * two statements. Returns the number of sessions removed.
  */
-export function deleteSessionsOlderThan(db: Database, cutoffIso: string): number {
-  const info = db.prepare('DELETE FROM sessions WHERE updated_at < ?').run(cutoffIso);
-  return info.changes;
+export function deleteSessionsOlderThan(
+  db: Database,
+  cutoffIso: string,
+  rrwebBaseDir: string = rrwebEventsDir(),
+): number {
+  const removeIds = db.transaction((cutoff: string): readonly string[] => {
+    const rows = db.prepare('SELECT id FROM sessions WHERE updated_at < ?').all(cutoff) as {
+      id: string;
+    }[];
+    db.prepare('DELETE FROM sessions WHERE updated_at < ?').run(cutoff);
+    return rows.map((r) => r.id);
+  });
+  const ids = removeIds(cutoffIso);
+  for (const id of ids) {
+    rmSync(join(rrwebBaseDir, id), { recursive: true, force: true });
+  }
+  return ids.length;
 }
