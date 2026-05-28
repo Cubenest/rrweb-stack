@@ -19,6 +19,7 @@ export default defineConfig({
   manifest: {
     name: 'peek',
     description: 'Capture your real browser session and expose it to AI coding agents via MCP.',
+    homepage_url: 'https://github.com/Cubenest/rrweb-stack/tree/main/packages/peek-extension',
     minimum_chrome_version: '116',
     // ADR-0008: NO `<all_urls>` / `https://*/*` in host_permissions. The broad
     // pattern lives in optional_host_permissions and is requested per-site from
