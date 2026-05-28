@@ -1,0 +1,46 @@
+---
+import '../styles/global.css';
+
+interface Props {
+  title: string;
+  description?: string;
+}
+
+const { title, description = 'tracelane — OSS test recorder for WDIO, Playwright, and Cypress. Captures rrweb + console + network and ships a self-contained HTML report on failed tests.' } = Astro.props;
+---
+
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="description" content={description} />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <meta name="generator" content={Astro.generator} />
+    <meta property="og:title" content={title} />
+    <meta property="og:description" content={description} />
+    <meta property="og:type" content="website" />
+    <title>{title}</title>
+  </head>
+  <body>
+    <header class="site-header">
+      <div class="inner">
+        <a href="/" class="brand">tracelane</a>
+        <nav>
+          <a href="/">Home</a>
+          <a href="/getting-started">Getting started</a>
+          <a href="https://github.com/Cubenest/rrweb-stack" rel="noopener">GitHub</a>
+        </nav>
+      </div>
+    </header>
+    <main>
+      <slot />
+    </main>
+    <footer class="site-footer">
+      <div class="inner">
+        <span>Apache 2.0 &middot; part of the <a href="https://github.com/Cubenest/rrweb-stack" rel="noopener">Cubenest/rrweb-stack</a> monorepo.</span>
+        <span>Alpha software &mdash; APIs may shift before 1.0.</span>
+      </div>
+    </footer>
+  </body>
+</html>

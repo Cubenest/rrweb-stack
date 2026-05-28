@@ -1,0 +1,64 @@
+---
+import Layout from '../layouts/Layout.astro';
+---
+
+<Layout title="tracelane — failed-test recorder for WebdriverIO, Playwright, and Cypress">
+  <h1>tracelane</h1>
+  <p class="tagline">Failed tests, fully replayable.</p>
+
+  <div class="badges">
+    <span class="badge">Apache 2.0</span>
+    <span class="badge">alpha</span>
+    <span class="badge">Node &ge; 22</span>
+  </div>
+
+  <p>
+    <strong>tracelane</strong> is an open-source test recorder for end-to-end suites.
+    It captures an <a href="https://www.rrweb.io" rel="noopener">rrweb</a>-grade session
+    plus the console and failed network responses while your tests run, and ships a
+    <em>single self-contained HTML report</em> on failure &mdash; replay, console
+    panel, and network panel, all offline, no server required.
+  </p>
+
+  <p>
+    Drop-in for <strong>WebdriverIO</strong> today; <strong>Playwright</strong> and
+    <strong>Cypress</strong> integrations are next on the roadmap and share the same
+    framework-agnostic core.
+  </p>
+
+  <div class="btn-row">
+    <a class="cta" href="/getting-started">Getting started &rarr;</a>
+    <a class="cta secondary" href="https://github.com/Cubenest/rrweb-stack/tree/main/packages/tracelane-wdio" rel="noopener">View on GitHub</a>
+  </div>
+
+  <h2>Why tracelane</h2>
+  <div class="feature-grid">
+    <div class="feature">
+      <h3>Failed-only by default</h3>
+      <p>Passing tests stream into an in-page buffer and are discarded. Only failures write a report &mdash; no disk noise, no CI bloat.</p>
+    </div>
+    <div class="feature">
+      <h3>Self-contained HTML</h3>
+      <p>One <code>.html</code> per failed test, capped at 25&nbsp;MB. Open it in any browser, offline. Replay scrubs, console panel, failed-network panel, no backend.</p>
+    </div>
+    <div class="feature">
+      <h3>In-page rrweb buffer</h3>
+      <p>The Node side polls the live page every 5&nbsp;s and on every <code>afterTest</code>. Re-injects on navigation. No CI parallelism races (<a href="https://github.com/Cubenest/rrweb-stack/blob/main/prds/adrs/0006-p1-in-page-buffer-node-polled.md" rel="noopener">ADR-0006</a>).</p>
+    </div>
+    <div class="feature">
+      <h3>Allure-ready</h3>
+      <p>Drop the report into Allure&apos;s <code>addAttachment</code> via the planned v1.1 reporter shim. Works with the spec reporter today.</p>
+    </div>
+  </div>
+
+  <h2>Packages</h2>
+  <ul>
+    <li><code>@tracelane/wdio</code> &mdash; the WebdriverIO Service. <a href="https://www.npmjs.com/package/@tracelane/wdio" rel="noopener">npm</a></li>
+    <li><code>@tracelane/core</code> &mdash; framework-agnostic recording engine. <a href="https://www.npmjs.com/package/@tracelane/core" rel="noopener">npm</a></li>
+    <li><code>@tracelane/report</code> &mdash; offline HTML report builder. <a href="https://www.npmjs.com/package/@tracelane/report" rel="noopener">npm</a></li>
+  </ul>
+
+  <p style="color: var(--fg-muted); font-size: 0.9rem; margin-top: 2rem;">
+    No telemetry. No cloud. No account. Reports are written to your local <code>outDir</code>.
+  </p>
+</Layout>

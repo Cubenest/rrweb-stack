@@ -1,0 +1,96 @@
+---
+import Layout from '../layouts/Layout.astro';
+---
+
+<Layout title="Getting started &middot; tracelane">
+  <h1>Getting started</h1>
+  <p class="tagline">From <code>pnpm add</code> to a replayable failure in ~2 minutes.</p>
+
+  <h2>1. Install</h2>
+  <p>In an existing WebdriverIO project:</p>
+  <pre><code>pnpm add -D @tracelane/wdio @tracelane/core @tracelane/report</code></pre>
+  <p>
+    Or with npm / yarn:
+    <code>npm i -D @tracelane/wdio @tracelane/core @tracelane/report</code>.
+  </p>
+  <p>
+    <code>webdriverio</code> and <code>@wdio/types</code> are peer dependencies
+    (<code>^9.0.0</code>) &mdash; you already have them in a WDIO project.
+  </p>
+
+  <h2>2. Register the service</h2>
+  <p>Add <code>TracelaneService</code> to the <code>services</code> array in <code>wdio.conf.ts</code>:</p>
+  <pre><code>{`// wdio.conf.ts
+import type { Options } from '@wdio/types';
+import TracelaneService from '@tracelane/wdio';
+
+export const config: Options.Testrunner = {
+  runner: 'local',
+  framework: 'mocha',
+  specs: ['./test/specs/**/*.ts'],
+  capabilities: [
+    {
+      browserName: 'chrome',
+      'goog:chromeOptions': {
+        args: ['--remote-debugging-port=9222', '--no-sandbox'],
+      },
+    },
+  ],
+  services: [
+    ['devtools', {}], // enables browser.cdp() for network capture
+    [
+      TracelaneService,
+      {
+        mode: 'failed',           // 'failed' (default) or 'all'
+        outDir: './tracelane',    // report output dir
+        capture: { rrweb: true, network: true, console: true },
+      },
+    ],
+  ],
+  reporters: ['spec'],
+};
+`}</code></pre>
+
+  <h2>3. Run your tests</h2>
+  <p>Run your suite normally:</p>
+  <pre><code>pnpm wdio run wdio.conf.ts</code></pre>
+  <div class="callout">
+    <strong>On failure:</strong> a self-contained HTML report is written to
+    <code>tracelane/&lt;spec&gt;--&lt;title&gt;--&lt;cid&gt;-&lt;ts&gt;.html</code>.
+    Open it in any browser to scrub through the rrweb session, inspect console
+    logs, and see failed responses &mdash; entirely offline. One file, no server.
+  </div>
+
+  <h2>4. Options</h2>
+  <p>
+    Full options reference, the <code>traceLaneHooks</code> alternative (for setups that
+    can&apos;t register a Service), and the Mocha / Jasmine / Cucumber notes are in the
+    package README:
+  </p>
+  <ul>
+    <li><a href="https://github.com/Cubenest/rrweb-stack/tree/main/packages/tracelane-wdio#readme" rel="noopener">@tracelane/wdio README on GitHub</a></li>
+    <li><a href="https://www.npmjs.com/package/@tracelane/wdio" rel="noopener">@tracelane/wdio on npm</a></li>
+    <li><a href="https://www.npmjs.com/package/@tracelane/core" rel="noopener">@tracelane/core on npm</a></li>
+    <li><a href="https://www.npmjs.com/package/@tracelane/report" rel="noopener">@tracelane/report on npm</a></li>
+  </ul>
+
+  <h2>Browser &amp; runner support</h2>
+  <ul>
+    <li><strong>Mocha</strong>, <strong>Jasmine</strong>, <strong>Cucumber</strong> (via <code>beforeScenario</code>/<code>afterScenario</code>) &mdash; supported.</li>
+    <li><strong>Chrome / Chromium &ge; 116</strong>, <strong>Edge</strong> &mdash; rrweb + console + network (with a CDP-capable session).</li>
+    <li><strong>Firefox</strong>, <strong>Safari</strong> &mdash; rrweb + console. CDP is Chromium-only; tracelane degrades gracefully and still writes a report.</li>
+  </ul>
+
+  <h2>What about Playwright and Cypress?</h2>
+  <p>
+    The core (<code>@tracelane/core</code>) is framework-agnostic by design &mdash; it
+    wraps the per-framework browser handle behind a <code>BrowserExecutor</code>
+    interface. The Playwright fixture and Cypress plugin are on the near-term
+    roadmap; track progress on the <a href="https://github.com/Cubenest/rrweb-stack" rel="noopener">repo</a>.
+  </p>
+
+  <p style="color: var(--fg-muted); font-size: 0.9rem; margin-top: 2rem;">
+    Questions or issues? Open one on
+    <a href="https://github.com/Cubenest/rrweb-stack/issues" rel="noopener">GitHub</a>.
+  </p>
+</Layout>

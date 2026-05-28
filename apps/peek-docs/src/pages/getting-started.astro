@@ -1,0 +1,129 @@
+---
+import Layout from '../layouts/Layout.astro';
+---
+
+<Layout title="Getting started &middot; peek">
+  <h1>Getting started</h1>
+  <p class="tagline">Run the MCP server, point your AI client at it, load the extension.</p>
+
+  <h2>1. Run the MCP server</h2>
+  <p>
+    The simplest path is <code>npx</code> &mdash; no install needed. Your AI client will
+    spawn the server for you on demand:
+  </p>
+  <pre><code>npx -y @peekdev/mcp</code></pre>
+  <p>
+    This runs the stdio MCP server (it reads and writes the local SQLite at
+    <code>~/.peek/sessions.db</code>). You generally won&apos;t invoke it directly &mdash;
+    your AI client (next step) does that.
+  </p>
+
+  <h2>2. Configure your AI client</h2>
+  <p>
+    Add peek as an MCP server in your client&apos;s config. Pick the one you use:
+  </p>
+
+  <h3>Claude Code &mdash; <code>~/.claude.json</code></h3>
+  <pre><code>{`{
+  "mcpServers": {
+    "peek": {
+      "command": "npx",
+      "args": ["-y", "@peekdev/mcp"]
+    }
+  }
+}
+`}</code></pre>
+
+  <h3>Cursor &mdash; <code>~/.cursor/mcp.json</code></h3>
+  <pre><code>{`{
+  "mcpServers": {
+    "peek": {
+      "command": "npx",
+      "args": ["-y", "@peekdev/mcp"]
+    }
+  }
+}
+`}</code></pre>
+
+  <h3>VS Code Copilot &mdash; <code>.vscode/mcp.json</code></h3>
+  <pre><code>{`{
+  "servers": {
+    "peek": {
+      "command": "npx",
+      "args": ["-y", "@peekdev/mcp"]
+    }
+  }
+}
+`}</code></pre>
+
+  <div class="callout">
+    <strong>Or let the CLI do it.</strong> Install <code>@peekdev/cli</code> and run
+    <code>peek init</code> &mdash; it detects installed AI clients and writes the right
+    config for each:
+    <pre style="margin-top: 0.5rem;"><code>npm install -g @peekdev/cli
+peek init</code></pre>
+  </div>
+
+  <h2>3. Install the native messaging host</h2>
+  <p>
+    For the Chrome extension to talk to <code>peek-mcp</code>, register the native
+    messaging manifest. The CLI handles this for you:
+  </p>
+  <pre><code>peek install</code></pre>
+  <p>
+    This writes the native-messaging manifest under your browser&apos;s
+    <code>NativeMessagingHosts</code> directory (macOS:
+    <code>~/Library/Application Support/Google/Chrome/NativeMessagingHosts/</code>;
+    Linux: <code>~/.config/google-chrome/NativeMessagingHosts/</code>; Windows:
+    a registry key under <code>HKCU\\Software\\Google\\Chrome\\NativeMessagingHosts</code>).
+  </p>
+
+  <h2>4. Load the Chrome extension (alpha)</h2>
+  <p>
+    Until the Chrome Web Store listing is live (Phase 5), load the extension
+    unpacked from a local build:
+  </p>
+  <pre><code>{`git clone https://github.com/Cubenest/rrweb-stack.git
+cd rrweb-stack
+pnpm install
+pnpm build
+pnpm --filter @peekdev/extension build
+`}</code></pre>
+  <ol>
+    <li>Open <code>chrome://extensions</code>.</li>
+    <li>Enable <strong>Developer mode</strong> (top right).</li>
+    <li>Click <strong>Load unpacked</strong>.</li>
+    <li>Select <code>packages/peek-extension/.output/chrome-mv3/</code>.</li>
+  </ol>
+
+  <h2>5. Enable peek on a site</h2>
+  <ul>
+    <li>Open the side panel from the toolbar.</li>
+    <li>Click <strong>Enable on this site</strong>. peek requests per-origin host permission from your user gesture and starts recording.</li>
+    <li>(Optional) Toggle <strong>Deep capture</strong> to record response bodies via <code>chrome.debugger</code>. Off by default.</li>
+    <li>(Optional) Set the per-origin <strong>permission level</strong> in the side panel. Default is Level 1 (observe-only).</li>
+  </ul>
+
+  <h2>6. Ask your agent</h2>
+  <p>
+    With the MCP server connected, ask your AI client things like:
+  </p>
+  <ul>
+    <li><em>&ldquo;What did I just do on this page?&rdquo;</em> (replays the latest rrweb frames)</li>
+    <li><em>&ldquo;Show me the failed network requests from the last 5 minutes.&rdquo;</em></li>
+    <li><em>&ldquo;What errors are in the console for example.com?&rdquo;</em></li>
+  </ul>
+
+  <h2>Next steps</h2>
+  <ul>
+    <li><a href="/privacy">Privacy policy</a> &mdash; what peek records and where it lives.</li>
+    <li><a href="https://github.com/Cubenest/rrweb-stack/tree/main/packages/peek-mcp#readme" rel="noopener">@peekdev/mcp README</a> &mdash; full MCP tool surface.</li>
+    <li><a href="https://github.com/Cubenest/rrweb-stack/tree/main/packages/peek-cli#readme" rel="noopener">@peekdev/cli README</a> &mdash; <code>peek init</code>, <code>sessions</code>, <code>audit log</code>.</li>
+    <li><a href="https://github.com/Cubenest/rrweb-stack/tree/main/packages/peek-extension#readme" rel="noopener">@peekdev/extension README</a> &mdash; side-panel UI and per-site activation.</li>
+  </ul>
+
+  <p style="color: var(--fg-muted); font-size: 0.9rem; margin-top: 2rem;">
+    Stuck? Open an issue on
+    <a href="https://github.com/Cubenest/rrweb-stack/issues" rel="noopener">GitHub</a>.
+  </p>
+</Layout>
