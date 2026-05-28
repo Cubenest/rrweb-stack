@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { RegistryBackedHostBridge } from '../src/mcp/host-bridge.js';
 import { PEEK_MCP_TOOLS, createPeekMcpServer } from '../src/mcp/server.js';
 import {
   clickEvent,
@@ -55,13 +56,22 @@ async function connectClient(opts: {
   dbPath?: string;
   eventsDir?: string;
   withRoots?: boolean;
-}): Promise<{ client: Client; close: () => Promise<void> }> {
+  hostBridge?: RegistryBackedHostBridge;
+  auditLogPath?: string;
+  clientName?: string;
+}): Promise<{
+  client: Client;
+  close: () => Promise<void>;
+  bridge: RegistryBackedHostBridge | undefined;
+}> {
   const peek = createPeekMcpServer({
     ...(opts.dbPath !== undefined ? { dbPath: opts.dbPath } : {}),
     ...(opts.eventsDir !== undefined ? { eventsDir: opts.eventsDir } : {}),
+    ...(opts.hostBridge !== undefined ? { hostBridge: opts.hostBridge } : {}),
+    ...(opts.auditLogPath !== undefined ? { auditLogPath: opts.auditLogPath } : {}),
   });
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
-  const client = new Client({ name: 'test-client', version: '0.0.0' });
+  const client = new Client({ name: opts.clientName ?? 'test-client', version: '0.0.0' });
   if (opts.withRoots) client.registerCapabilities({ roots: {} });
 
   await Promise.all([peek.server.connect(serverTransport), client.connect(clientTransport)]);
@@ -71,6 +81,7 @@ async function connectClient(opts: {
       await client.close();
       peek.close();
     },
+    bridge: opts.hostBridge,
   };
 }
 
@@ -85,16 +96,16 @@ function textOf(result: { content: Array<{ type: string; text?: string }> }): st
 }
 
 describe('peek MCP server: tools/list', () => {
-  it('lists exactly the 8 read-only tools', async () => {
+  it('lists exactly the documented tool surface (8 read + 2 write)', async () => {
     const { dbPath, eventsDir } = seedStore(dir, [loginSession()]);
     const { client, close } = await connectClient({ dbPath, eventsDir });
     try {
       const { tools } = await client.listTools();
       const names = tools.map((t) => t.name).sort();
       expect(names).toEqual([...PEEK_MCP_TOOLS].sort());
-      // No write tools leaked in.
-      expect(names).not.toContain('execute_action');
-      expect(names).not.toContain('request_authorization');
+      // Phase 3d landed the two Level-3+ act tools; they MUST appear.
+      expect(names).toContain('execute_action');
+      expect(names).toContain('request_authorization');
     } finally {
       await close();
     }
@@ -253,9 +264,9 @@ describe('peek MCP server: graceful no-DB', () => {
       eventsDir: join(dir, 'rrweb-events'),
     });
     try {
-      // tools/list still works.
+      // tools/list still works (8 read + 2 write).
       const { tools } = await client.listTools();
-      expect(tools).toHaveLength(8);
+      expect(tools).toHaveLength(10);
       // and a call returns the friendly message rather than erroring.
       const res = await client.callTool({ name: 'list_recent_sessions', arguments: {} });
       expect(textOf(res as never)).toContain('No sessions recorded yet');
@@ -317,6 +328,243 @@ describe('peek MCP server: roots scoping', () => {
     } finally {
       await client.close();
       peek.close();
+    }
+  });
+});
+
+// --- Act tools (Task 3.24) ---------------------------------------------------
+
+describe('peek MCP server: request_authorization (Task 3.24)', () => {
+  it('routes through the host bridge and writes ONE audit-log line', async () => {
+    const { dbPath, eventsDir } = seedStore(dir, [loginSession()]);
+    const auditLogPath = join(dir, 'audit.log');
+    const bridge = new RegistryBackedHostBridge();
+    const { client, close } = await connectClient({
+      dbPath,
+      eventsDir,
+      hostBridge: bridge,
+      auditLogPath,
+      clientName: 'cursor',
+    });
+    try {
+      // Fire the tool call but don't await yet — drive the bridge first.
+      const callP = client.callTool({
+        name: 'request_authorization',
+        arguments: {
+          sessionId: 's_login',
+          action: { type: 'click', selector: '#login' },
+        },
+      });
+
+      // The bridge has one pending request; simulate the SW replying.
+      // Poll briefly because the call is async (the MCP request flight
+      // happens over the in-memory transport).
+      for (let i = 0; i < 20 && bridge.pending.length === 0; i++) {
+        await new Promise((r) => setTimeout(r, 5));
+      }
+      expect(bridge.pending).toHaveLength(1);
+      expect(bridge.pending[0]?.req.tool).toBe('request_authorization');
+      expect(bridge.pending[0]?.req.client).toBe('cursor');
+      bridge.resolveNext({
+        verdict: 'allow',
+        result: 'ok',
+        approver: 'user',
+        approvalMs: 1716480000000,
+        confirmToken: 'tok_abc',
+      });
+
+      const res = await callP;
+      const body = parseJson(res as never) as Record<string, unknown>;
+      expect(body.tool).toBe('request_authorization');
+      expect(body.verdict).toBe('allow');
+      expect(body.result).toBe('ok');
+      expect(body.approver).toBe('user');
+      expect(body.confirmToken).toBe('tok_abc');
+
+      // Audit log appended exactly one line.
+      const contents = require('node:fs').readFileSync(auditLogPath, 'utf8');
+      const lines = contents.split('\n').filter((l: string) => l.length > 0);
+      expect(lines).toHaveLength(1);
+      const entry = JSON.parse(lines[0]);
+      expect(entry.tool).toBe('request_authorization');
+      expect(entry.client).toBe('cursor');
+      expect(entry.sessionId).toBe('s_login');
+      expect(entry.approver).toBe('user');
+      expect(entry.result).toBe('ok');
+      expect(entry.approvalTs).toBe('2024-05-23T16:00:00.000Z');
+    } finally {
+      await close();
+    }
+  });
+});
+
+describe('peek MCP server: execute_action (Task 3.24)', () => {
+  it('passes confirmToken through + audit-logs an ok result', async () => {
+    const { dbPath, eventsDir } = seedStore(dir, [loginSession()]);
+    const auditLogPath = join(dir, 'audit.log');
+    const bridge = new RegistryBackedHostBridge();
+    const { client, close } = await connectClient({
+      dbPath,
+      eventsDir,
+      hostBridge: bridge,
+      auditLogPath,
+      clientName: 'claude-code',
+    });
+    try {
+      const callP = client.callTool({
+        name: 'execute_action',
+        arguments: {
+          sessionId: 's_login',
+          action: { type: 'click', selector: '#login' },
+          confirmToken: 'tok_abc',
+        },
+      });
+
+      for (let i = 0; i < 20 && bridge.pending.length === 0; i++) {
+        await new Promise((r) => setTimeout(r, 5));
+      }
+      expect(bridge.pending[0]?.req.tool).toBe('execute_action');
+      expect(bridge.pending[0]?.req.confirmToken).toBe('tok_abc');
+      bridge.resolveNext({
+        verdict: 'allow',
+        result: 'ok',
+        approver: 'user',
+        approvalMs: 1716480001000,
+        details: { dispatched: true },
+      });
+
+      const res = await callP;
+      const body = parseJson(res as never) as Record<string, unknown>;
+      expect(body.verdict).toBe('allow');
+      expect(body.result).toBe('ok');
+
+      const contents = require('node:fs').readFileSync(auditLogPath, 'utf8');
+      const entry = JSON.parse(contents.trim());
+      expect(entry.tool).toBe('execute_action');
+      expect(entry.client).toBe('claude-code');
+    } finally {
+      await close();
+    }
+  });
+
+  it('redacts TypeAction.text in the audit log (defense in depth)', async () => {
+    const { dbPath, eventsDir } = seedStore(dir, [loginSession()]);
+    const auditLogPath = join(dir, 'audit.log');
+    const bridge = new RegistryBackedHostBridge();
+    const { client, close } = await connectClient({
+      dbPath,
+      eventsDir,
+      hostBridge: bridge,
+      auditLogPath,
+    });
+    try {
+      const callP = client.callTool({
+        name: 'execute_action',
+        arguments: {
+          sessionId: 's_login',
+          action: { type: 'type', selector: '#password', text: 'hunter2' },
+        },
+      });
+      for (let i = 0; i < 20 && bridge.pending.length === 0; i++) {
+        await new Promise((r) => setTimeout(r, 5));
+      }
+      bridge.resolveNext({ verdict: 'allow', result: 'ok', approver: 'user' });
+      await callP;
+      const contents = require('node:fs').readFileSync(auditLogPath, 'utf8');
+      const entry = JSON.parse(contents.trim());
+      expect(entry.args.text).toBe('<<REDACTED>>');
+      expect(entry.args.selector).toBe('#password'); // selector NOT redacted
+    } finally {
+      await close();
+    }
+  });
+
+  it('logs a denied result with the destructiveTerm when the SW refused', async () => {
+    const { dbPath, eventsDir } = seedStore(dir, [loginSession()]);
+    const auditLogPath = join(dir, 'audit.log');
+    const bridge = new RegistryBackedHostBridge();
+    const { client, close } = await connectClient({
+      dbPath,
+      eventsDir,
+      hostBridge: bridge,
+      auditLogPath,
+    });
+    try {
+      const callP = client.callTool({
+        name: 'execute_action',
+        arguments: {
+          sessionId: 's_login',
+          action: { type: 'click', selector: '#delete' },
+        },
+      });
+      for (let i = 0; i < 20 && bridge.pending.length === 0; i++) {
+        await new Promise((r) => setTimeout(r, 5));
+      }
+      bridge.resolveNext({
+        verdict: 'deny',
+        result: 'denied',
+        approver: 'user',
+        destructiveTerm: 'delete',
+        error: 'User denied destructive action',
+      });
+      const res = await callP;
+      const body = parseJson(res as never) as Record<string, unknown>;
+      expect(body.verdict).toBe('deny');
+      expect(body.result).toBe('denied');
+      expect(body.destructiveTerm).toBe('delete');
+      expect(body.error).toBe('User denied destructive action');
+      const contents = require('node:fs').readFileSync(auditLogPath, 'utf8');
+      const entry = JSON.parse(contents.trim());
+      expect(entry.result).toBe('denied');
+      expect(entry.destructiveTerm).toBe('delete');
+    } finally {
+      await close();
+    }
+  });
+
+  it('falls through with denied/error when no bridge is wired (MissingHostBridge default)', async () => {
+    const { dbPath, eventsDir } = seedStore(dir, [loginSession()]);
+    const auditLogPath = join(dir, 'audit.log');
+    // No hostBridge → MissingHostBridge default kicks in.
+    const { client, close } = await connectClient({ dbPath, eventsDir, auditLogPath });
+    try {
+      const res = await client.callTool({
+        name: 'execute_action',
+        arguments: {
+          sessionId: 's_login',
+          action: { type: 'reload' },
+        },
+      });
+      const body = parseJson(res as never) as Record<string, unknown>;
+      expect(body.verdict).toBe('deny');
+      expect(body.result).toBe('denied');
+      expect(String(body.error)).toContain('native-host bridge not wired');
+      // Audit log still recorded the attempt.
+      const contents = require('node:fs').readFileSync(auditLogPath, 'utf8');
+      expect(contents.split('\n').filter((l: string) => l.length > 0)).toHaveLength(1);
+    } finally {
+      await close();
+    }
+  });
+
+  it('Zod rejects malformed action input at the tool boundary', async () => {
+    const { dbPath, eventsDir } = seedStore(dir, [loginSession()]);
+    const bridge = new RegistryBackedHostBridge();
+    const { client, close } = await connectClient({ dbPath, eventsDir, hostBridge: bridge });
+    try {
+      const res = await client.callTool({
+        name: 'execute_action',
+        arguments: {
+          sessionId: 's_login',
+          action: { type: 'click' }, // missing selector → invalid
+        },
+      });
+      // The SDK returns { isError: true } for input validation failures.
+      expect((res as { isError?: boolean }).isError).toBe(true);
+      // No bridge dispatch should have happened — validation failed first.
+      expect(bridge.pending).toHaveLength(0);
+    } finally {
+      await close();
     }
   });
 });

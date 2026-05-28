@@ -1,4 +1,5 @@
 import { defineBackground } from 'wxt/utils/define-background';
+import { originFromUrl } from '../src/activation/origin';
 import { isOriginEnabled } from '../src/activation/storage';
 import { INITIAL_BACKOFF_MS, jitter, nextBackoffMs } from '../src/background/backoff';
 import {
@@ -12,6 +13,11 @@ import { SessionRegistry } from '../src/background/session';
 import { RecorderStatsStore } from '../src/background/stats';
 import { NATIVE_HOST_ID } from '../src/constants';
 import type { Cmd, CmdResponse, NativeHostState, RelayAck } from '../src/messaging/protocol';
+import { InMemoryConfirmTokenStore, handleActionRequest } from '../src/permissions/action-handler';
+import type { ActionResultMessage } from '../src/permissions/action-protocol';
+import { isActionRequest } from '../src/permissions/action-protocol';
+import { getPermissionLevel } from '../src/permissions/store';
+import { YoloSessionStore } from '../src/permissions/yolo';
 import { injectRecorder } from '../src/recorder/inject';
 
 /**
@@ -57,12 +63,91 @@ export default defineBackground({
     const stats = new RecorderStatsStore();
     const sessions = new SessionRegistry();
 
+    // Permission state (3d-3). Both in-memory + scoped to this SW instance.
+    const yolo = new YoloSessionStore();
+    const confirmTokens = new InMemoryConfirmTokenStore();
+
     function handleHostMessage(message: unknown): void {
-      // Native-host → extension messages. Action results / ack-nack are wired
-      // in 3d-3. For now receiving anything already resets the SW idle timer,
-      // which is the keep-alive guarantee we rely on.
-      void message;
+      // Action request from peek-mcp's native-host process (Task 3.24). The
+      // handler routes through the permission gate, the destructive matcher,
+      // and (for Level 3) the side-panel banner. The result message ID echoes
+      // the requestId so the host correlates back to the awaiting MCP tool.
+      if (isActionRequest(message)) {
+        void handleActionRequest(message, {
+          async getTabFor(req) {
+            if (req.tabId !== undefined) {
+              try {
+                const tab = await chrome.tabs.get(req.tabId);
+                return tab;
+              } catch {
+                // fall through to active-tab lookup
+              }
+            }
+            const [active] = await chrome.tabs.query({
+              active: true,
+              lastFocusedWindow: true,
+            });
+            return active;
+          },
+          yolo,
+          tokens: confirmTokens,
+          // The MAIN-world banner UX + selector resolution + dispatch are
+          // E2E-deferred — the brief calls them out as "the actual
+          // chrome.scripting MAIN dispatch + the React banner UX are E2E
+          // (Phase 3e)". Wire safe defaults that fail-closed so a user who
+          // gets here at Level 3 sees a structured deny (no banner yet) and
+          // the audit log still records it.
+          async promptUserConfirmation() {
+            return {
+              verdict: 'deny',
+              approvalMs: Date.now(),
+              reason: 'panel-closed',
+            };
+          },
+          async resolveTarget() {
+            // No MAIN-world resolver wired yet; an empty target means the
+            // destructive matcher won't fire. Acceptable: a Level-3 action
+            // still confirms (every action prompts); a Level-4 action will
+            // skip the override (no destructive term resolved) — when the
+            // dispatcher lands it will populate target before the gate runs.
+            return {};
+          },
+          async dispatchInMainWorld() {
+            return { ok: false, error: 'MAIN-world dispatcher not wired (Phase 3e)' };
+          },
+        })
+          .then((reply) => forwardActionResult(reply))
+          .catch((err) => {
+            console.warn('[peek] action-handler threw:', err);
+          });
+        return;
+      }
+      // Other native-host → extension messages (capture-ingest acks, future
+      // diagnostics). Receiving anything resets the SW idle timer, which is
+      // the keep-alive guarantee we rely on.
     }
+
+    /**
+     * Forward an action.result terminal message back to the host through the
+     * native port. Best-effort: a dropped reply will surface to the MCP tool
+     * handler as a timeout.
+     */
+    function forwardActionResult(reply: ActionResultMessage): void {
+      const port = nativePort;
+      if (!port) return;
+      try {
+        port.postMessage(reply);
+      } catch (err) {
+        console.warn('[peek] action.result post failed:', err);
+      }
+    }
+
+    // YOLO grants are anchored to tabs; expire when a tab closes (in addition
+    // to the 60-min internal timer). The capture-side tabs.onRemoved below
+    // also clears stats/sessions.
+    chrome.tabs.onRemoved.addListener((tabId) => {
+      yolo.onTabClosed(tabId);
+    });
 
     /**
      * Forward a body to the native host. Best-effort: if the port is down the
@@ -152,6 +237,10 @@ export default defineBackground({
       if (!url) return;
       try {
         if (!(await isOriginEnabled(url))) return;
+        // Level 0 = Off: ADR-0010 says the tool surface is disabled AND
+        // recording is suppressed on the site. Bail before injecting.
+        const origin = originFromUrl(url);
+        if (origin !== null && (await getPermissionLevel(origin)) === 0) return;
       } catch {
         return; // storage read failed — skip, try again on the next event
       }

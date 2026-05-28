@@ -1,7 +1,8 @@
 // End-to-end stdio smoke (Task 3.11 verification): spawn the BUILT bin over a
 // real child-process stdio pipe, complete the MCP initialize handshake, and
-// assert tools/list returns the 8 read-only tools. This is the closest thing to
-// how an AI tool (Claude Code / Cursor) actually launches `npx -y @peekdev/mcp`.
+// assert tools/list returns the documented peek tool surface (10 in Phase 3d:
+// 8 read + 2 act). This is the closest thing to how an AI tool (Claude Code /
+// Cursor) actually launches `npx -y @peekdev/mcp`.
 //
 // Requires `dist/index.js` to exist — the test skips with a clear message if the
 // package hasn't been built (CI runs build before test).
@@ -72,7 +73,7 @@ afterEach(() => {
 });
 
 describe.skipIf(!built)('peek-mcp stdio smoke (built bin)', () => {
-  it('completes initialize + tools/list over real stdio, returning 8 tools', async () => {
+  it('completes initialize + tools/list over real stdio, returning all 10 tools', async () => {
     child = spawn(process.execPath, [distEntry], {
       env: { ...process.env, PEEK_HOME: home },
       stdio: ['pipe', 'pipe', 'pipe'],
@@ -92,6 +93,7 @@ describe.skipIf(!built)('peek-mcp stdio smoke (built bin)', () => {
     const names = (list.result?.tools ?? []).map((t) => t.name).sort();
     expect(names).toEqual(
       [
+        // Read tools (Phase 3c).
         'generate_playwright_repro',
         'get_dom_snapshot',
         'get_session_console_errors',
@@ -100,6 +102,9 @@ describe.skipIf(!built)('peek-mcp stdio smoke (built bin)', () => {
         'get_user_action_before_error',
         'list_recent_sessions',
         'query_dom_history',
+        // Write tools (Phase 3d, Level 3+ gated).
+        'execute_action',
+        'request_authorization',
       ].sort(),
     );
   });

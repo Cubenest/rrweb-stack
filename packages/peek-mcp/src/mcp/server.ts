@@ -16,8 +16,16 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { Database } from 'better-sqlite3';
 import { z } from 'zod';
 import { openReadonlyDb } from '../db/open.js';
+import {
+  type AuditResult,
+  type AuditTool,
+  type AuditWriteOptions,
+  recordAuditEntry,
+} from '../native-host/audit.js';
+import { ActionSchema } from './action-schema.js';
 import { SessionEventsError, loadSessionEvents } from './event-blobs.js';
 import { queryDomHistory, reconstructDomAt, userActionsBeforeError } from './event-walker.js';
+import { type HostBridge, MissingHostBridge } from './host-bridge.js';
 import { generatePlaywrightRepro } from './playwright-repro.js';
 import {
   getConsoleErrors,
@@ -32,13 +40,16 @@ import { buildSessionSummary } from './summary.js';
 
 export const SERVER_NAME = 'peek-mcp';
 export const SERVER_INSTRUCTIONS =
-  'Inspect locally-recorded browser sessions. Start with list_recent_sessions, ' +
-  'then drill in by sessionId: get_session_summary for a narrative, ' +
-  'get_session_console_errors / get_session_network_errors for failures, ' +
-  'get_user_action_before_error to see what the user did before an error, ' +
-  'get_dom_snapshot / query_dom_history to inspect the DOM over time, and ' +
-  'generate_playwright_repro to turn a session into a Playwright test. All tools ' +
-  'are read-only.';
+  'Inspect locally-recorded browser sessions and (Level 3+) execute actions ' +
+  "in the user's browser. Start with list_recent_sessions, then drill in by " +
+  'sessionId: get_session_summary for a narrative, get_session_console_errors / ' +
+  'get_session_network_errors for failures, get_user_action_before_error to ' +
+  'see what the user did before an error, get_dom_snapshot / query_dom_history ' +
+  'to inspect the DOM over time, and generate_playwright_repro to turn a ' +
+  'session into a Playwright test. The write tools — execute_action and ' +
+  'request_authorization — are gated by a five-level per-origin permission ' +
+  'model with a destructive-action override; consult the user via ' +
+  'request_authorization before high-impact actions.';
 
 /** A `content: [{ type: 'text' }]` MCP tool result wrapping `value` as pretty JSON. */
 function jsonResult(value: unknown): { content: Array<{ type: 'text'; text: string }> } {
@@ -78,6 +89,23 @@ export interface CreatePeekMcpServerOptions {
   readonly eventsDir?: string;
   /** Roots-list timeout (tests); defaults to 1000ms. */
   readonly rootsTimeoutMs?: number;
+  /**
+   * The host bridge for act-tool dispatch (Task 3.24). Defaults to a
+   * {@link MissingHostBridge} that returns a structured "bridge not wired"
+   * denied — so the MCP server constructs cleanly in a process that has no
+   * native-host IPC + every act-tool call still goes through the audit log.
+   * Tests inject a {@link RegistryBackedHostBridge}; the production IPC
+   * implementation is the 3d-4/3e integration layer.
+   */
+  readonly hostBridge?: HostBridge;
+  /**
+   * Override the audit-log path (tests). Defaults to ~/.peek/audit.log via
+   * the audit module. The MCP server (this process) writes the audit log
+   * directly — it's the trust surface, so the closest process to the AI
+   * client gets the write. The user-policy reader lives on the native-host
+   * side (where the SW round-trip happens).
+   */
+  readonly auditLogPath?: string;
 }
 
 /**
@@ -398,11 +426,155 @@ export function createPeekMcpServer(options: CreatePeekMcpServerOptions = {}): P
         return jsonResult({ selector, changes });
       },
     );
+
+    // 9. request_authorization (Task 3.24) -----------------------------------
+    // Level-3 confirmation step: the AI calls this to PROMPT the user via the
+    // side-panel banner. The host bridges to the SW, which surfaces the
+    // banner. On Allow the host returns a one-shot confirmToken the AI passes
+    // to execute_action. EVERY call (including denied ones) is audit-logged.
+    server.registerTool(
+      'request_authorization',
+      {
+        description:
+          'Ask the user to authorize an action in their browser via the side-' +
+          'panel banner (Level 3 act-with-confirm). Returns a one-shot ' +
+          'confirmToken to pass to execute_action, or denies the request. ' +
+          'Every call is recorded to ~/.peek/audit.log.',
+        inputSchema: {
+          sessionId: z.string(),
+          action: ActionSchema,
+        },
+      },
+      async ({ sessionId, action }) => {
+        return await dispatchActTool({
+          tool: 'request_authorization',
+          sessionId,
+          action,
+        });
+      },
+    );
+
+    // 10. execute_action (Task 3.24) -----------------------------------------
+    // The actual DOM mutation. Gated by the per-origin permission level;
+    // destructive blocklist overrides Level 4. confirmToken (optional) is the
+    // token returned by a prior request_authorization, used to skip the
+    // banner step at Level 3. Without it: Level 3 raises a banner; Level 4
+    // proceeds (unless destructive); Level <3 denies.
+    server.registerTool(
+      'execute_action',
+      {
+        description:
+          "Execute an action in the user's browser. Requires per-origin " +
+          'permission Level 3+ (Level 3 prompts unless confirmToken is passed; ' +
+          'Level 4 auto-allows non-destructive). The destructive-action ' +
+          'override (delete/remove/transfer/send/pay/purchase/buy/confirm/' +
+          'subscribe/logout/sign out/unsubscribe/cancel subscription/wire/' +
+          'withdraw) always prompts, even at Level 4. Every call is ' +
+          'recorded to ~/.peek/audit.log.',
+        inputSchema: {
+          sessionId: z.string(),
+          action: ActionSchema,
+          confirmToken: z.string().optional(),
+        },
+      },
+      async ({ sessionId, action, confirmToken }) => {
+        return await dispatchActTool({
+          tool: 'execute_action',
+          sessionId,
+          action,
+          ...(confirmToken !== undefined ? { confirmToken } : {}),
+        });
+      },
+    );
+  }
+
+  // --- Act-tool dispatch (shared between execute_action + request_authorization) ---
+  async function dispatchActTool(input: {
+    tool: AuditTool;
+    sessionId: string;
+    action: import('./action-schema.js').Action;
+    confirmToken?: string;
+  }): Promise<ReturnType<typeof jsonResult>> {
+    const bridge = options.hostBridge ?? new MissingHostBridge();
+    const clientImpl = server.server.getClientVersion();
+    const client = clientImpl?.name ?? 'unknown';
+    const requestStartedAtMs = Date.now();
+
+    let response: import('./host-bridge.js').HostActionResponse;
+    let bridgeError: unknown;
+    try {
+      response = await bridge.request({
+        tool: input.tool,
+        sessionId: input.sessionId,
+        action: input.action,
+        client,
+        ...(input.confirmToken !== undefined ? { confirmToken: input.confirmToken } : {}),
+      });
+    } catch (err) {
+      bridgeError = err;
+      // Synthesize a denied/error response so we still audit-log + return a
+      // structured reply.
+      response = {
+        verdict: 'deny',
+        result: 'error',
+        approver: 'user',
+        error: err instanceof Error ? err.message : String(err),
+      };
+    }
+
+    // Audit-log the call — even when the bridge errored / denied. The audit
+    // log is the trust surface and must never miss a write.
+    const auditResult: AuditResult = response.result;
+    try {
+      const auditWriteOptions: AuditWriteOptions =
+        options.auditLogPath !== undefined ? { path: options.auditLogPath } : {};
+      recordAuditEntry(
+        {
+          tool: input.tool,
+          action: input.action,
+          approver: response.approver,
+          client,
+          sessionId: input.sessionId,
+          result: auditResult,
+          nowMs: requestStartedAtMs,
+          ...(response.approvalMs !== undefined ? { approvalMs: response.approvalMs } : {}),
+          ...(response.destructiveTerm !== undefined
+            ? { destructiveTerm: response.destructiveTerm }
+            : {}),
+          ...(response.error !== undefined ? { error: response.error } : {}),
+        },
+        auditWriteOptions,
+      );
+    } catch (err) {
+      console.error(
+        `peek-mcp: audit log write failed — ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
+
+    // Surface the result to the AI as JSON. confirmToken (when present) is
+    // the only field the AI re-uses; the rest is for diagnostic display.
+    const body: Record<string, unknown> = {
+      tool: input.tool,
+      verdict: response.verdict,
+      result: response.result,
+      approver: response.approver,
+    };
+    if (response.confirmToken !== undefined) body.confirmToken = response.confirmToken;
+    if (response.destructiveTerm !== undefined) body.destructiveTerm = response.destructiveTerm;
+    if (response.error !== undefined) body.error = response.error;
+    if (response.details !== undefined) body.details = response.details;
+    if (bridgeError !== undefined) {
+      // Make sure errors propagate visibly to the AI as well.
+      body.bridgeError = bridgeError instanceof Error ? bridgeError.message : String(bridgeError);
+    }
+
+    return jsonResult(body);
   }
 }
 
 /** The tool names this server registers, for smoke tests / docs. */
 export const PEEK_MCP_TOOLS = [
+  // Read tools (Phase 3c, Level 1+).
   'list_recent_sessions',
   'get_session_summary',
   'get_session_console_errors',
@@ -411,4 +583,7 @@ export const PEEK_MCP_TOOLS = [
   'generate_playwright_repro',
   'get_dom_snapshot',
   'query_dom_history',
+  // Write tools (Phase 3d, Level 3+).
+  'request_authorization',
+  'execute_action',
 ] as const;
