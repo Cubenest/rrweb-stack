@@ -52,6 +52,15 @@ the user opts in to specific features.
 - **P2 PRD §A.5** — original permission justification source.
 - **Privacy policy** — [`PRIVACY_POLICY.md`](./PRIVACY_POLICY.md).
 
+## Content Security Policy
+
+`content_security_policy.extension_pages`: `"script-src 'self' 'wasm-unsafe-eval'; object-src 'self';"`
+
+- `'self'` — scripts only from the extension's own packaged files; no remote scripts, no inline scripts, no `eval`.
+- `'wasm-unsafe-eval'` — permits WebAssembly compilation. This is a Chrome MV3-allowed directive **distinct from** `'unsafe-eval'`; it enables WASM without enabling JS `eval()`. peek does not currently ship any WASM, but the rrweb fork retains the option (e.g. for `@posthog/rrweb` compression worklets); the directive is left in for forward compatibility and to match the upstream rrweb CSP.
+
+**Validator false-positive note:** some Manifest V3 validators (including the `chrome-extension-builder:manifest-auditor` plugin v1.2.2 used in this repo's Phase 4 audit) do a substring match on `unsafe-eval` and incorrectly flag `'wasm-unsafe-eval'` as a violation. The directive is explicitly allowed by Chrome's [MV3 CSP policy](https://developer.chrome.com/docs/extensions/reference/manifest/content-security-policy) and CWS does not reject it. The validator finding is annotated here as a known false positive — no code change required.
+
 ## Auditing the manifest
 
 To verify the live manifest matches this document, build the extension and
