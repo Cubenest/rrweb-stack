@@ -3,7 +3,6 @@
   "version": "0.1.0-alpha.1",
   "description": "WebdriverIO Service that records rrweb sessions and writes a self-contained HTML report on failed tests. The user-facing tracelane integration for WDIO.",
   "license": "Apache-2.0",
-  "private": true,
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
