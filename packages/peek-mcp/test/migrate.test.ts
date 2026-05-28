@@ -56,7 +56,8 @@ describe('migrations runner', () => {
   it('records the schema version after applying', () => {
     const db = new Database(':memory:');
     runMigrations(db);
-    expect(schemaVersion(db)).toBe(1);
+    // Bumps with every new migration on disk; latest is 0002_network_bodies.
+    expect(schemaVersion(db)).toBe(2);
     db.close();
   });
 
@@ -66,7 +67,7 @@ describe('migrations runner', () => {
     expect(first.length).toBeGreaterThanOrEqual(1);
     const second = runMigrations(db);
     expect(second).toHaveLength(0);
-    expect(schemaVersion(db)).toBe(1);
+    expect(schemaVersion(db)).toBe(2);
     db.close();
   });
 
@@ -110,7 +111,7 @@ describe('openDb', () => {
     // Note: WAL is asserted separately on a temp-file DB — an in-memory DB
     // cannot use WAL (journal_mode silently stays `memory`).
     const db = openDb({ path: ':memory:' });
-    expect(schemaVersion(db)).toBe(1);
+    expect(schemaVersion(db)).toBe(2);
     expect(tableNames(db)).toEqual(expect.arrayContaining(EXPECTED_TABLES));
     expect(db.pragma('foreign_keys', { simple: true }) as number).toBe(1);
     db.close();
@@ -122,7 +123,7 @@ describe('openDb', () => {
     const db = openDb({ path: dbPath });
     try {
       expect(String(db.pragma('journal_mode', { simple: true })).toLowerCase()).toBe('wal');
-      expect(schemaVersion(db)).toBe(1);
+      expect(schemaVersion(db)).toBe(2);
     } finally {
       db.close();
       rmSync(dir, { recursive: true, force: true });

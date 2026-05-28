@@ -360,6 +360,109 @@ describe('network.append — row-per-record into network_events', () => {
     );
     expect(reply).toMatchObject({ type: 'network.append.ok', count: 3 });
   });
+
+  // Deep capture body persistence — ADR-0010, PRD §A.8.
+  // The relay's `maskNetMessage` runs `redactBody` BEFORE these records leave
+  // the content script, so the strings arriving here are already the masked
+  // form. These tests cover the host-side persistence half of that path.
+  it('persists a masked responseBody on a response record (Deep capture)', () => {
+    ingest(
+      {
+        type: 'network.append',
+        sessionId: 's_resp_body',
+        records: [
+          {
+            kind: 'response',
+            id: 'rb1',
+            ts: 1500,
+            status: 200,
+            url: 'https://api.test/v1/things/42',
+            responseBody: '<<masked>>',
+          },
+        ],
+      },
+      ctx,
+    );
+    const row = db
+      .prepare(
+        'SELECT request_id, status, request_body_redacted, response_body_redacted FROM network_events WHERE session_id = ?',
+      )
+      .get('s_resp_body') as {
+      request_id: string;
+      status: number;
+      request_body_redacted: string | null;
+      response_body_redacted: string | null;
+    };
+    expect(row.request_id).toBe('rb1');
+    expect(row.status).toBe(200);
+    expect(row.response_body_redacted).toBe('<<masked>>');
+    expect(row.request_body_redacted).toBeNull();
+  });
+
+  it('persists a masked requestBody on a request record (Deep capture)', () => {
+    ingest(
+      {
+        type: 'network.append',
+        sessionId: 's_req_body',
+        records: [
+          {
+            kind: 'request',
+            id: 'rb2',
+            ts: 1700,
+            method: 'POST',
+            url: 'https://api.test/v1/login',
+            requestBody: '<masked body>',
+          },
+        ],
+      },
+      ctx,
+    );
+    const row = db
+      .prepare(
+        'SELECT request_id, method, request_body_redacted, response_body_redacted FROM network_events WHERE session_id = ?',
+      )
+      .get('s_req_body') as {
+      request_id: string;
+      method: string;
+      request_body_redacted: string | null;
+      response_body_redacted: string | null;
+    };
+    expect(row.request_id).toBe('rb2');
+    expect(row.method).toBe('POST');
+    expect(row.request_body_redacted).toBe('<masked body>');
+    expect(row.response_body_redacted).toBeNull();
+  });
+
+  it('lands SQL NULL (not "undefined" / empty string) when body fields are absent', () => {
+    ingest(
+      {
+        type: 'network.append',
+        sessionId: 's_no_body',
+        records: [
+          {
+            kind: 'request',
+            id: 'rb3',
+            ts: 1900,
+            method: 'GET',
+            url: 'https://api.test/v1/health',
+          },
+        ],
+      },
+      ctx,
+    );
+    const row = db
+      .prepare(
+        'SELECT request_body_redacted, response_body_redacted FROM network_events WHERE session_id = ?',
+      )
+      .get('s_no_body') as {
+      request_body_redacted: string | null;
+      response_body_redacted: string | null;
+    };
+    // better-sqlite3 surfaces SQL NULL as JS null; assert explicitly so a
+    // future regression that binds `undefined`/`'undefined'`/`''` fails loudly.
+    expect(row.request_body_redacted).toBeNull();
+    expect(row.response_body_redacted).toBeNull();
+  });
 });
 
 describe('shadow.report — deferred persistence (log + ack)', () => {

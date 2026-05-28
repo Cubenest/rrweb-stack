@@ -68,7 +68,7 @@ describe('native-host stdio loop — host.hello handshake (sanity)', () => {
     const fx = startHostFixture(home);
     fx.input.write(encodeMessage({ type: 'host.hello' }));
     await waitForReply(fx.replies, 1);
-    expect(fx.replies[0]).toMatchObject({ type: 'host.hello.ok', schemaVersion: 1 });
+    expect(fx.replies[0]).toMatchObject({ type: 'host.hello.ok', schemaVersion: 2 });
     await fx.teardown();
   });
 });

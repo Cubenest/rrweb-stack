@@ -65,7 +65,7 @@ describe('gatherStatus', () => {
     const report = gatherStatus(probesFor(dbPath, home, true));
     expect(report.dbExists).toBe(true);
     expect(report.dbBytes).toBeGreaterThan(0);
-    expect(report.schemaVersion).toBe(1);
+    expect(report.schemaVersion).toBe(2);
     expect(report.sessionCount).toBe(1);
   });
 

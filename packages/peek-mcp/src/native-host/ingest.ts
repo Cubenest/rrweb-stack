@@ -72,6 +72,15 @@ export interface IncomingNetRecord {
   readonly status?: number;
   readonly transport?: 'fetch' | 'xhr';
   readonly error?: string;
+  /**
+   * Deep capture (ADR-0010, PRD §A.8): the relay's `maskNetMessage` runs
+   * `redactBody` in the ISOLATED world and forwards the masked string here.
+   * Shape mirrors `NetMessage.requestBody` / `responseBody` in
+   * peek-extension/src/recorder/messages.ts. Absent for Basic capture,
+   * `request` records that carried no body, and `error` records.
+   */
+  readonly requestBody?: string;
+  readonly responseBody?: string;
 }
 
 export interface IncomingNetworkAppend {
@@ -333,10 +342,13 @@ function ingestNetworkAppend(
 
   ensureSessionRow(ctx.db, msg.sessionId, msg.url, msg.title);
 
+  // Deep capture (ADR-0010): the relay-side mask runs `redactBody` BEFORE the
+  // body arrives here, so we just persist the already-masked string. Unset
+  // fields land as SQL NULL (not the literal "undefined" / empty string).
   const insert = ctx.db.prepare(
     `INSERT INTO network_events
-       (session_id, ts_ms, method, url, status, status_text, request_id, resource_type, duration_ms, error_text)
-     VALUES (?, ?, ?, ?, ?, NULL, ?, ?, NULL, ?)`,
+       (session_id, ts_ms, method, url, status, status_text, request_id, resource_type, duration_ms, error_text, request_body_redacted, response_body_redacted)
+     VALUES (?, ?, ?, ?, ?, NULL, ?, ?, NULL, ?, ?, ?)`,
   );
   const tx = ctx.db.transaction((rows: readonly IncomingNetRecord[]) => {
     for (const rec of rows) {
@@ -348,7 +360,20 @@ function ingestNetworkAppend(
       const requestId = typeof rec.id === 'string' ? rec.id : null;
       const resourceType = typeof rec.transport === 'string' ? rec.transport : null;
       const errorText = typeof rec.error === 'string' ? rec.error : null;
-      insert.run(msg.sessionId, ts, method, url, status, requestId, resourceType, errorText);
+      const requestBody = typeof rec.requestBody === 'string' ? rec.requestBody : null;
+      const responseBody = typeof rec.responseBody === 'string' ? rec.responseBody : null;
+      insert.run(
+        msg.sessionId,
+        ts,
+        method,
+        url,
+        status,
+        requestId,
+        resourceType,
+        errorText,
+        requestBody,
+        responseBody,
+      );
     }
   });
   tx(records);
