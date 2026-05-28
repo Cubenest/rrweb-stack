@@ -525,6 +525,7 @@ export function createPeekMcpServer(options: CreatePeekMcpServerOptions = {}): P
     // Audit-log the call — even when the bridge errored / denied. The audit
     // log is the trust surface and must never miss a write.
     const auditResult: AuditResult = response.result;
+    let auditWriteFailed = false;
     try {
       const auditWriteOptions: AuditWriteOptions =
         options.auditLogPath !== undefined ? { path: options.auditLogPath } : {};
@@ -546,6 +547,7 @@ export function createPeekMcpServer(options: CreatePeekMcpServerOptions = {}): P
         auditWriteOptions,
       );
     } catch (err) {
+      auditWriteFailed = true;
       console.error(
         `peek-mcp: audit log write failed — ${err instanceof Error ? err.message : String(err)}`,
       );
@@ -553,15 +555,25 @@ export function createPeekMcpServer(options: CreatePeekMcpServerOptions = {}): P
 
     // Surface the result to the AI as JSON. confirmToken (when present) is
     // the only field the AI re-uses; the rest is for diagnostic display.
+    //
+    // If the audit-log write failed, downgrade the tool response to
+    // `result: 'error'` so the AI sees the broken audit chain. The underlying
+    // action may already have been dispatched by the SW (irreversible at this
+    // point) — but the AI's view of the outcome must accurately reflect that
+    // the audit chain was broken, since the audit log is the trust surface.
     const body: Record<string, unknown> = {
       tool: input.tool,
       verdict: response.verdict,
-      result: response.result,
+      result: auditWriteFailed ? 'error' : response.result,
       approver: response.approver,
     };
     if (response.confirmToken !== undefined) body.confirmToken = response.confirmToken;
     if (response.destructiveTerm !== undefined) body.destructiveTerm = response.destructiveTerm;
-    if (response.error !== undefined) body.error = response.error;
+    if (auditWriteFailed) {
+      body.error = 'audit log write failed';
+    } else if (response.error !== undefined) {
+      body.error = response.error;
+    }
     if (response.details !== undefined) body.details = response.details;
     if (bridgeError !== undefined) {
       // Make sure errors propagate visibly to the AI as well.

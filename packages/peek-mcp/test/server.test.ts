@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
@@ -542,6 +542,50 @@ describe('peek MCP server: execute_action (Task 3.24)', () => {
       // Audit log still recorded the attempt.
       const contents = require('node:fs').readFileSync(auditLogPath, 'utf8');
       expect(contents.split('\n').filter((l: string) => l.length > 0)).toHaveLength(1);
+    } finally {
+      await close();
+    }
+  });
+
+  it("downgrades the tool result to 'error' when the audit log write fails", async () => {
+    const { dbPath, eventsDir } = seedStore(dir, [loginSession()]);
+    // Make the audit log path a DIRECTORY so the writer (writeFileSync to
+    // seed mode 0o600 OR appendFileSync) errors with EISDIR.
+    const auditLogPath = join(dir, 'audit.log');
+    mkdirSync(auditLogPath);
+    const bridge = new RegistryBackedHostBridge();
+    const { client, close } = await connectClient({
+      dbPath,
+      eventsDir,
+      hostBridge: bridge,
+      auditLogPath,
+    });
+    try {
+      const callP = client.callTool({
+        name: 'execute_action',
+        arguments: {
+          sessionId: 's_login',
+          action: { type: 'click', selector: '#login' },
+        },
+      });
+      for (let i = 0; i < 20 && bridge.pending.length === 0; i++) {
+        await new Promise((r) => setTimeout(r, 5));
+      }
+      // SW happily allowed — but the audit-log write will fail.
+      bridge.resolveNext({
+        verdict: 'allow',
+        result: 'ok',
+        approver: 'user',
+      });
+      const res = await callP;
+      const body = parseJson(res as never) as Record<string, unknown>;
+      // The verdict from the SW is preserved (the action ran), but the result
+      // is downgraded to 'error' so the AI sees the broken audit chain.
+      expect(body.verdict).toBe('allow');
+      expect(body.result).toBe('error');
+      expect(body.error).toBe('audit log write failed');
+      // Approver is preserved (per the brief).
+      expect(body.approver).toBe('user');
     } finally {
       await close();
     }
