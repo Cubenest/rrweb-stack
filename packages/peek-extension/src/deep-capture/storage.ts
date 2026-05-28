@@ -2,9 +2,12 @@
  * Per-origin Deep capture toggle persistence (Task 3.26, ADR-0010).
  *
  * Deep capture uses `chrome.debugger` to record response bodies. ADR-0010
- * keeps the feature OFF by default (the install card stays clean — the
- * `debugger` permission lives in `optional_permissions`, not the static
- * `permissions` list) and the user enables it per-site from the side panel.
+ * keeps the feature OFF by default — the user enables it per-site from the
+ * side panel. The `debugger` permission moved from `optional_permissions`
+ * to static `permissions` in alpha.4 (P-14, Chrome 121+ banned debugger
+ * from MV3 optional_permissions); the install card now shows the
+ * read-and-modify-all-data warning. Deep capture stays opt-in via the
+ * per-origin toggle gated by ADR-0010's five-level model.
  *
  * Storage shape (sync — follows the user across devices, same posture as
  * `activation/storage.ts`):
