@@ -4,6 +4,7 @@ import { requestActivation } from '../../src/activation/request';
 import { isOriginEnabled } from '../../src/activation/storage';
 import { ActivateSection } from './sections/ActivateSection';
 import { AuditLogSection } from './sections/AuditLogSection';
+import { DeepCaptureSection } from './sections/DeepCaptureSection';
 import { EventCountSection } from './sections/EventCountSection';
 import { PermissionLevelSection } from './sections/PermissionLevelSection';
 import { useActiveTab } from './useActiveTab';
@@ -91,6 +92,8 @@ export function App(): React.JSX.Element {
       <EventCountSection tabId={tabId} />
 
       <PermissionLevelSection origin={origin} />
+
+      <DeepCaptureSection origin={origin} />
 
       <AuditLogSection />
 

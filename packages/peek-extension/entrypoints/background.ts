@@ -12,6 +12,12 @@ import {
 import { SessionRegistry } from '../src/background/session';
 import { RecorderStatsStore } from '../src/background/stats';
 import { NATIVE_HOST_ID } from '../src/constants';
+import {
+  DEEP_CAPTURE_ORIGINS_KEY,
+  DeepCaptureManager,
+  buildChromeDebuggerSurface,
+  isDeepCaptureEnabled,
+} from '../src/deep-capture';
 import type { Cmd, CmdResponse, NativeHostState, RelayAck } from '../src/messaging/protocol';
 import { InMemoryConfirmTokenStore, handleActionRequest } from '../src/permissions/action-handler';
 import type { ActionResultMessage } from '../src/permissions/action-protocol';
@@ -66,6 +72,54 @@ export default defineBackground({
     // Permission state (3d-3). Both in-memory + scoped to this SW instance.
     const yolo = new YoloSessionStore();
     const confirmTokens = new InMemoryConfirmTokenStore();
+
+    // Deep capture (3d-4, Task 3.26). The manager is lazily constructed on
+    // first attach because constructing it registers an event listener on
+    // `chrome.debugger.onEvent`, and `chrome.debugger` is only present when
+    // the user has granted the optional `debugger` permission. Accessing
+    // `chrome.debugger` before grant throws.
+    let deepCapture: DeepCaptureManager | null = null;
+    function getOrInitDeepCapture(): DeepCaptureManager | null {
+      if (deepCapture !== null) return deepCapture;
+      if (typeof chrome.debugger === 'undefined') return null;
+      deepCapture = new DeepCaptureManager({
+        debugger: buildChromeDebuggerSurface(),
+        onBody: (tabId, record) => {
+          // Route the masked body through the existing network.append
+          // channel so the host's network_events row stores it.
+          const ref = sessions.peek(tabId);
+          if (!ref) {
+            console.debug('[peek] Deep capture body without active session — dropped');
+            return;
+          }
+          forwardToHost(networkAppend(ref, [record]));
+        },
+      });
+      return deepCapture;
+    }
+
+    /**
+     * Sync the manager's attached set with persisted Deep-capture state for
+     * `tabId`. Called on tab activation/update + on storage change. Idempotent
+     * for both attach and detach.
+     */
+    async function syncDeepCaptureForTab(tabId: number, url: string | undefined): Promise<void> {
+      if (!url) return;
+      let enabled = false;
+      try {
+        enabled = await isDeepCaptureEnabled(url);
+      } catch {
+        return;
+      }
+      const mgr = getOrInitDeepCapture();
+      if (!mgr) return; // permission not granted yet — nothing to do.
+      try {
+        if (enabled) await mgr.attach(tabId);
+        else await mgr.detach(tabId);
+      } catch (err) {
+        console.debug('[peek] Deep capture sync failed:', err);
+      }
+    }
 
     function handleHostMessage(message: unknown): void {
       // Action request from peek-mcp's native-host process (Task 3.24). The
@@ -258,13 +312,34 @@ export default defineBackground({
       // (window.__peekRecorderInstalled) covers a double-fire.
       if (changeInfo.status === 'loading' && tab.url) {
         void maybeInject(tabId, tab.url);
+        // Deep-capture attach/detach is keyed on persisted per-origin opt-in
+        // (Task 3.26). Sync on each loading event so a fresh-origin
+        // navigation reattaches with the right origin's setting.
+        void syncDeepCaptureForTab(tabId, tab.url);
       }
+    });
+
+    // React to side-panel toggle changes immediately for the active tab.
+    chrome.storage.onChanged.addListener((changes, area) => {
+      if (area !== 'sync') return;
+      if (!(DEEP_CAPTURE_ORIGINS_KEY in changes)) return;
+      void chrome.tabs.query({ active: true, lastFocusedWindow: true }).then(([active]) => {
+        if (active?.id !== undefined) {
+          void syncDeepCaptureForTab(active.id, active.url);
+        }
+      });
     });
 
     // --- Tab teardown ------------------------------------------------------
     chrome.tabs.onRemoved.addListener((tabId) => {
       stats.clear(tabId);
       sessions.clear(tabId);
+      // Detach the debugger from a closed tab (best-effort — Chrome may
+      // have already auto-detached on close). The manager is idempotent
+      // for the unattached case.
+      if (deepCapture !== null) {
+        void deepCapture.detach(tabId);
+      }
     });
 
     // --- Message router ----------------------------------------------------

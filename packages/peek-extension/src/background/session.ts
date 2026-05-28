@@ -69,6 +69,16 @@ export class SessionRegistry {
     return ref;
   }
 
+  /** Read the existing session ref for a tab without creating one. */
+  peek(tabId: number): SessionRef | null {
+    const s = this.byTab.get(tabId);
+    if (!s) return null;
+    const ref: SessionRef = { sessionId: s.sessionId };
+    if (s.url !== undefined) ref.url = s.url;
+    if (s.title !== undefined) ref.title = s.title;
+    return ref;
+  }
+
   /** Forget a tab's session (on tab close). */
   clear(tabId: number): void {
     this.byTab.delete(tabId);
