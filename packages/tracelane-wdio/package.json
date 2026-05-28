@@ -1,6 +1,6 @@
 {
   "name": "@tracelane/wdio",
-  "version": "0.1.0-alpha.0",
+  "version": "0.1.0-alpha.1",
   "description": "WebdriverIO Service that records rrweb sessions and writes a self-contained HTML report on failed tests. The user-facing tracelane integration for WDIO.",
   "license": "Apache-2.0",
   "private": true,
@@ -8,8 +8,14 @@
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "exports": {
-    ".": { "types": "./dist/index.d.ts", "import": "./dist/index.js" },
-    "./hooks": { "types": "./dist/hooks.d.ts", "import": "./dist/hooks.js" }
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./hooks": {
+      "types": "./dist/hooks.d.ts",
+      "import": "./dist/hooks.js"
+    }
   },
   "files": ["dist", "NOTICE", "README.md"],
   "scripts": {
@@ -38,7 +44,10 @@
     "tsx": "^4.19.0",
     "webdriverio": "^9.0.0"
   },
-  "publishConfig": { "access": "public", "provenance": true },
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  },
   "repository": {
     "type": "git",
     "url": "git+https://github.com/Cubenest/rrweb-stack.git",
