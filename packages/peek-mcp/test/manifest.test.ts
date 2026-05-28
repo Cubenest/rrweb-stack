@@ -102,8 +102,19 @@ describe('resolveInstallTargets — P2 PRD §A7 path table', () => {
     expect(byBrowser['Windows Edge']).toBe(
       'HKCU\\Software\\Microsoft\\Edge\\NativeMessagingHosts\\com.cubenest.peek',
     );
-    // Registry targets carry no filesystem path.
-    expect(targets.every((t) => t.manifestPath === undefined)).toBe(true);
+  });
+
+  it('Windows: ALSO carries a manifestPath under %LOCALAPPDATA% so the registry value can point at it', () => {
+    const targets = resolveInstallTargets('win32', 'C:\\Users\\jane');
+    const byBrowser = Object.fromEntries(targets.map((t) => [t.browser, t.manifestPath]));
+    // join() uses the host's path separator; we accept either form because the
+    // unit tests may run on darwin/linux CI but install on Windows.
+    expect(byBrowser['Windows Chrome']).toMatch(
+      /AppData[\\/]+Local[\\/]+Google[\\/]+Chrome[\\/]+NativeMessagingHosts[\\/]+com\.cubenest\.peek\.json$/,
+    );
+    expect(byBrowser['Windows Edge']).toMatch(
+      /AppData[\\/]+Local[\\/]+Microsoft[\\/]+Edge[\\/]+NativeMessagingHosts[\\/]+com\.cubenest\.peek\.json$/,
+    );
   });
 
   it('covers all documented install locations across the three OSes', () => {

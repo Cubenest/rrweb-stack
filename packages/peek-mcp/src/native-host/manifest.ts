@@ -145,13 +145,35 @@ export function resolveInstallTargets(
       ];
     }
     case 'win32': {
+      // Per P2 PRD §A7, the Windows install needs BOTH:
+      //   - the manifest JSON on disk (Chrome/Edge resolve registry values to
+      //     a file path), and
+      //   - the registry key whose default value points at that path.
+      // The conventional location is %LOCALAPPDATA%\<vendor>\<browser>\
+      // NativeMessagingHosts\<host>.json. We derive %LOCALAPPDATA% from the
+      // injected `homeDir` (`C:\Users\<user>`) so tests don't depend on env.
+      const localAppData = join(homeDir, 'AppData', 'Local');
       return [
         {
           browser: 'Windows Chrome',
+          manifestPath: join(
+            localAppData,
+            'Google',
+            'Chrome',
+            'NativeMessagingHosts',
+            MANIFEST_FILENAME,
+          ),
           registryKey: `HKCU\\Software\\Google\\Chrome\\NativeMessagingHosts\\${NATIVE_HOST_NAME}`,
         },
         {
           browser: 'Windows Edge',
+          manifestPath: join(
+            localAppData,
+            'Microsoft',
+            'Edge',
+            'NativeMessagingHosts',
+            MANIFEST_FILENAME,
+          ),
           registryKey: `HKCU\\Software\\Microsoft\\Edge\\NativeMessagingHosts\\${NATIVE_HOST_NAME}`,
         },
       ];

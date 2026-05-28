@@ -9,11 +9,13 @@ export {
   loadExtensionIds,
 } from './config.js';
 export {
+  buildRealSink,
   type InstallOptions,
   type InstallResult,
   type InstallSink,
   installManifests,
   realSink,
+  type RegExecFn,
 } from './installer.js';
 export {
   allowedOrigins,
