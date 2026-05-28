@@ -44,7 +44,8 @@
     "webdriverio": "^9.0.0"
   },
   "publishConfig": {
-    "access": "public"
+    "access": "public",
+    "provenance": true
   },
   "repository": {
     "type": "git",
