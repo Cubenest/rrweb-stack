@@ -1,0 +1,159 @@
+---
+import Layout from '../layouts/Layout.astro';
+---
+
+<Layout title="peek vs Jam.dev">
+  <h1>peek vs Jam.dev</h1>
+  <p class="tagline">
+    Both record rich context from your real browser. The delta is the
+    consumer: peek's audience is your AI coding agent; Jam's audience is the
+    engineer you send a bug report to.
+  </p>
+
+  <p>
+    This page exists for the person searching &ldquo;jam.dev alternative&rdquo;
+    or &ldquo;local-only bug capture&rdquo; or &ldquo;MCP browser
+    extension.&rdquo; No FUD &mdash; Jam.dev is a well-built product. The two tools
+    overlap in tech but target different workflows. The sections below say
+    when each one fits.
+  </p>
+
+  <h2>At a glance</h2>
+
+  <table>
+    <thead>
+      <tr>
+        <th></th>
+        <th>peek</th>
+        <th>Jam.dev</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><strong>Primary consumer</strong></td>
+        <td>An AI coding agent (Claude Code, Cursor, Cline, Windsurf, Continue, Zed) querying via MCP.</td>
+        <td>A human engineer reviewing a bug report sent by QA / a PM / a designer.</td>
+      </tr>
+      <tr>
+        <td><strong>Output format</strong></td>
+        <td>MCP tools returning JSON (console errors, network failures, DOM-at-timestamp, full event slices). The session lives in a local SQLite DB.</td>
+        <td>A &ldquo;Jam&rdquo; &mdash; a hosted URL with rendered video + DOM + console + network for a human viewer.</td>
+      </tr>
+      <tr>
+        <td><strong>Where data lives</strong></td>
+        <td>Local: <code>~/.peek/sessions.db</code>. Never leaves your machine.</td>
+        <td>Vendor cloud (jam.dev). Required for the shareable URL workflow.</td>
+      </tr>
+      <tr>
+        <td><strong>Signup</strong></td>
+        <td>None. Install the CLI + extension and go.</td>
+        <td>Required (Jam account) to host and share captures.</td>
+      </tr>
+      <tr>
+        <td><strong>Cost</strong></td>
+        <td>Free. Apache 2.0.</td>
+        <td>Free tier with limits; paid tiers for teams.</td>
+      </tr>
+      <tr>
+        <td><strong>Workflow shape</strong></td>
+        <td>You're already talking to your AI agent. You ask &ldquo;what's in my latest session?&rdquo; The agent calls <code>list_sessions</code>, <code>get_session_console_errors</code>, etc. and answers.</td>
+        <td>You hit the Jam button, narrate a bug, click stop, paste the URL into Slack. The recipient signs in and reviews the rendered capture.</td>
+      </tr>
+      <tr>
+        <td><strong>Capture trigger</strong></td>
+        <td>Per-origin host permission. Off by default for every site. Enable from the side panel.</td>
+        <td>Click the Jam extension button to start, click again to stop.</td>
+      </tr>
+      <tr>
+        <td><strong>Replay UX</strong></td>
+        <td>None in the extension &mdash; AI agents query the data structurally. (Optional <code>peek sessions export --format html</code> writes a tracelane-style file for human viewing.)</td>
+        <td>Purpose-built reviewer UI: video timeline, DOM inspector, console pane, network pane, commenting.</td>
+      </tr>
+      <tr>
+        <td><strong>Network capture</strong></td>
+        <td>Yes (rrweb + optional CDP &ldquo;Deep capture&rdquo; for response bodies).</td>
+        <td>Yes.</td>
+      </tr>
+      <tr>
+        <td><strong>Console capture</strong></td>
+        <td>Yes (level + stack + URL).</td>
+        <td>Yes.</td>
+      </tr>
+      <tr>
+        <td><strong>Write-back</strong></td>
+        <td>The MCP server can <code>execute_action</code> (click / input / navigate) on the live tab, gated by per-action authorization recorded in an audit log. Off by default; not a sharing feature.</td>
+        <td>Read-only by design &mdash; Jam is a capture-and-share product, not a remote-control tool.</td>
+      </tr>
+      <tr>
+        <td><strong>Privacy boundary</strong></td>
+        <td>Your machine. Sessions, audit log, native messaging host all local.</td>
+        <td>Vendor cloud (Jam's infrastructure). Vendor SOC2 + their data-handling policy.</td>
+      </tr>
+      <tr>
+        <td><strong>MCP-native</strong></td>
+        <td>Yes &mdash; this is the entire design goal.</td>
+        <td>No. Jam is a browser-extension + cloud product; AI-agent integration isn't its target.</td>
+      </tr>
+      <tr>
+        <td><strong>Maturity</strong></td>
+        <td>Pre-1.0 (alpha as of May 2026). CWS submission pending; alpha testers load unpacked.</td>
+        <td>Mature commercial product with significant team adoption.</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <h2>When peek is the right choice</h2>
+
+  <ul>
+    <li>The primary thing you do with browser context is <em>talk to your AI agent about it</em> &mdash; you want Claude Code / Cursor / Cline to read what's on the page when you describe a problem.</li>
+    <li>You're under local-only constraints &mdash; regulated industry, sensitive customer data, contractual requirement that &ldquo;recordings of our app don't leave employee machines.&rdquo;</li>
+    <li>You want the option of <em>write-back</em> (an AI agent that can click and type for you on the live tab) with explicit per-action authorization. peek's permission model is built for this; Jam doesn't address it.</li>
+    <li>You're OSS-first and don't want a vendor in the audit log for your bug data.</li>
+  </ul>
+
+  <h2>When Jam.dev is the right choice</h2>
+
+  <ul>
+    <li>Your primary workflow is <em>handoff</em>: someone captures a bug; someone else fixes it. The capturer (QA, PM, designer, support) is often not the fixer (engineer). Jam's hosted URL collapses that into one link.</li>
+    <li>You want a polished hosted reviewer UX out of the box &mdash; commenting, sharing, video scrubbing, organization-level capture libraries.</li>
+    <li>The data crossing into vendor cloud is acceptable to your security review.</li>
+    <li>You don't (yet) have an AI-coding-agent workflow that benefits from MCP &mdash; Jam's value prop is human-to-human.</li>
+  </ul>
+
+  <h2>Can you use both?</h2>
+
+  <p>
+    Yes. They don't conflict. Use Jam for &ldquo;here's a bug, please fix&rdquo;
+    handoffs to a teammate, and peek for &ldquo;here's what's in my browser,
+    Claude, please help me work this out.&rdquo; Different workflows, no
+    overlap in storage or replay.
+  </p>
+
+  <h2>What about Sentry Session Replay or LogRocket?</h2>
+
+  <p>
+    Different category. Both Sentry Session Replay and LogRocket record
+    <em>production traffic</em> from end-users &mdash; the captures are about
+    incidents your users hit, not about bugs you're actively poking. peek is
+    a developer-side tool: nothing records until you explicitly enable it on
+    a specific site, and the captures live on your machine, not in a product
+    data warehouse. If you need production-incident replay, Sentry / LogRocket
+    are the right shape. Peek does not compete in that category.
+  </p>
+
+  <h2>Why this page exists</h2>
+
+  <p>
+    Comparison pages capture search intent that the competitor's own marketing
+    page deliberately won't. If you arrived here from
+    &ldquo;jam.dev alternative,&rdquo; the honest answer is: it depends on
+    whether your primary consumer of the capture is an AI agent or a human.
+    peek is purpose-built for the first; Jam is purpose-built for the second.
+  </p>
+
+  <p style="color: var(--fg-muted); font-size: 0.9rem; margin-top: 2rem;">
+    Found something inaccurate above? Open a PR on
+    <a href="https://github.com/Cubenest/rrweb-stack/blob/main/apps/peek-docs/src/pages/vs-jam-dev.astro" rel="noopener">this page</a>
+    &mdash; the goal is accuracy, not advocacy.
+  </p>
+</Layout>
