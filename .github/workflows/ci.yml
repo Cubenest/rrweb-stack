@@ -6,13 +6,23 @@ on:
   push:
     branches: [main]
 
+# Workflow-default permissions are minimal — read-only. Individual jobs
+# that need more (none in this file at present) must declare their own
+# `permissions:` block. The publish workflow lives in release.yml; this
+# file is CI only. Hard rule recorded in CONTRIBUTING.md §"Workflow
+# security hard rules": every workflow scopes permissions, and no
+# workflow in this repo uses `pull_request_target` (the PostHog
+# Shai-Hulud 2.0 vector, Nov 24 2025).
+permissions:
+  contents: read
+
 jobs:
   ci:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4
+      - uses: pnpm/action-setup@f40ffcd9367d9f12939873eb1018b921a783ffaa  # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020  # v4
         with:
           node-version: '24'
           cache: pnpm
@@ -37,15 +47,15 @@ jobs:
     # Do not fail the overall workflow if the browser E2E is flaky/unavailable.
     continue-on-error: true
     steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4
+      - uses: pnpm/action-setup@f40ffcd9367d9f12939873eb1018b921a783ffaa  # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020  # v4
         with:
           node-version: '24'
           cache: pnpm
       # ubuntu-latest ships Chrome; pin it explicitly so the run is reproducible
       # and chromedriver auto-management has a known browser to match.
-      - uses: browser-actions/setup-chrome@v1
+      - uses: browser-actions/setup-chrome@19ae4b339ee18925ab85cf12c1041150ea4a44c8  # v1
         with:
           chrome-version: stable
       - run: pnpm install --frozen-lockfile
@@ -62,9 +72,9 @@ jobs:
     runs-on: ubuntu-latest
     continue-on-error: true
     steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4
+      - uses: pnpm/action-setup@f40ffcd9367d9f12939873eb1018b921a783ffaa  # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020  # v4
         with:
           node-version: '24'
           cache: pnpm

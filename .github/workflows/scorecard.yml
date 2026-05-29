@@ -1,0 +1,55 @@
+# OpenSSF Scorecard — weekly read-only supply-chain posture scan. Results land
+# as SARIF on GitHub's code-scanning surface; non-blocking (does not gate CI).
+#
+# Pinned to commit SHAs per the workflow security hard rule in CONTRIBUTING.md.
+# Every action below is a 40-character SHA with a `# v<tag>` comment so
+# Renovate's pinDigests + the human reader both know what's running.
+name: Scorecard
+
+on:
+  branch_protection_rule:
+  schedule:
+    - cron: '0 6 * * 1'  # Monday 06:00 UTC
+  push:
+    branches: [main]
+
+permissions: read-all
+
+jobs:
+  analysis:
+    name: Scorecard analysis
+    runs-on: ubuntu-latest
+    permissions:
+      # Needed for the SARIF upload to code scanning.
+      security-events: write
+      # Needed for OIDC-based publication of results to the OpenSSF API.
+      id-token: write
+      contents: read
+      actions: read
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4
+        with:
+          persist-credentials: false
+
+      - name: Run analysis
+        uses: ossf/scorecard-action@4eaacf0543bb3f2c246792bd56e8cdeffafb205a  # v2.4.3
+        with:
+          results_file: results.sarif
+          results_format: sarif
+          # Publish results to the OpenSSF Scorecard public API so the
+          # repository earns a Scorecard badge. The publish is read-only
+          # from this workflow's perspective — it does not mutate the repo.
+          publish_results: true
+
+      - name: Upload SARIF artifact
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4
+        with:
+          name: SARIF file
+          path: results.sarif
+          retention-days: 5
+
+      - name: Upload SARIF to code scanning
+        uses: github/codeql-action/upload-sarif@03e4368ac7daa2bd82b3e85262f3bf87ee112f57  # v3
+        with:
+          sarif_file: results.sarif

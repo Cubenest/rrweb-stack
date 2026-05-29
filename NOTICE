@@ -1,11 +1,39 @@
 rrweb-stack
-Copyright 2026 Cubenest
+Copyright 2025-2026 Cubenest
 
 This product includes software developed by:
+
 - PostHog (https://posthog.com) — vendored rrweb fork:
     @posthog/rrweb 0.0.34 (MIT License)
     @posthog/rrweb-types 0.0.24 (MIT License)
-  Forked from upstream rrweb-io/rrweb 2.0.0-alpha.17.
+  Forked from upstream rrweb-io/rrweb 2.0.0-alpha.17. Re-exported through
+  @cubenest/rrweb-core.
+
+- rrweb-io contributors (https://github.com/rrweb-io/rrweb) — upstream
+  rrweb plugin + player:
+    @rrweb/rrweb-plugin-console-record 2.0.0-alpha.20 (MIT License)
+    rrweb-player 1.0.0-alpha.4 (MIT License) — UMD + CSS inlined by
+      @tracelane/report into report HTML.
+
+- 101arrowz — fflate (MIT License) — gzip / gunzip used by both report
+  generation and recorder compression.
+
+- WiseLibs — better-sqlite3 (MIT License) — local-first storage used by
+  @peekdev/cli and @peekdev/mcp.
+
+- Anthropic — @modelcontextprotocol/sdk (MIT License) — MCP server SDK
+  used by @peekdev/mcp.
+
+- Colin McDonnell — zod (MIT License) — runtime schema validation used by
+  @peekdev/mcp.
+
+- Meta — react and react-dom (MIT License) — used by @peekdev/extension's
+  side-panel UI.
 
 This product is licensed under the Apache License, Version 2.0.
 See the LICENSE file for details.
+
+Per-package NOTICE files in `packages/*/NOTICE` enumerate the subset of
+the above that each individual package ships in its published tarball or
+distribution bundle. Apache-2.0 §4(d) propagation is satisfied by those
+per-package NOTICE files; this root NOTICE is the umbrella view.

@@ -1,0 +1,44 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": [
+    "config:best-practices",
+    "security:openssf-scorecard",
+    ":dependencyDashboard",
+    ":semanticCommits",
+    "group:monorepos"
+  ],
+  "minimumReleaseAge": "7 days",
+  "lockFileMaintenance": {
+    "enabled": true,
+    "schedule": ["before 5am on monday"]
+  },
+  "packageRules": [
+    {
+      "description": "Auto-merge patch updates that survived the 7-day cooldown",
+      "matchUpdateTypes": ["patch"],
+      "automerge": true
+    },
+    {
+      "description": "Supply-chain risk premium for the vendored rrweb fork lineage. The PostHog Shai-Hulud 2.0 incident (Nov 24 2025) compromised @posthog/rrweb-record@0.0.31, which npm has since marked deprecated 'compromised'. Hold these for 21 days post-publish so a downstream republish has time to be flagged before we pull it.",
+      "matchPackageNames": [
+        "@posthog/rrweb",
+        "@posthog/rrweb-record",
+        "@posthog/rrweb-types",
+        "@posthog/rrweb-plugin-console-record",
+        "rrweb",
+        "@rrweb/rrweb-plugin-console-record"
+      ],
+      "minimumReleaseAge": "21 days",
+      "automerge": false,
+      "labels": ["supply-chain-risk"]
+    },
+    {
+      "description": "Pin GitHub Actions to commit SHAs, not floating tags. Pairs with the workflow hard-rule in CONTRIBUTING.md.",
+      "matchManagers": ["github-actions"],
+      "pinDigests": true
+    }
+  ],
+  "vulnerabilityAlerts": {
+    "minimumReleaseAge": "0 days"
+  }
+}
