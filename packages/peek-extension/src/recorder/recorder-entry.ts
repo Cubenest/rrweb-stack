@@ -20,18 +20,23 @@
  * recorder. The page shares this realm and can observe the patched
  * `fetch`/`XHR`, but cannot reach the recorder's state. Masking happens on the
  * ISOLATED side before anything is persisted.
+ *
+ * NETWORK CAPTURE (alpha.6, Phase 5 task #72): the manual `window.fetch` +
+ * `XMLHttpRequest.prototype.{open,send,setRequestHeader}` wrappers (~140 LOC)
+ * that previously lived in this file — along with the helper module they
+ * relied on — have been REPLACED by `getRecordNetworkPlugin()` from
+ * `@cubenest/rrweb-core`. The plugin emits `EventType.Plugin` events with
+ * `data.plugin === 'rrweb/network@1'` through the SAME `emit` callback rrweb
+ * uses for DOM/console events; the ISOLATED relay forwards them in the
+ * `recorder.events` channel, and the SW synthesizes legacy `NetMessage`
+ * envelopes for `network.append` (see `background/network-plugin-synth.ts`)
+ * so peek-mcp's `network_events` table + the `get_session_network_errors` MCP
+ * tool keep working unchanged. The plugin's PerformanceObserver path also
+ * captures static-asset + navigation timings the old wrappers missed.
  */
 
-import { getRecordConsolePlugin, record } from '@cubenest/rrweb-core';
-import { PEEK_NET_SOURCE, PEEK_RRWEB_SOURCE } from './messages.js';
-import {
-  bodyToString,
-  buildFetchRequest,
-  buildFetchResponse,
-  buildNetError,
-  capBody,
-  headersToObject,
-} from './net-capture.js';
+import { getRecordConsolePlugin, getRecordNetworkPlugin, record } from '@cubenest/rrweb-core';
+import { PEEK_RRWEB_SOURCE } from './messages.js';
 
 // Re-injected on every navigation; keep it idempotent so a double-inject (a
 // racing executeScript into the same realm) never double-patches fetch/XHR or
@@ -68,28 +73,8 @@ const GUARD = '__peekRecorderInstalled';
       // rather than break the page.
     }
   };
-  const postNet = (payload: unknown): void => {
-    try {
-      window.postMessage({ source: PEEK_NET_SOURCE, payload }, '*');
-    } catch {
-      /* ignore */
-    }
-  };
 
-  const uuid = (): string => {
-    try {
-      if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
-        return crypto.randomUUID();
-      }
-    } catch {
-      /* fall through */
-    }
-    return `peek-${Date.now()}-${Math.random().toString(36).slice(2)}`;
-  };
-
-  const now = (): number => Date.now();
-
-  // --- rrweb DOM + console recording -------------------------------------
+  // --- rrweb DOM + console + network recording --------------------------
   // record() returns a stop fn; we deliberately keep no handle (the page could
   // not reach it anyway from inside this closure) — the recorder stops when the
   // page unloads. `emit` posts each event to the ISOLATED relay.
@@ -126,137 +111,30 @@ const GUARD = '__peekRecorderInstalled';
       // above for the rationale + trade-off.
       checkoutEveryNms: 120_000,
       checkoutEveryN: 5000,
-      // Capture console as rrweb plugin events so the relay/native host can
-      // extract console_events without a second channel.
-      plugins: [getRecordConsolePlugin()],
+      plugins: [
+        // Capture console as rrweb plugin events so the relay/native host can
+        // extract console_events without a second channel.
+        getRecordConsolePlugin(),
+        // Framework-agnostic network capture (alpha.6, Phase 5 task #72).
+        // Defaults are PostHog-conservative + match peek's privacy posture:
+        //   - recordHeaders: false  — headers carry auth tokens/cookies
+        //   - recordBody:    false  — bodies carry PII; rely on Deep capture
+        //                              (chrome.debugger) for opt-in body capture
+        //   - recordInitialRequests + capturePerformance: true — the
+        //     PerformanceObserver path picks up page-load resources + the
+        //     navigation entry the legacy wrappers missed
+        // The plugin's DEFAULT maskRequestFn already pipes through
+        // @cubenest/rrweb-core's redactBody / redactNetworkHeaders / URL-
+        // redaction, so we omit it here and inherit the defense-in-depth mask.
+        getRecordNetworkPlugin({
+          recordHeaders: false,
+          recordBody: false,
+          recordInitialRequests: true,
+          capturePerformance: true,
+        }),
+      ],
     } as Parameters<typeof record>[0]);
   } catch (err) {
     postRrweb({ __peekError: 'record_init_failed', detail: String(err) });
   }
-
-  // --- fetch wrap (§A.10) -------------------------------------------------
-  const origFetch = window.fetch;
-  if (typeof origFetch === 'function') {
-    window.fetch = function patchedFetch(
-      this: typeof window,
-      input: RequestInfo | URL,
-      init?: RequestInit,
-    ): Promise<Response> {
-      const id = uuid();
-      try {
-        postNet(buildFetchRequest(id, input, init, now()));
-      } catch {
-        /* never let instrumentation break the request */
-      }
-      const p = origFetch.call(this, input as RequestInfo, init);
-      p.then(
-        (resp) => {
-          try {
-            const clone = resp.clone();
-            const headers = headersToObject(clone.headers);
-            clone
-              .text()
-              .then((text) => postNet(buildFetchResponse(id, resp.status, headers, text, now())))
-              .catch(() => {
-                /* body already consumed elsewhere — skip */
-              });
-          } catch {
-            /* clone can throw on opaque responses — skip body */
-          }
-        },
-        (err) => postNet(buildNetError(id, err, now())),
-      );
-      return p;
-    } as typeof window.fetch;
-  }
-
-  // --- XHR wrap (§A.10) ---------------------------------------------------
-  // Per-instance capture metadata (id, method, url, PRE-masking request
-  // headers) is held in a WeakMap PRIVATE to this IIFE closure — NOT as an
-  // expando on the XHR instance. An expando (`xhr.__peek`) would let any page
-  // script holding the XHR reference read the raw `Authorization` header before
-  // the ISOLATED relay masks it (review issue 3). The WeakMap also lets entries
-  // be GC'd with their XHR. `headers` here are raw; redaction is the relay's.
-  interface PeekXhrMeta {
-    id: string;
-    method: string;
-    url: string;
-    headers: Record<string, string>;
-  }
-  const xhrMeta = new WeakMap<XMLHttpRequest, PeekXhrMeta>();
-  const X = XMLHttpRequest.prototype;
-  const origOpen = X.open;
-  const origSend = X.send;
-  const origSetHeader = X.setRequestHeader;
-
-  // Forward via rest params (`...rest`) rather than `arguments` — the original
-  // signatures carry optional trailing args (open: async/user/password) we must
-  // pass through verbatim. The originals return void, so we don't `return`.
-  X.open = function peekOpen(
-    this: XMLHttpRequest,
-    method: string,
-    url: string | URL,
-    ...rest: unknown[]
-  ): void {
-    xhrMeta.set(this, {
-      id: uuid(),
-      method: (method || 'GET').toUpperCase(),
-      url: typeof url === 'string' ? url : String(url),
-      headers: {},
-    });
-    (origOpen as (...a: unknown[]) => void).call(this, method, url, ...rest);
-  } as typeof X.open;
-
-  X.setRequestHeader = function peekSetHeader(
-    this: XMLHttpRequest,
-    name: string,
-    value: string,
-    ...rest: unknown[]
-  ): void {
-    const meta = xhrMeta.get(this);
-    if (meta) meta.headers[name] = value;
-    (origSetHeader as (...a: unknown[]) => void).call(this, name, value, ...rest);
-  } as typeof X.setRequestHeader;
-
-  X.send = function peekSend(
-    this: XMLHttpRequest,
-    body?: Document | XMLHttpRequestBodyInit | null,
-    ...rest: unknown[]
-  ): void {
-    const meta = xhrMeta.get(this);
-    if (meta) {
-      try {
-        postNet({
-          kind: 'request',
-          id: meta.id,
-          ts: now(),
-          transport: 'xhr',
-          method: meta.method,
-          url: meta.url,
-          headers: meta.headers,
-          // Use bodyToString (typed shapes → "[Blob 4096B]" etc.) for parity
-          // with the fetch path, not String(body) → "[object Blob]" (issue 4).
-          ...(body != null ? { requestBody: bodyToString(body) ?? '' } : {}),
-        });
-      } catch {
-        /* ignore */
-      }
-      this.addEventListener('loadend', () => {
-        try {
-          const text = typeof this.responseText === 'string' ? this.responseText : '';
-          postNet({
-            kind: 'response',
-            id: meta.id,
-            ts: now(),
-            status: this.status,
-            responseBody: capBody(text),
-          });
-        } catch {
-          /* responseText throws for non-text responseType — skip body */
-          postNet({ kind: 'response', id: meta.id, ts: now(), status: this.status });
-        }
-      });
-    }
-    (origSend as (...a: unknown[]) => void).call(this, body, ...rest);
-  } as typeof X.send;
 })();

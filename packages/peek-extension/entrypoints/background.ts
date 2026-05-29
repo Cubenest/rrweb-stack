@@ -9,6 +9,7 @@ import {
   sessionAppend,
   shadowReport,
 } from '../src/background/native-protocol';
+import { synthesizeNetMessagesFromEvents } from '../src/background/network-plugin-synth';
 import { SessionRegistry } from '../src/background/session';
 import { RecorderStatsStore } from '../src/background/stats';
 import { ENABLED_ORIGINS_KEY, NATIVE_HOST_ID } from '../src/constants';
@@ -491,6 +492,28 @@ export default defineBackground({
       const ref = sessions.ensure(tabId, { url: sender.tab?.url, title: sender.tab?.title });
       if (message.events.length > 0) forwardToHost(sessionAppend(ref, message.events));
       if (message.console.length > 0) forwardToHost(consoleAppend(ref, message.console));
+
+      // alpha.6 (Phase 5 task #72): the network plugin emits its events through
+      // the rrweb event stream (`recorder.events`), not the legacy `recorder.net`
+      // channel. Walk the batch for `EventType.Plugin` / `rrweb/network@1` events
+      // and synthesize legacy `NetMessage` envelopes onto `network.append` so
+      // peek-mcp's `network_events` table + the `get_session_network_errors`
+      // MCP tool keep working unchanged. DOUBLE-WRITE: the plugin events also
+      // stay in the rrweb stream (above), preserving the data for the future
+      // read-path migration (alpha.10+) that walks the stream directly. Remove
+      // this synth call when that migration lands — see comment block in
+      // src/background/network-plugin-synth.ts for the removal trigger.
+      if (message.events.length > 0) {
+        const synth = synthesizeNetMessagesFromEvents(message.events);
+        if (synth.length > 0) {
+          // Count opens for the side panel — keep the legacy semantic of
+          // counting `request` envelopes (the live counter shouldn't change
+          // shape just because the capture mechanism did).
+          const opens = synth.filter((r) => r.kind === 'request').length;
+          if (opens > 0) stats.addNetwork(tabId, opens);
+          forwardToHost(networkAppend(ref, synth));
+        }
+      }
     }
 
     function handleRelayNet(
