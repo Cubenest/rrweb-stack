@@ -2,6 +2,16 @@
 // §C.1). Opens the shared DB read-mostly via @peekdev/mcp's openDb, runs the
 // pure query/format helpers, and prints / writes. Arg parsing uses the built-in
 // node:util parseArgs (no dependency).
+//
+// P-18 (alpha.7): every subcommand's parseArgs call MUST declare `--help` as a
+// known option. Pre-fix, passing `--help` to a subcommand crashed with
+// `TypeError: Unknown option '--help'` because node:util parseArgs rejects
+// unknown flags by default. Each subcommand now defines its own `printHelp`
+// (so the usage matches the subcommand's actual options) and `--help` short-
+// circuits to exit 0 before any other work. `list` also adds `--json` for
+// machine-readable output (audit log already has it; show/export/delete
+// don't need it — show is interactive, export writes its own format-
+// controlled file, delete is unary).
 
 import { writeFileSync } from 'node:fs';
 import { parseArgs } from 'node:util';
@@ -34,14 +44,100 @@ function printUsage(): void {
       'Usage: peek sessions <command>',
       '',
       'Commands:',
-      '  list [--origin <url>] [--limit 20]   List recent sessions (newest first)',
-      '  show <session-id>                    Show one session (metadata + errors)',
+      '  list [--origin <url>] [--limit 20] [--json]   List recent sessions (newest first)',
+      '  show <session-id>                              Show one session (metadata + errors)',
       `  export <session-id> --format <${EXPORT_FORMATS.join('|')}> [--out <file>]`,
-      '  delete <session-id>                  Delete one session',
-      '  delete --all-older-than <dur>        Delete sessions older than e.g. 7d',
+      '  delete <session-id>                            Delete one session',
+      '  delete --all-older-than <dur>                  Delete sessions older than e.g. 7d',
+      '',
+      "Run 'peek sessions <command> --help' for command-specific options.",
       '',
     ].join('\n'),
   );
+}
+
+function printListHelp(): void {
+  process.stdout.write(
+    [
+      'Usage: peek sessions list [options]',
+      '',
+      'Options:',
+      '  --origin <url>   Filter to a single origin (scheme://host[:port])',
+      '  --limit <n>      Max rows to return (default 20, must be > 0)',
+      '  --json           Emit rows as a JSON array instead of a table',
+      '  --help           Show this help and exit',
+      '',
+    ].join('\n'),
+  );
+}
+
+function printShowHelp(): void {
+  process.stdout.write(
+    [
+      'Usage: peek sessions show <session-id>',
+      '',
+      'Print one session as Markdown (the same shape `--format markdown` exports).',
+      '',
+      'Options:',
+      '  --help   Show this help and exit',
+      '',
+    ].join('\n'),
+  );
+}
+
+function printExportHelp(): void {
+  process.stdout.write(
+    [
+      'Usage: peek sessions export <session-id> [options]',
+      '',
+      'Options:',
+      `  --format <${EXPORT_FORMATS.join('|')}>   Export format (default: markdown)`,
+      '  --out <file>                              Write to file instead of stdout',
+      '  --help                                    Show this help and exit',
+      '',
+      'Formats:',
+      '  markdown    Structured AI-paste (default)',
+      '  json        Machine-readable, same schema as the MCP get_session_* tools',
+      '  playwright  Runnable Playwright `test(...)` script (K.2 alpha.7)',
+      '  html        Self-contained replay viewer (deferred — see --help error)',
+      '',
+    ].join('\n'),
+  );
+}
+
+function printDeleteHelp(): void {
+  process.stdout.write(
+    [
+      'Usage: peek sessions delete <session-id>',
+      '       peek sessions delete --all-older-than <duration>',
+      '',
+      'Options:',
+      '  --all-older-than <dur>   Delete every session older than e.g. 7d, 24h, 30m',
+      '  --help                   Show this help and exit',
+      '',
+    ].join('\n'),
+  );
+}
+
+/**
+ * A single JSON row for `peek sessions list --json`. Mirrors the table columns
+ * one-for-one so a scripting consumer reads the same data the human sees, but
+ * also carries the fields useful for programmatic drill-in (`origin`, `url`,
+ * `created_at`, `event_count`, `bytes`).
+ *
+ * Field names: snake_case to match the DB column shapes (peek audit log --json
+ * does likewise) — the closer machine-readable output stays to the SQL row,
+ * the less translation a downstream tool has to do.
+ */
+interface SessionListJsonRow {
+  readonly id: string;
+  readonly origin: string | null;
+  readonly url: string | null;
+  readonly created_at: string;
+  readonly updated_at: string;
+  readonly event_count: number;
+  readonly bytes: number;
+  readonly status: string;
 }
 
 function runList(argv: string[]): number {
@@ -50,9 +146,15 @@ function runList(argv: string[]): number {
     options: {
       origin: { type: 'string' },
       limit: { type: 'string' },
+      json: { type: 'boolean' },
+      help: { type: 'boolean' },
     },
     allowPositionals: false,
   });
+  if (values.help) {
+    printListHelp();
+    return 0;
+  }
   const limit = values.limit !== undefined ? Number(values.limit) : 20;
   if (!Number.isInteger(limit) || limit <= 0) {
     process.stderr.write('peek sessions list: --limit must be a positive integer\n');
@@ -65,6 +167,23 @@ function runList(argv: string[]): number {
       limit,
       ...(values.origin !== undefined ? { origin: values.origin } : {}),
     });
+    if (values.json) {
+      // Machine-readable: always emit a JSON array (empty when no sessions),
+      // never the "No sessions recorded yet." human string. Downstream scripts
+      // can `JSON.parse` the output unconditionally.
+      const json: SessionListJsonRow[] = rows.map((s) => ({
+        id: s.id,
+        origin: s.origin,
+        url: s.url,
+        created_at: s.createdAt,
+        updated_at: s.updatedAt,
+        event_count: s.eventCount,
+        bytes: s.bytes,
+        status: s.status,
+      }));
+      process.stdout.write(`${JSON.stringify(json, null, 2)}\n`);
+      return 0;
+    }
     if (rows.length === 0) {
       process.stdout.write('No sessions recorded yet.\n');
       return 0;
@@ -87,7 +206,17 @@ function runList(argv: string[]): number {
 }
 
 function runShow(argv: string[]): number {
-  const { positionals } = parseArgs({ args: argv, allowPositionals: true, options: {} });
+  const { values, positionals } = parseArgs({
+    args: argv,
+    allowPositionals: true,
+    options: {
+      help: { type: 'boolean' },
+    },
+  });
+  if (values.help) {
+    printShowHelp();
+    return 0;
+  }
   const id = positionals[0];
   if (!id) {
     process.stderr.write('peek sessions show: missing <session-id>\n');
@@ -115,9 +244,14 @@ function runExport(argv: string[]): number {
     options: {
       format: { type: 'string' },
       out: { type: 'string' },
+      help: { type: 'boolean' },
     },
     allowPositionals: true,
   });
+  if (values.help) {
+    printExportHelp();
+    return 0;
+  }
   const id = positionals[0];
   if (!id) {
     process.stderr.write('peek sessions export: missing <session-id>\n');
@@ -139,10 +273,14 @@ function runExport(argv: string[]): number {
       process.stderr.write(`peek sessions export: no session with id '${id}'\n`);
       return 1;
     }
-    const result = formatSession(detail, format);
+    const result = formatSession(detail, format, {
+      ...(detail.session.eventsBlobPath !== null
+        ? { blobPath: detail.session.eventsBlobPath }
+        : {}),
+    });
     if (!result.ok) {
-      // html / playwright stubs: clear message, non-zero exit (never write a
-      // partial file).
+      // html stub: clear message, non-zero exit (never write a partial file).
+      // playwright wired through in alpha.7 (K.2); json/markdown always ok.
       process.stderr.write(`peek sessions export: ${result.message}\n`);
       return 2;
     }
@@ -163,9 +301,14 @@ function runDelete(argv: string[]): number {
     args: argv,
     options: {
       'all-older-than': { type: 'string' },
+      help: { type: 'boolean' },
     },
     allowPositionals: true,
   });
+  if (values.help) {
+    printDeleteHelp();
+    return 0;
+  }
   const olderThan = values['all-older-than'];
   const id = positionals[0];
 

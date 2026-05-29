@@ -21,6 +21,14 @@
     "./native-host": {
       "types": "./dist/native-host/index.d.ts",
       "import": "./dist/native-host/index.js"
+    },
+    "./mcp/playwright-repro": {
+      "types": "./dist/mcp/playwright-repro.d.ts",
+      "import": "./dist/mcp/playwright-repro.js"
+    },
+    "./mcp/event-blobs": {
+      "types": "./dist/mcp/event-blobs.d.ts",
+      "import": "./dist/mcp/event-blobs.js"
     }
   },
   "files": [

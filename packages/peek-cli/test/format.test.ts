@@ -1,8 +1,14 @@
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { gzipSync } from 'node:zlib';
+import { generatePlaywrightRepro } from '@peekdev/mcp/mcp/playwright-repro';
 import { describe, expect, it } from 'vitest';
 import type { SessionDetail } from '../src/lib/db.js';
 import { formatSession, isExportFormat } from '../src/lib/format/index.js';
 import { buildAttribution, formatSessionJson, toJsonExport } from '../src/lib/format/json.js';
 import { formatSessionMarkdown } from '../src/lib/format/markdown.js';
+import { formatSessionPlaywright } from '../src/lib/format/playwright.js';
 import { CLI_VERSION } from '../src/version.js';
 
 const DETAIL: SessionDetail = {
@@ -17,6 +23,7 @@ const DETAIL: SessionDetail = {
     eventCount: 412,
     bytes: 81_920,
     status: 'finalized',
+    eventsBlobPath: null,
   },
   counts: { consoleErrors: 2, networkErrors: 1 },
   consoleErrors: [
@@ -61,6 +68,7 @@ const EMPTY_DETAIL: SessionDetail = {
     eventCount: 0,
     bytes: 0,
     status: 'active',
+    eventsBlobPath: null,
   },
   counts: { consoleErrors: 0, networkErrors: 0 },
   consoleErrors: [],
@@ -221,18 +229,96 @@ describe('formatSessionMarkdown — Phase 5 attribution paragraph', () => {
 });
 
 describe('formatSession dispatch', () => {
-  it('renders markdown and json as ok', () => {
+  it('renders markdown, json, and playwright as ok', () => {
     expect(formatSession(DETAIL, 'markdown').ok).toBe(true);
     expect(formatSession(DETAIL, 'json').ok).toBe(true);
+    // K.2 alpha.7 fix: playwright now wires through to the MCP walker even
+    // with no blob (empty events → valid `test(...)` shell w/ placeholder).
+    expect(formatSession(DETAIL, 'playwright').ok).toBe(true);
   });
 
-  it('returns a not-implemented message for html and playwright', () => {
+  it('returns a not-implemented message for html (a peek-specific replay viewer is deferred)', () => {
     const html = formatSession(DETAIL, 'html');
-    const pw = formatSession(DETAIL, 'playwright');
     expect(html.ok).toBe(false);
-    expect(pw.ok).toBe(false);
     if (!html.ok) expect(html.message).toMatch(/not yet implemented/);
-    if (!pw.ok) expect(pw.message).toMatch(/not yet implemented/);
+  });
+});
+
+describe('formatSessionPlaywright (K.2 alpha.7 — CLI shares MCP walker)', () => {
+  it('returns a valid Playwright `test(...)` script even with no blob (empty events shell)', () => {
+    const result = formatSession(DETAIL, 'playwright');
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      // Boilerplate emitted by `generatePlaywrightRepro` regardless of input.
+      expect(result.content).toContain("import { test, expect } from '@playwright/test'");
+      expect(result.content).toContain('test(');
+      expect(result.content).toContain('async ({ page }) =>');
+      // No blob → walker emits the "no actions" placeholder, not a partial script.
+      expect(result.content).toContain('No user actions were recorded');
+    }
+  });
+
+  it('uses the session title as the test title when available', () => {
+    const result = formatSession(DETAIL, 'playwright');
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.content).toContain("test('Checkout flow'");
+    }
+  });
+
+  it('falls back to a session-id-based title when session.title is null', () => {
+    const result = formatSession(EMPTY_DETAIL, 'playwright');
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.content).toContain("test('peek session s_empty'");
+    }
+  });
+
+  // K.2 cross-surface parity (P2 PRD §B3): the CLI's `--format playwright`
+  // and the MCP `generate_playwright_repro` tool MUST emit byte-identical
+  // output for the same session — the whole point of wiring them to the
+  // same walker. The CLI loads the gzipped blob from disk and hands the
+  // decoded eventWithTime[] to the same generator the MCP server uses.
+  it('produces byte-identical output to the MCP walker for the same session', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'peek-cli-pw-parity-'));
+    try {
+      // A minimal navigation-only event stream (the same shape rrweb emits
+      // on a `page.goto`). We don't need a realistic DOM for parity testing —
+      // we cast through unknown since this package doesn't depend on the
+      // rrweb-core types directly (peek-cli is a thin reader; the type lives
+      // in @peekdev/mcp via @cubenest/rrweb-core transitively).
+      const events = [
+        {
+          type: 4,
+          data: { href: 'https://example.com/checkout', width: 1280, height: 800 },
+          timestamp: 1000,
+        },
+      ];
+      // gzip using node:zlib — fflate (which decompress() uses) reads RFC-1952
+      // gzip frames just fine, so we can avoid pulling rrweb-core into the
+      // CLI's devDeps. Verified by event-blobs.test.ts.
+      const absBlob = join(dir, 's_parity.rrweb.gz');
+      writeFileSync(absBlob, gzipSync(Buffer.from(JSON.stringify(events))));
+
+      const detail: SessionDetail = {
+        ...DETAIL,
+        session: { ...DETAIL.session, eventsBlobPath: absBlob },
+      };
+      const cliOutput = formatSessionPlaywright(detail, absBlob);
+      // The walker takes eventWithTime[] — cast through unknown matches the
+      // shape we wrote to the blob.
+      const mcpOutput = generatePlaywrightRepro(
+        events as unknown as Parameters<typeof generatePlaywrightRepro>[0],
+        {
+          title: detail.session.title ?? `peek session ${detail.session.id}`,
+        },
+      );
+      expect(cliOutput).toBe(mcpOutput);
+      // Sanity: both contain the navigation we emitted.
+      expect(cliOutput).toContain("await page.goto('https://example.com/checkout')");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });
 

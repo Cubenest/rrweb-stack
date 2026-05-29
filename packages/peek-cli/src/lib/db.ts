@@ -24,6 +24,13 @@ export interface SessionRow {
   readonly eventCount: number;
   readonly bytes: number;
   readonly status: string;
+  /**
+   * Relative path to the gzipped event blob under ~/.peek/rrweb-events/.
+   * Null when the session has never flushed (active session pre-flush) or
+   * pre-dates the column. Consumed by the playwright export (K.2 alpha.7)
+   * to feed the rrweb stream to `generate_playwright_repro`.
+   */
+  readonly eventsBlobPath: string | null;
 }
 
 /** A console message extracted for a session (mirrors `get_session_console_errors`). */
@@ -72,6 +79,7 @@ interface RawSessionRow {
   event_count: number;
   bytes: number;
   status: string;
+  events_blob_path: string | null;
 }
 
 function mapSession(r: RawSessionRow): SessionRow {
@@ -86,6 +94,7 @@ function mapSession(r: RawSessionRow): SessionRow {
     eventCount: r.event_count,
     bytes: r.bytes,
     status: r.status,
+    eventsBlobPath: r.events_blob_path,
   };
 }
 
