@@ -31,6 +31,23 @@ let fixtureUrl = '';
 
 const MAX_REPORT_BYTES = 25 * 1024 * 1024;
 
+// CI hand-off (see .github/workflows/ci.yml e2e-wdio job).
+//
+// WDIO 9's startWebDriver calls setupPuppeteerBrowser + setupChromedriver from
+// @wdio/utils, which IGNORE Chrome/chromedriver pre-installed on PATH and
+// instead download their own via @puppeteer/browsers into os.tmpdir(). On
+// GitHub Actions Ubuntu runners that download can hang silently (no progress
+// is logged at warn level), pinning the worker until the 15-min job timeout
+// fires — that's the May 29 2026 CI cancellation we saw on every push.
+//
+// Fix: in CI, browser-actions/setup-chrome installs both binaries and exports
+// CHROME_PATH + CHROMEDRIVER_PATH. When those are set we point WDIO directly
+// at them via goog:chromeOptions.binary + wdio:chromedriverOptions.binary,
+// which short-circuits the Puppeteer download path entirely. Locally the env
+// vars are unset and WDIO auto-resolves Chrome from the system as before.
+const chromeBinary = process.env.CHROME_PATH || undefined;
+const chromedriverBinary = process.env.CHROMEDRIVER_PATH || undefined;
+
 export const config: Options.Testrunner = {
   runner: 'local',
   specs: [join(here, 'test', 'specs', '**', '*.e2e.ts')],
@@ -40,6 +57,7 @@ export const config: Options.Testrunner = {
     {
       browserName: 'chrome',
       'goog:chromeOptions': {
+        ...(chromeBinary ? { binary: chromeBinary } : {}),
         args: [
           '--headless=new',
           '--disable-gpu',
@@ -48,10 +66,16 @@ export const config: Options.Testrunner = {
           '--remote-debugging-port=0',
         ],
       },
+      ...(chromedriverBinary ? { 'wdio:chromedriverOptions': { binary: chromedriverBinary } } : {}),
     },
   ],
 
-  logLevel: 'warn',
+  // 'info' (not 'warn'): WDIO 9 logs driver setup at info level — chromedriver
+  // download progress, "Using pre-installed chrome v...", driver-start params.
+  // Without these lines, a hang in the connect phase produces zero output and
+  // is invisible until the job timeout fires. The volume is small (<50 lines
+  // for a healthy run) so the noise tradeoff is worth the diagnosability.
+  logLevel: 'info',
   framework: 'mocha',
   mochaOpts: { ui: 'bdd', timeout: 60_000 },
   reporters: ['spec'],

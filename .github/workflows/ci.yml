@@ -60,14 +60,23 @@ jobs:
           node-version: '24'
           cache: pnpm
       # ubuntu-latest ships Chrome; pin it explicitly so the run is reproducible.
-      # `install-chromedriver: true` is REQUIRED — the action defaults to false,
-      # which leaves the runner with Chrome installed but no chromedriver in
-      # PATH. WDIO 9 then silently hangs trying to talk to a non-existent
-      # driver (no service registered to auto-download one; @wdio/chromedriver-
-      # service is not in this package's devDeps). The May 29 2026 CI hang was
-      # exactly this failure mode — every e2e-wdio run cancelled at the
-      # `Execution of 1 workers started` line with zero output thereafter.
+      # `install-chromedriver: true` is REQUIRED — the action defaults to false.
+      # Capture both binary paths via `id:` + outputs and pipe them into WDIO via
+      # CHROME_PATH/CHROMEDRIVER_PATH (consumed by e2e/wdio.conf.ts).
+      #
+      # WHY this matters (May 29 2026 root cause): WDIO 9.27's startWebDriver
+      # calls setupPuppeteerBrowser + setupChromedriver from @wdio/utils, which
+      # ignore Chrome/chromedriver on PATH and instead download their own copies
+      # via @puppeteer/browsers into os.tmpdir(). On GH Actions Ubuntu runners
+      # that download hangs silently (driver-setup logs are at info level; conf
+      # ran at warn level). Every e2e-wdio run cancelled at the 15-min cap with
+      # zero output after "Execution of 1 workers started" — workflow conclusion
+      # = cancelled => red CI badge on a repo where every push-triggered job
+      # that mattered (the required `ci` gate + e2e-peek) was actually passing.
+      # Pointing WDIO at the binaries setup-chrome already installed bypasses
+      # the Puppeteer download entirely.
       - uses: browser-actions/setup-chrome@19ae4b339ee18925ab85cf12c1041150ea4a44c8  # v1
+        id: setup-chrome
         with:
           chrome-version: stable
           install-chromedriver: true
@@ -75,6 +84,9 @@ jobs:
       # The recorder bundle + workspace deps must be built before the E2E.
       - run: pnpm build
       - run: pnpm --filter @tracelane/wdio test:e2e
+        env:
+          CHROME_PATH: ${{ steps.setup-chrome.outputs.chrome-path }}
+          CHROMEDRIVER_PATH: ${{ steps.setup-chrome.outputs.chromedriver-path }}
 
   # peek extension Playwright persistent-context smoke (Task 3.29). Separate,
   # non-blocking job — a Playwright/chromium download flake or a Chromium
