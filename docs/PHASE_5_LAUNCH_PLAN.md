@@ -581,7 +581,7 @@ Items that can only be done via a vendor web UI — no API, no CLI, no automatio
 
 - [ ] **tracelane hero GIF** — Gate B1. vhs tape scaffolded at `assets/tracelane-hero.tape`. Steps: `brew install vhs` → stage fixture per the tape file header → `vhs assets/tracelane-hero.tape` → commit `assets/tracelane-hero.gif` → reference it from `packages/tracelane-wdio/README.md` with the absolute `raw.githubusercontent.com` URL.
 - [ ] **peek hero GIF** — same pattern; Week 3-4 in §3.2.
-- [ ] **Demo URL** — Gate B7. Either host a real tracelane HTML report from `apps/tracelane-docs/` (low-friction; one Astro page), OR a Loom-style recording of peek in action. Pick one.
+- [x] ~~**Demo URL** — Gate B7. Either host a real tracelane HTML report from `apps/tracelane-docs/` (low-friction; one Astro page), OR a Loom-style recording of peek in action. Pick one.~~ **Done 2026-05-29** — live at `apps/tracelane-docs/src/pages/demo.astro` + `public/demo/login-failure.html`. Wrapper page at `/demo`, raw report at `/demo/login-failure.html` (159 KB). Real rrweb capture from the e2e/smoke fixture, sed-redacted to strip the local FS path.
 
 #### Publishing + comms
 
