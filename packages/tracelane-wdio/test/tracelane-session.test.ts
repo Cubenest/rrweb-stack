@@ -46,10 +46,18 @@ function resetPageState(): void {
 
 /** The console-plugin options the recorder's init script was called with, if any. */
 function consoleOptionsFromExecuteCalls(browser: MockBrowser): unknown {
-  // runInit() calls execute(tracelaneInitScript, cooldownMs:number, consoleOptions).
+  // runInit() calls execute(tracelaneInitScript, cooldownMs:number, consoleOptions, networkOptions?).
   const calls = (browser.execute as ReturnType<typeof vi.fn>).mock.calls;
   const initCall = calls.find((c) => typeof c[1] === 'number' && c.length >= 3);
   return initCall?.[2];
+}
+
+/** The network-plugin options the recorder's init script was called with, if any. */
+function networkOptionsFromExecuteCalls(browser: MockBrowser): unknown {
+  // The 4th positional arg to execute(initScript, cooldownMs, consoleOpts, networkOpts).
+  const calls = (browser.execute as ReturnType<typeof vi.fn>).mock.calls;
+  const initCall = calls.find((c) => typeof c[1] === 'number' && c.length >= 4);
+  return initCall?.[3];
 }
 
 describe.skipIf(!bundleBuilt)('TraceLaneSession — afterTest report-write decision', () => {
@@ -316,3 +324,56 @@ describe.skipIf(!bundleBuilt)('TraceLaneSession — no teardown drain (#5)', () 
     expect((browser.execute as ReturnType<typeof vi.fn>).mock.calls).toHaveLength(0);
   });
 });
+
+describe.skipIf(!bundleBuilt)(
+  'TraceLaneSession — capture.networkOptions passthrough (Phase 5)',
+  () => {
+    let warnSpy: ReturnType<typeof vi.spyOn>;
+
+    beforeEach(() => {
+      resetPageState();
+      // The mock browser's cdp() throws by default; silence the "CDP unavailable"
+      // warning so these passthrough tests aren't polluted by the legacy path.
+      warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    });
+
+    afterEach(() => {
+      warnSpy.mockRestore();
+    });
+
+    it('forwards the network plugin defaults (empty object) when no options are set', async () => {
+      // Default capture.network is true and no networkOptions — the session must
+      // still register the plugin and pass `{}` so it picks up the plugin's
+      // built-in privacy defaults (bodies + headers off).
+      const session = new TraceLaneSession({}, 'mocha', '0-0');
+      const browser = mockBrowser();
+      await session.onBefore(browser);
+      await session.onBeforeTest('a test', 'test/x.spec.ts');
+      expect(networkOptionsFromExecuteCalls(browser)).toEqual({});
+    });
+
+    it('forwards an explicit capture.networkOptions object verbatim', async () => {
+      const custom = {
+        recordHeaders: true,
+        recordBody: ['application/json'],
+        payloadHostDenyList: ['analytics.example.com'],
+      };
+      const session = new TraceLaneSession({ capture: { networkOptions: custom } }, 'mocha', '0-0');
+      const browser = mockBrowser();
+      await session.onBefore(browser);
+      await session.onBeforeTest('a test', 'test/x.spec.ts');
+      expect(networkOptionsFromExecuteCalls(browser)).toEqual(custom);
+    });
+
+    it('omits networkOptions entirely when capture.network is false', async () => {
+      // When the user opts out of network capture, the session must NOT pass
+      // a network-options arg — the in-page plugin then stays unregistered and
+      // the legacy CDP path remains the only network channel (covered above).
+      const session = new TraceLaneSession({ capture: { network: false } }, 'mocha', '0-0');
+      const browser = mockBrowser();
+      await session.onBefore(browser);
+      await session.onBeforeTest('a test', 'test/x.spec.ts');
+      expect(networkOptionsFromExecuteCalls(browser)).toBeUndefined();
+    });
+  },
+);
