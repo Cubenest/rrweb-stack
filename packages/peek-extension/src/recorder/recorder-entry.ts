@@ -93,6 +93,28 @@ const GUARD = '__peekRecorderInstalled';
   // record() returns a stop fn; we deliberately keep no handle (the page could
   // not reach it anyway from inside this closure) — the recorder stops when the
   // page unloads. `emit` posts each event to the ISOLATED relay.
+  //
+  // Checkout cadence (J.6, 2026-05-28 QA walk): rrweb's default is to emit ONE
+  // FullSnapshot at recording start, then only IncrementalSnapshots forever.
+  // For a long-running session (the AI-coding-agent flow: open tab, fight with
+  // the app for 5+ minutes, then ask Claude what just happened) the only
+  // FullSnapshot is hundreds of MB of incrementals back — and the MCP
+  // `get_dom_snapshot` tool, which walks forward from the nearest FullSnapshot
+  // at/before the error timestamp, then returns "no snapshot at or before the
+  // error" or a many-second reconstruction. `checkoutEveryNms` makes rrweb
+  // emit a fresh FullSnapshot on a cadence so the look-back window is bounded.
+  //
+  // Trade-off: each checkout is a full serialized DOM (~10-100 KB on typical
+  // pages, MB-class on heavy SPAs) — so a 2 min cadence on a 30 min session
+  // adds ~15 extra FullSnapshots, well under the 25 MB session ceiling we
+  // already enforce upstream. 2 min is the sweet spot between disk cost and
+  // AI-tool responsiveness: an error fired at t=29 min reconstructs from a
+  // FullSnapshot at most 2 min stale, which is the user-perceived bound on
+  // "the DOM at the time of the bug".
+  //
+  // `checkoutEveryN: 5000` is the secondary trigger — for bursty-mutation
+  // pages (a heavy infinite-scroll feed, a webgl canvas re-render loop) where
+  // 2 minutes of events could be 100k+ entries. Whichever fires first.
   try {
     record({
       emit: (event: unknown) => postRrweb(event),
@@ -100,6 +122,10 @@ const GUARD = '__peekRecorderInstalled';
       // are picked up best-effort by the ISOLATED relay (Task 3.21).
       recordCanvas: false,
       collectFonts: false,
+      // J.6: bound the look-back window for get_dom_snapshot. See the comment
+      // above for the rationale + trade-off.
+      checkoutEveryNms: 120_000,
+      checkoutEveryN: 5000,
       // Capture console as rrweb plugin events so the relay/native host can
       // extract console_events without a second channel.
       plugins: [getRecordConsolePlugin()],

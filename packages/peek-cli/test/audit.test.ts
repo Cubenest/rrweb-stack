@@ -1,4 +1,8 @@
-import { describe, expect, it } from 'vitest';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { runAudit } from '../src/commands/audit.js';
 import { filterAuditEntries, parseAuditLog } from '../src/lib/audit.js';
 
 const LOG = [
@@ -97,5 +101,59 @@ describe('filterAuditEntries', () => {
         sinceMs: 0,
       }),
     ).toHaveLength(2);
+  });
+});
+
+// P-18 (alpha.7): `--help` is now a declared option on `peek audit log` so it
+// doesn't crash parseArgs. The audit command's `--json` was already wired pre-
+// alpha.7 — the test below just pins the help behavior.
+
+describe('peek audit log --help (P-18 alpha.7)', () => {
+  let home: string;
+  let origHome: string | undefined;
+
+  beforeEach(() => {
+    home = mkdtempSync(join(tmpdir(), 'peek-audit-help-'));
+    origHome = process.env.PEEK_HOME;
+    process.env.PEEK_HOME = home;
+  });
+
+  afterEach(() => {
+    // Restore PEEK_HOME — mirror peek-mcp test convention (use '' to mean
+    // "unset" since biome's lint/performance/noDelete rules out `delete`).
+    if (origHome === undefined) process.env.PEEK_HOME = '';
+    else process.env.PEEK_HOME = origHome;
+    rmSync(home, { recursive: true, force: true });
+  });
+
+  it('prints usage to stdout and exits 0 without reading the audit log', () => {
+    let out = '';
+    let err = '';
+    const outSpy = vi.spyOn(process.stdout, 'write').mockImplementation(((
+      chunk: string | Uint8Array,
+    ) => {
+      out += typeof chunk === 'string' ? chunk : Buffer.from(chunk).toString('utf8');
+      return true;
+    }) as typeof process.stdout.write);
+    const errSpy = vi.spyOn(process.stderr, 'write').mockImplementation(((
+      chunk: string | Uint8Array,
+    ) => {
+      err += typeof chunk === 'string' ? chunk : Buffer.from(chunk).toString('utf8');
+      return true;
+    }) as typeof process.stderr.write);
+    try {
+      const code = runAudit(['log', '--help']);
+      expect(code).toBe(0);
+      expect(err).toBe('');
+      expect(out).toContain('Usage: peek audit log');
+      expect(out).toContain('--since');
+      expect(out).toContain('--tool');
+      expect(out).toContain('--client');
+      expect(out).toContain('--json');
+      expect(out).toContain('--help');
+    } finally {
+      outSpy.mockRestore();
+      errSpy.mockRestore();
+    }
   });
 });

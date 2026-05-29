@@ -157,6 +157,46 @@ describe('reconstructDomAt', () => {
     const events = [fullSnapshot(root, 5000)];
     expect(reconstructDomAt(events, 1000)).toBeUndefined();
   });
+
+  // J.6 (alpha.7): the recorder now emits a fresh FullSnapshot every 2 minutes
+  // (checkoutEveryNms: 120_000). reconstructDomAt MUST root reconstruction at
+  // the LATEST FullSnapshot at/before `ts`, not the first — otherwise the
+  // checkout cadence buys us nothing and the walker still chews through all
+  // mutations from t=0.
+  it('uses the LATEST FullSnapshot at/before ts when multiple checkouts exist (J.6 alpha.7)', () => {
+    freshIds();
+    const initialBody = el('div', { attributes: { id: 'initial' } });
+    const initialRoot = documentWith([initialBody]);
+
+    freshIds();
+    const checkoutBody = el('div', { attributes: { id: 'after-checkout' } });
+    const checkoutRoot = documentWith([checkoutBody]);
+
+    const events = [
+      // t=0 — initial FullSnapshot at recording start.
+      fullSnapshot(initialRoot, 0),
+      // A few incrementals between checkouts (would be expensive to replay).
+      mutationEvent({ attributes: [{ id: initialBody.id, attributes: { class: 'a' } }] }, 30_000),
+      mutationEvent({ attributes: [{ id: initialBody.id, attributes: { class: 'b' } }] }, 60_000),
+      // t=120_001 — checkout FullSnapshot (rrweb fires this when
+      // checkoutEveryNms elapses). Fresh DOM, fresh tree.
+      fullSnapshot(checkoutRoot, 120_001),
+      // A few more incrementals after the checkout.
+      mutationEvent({ attributes: [{ id: checkoutBody.id, attributes: { class: 'c' } }] }, 125_000),
+    ];
+
+    // Reconstruct at t=130_000 (after the checkout). Result must be rooted at
+    // the t=120_001 FullSnapshot — NOT t=0. Two signals:
+    //   1. baseSnapshotTs is 120_001 (the checkout), not 0.
+    //   2. mutationsApplied is 1 (only the post-checkout mutation), not 3.
+    //   3. The reconstructed HTML contains the post-checkout #after-checkout
+    //      element, not the initial #initial element.
+    const snap = reconstructDomAt(events, 130_000);
+    expect(snap?.baseSnapshotTs).toBe(120_001);
+    expect(snap?.mutationsApplied).toBe(1);
+    expect(snap?.html).toContain('id="after-checkout"');
+    expect(snap?.html).not.toContain('id="initial"');
+  });
 });
 
 describe('queryDomHistory', () => {

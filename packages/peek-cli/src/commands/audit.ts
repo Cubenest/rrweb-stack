@@ -24,6 +24,7 @@ function printUsage(): void {
       '  --tool <name>     Filter by tool (e.g. execute_action)',
       '  --client <name>   Filter by MCP client (e.g. cursor, claude-code)',
       '  --json            Emit matching entries as JSON instead of a table',
+      '  --help            Show this help and exit',
       '',
     ].join('\n'),
   );
@@ -56,6 +57,10 @@ export function runAudit(argv: string[]): number {
     return 1;
   }
 
+  // P-18 (alpha.7): declare `--help` as a known option so passing it doesn't
+  // crash parseArgs with `TypeError: Unknown option`. Short-circuit to usage
+  // BEFORE any DB / log read so `peek audit log --help` always works even on
+  // a broken install.
   const { values } = parseArgs({
     args: argv.slice(1),
     options: {
@@ -63,9 +68,14 @@ export function runAudit(argv: string[]): number {
       tool: { type: 'string' },
       client: { type: 'string' },
       json: { type: 'boolean' },
+      help: { type: 'boolean' },
     },
     allowPositionals: false,
   });
+  if (values.help) {
+    printUsage();
+    return 0;
+  }
 
   const filter: AuditFilter = {
     ...(values.tool !== undefined ? { tool: values.tool } : {}),
