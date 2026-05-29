@@ -92,7 +92,7 @@ The wedge: WebdriverIO is the lowest-friction OSS host (1.93M weekly DLs, 9.6k s
 |---|---|---|---|
 | 1 | `@tracelane/wdio` alpha.6 — close T-7 (CDP network capture in fixture, or document degradation explicitly) + P-18 (`--json` flag for `peek sessions list`, despite the cross-product name; this is a tracelane finding's audit-output equivalent) | None — internal | `pnpm test` green, manual QA re-run clean |
 | 1–2 | README hero GIF + first-paragraph rewrite + tagline lockin | None — internal | Gate B1, B2 green |
-| 2 | `tracelane/upload-report-action` v0.1 (GitHub Marketplace) — uploads the HTML report as a workflow artifact + posts a PR comment with a link | Submit to GitHub Marketplace; semver-tagged release | Listing live |
+| 2 | `tracelane/upload-report-action` v0.1 (GitHub Marketplace) — uploads the HTML report as a workflow artifact + posts a PR comment with a link | **Repo + v0.1.0 release ✅ done 2026-05-29 (`Cubenest/tracelane-upload-report-action@v0.1.0`). Marketplace listing pending** — see §11 Owner punch list | Listing live |
 | 2–3 | `@tracelane/playwright-reporter` MVP — Reporter interface (`onTestEnd` + `onAttachment`), shareable single-file HTML output, positioning explicitly NOT capture but *attach* | None yet — wait for the package to stabilise | npm 0.1.0 published, README example green |
 | 3 | `@tracelane/allure-attachment` — attaches `rrweb.html` to every Allure result so it shows in the existing Allure UI under Attachments | Email Qameta team (Artem Eroshenko) introducing the package; no PR required | Package downloads non-zero |
 | 4 | PR to `webdriverio/awesome-webdriverio` adding `@tracelane/wdio` to services + reporters section | One PR | Merged within 2 weeks (historical precedent) |
@@ -556,3 +556,55 @@ Inline citations are deferred to the four source research deliverables — this 
 - Quarterly review after day 90: rotate this entire doc — what worked, what didn't, what to keep for the next 90-day cycle.
 
 This document is durable; the week-by-week tables are not. Edit them ruthlessly.
+
+---
+
+### 11. Owner punch list (web-UI-only actions the maintainer must do by hand)
+
+Items that can only be done via a vendor web UI — no API, no CLI, no automation path. Tracked here so they don't get lost in chat scrollback. Tick the box when complete.
+
+#### Marketplace + listings
+
+- [ ] **GitHub Marketplace: publish `Cubenest/tracelane-upload-report-action@v0.1.0`.**
+  - Path: open https://github.com/Cubenest/tracelane-upload-report-action/releases/tag/v0.1.0 → Edit → check "Publish this Action to the GitHub Marketplace" → primary category = "Testing" → accept the Marketplace Developer Agreement (first time) → Update release.
+  - Result: listing lives at `https://github.com/marketplace/actions/<slug>` within ~1-2 minutes.
+  - Blocker if GitHub flags it: action name collision, missing `branding.icon` (we used `file-text` — valid Feather icon), or first-time Developer Agreement not yet accepted.
+- [ ] **PR to `webdriverio/awesome-webdriverio`** — add `@tracelane/wdio` to services + reporters section. Week 4 in §3.1. One PR, no follow-up.
+- [ ] **PR to `microsoft/playwright/awesome-playwright`** — wait until `@tracelane/playwright-reporter` ships (Week 2-3 internal ship).
+- [ ] **PulseMCP listing** for `@peekdev/mcp` — submit via PulseMCP web form; metadata pre-filled at `docs/peek/distribution/pulsemcp.json`.
+- [ ] **Smithery listing** — same shape, metadata at `docs/peek/distribution/smithery.json`.
+- [ ] **mcp.so listing** — markdown PR, source at `docs/peek/distribution/mcp-so.md`.
+- [ ] **modelcontextprotocol/servers PR** — community list; pre-fill at `docs/peek/distribution/modelcontextprotocol-servers.md`.
+- [ ] **Chrome Web Store submission** for `@peekdev/extension` — unlisted first, then Public after one alpha cycle. Justifications at `docs/peek/PERMISSION_JUSTIFICATION.md`, privacy policy at `docs/peek/PRIVACY_POLICY.md`.
+
+#### Hosting + media (heavy-lift artifacts)
+
+- [ ] **tracelane hero GIF** — Gate B1. vhs tape scaffolded at `assets/tracelane-hero.tape`. Steps: `brew install vhs` → stage fixture per the tape file header → `vhs assets/tracelane-hero.tape` → commit `assets/tracelane-hero.gif` → reference it from `packages/tracelane-wdio/README.md` with the absolute `raw.githubusercontent.com` URL.
+- [ ] **peek hero GIF** — same pattern; Week 3-4 in §3.2.
+- [ ] **Demo URL** — Gate B7. Either host a real tracelane HTML report from `apps/tracelane-docs/` (low-friction; one Astro page), OR a Loom-style recording of peek in action. Pick one.
+
+#### Publishing + comms
+
+- [ ] **Publish origin-story post on harish.dev.** Draft at `docs/posts/origin-story.md`. Cross-link from project README "Background" section (do NOT lead with it).
+- [ ] **Open GitHub Sponsors** at `https://github.com/sponsors/harry-harish`. Referenced from root README as "opening for launch". Per OSS maintenance manual §4: open at launch, not after.
+- [ ] **Show HN submission** — week 5-6. Tue or Wed, 09:00-11:00 ET. Title format: "Show HN: tracelane — self-contained HTML test-failure replays for WebdriverIO / Playwright". Maintainer in-thread for ≥4 hours.
+- [ ] **JavaScript Weekly submission** — week 6. Public submit form + DM `@peterc` on X / Bluesky. One submission, no follow-up.
+- [ ] **TestJS Summit 2026 CFP** — week 7. Talk title: "What the developer console can't tell you: rrweb-based test forensics in 25 minutes".
+- [ ] **PodRocket pitch** — week 9-10. Email `elizabeth.becz@logrocket.com`.
+
+#### Token + ownership hygiene
+
+- [ ] **Promote `enforce_admins: true`** on the `main` branch protection at the first non-alpha tag (v1.0). Until then, the maintainer keeps direct-to-main via admin bypass (configured 2026-05-29).
+- [ ] **Enable "Require 2FA on publish"** on `@tracelane/cli` (newly published 2026-05-29) once the per-package toggle is available on npmjs.com. The other 6 packages still need this set — it requires the package to exist before npm exposes the setting. See `cubenest-two-product-oss.md` memory note for the gotcha.
+
+#### Five open questions (carried from §10)
+
+- [ ] Decide between bundled vs separate `@tracelane/playwright-reporter` package.
+- [ ] Decide on `peek` write-path Phase 6 vs Week 11 ship.
+- [ ] Decide on Cypress strategy depth (JSON-only vs heavier).
+- [ ] Confirm Sustainability cadence boundaries (week 6 vs week 12).
+- [ ] Choose between integration-led measurement (DLs) vs ecosystem measurement (template repo references) as the day-90 north star metric.
+
+---
+
+*Use this section as a working checklist. When a row clears, leave the line struck through (`~~`) with the completion date — that preserves "we did this" for the post-mortem rather than deleting history.*
