@@ -1,5 +1,12 @@
 # @tracelane/wdio
 
+## 0.1.0-alpha.8
+
+### Patch Changes
+
+- @tracelane/core@0.1.0-alpha.5
+- @tracelane/report@0.1.0-alpha.6
+
 ## 0.1.0-alpha.7
 
 ### Patch Changes
