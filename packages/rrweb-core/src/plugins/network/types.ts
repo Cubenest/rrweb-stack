@@ -94,15 +94,17 @@ export interface CapturedNetworkRequest {
    */
   isInitial?: boolean | undefined;
   /**
-   * `performance.now()` at request start. We also expose this as
-   * `startTime` for compatibility with PerformanceEntry consumers.
+   * `performance.now()` at request start. This is the wire-format
+   * field name consumers (panel extractor, MCP ingest) read; the
+   * underlying PerformanceEntry's `startTime` is normalized into
+   * this shape inside the plugin.
    */
-  startTime?: number | undefined;
+  requestMadeAt?: number | undefined;
   /** `performance.now()` at response end. */
-  endTime?: number | undefined;
+  responseEnd?: number | undefined;
   /** `Date.now() - performance.now()` snapshot — replay clock origin. */
   timeOrigin?: number | undefined;
-  /** Wall-clock timestamp (ms since epoch) — `timeOrigin + startTime`. */
+  /** Wall-clock timestamp (ms since epoch) — `timeOrigin + requestMadeAt`. */
   timestamp?: number | undefined;
   /**
    * Resource entry type — set on entries that originate from the
@@ -197,7 +199,7 @@ export interface NetworkRecordOptions {
    * navigation timings even for requests we didn't wrap (e.g. images,
    * stylesheets, fonts, page navigations). Default `true`.
    */
-  recordPerformance?: boolean | undefined;
+  capturePerformance?: boolean | undefined;
   /**
    * Which `PerformanceObserver` entry types to observe. Default is
    * `['navigation', 'resource', 'first-input', 'paint']`. Caller can

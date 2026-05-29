@@ -334,6 +334,33 @@ describe('getRecordNetworkPlugin — fetch wrapper', () => {
       obs.teardown();
     }
   });
+
+  it('emits a status=0 record and re-throws on network error', async () => {
+    const networkError = new TypeError('Failed to fetch');
+    window.fetch = vi.fn().mockRejectedValue(networkError);
+    const obs = installObserver({ recordHeaders: true });
+    let caught: unknown;
+    try {
+      try {
+        await window.fetch('/api/offline');
+      } catch (err) {
+        caught = err;
+      }
+      // The original error must propagate to the caller's catch.
+      expect(caught).toBe(networkError);
+      // …AND the plugin emits a synthetic status=0 record so replay
+      // tooling can still show the attempt.
+      await waitFor(() => obs.batches.some((b) => b.requests.some((r) => r.status === 0)));
+      const flat = obs.batches.flatMap((b) => b.requests);
+      const errRecords = flat.filter((r) => r.initiatorType === 'fetch' && r.status === 0);
+      // Exactly one synthetic record for the failed request.
+      expect(errRecords.length).toBe(1);
+      expect(errRecords[0]?.name).toContain('/api/offline');
+      expect(errRecords[0]?.method).toBe('GET');
+    } finally {
+      obs.teardown();
+    }
+  });
 });
 
 // ─── 5-6. XHR path ───────────────────────────────────────────────────────────
@@ -431,13 +458,96 @@ describe('getRecordNetworkPlugin — XHR wrapper', () => {
       obs.teardown();
     }
   });
+
+  it('removeEventListener references match what addEventListener received', async () => {
+    // Regression test for the upstream PostHog bug: `cleanup` was
+    // passed to both `add` and `remove` for some events, but other
+    // events were `add`ed with `errorCleanup`. Mismatched references
+    // make `removeEventListener` silently no-op, leaking listeners.
+    //
+    // We instrument a real (jsdom) XMLHttpRequest's add/remove and
+    // assert every removal corresponds to an addition with the same
+    // function reference.
+    const adds: Array<{ event: string; ref: unknown }> = [];
+    const removes: Array<{ event: string; ref: unknown }> = [];
+
+    class TrackedXHR extends XMLHttpRequest {
+      override addEventListener(
+        type: string,
+        listener: EventListenerOrEventListenerObject | null,
+        options?: boolean | AddEventListenerOptions,
+      ): void {
+        adds.push({ event: type, ref: listener });
+        super.addEventListener(type, listener, options);
+      }
+      override removeEventListener(
+        type: string,
+        listener: EventListenerOrEventListenerObject | null,
+        options?: boolean | EventListenerOptions,
+      ): void {
+        removes.push({ event: type, ref: listener });
+        super.removeEventListener(type, listener, options);
+      }
+      override send(_body?: Document | XMLHttpRequestBodyInit | null): void {
+        const self = this as XMLHttpRequest & {
+          readyState: number;
+          status: number;
+          response: string;
+        };
+        setTimeout(() => {
+          Object.defineProperty(self, 'readyState', { value: 4, configurable: true });
+          Object.defineProperty(self, 'status', { value: 200, configurable: true });
+          Object.defineProperty(self, 'response', { value: '', configurable: true });
+          (self as unknown as { getAllResponseHeaders: () => string }).getAllResponseHeaders = () =>
+            '';
+          self.dispatchEvent(new Event('readystatechange'));
+        }, 0);
+      }
+    }
+
+    window.XMLHttpRequest = TrackedXHR as unknown as typeof XMLHttpRequest;
+    const obs = installObserver({ recordHeaders: true });
+    try {
+      const xhr = new window.XMLHttpRequest();
+      xhr.open('GET', '/api/listener-check');
+      xhr.send();
+      await waitFor(() =>
+        obs.batches.some((b) => b.requests.some((r) => r.initiatorType === 'xmlhttprequest')),
+      );
+
+      // The plugin attaches 4 listeners and (on the success path) the
+      // readystatechange listener calls `cleanup()` which removes all 4.
+      // For each (event, ref) pair removed, an identical pair must
+      // exist in `adds`.
+      const pluginAdded = adds.filter((a) =>
+        ['readystatechange', 'error', 'abort', 'timeout'].includes(a.event),
+      );
+      const pluginRemoved = removes.filter((r) =>
+        ['readystatechange', 'error', 'abort', 'timeout'].includes(r.event),
+      );
+
+      expect(pluginAdded.length).toBe(4);
+      expect(pluginRemoved.length).toBe(4);
+
+      // The critical invariant: every removal must reference a function
+      // that was added under the same event name.
+      for (const removal of pluginRemoved) {
+        const matching = pluginAdded.find(
+          (a) => a.event === removal.event && a.ref === removal.ref,
+        );
+        expect(matching).toBeDefined();
+      }
+    } finally {
+      obs.teardown();
+    }
+  });
 });
 
 // ─── 7. PerformanceObserver path ─────────────────────────────────────────────
 
 describe('getRecordNetworkPlugin — PerformanceObserver path', () => {
   it('emits a request with isInitial:true for performance entries', async () => {
-    const obs = installObserver({ recordPerformance: true, recordInitialRequests: false });
+    const obs = installObserver({ capturePerformance: true, recordInitialRequests: false });
     try {
       // Emit a synthetic resource entry via the mock observer.
       emitMockPerformanceEntry({
@@ -458,12 +568,42 @@ describe('getRecordNetworkPlugin — PerformanceObserver path', () => {
     }
   });
 
-  it('does not install observer when recordPerformance=false', () => {
+  it('does not install observer when capturePerformance=false', () => {
     installedObservers.length = 0;
-    const obs = installObserver({ recordPerformance: false });
+    const obs = installObserver({ capturePerformance: false });
     try {
       // No observer should have been registered.
       expect(installedObservers.length).toBe(0);
+    } finally {
+      obs.teardown();
+    }
+  });
+
+  it('reads responseStatus from a TAO-allowed PerformanceResourceTiming entry', async () => {
+    const obs = installObserver({
+      capturePerformance: true,
+      recordInitialRequests: false,
+    });
+    try {
+      // Modern Chrome exposes `responseStatus` on resource timings
+      // when Timing-Allow-Origin permits it (or for same-origin
+      // requests). In default mode (no fetch/XHR wrapping), this is
+      // the ONLY status info we get — without it, the emitted record
+      // has `status: undefined`.
+      emitMockPerformanceEntry({
+        name: 'https://api.example.com/data.json',
+        entryType: 'resource',
+        initiatorType: 'fetch',
+        startTime: 100,
+        responseEnd: 200,
+        // biome-ignore lint/suspicious/noExplicitAny: synthetic entry shape
+        ...({ responseStatus: 404 } as any),
+      });
+      await waitFor(() => obs.batches.length > 0);
+      const flat = obs.batches.flatMap((b) => b.requests);
+      const synth = flat.find((r) => r.name.includes('data.json'));
+      expect(synth).toBeDefined();
+      expect(synth?.status).toBe(404);
     } finally {
       obs.teardown();
     }
@@ -703,7 +843,7 @@ describe('getRecordNetworkPlugin — body truncation', () => {
 describe('getRecordNetworkPlugin — batch overflow', () => {
   it('drops requests once maxRequestsPerBatch is exceeded in the same tick', async () => {
     const obs = installObserver({
-      recordPerformance: true,
+      capturePerformance: true,
       recordInitialRequests: false,
       maxRequestsPerBatch: 3,
     });

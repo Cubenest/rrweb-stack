@@ -2,7 +2,7 @@
 //
 // Adapted from PostHog's `replay/config.ts` `defaultNetworkOptions`. The
 // trimmed differences vs PostHog's version:
-//   - `recordPerformance` and `recordInitialRequests` default to `true`
+//   - `capturePerformance` and `recordInitialRequests` default to `true`
 //     here — PostHog's defaults to `false` because their config layer
 //     gates them on a remote feature flag. Our substrate is opt-out at
 //     the plugin level: consumers who want only the timing surface get
@@ -17,6 +17,14 @@
 //     Clarity, …) to avoid feedback loops, but we have no equivalent
 //     "always-on PostHog endpoint" — consumers (tracelane, peek)
 //     bring their own list per integration.
+//
+// The exported object is frozen with `Object.freeze` so consumer
+// mutation can't change module-global state. This is important
+// because `record.ts` uses a referential-equality check
+// (`hasConsumerMask = consumerMask !== defaultNetworkOptions.maskRequestFn`)
+// to detect when no consumer mask was provided — if a consumer
+// overwrites `defaultNetworkOptions.maskRequestFn`, the sentinel
+// silently flips and the privacy-default mask stops running.
 
 import type { CapturedNetworkRequest, InitiatorType, MaskRequestFn } from './types.js';
 
@@ -30,7 +38,7 @@ export interface DefaultedNetworkOptions {
   recordInitialRequests: boolean;
   recordHeaders: boolean | { request: boolean; response: boolean };
   recordBody: boolean | string[] | { request: boolean | string[]; response: boolean | string[] };
-  recordPerformance: boolean;
+  capturePerformance: boolean;
   performanceEntryTypeToObserve: string[];
   initiatorTypes: InitiatorType[];
   payloadSizeLimitBytes: number;
@@ -43,8 +51,12 @@ export interface DefaultedNetworkOptions {
 /**
  * Fully-defaulted plugin options. Internal — `record.ts` merges this
  * with the caller's options at observer-install time.
+ *
+ * Frozen via `Object.freeze` (and `as const` on the literal) so
+ * downstream code can't mutate the defaults at runtime — see the
+ * top-of-file comment for the privacy implication.
  */
-export const defaultNetworkOptions: DefaultedNetworkOptions = {
+export const defaultNetworkOptions: DefaultedNetworkOptions = Object.freeze({
   initiatorTypes: [
     'audio',
     'beacon',
@@ -76,10 +88,15 @@ export const defaultNetworkOptions: DefaultedNetworkOptions = {
   recordHeaders: false,
   recordBody: false,
   recordInitialRequests: true,
-  recordPerformance: true,
-  performanceEntryTypeToObserve: ['first-input', 'navigation', 'paint', 'resource'],
+  capturePerformance: true,
+  performanceEntryTypeToObserve: Object.freeze([
+    'first-input',
+    'navigation',
+    'paint',
+    'resource',
+  ]) as unknown as string[],
   payloadSizeLimitBytes: 1_000_000,
   bodyByteLimit: 5_000,
   maxRequestsPerBatch: 1_000,
-  payloadHostDenyList: [],
-};
+  payloadHostDenyList: Object.freeze([]) as unknown as string[],
+});
