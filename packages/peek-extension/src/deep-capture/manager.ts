@@ -23,7 +23,6 @@
  * users see — actual end-to-end with the live CDP is Phase 3e E2E).
  */
 
-import { originFromUrl } from '../activation/origin.js';
 import type { NetMessage } from '../recorder/messages.js';
 import { maskNetMessage } from '../relay/mask.js';
 
@@ -112,14 +111,24 @@ export class DeepCaptureManager {
 
   async detach(tabId: number): Promise<void> {
     const entry = this.#attached.get(tabId);
-    if (!entry) return;
-    entry.unsubscribeEvent();
-    this.#attached.delete(tabId);
+    if (entry) {
+      entry.unsubscribeEvent();
+      this.#attached.delete(tabId);
+    }
+    // P-17 (2026-05-29 QA walk): ALWAYS try chrome.debugger.detach, even when
+    // `#attached` doesn't have the tab. The in-memory Map is lost when the
+    // MV3 service worker is torn down for inactivity, but Chrome-level
+    // debugger attachments survive the SW restart (yellow banner persists).
+    // Without this unconditional detach, a toggle-off after an SW restart
+    // leaves the banner on tabs the manager has forgotten — a privacy
+    // regression. `chrome.debugger.detach` is idempotent: it throws
+    // "Debugger is not attached to the tab" when there's nothing to detach;
+    // we swallow that the same way we swallow tab-closed errors.
     try {
       await this.#deps.debugger.detach({ tabId });
     } catch (err) {
-      // The tab may have already closed — debugger.detach throws on a
-      // closed-target. Best-effort; don't crash.
+      // Safe to ignore: either the tab is closed, or no debugger session
+      // existed (manager state was correct, Chrome state was clean).
       console.debug('[peek] Deep capture detach failed:', err);
     }
   }
@@ -131,35 +140,29 @@ export class DeepCaptureManager {
   }
 
   /**
-   * Detach every attached tab whose URL has the given origin. Used by the SW
-   * when the user disables Deep capture for an origin — the toggle MUST revoke
-   * immediately for ALL tabs of that origin, not just the active one. Otherwise
-   * background tabs continue capturing response bodies until the user activates
-   * them (a privacy regression).
+   * Detach a caller-supplied list of tab IDs, used when the user disables
+   * Deep capture for an origin — the toggle MUST revoke immediately for ALL
+   * tabs of that origin, not just the active one. Otherwise background tabs
+   * keep capturing response bodies until activated (privacy regression).
+   *
+   * The caller (background.ts SW) enumerates `chrome.tabs.query({})` and
+   * filters by origin, then passes the tabIds here. We do NOT iterate
+   * `#attached` because the in-memory Map is wiped when the MV3 SW restarts;
+   * if we only detached "what we know about", tabs Chrome still has
+   * debugger-attached would keep their yellow banners forever (P-17, 2026-05-29
+   * QA walk). The `detach()` method is now idempotent — it ALWAYS calls
+   * `chrome.debugger.detach`, regardless of whether the manager remembers the
+   * tab, swallowing "not attached" errors.
    *
    * @param origin the bare origin (`https://example.com`) just removed from the
-   *   persisted opt-in list.
-   * @param resolveUrl async resolver from tabId → current URL (the SW wires
-   *   `chrome.tabs.get`). Returns `undefined` if the tab is gone / inaccessible
-   *   — those tabs are skipped (detach-on-close handles them separately).
-   * @returns the tabIds that were detached.
+   *   persisted opt-in list. Kept for logging / parity; not used for filtering
+   *   inside the manager (the caller already filtered).
+   * @param tabIds the tabIds to detach. Pass an empty array for "nothing to do".
+   * @returns the tabIds that were attempted (parity with caller's list).
    */
-  async detachOrigin(
-    origin: string,
-    resolveUrl: (tabId: number) => Promise<string | undefined>,
-  ): Promise<readonly number[]> {
-    const candidates = [...this.#attached.keys()];
-    const urls = await Promise.all(candidates.map((id) => resolveUrl(id).catch(() => undefined)));
-    const toDetach: number[] = [];
-    for (let i = 0; i < candidates.length; i++) {
-      const url = urls[i];
-      if (!url) continue;
-      if (originFromUrl(url) !== origin) continue;
-      // biome-ignore lint/style/noNonNullAssertion: paired with urls[i] above
-      toDetach.push(candidates[i]!);
-    }
-    await Promise.all(toDetach.map((id) => this.detach(id)));
-    return toDetach;
+  async detachOrigin(_origin: string, tabIds: readonly number[]): Promise<readonly number[]> {
+    await Promise.all(tabIds.map((id) => this.detach(id)));
+    return [...tabIds];
   }
 
   // ---- internals -----------------------------------------------------------
