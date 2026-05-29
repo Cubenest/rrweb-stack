@@ -13,6 +13,7 @@ import { join } from 'node:path';
 import { openDb } from '@peekdev/mcp/db';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { runSessions } from '../src/commands/sessions.js';
+import { getSessionCounts } from '../src/lib/db.js';
 
 interface CapturedStdio {
   stdout: string;
@@ -96,6 +97,25 @@ function seedDb(): void {
       8192,
       'finalized',
     );
+    // Seed errors so console_count + network_count assertions are non-trivial
+    // (P-18 alpha.8 spec): s_beta gets 2 console errors + 1 network error;
+    // s_alpha gets 1 of each. Non-error console rows + 2xx network rows are
+    // also seeded so the WHERE-level error filter matters.
+    const insertConsole = db.prepare(
+      'INSERT INTO console_events (session_id, ts_ms, level, message) VALUES (?, ?, ?, ?)',
+    );
+    insertConsole.run('s_beta', 1_716_717_720_000, 'error', 'TypeError: x');
+    insertConsole.run('s_beta', 1_716_717_721_000, 'error', 'second error');
+    insertConsole.run('s_beta', 1_716_717_722_000, 'log', 'noise');
+    insertConsole.run('s_alpha', 1_716_717_710_000, 'error', 'first error');
+    insertConsole.run('s_alpha', 1_716_717_711_000, 'info', 'noise');
+
+    const insertNet = db.prepare(
+      'INSERT INTO network_events (session_id, ts_ms, method, url, status, error_text) VALUES (?, ?, ?, ?, ?, ?)',
+    );
+    insertNet.run('s_beta', 1_716_717_719_000, 'POST', 'https://app.test/api/pay', 500, null);
+    insertNet.run('s_beta', 1_716_717_720_000, 'GET', 'https://app.test/api/ok', 200, null);
+    insertNet.run('s_alpha', 1_716_717_709_000, 'GET', 'https://app.test/api/x', null, 'net::ERR');
   } finally {
     db.close();
   }
@@ -104,7 +124,7 @@ function seedDb(): void {
 // P-18 (alpha.7): `peek sessions list --json` / `--help` MUST NOT crash with
 // `TypeError: Unknown option`. Pre-fix, parseArgs rejected both flags.
 
-describe('peek sessions list --json (P-18 alpha.7)', () => {
+describe('peek sessions list --json (P-18 alpha.7 / alpha.8)', () => {
   it('emits a JSON array of session rows, parseable with JSON.parse', async () => {
     seedDb();
     const { code, output } = await withCaptured(['list', '--json']);
@@ -126,6 +146,59 @@ describe('peek sessions list --json (P-18 alpha.7)', () => {
       status: 'finalized',
     });
     expect(parsed[1]).toMatchObject({ id: 's_alpha', event_count: 42 });
+  });
+
+  // P-18 alpha.8 spec gap: per-row `console_count` + `network_count` MUST be
+  // present + numeric (the most actionable signal for AI consumers — answers
+  // "which session is worth investigating" without a drill-in round-trip).
+  // Counts MUST match `getSessionCounts` exactly so JSON list and `peek
+  // sessions show <id>` agree on the numbers (same definitions:
+  // console_count := level='error'; network_count := status>=400 OR
+  // error_text non-null).
+  it('includes console_count and network_count per row (P-18 alpha.8 spec fields)', async () => {
+    seedDb();
+    const { output } = await withCaptured(['list', '--json']);
+    const parsed = JSON.parse(output.stdout) as Array<Record<string, unknown>>;
+    for (const row of parsed) {
+      expect(typeof row.console_count).toBe('number');
+      expect(typeof row.network_count).toBe('number');
+    }
+    // s_beta: 2 console errors + 1 network error (status 500, the 200 doesn't count).
+    expect(parsed[0]).toMatchObject({
+      id: 's_beta',
+      console_count: 2,
+      network_count: 1,
+    });
+    // s_alpha: 1 console error (the 'info' doesn't count) + 1 network error (error_text non-null).
+    expect(parsed[1]).toMatchObject({
+      id: 's_alpha',
+      console_count: 1,
+      network_count: 1,
+    });
+  });
+
+  it('console_count + network_count match getSessionCounts (single-row source of truth)', async () => {
+    seedDb();
+    const { output } = await withCaptured(['list', '--json']);
+    const parsed = JSON.parse(output.stdout) as Array<{
+      id: string;
+      console_count: number;
+      network_count: number;
+    }>;
+    // Cross-check every row against the single-row helper. Drift between the
+    // JOIN aggregation and getSessionCounts would mean JSON list and `peek
+    // sessions show <id>` disagree on the numbers — a downstream-confusing bug.
+    const dbPath = join(home, 'sessions.db');
+    const db = openDb({ path: dbPath });
+    try {
+      for (const row of parsed) {
+        const single = getSessionCounts(db, row.id);
+        expect(row.console_count).toBe(single.consoleErrors);
+        expect(row.network_count).toBe(single.networkErrors);
+      }
+    } finally {
+      db.close();
+    }
   });
 
   it('emits an empty JSON array (not the human "No sessions" string) on a fresh DB', async () => {

@@ -22,6 +22,7 @@ import {
   deleteSessionsOlderThan,
   getSessionDetail,
   listSessions,
+  listSessionsWithCounts,
 } from '../lib/db.js';
 import { cutoffBefore } from '../lib/duration.js';
 import {
@@ -120,10 +121,17 @@ function printDeleteHelp(): void {
 }
 
 /**
- * A single JSON row for `peek sessions list --json`. Mirrors the table columns
- * one-for-one so a scripting consumer reads the same data the human sees, but
- * also carries the fields useful for programmatic drill-in (`origin`, `url`,
- * `created_at`, `event_count`, `bytes`).
+ * A single JSON row for `peek sessions list --json`. Spec (P-18 alpha.7) calls
+ * for: id, origin, url, created_at, updated_at, event_count, console_count,
+ * network_count. `console_count` + `network_count` are the most actionable
+ * signal for AI consumers — they answer "which session is worth investigating"
+ * without a drill-in round-trip. Definitions match `getSessionCounts` exactly
+ * (console errors = level='error'; network errors = status >= 400 OR error_text
+ * non-null) so JSON list + `peek sessions show` agree on the numbers.
+ *
+ * `bytes` + `status` are kept (not in spec, not prohibited) — they're already
+ * in the `sessions` row and help triage active vs idle sessions at zero query
+ * cost.
  *
  * Field names: snake_case to match the DB column shapes (peek audit log --json
  * does likewise) — the closer machine-readable output stays to the SQL row,
@@ -136,6 +144,8 @@ interface SessionListJsonRow {
   readonly created_at: string;
   readonly updated_at: string;
   readonly event_count: number;
+  readonly console_count: number;
+  readonly network_count: number;
   readonly bytes: number;
   readonly status: string;
 }
@@ -163,14 +173,17 @@ function runList(argv: string[]): number {
 
   const db = open();
   try {
-    const rows = listSessions(db, {
+    const listOpts = {
       limit,
       ...(values.origin !== undefined ? { origin: values.origin } : {}),
-    });
+    };
     if (values.json) {
-      // Machine-readable: always emit a JSON array (empty when no sessions),
-      // never the "No sessions recorded yet." human string. Downstream scripts
-      // can `JSON.parse` the output unconditionally.
+      // Machine-readable path: pull the count-enriched rows in a single
+      // query (avoids N+1 on the list path — see listSessionsWithCounts).
+      // Always emit a JSON array (empty when no sessions), never the
+      // "No sessions recorded yet." human string. Downstream scripts can
+      // `JSON.parse` the output unconditionally.
+      const rows = listSessionsWithCounts(db, listOpts);
       const json: SessionListJsonRow[] = rows.map((s) => ({
         id: s.id,
         origin: s.origin,
@@ -178,12 +191,17 @@ function runList(argv: string[]): number {
         created_at: s.createdAt,
         updated_at: s.updatedAt,
         event_count: s.eventCount,
+        console_count: s.consoleCount,
+        network_count: s.networkCount,
         bytes: s.bytes,
         status: s.status,
       }));
       process.stdout.write(`${JSON.stringify(json, null, 2)}\n`);
       return 0;
     }
+    // Human table path: counts aren't shown (see `peek sessions show` for
+    // the drill-in view), so the cheaper `listSessions` is fine.
+    const rows = listSessions(db, listOpts);
     if (rows.length === 0) {
       process.stdout.write('No sessions recorded yet.\n');
       return 0;
