@@ -375,3 +375,113 @@ describe('applyWdioEdit byte-delta sanity', () => {
     expect(delta).toBeLessThanOrEqual(400);
   });
 });
+
+// ---- Shadow safety (2026-05-29 code-review fix) ----------------------------
+//
+// The pre-fix editor matched the FIRST `services:` it saw — including ones
+// inside block/line comments, string literals, and nested objects like
+// `capabilities: [{ services: [...] }]`. These tests pin the post-fix
+// behaviour: the real top-level testrunner `services:` is what gets edited,
+// shadows are left bytewise untouched. See wdio-editor.ts header comment
+// "SHADOW SAFETY" for the strip-and-depth approach.
+
+describe('applyWdioEdit handles string/comment shadows', () => {
+  it('skips services: inside a block comment', () => {
+    const src = `/* Example: services: ['devtools'] */
+export const config = { framework: 'mocha', services: ['real'] };
+`;
+    const r = applyWdioEdit(src);
+    if (!r.ok) throw new Error(`expected ok, got: ${r.reason}`);
+    // The REAL array got the tuple.
+    expect(r.source).toContain("services: ['real', [TraceLaneService, { mode: 'failed' }]]");
+    // The comment shadow is preserved bytewise — `devtools` is NOT followed
+    // by the tracelane tuple inside the comment.
+    expect(r.source).toContain("/* Example: services: ['devtools'] */");
+    // Belt-and-braces: only ONE TraceLaneService entry in the whole file.
+    expect((r.source.match(/TraceLaneService/g) ?? []).length).toBe(2); // import + tuple
+  });
+
+  it('skips services: inside a line comment', () => {
+    const src = `// services: ['devtools'] is an example, not the real one
+export const config = { framework: 'mocha', services: ['real'] };
+`;
+    const r = applyWdioEdit(src);
+    if (!r.ok) throw new Error(`expected ok, got: ${r.reason}`);
+    expect(r.source).toContain("services: ['real', [TraceLaneService, { mode: 'failed' }]]");
+    // Line comment is preserved bytewise.
+    expect(r.source).toContain("// services: ['devtools'] is an example, not the real one");
+  });
+
+  it('skips services: inside a string literal', () => {
+    // A note inside a value that happens to contain the substring "services: ["
+    // must not be matched as a key.
+    const src = `const note = "services: ['shadow']";
+export const config = { framework: 'mocha', services: ['real'] };
+`;
+    const r = applyWdioEdit(src);
+    if (!r.ok) throw new Error(`expected ok, got: ${r.reason}`);
+    expect(r.source).toContain("services: ['real', [TraceLaneService, { mode: 'failed' }]]");
+    // The string-literal shadow is preserved bytewise.
+    expect(r.source).toContain(`const note = "services: ['shadow']";`);
+  });
+
+  it('skips services: inside nested capabilities[*].services', () => {
+    // The WDIO `capabilities` array can hold per-capability driver hints
+    // including a `services` key (driver capabilities, not the testrunner-
+    // level service registration). The outer config-level `services:` is
+    // what we want to wire; the inner one must be left bytewise unchanged.
+    const src = `export const config = {
+  capabilities: [{ services: ['safari'] }],
+  services: ['devtools'],
+};
+`;
+    const r = applyWdioEdit(src);
+    if (!r.ok) throw new Error(`expected ok, got: ${r.reason}`);
+    // OUTER services: edited.
+    expect(r.source).toContain("services: ['devtools', [TraceLaneService, { mode: 'failed' }]]");
+    // INNER capabilities[0].services: untouched.
+    expect(r.source).toContain("capabilities: [{ services: ['safari'] }]");
+  });
+
+  it('skips an example import inside a block comment', () => {
+    // A top-of-file doc-comment that shows an example tracelane import must
+    // NOT be detected as the real import — otherwise the idempotency check
+    // would short-circuit and we'd never wire a fresh conf.
+    const src = `/* Setup tip:
+   import TraceLaneService from '@tracelane/wdio';
+   then add the tuple to services:.
+*/
+import type { Options } from '@wdio/types';
+
+export const config: Options.Testrunner = {
+  framework: 'mocha',
+  services: [],
+};
+`;
+    const r = applyWdioEdit(src);
+    if (!r.ok) throw new Error(`expected ok, got: ${r.reason}`);
+    // alreadyConfigured must be FALSE — the import in the comment doesn't count.
+    expect(r.alreadyConfigured).toBe(false);
+    expect(r.addedImport).toBe(true);
+    // The comment is preserved bytewise.
+    expect(r.source).toContain("/* Setup tip:\n   import TraceLaneService from '@tracelane/wdio';");
+    // And we still added a REAL import.
+    const realImports = r.source.match(/^import TraceLaneService from '@tracelane\/wdio';/gm);
+    expect(realImports?.length).toBe(1);
+  });
+
+  it("doesn't false-positive on a TraceLaneService mention inside a string", () => {
+    // hasTracelaneServiceEntry must not treat a string-literal mention of
+    // the symbol as already-configured.
+    const src = `const msg = "see TraceLaneService docs";
+export const config = { framework: 'mocha', services: [] };
+`;
+    const r = applyWdioEdit(src);
+    if (!r.ok) throw new Error(`expected ok, got: ${r.reason}`);
+    expect(r.alreadyConfigured).toBe(false);
+    expect(r.addedImport).toBe(true);
+    expect(r.addedServiceEntry).toBe(true);
+    // The string is preserved.
+    expect(r.source).toContain(`const msg = "see TraceLaneService docs";`);
+  });
+});

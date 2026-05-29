@@ -36,7 +36,7 @@ import {
 } from '../lib/detect.js';
 import { hasTracelaneEntry, mergeGitignore } from '../lib/gitignore.js';
 import { confirm } from '../lib/prompt.js';
-import { applyWdioEdit } from '../lib/wdio-editor.js';
+import { MANUAL_SNIPPET, applyWdioEdit } from '../lib/wdio-editor.js';
 
 /** Tracking-issue URLs for the not-yet-shipped Playwright/Cypress paths. */
 // NOTE for maintainer: these issue numbers don't have to exist on day one —
@@ -336,14 +336,17 @@ export async function runInitProgrammatic(opts: InitOptions): Promise<number> {
     );
   }
 
-  // Final message — the "next: " call to action.
+  // Final message — the "next: " call to action. Include a literal,
+  // copy-paste-ready command so the user knows exactly what to run, with
+  // the conf filename matching what we detected (handles .js/.mjs/.cjs).
   const ok = process.stdout.isTTY ? '✔' : 'OK';
   write(
     stdout,
     [
       '',
       `${ok} done.`,
-      'Next: run your test suite. On a failing Chrome test you get',
+      `Run: npx wdio run ${basename(detected.configPath)}`,
+      'On a failing Chrome test you get',
       './tracelane-reports/<spec>--<title>.html — open it in any browser.',
       '',
       'Docs: https://github.com/Cubenest/rrweb-stack/tree/main/packages/tracelane-wdio',
@@ -395,8 +398,9 @@ function editWdioConfOnDisk(configPath: string): EditOutcomeOnDisk {
     return {
       kind: 'restored',
       reason: 'post-write read-back did not match expected content',
-      snippet:
-        "Paste at the top of your conf:\n\nimport TraceLaneService from '@tracelane/wdio';\n\nand inside the services array:\n  [TraceLaneService, { mode: 'failed' }]",
+      // Single source of truth — defined alongside the editor's back-out
+      // path so the snippet copy can't drift.
+      snippet: MANUAL_SNIPPET,
       backupPath,
     };
   }
