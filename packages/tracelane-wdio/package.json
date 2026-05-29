@@ -1,6 +1,6 @@
 {
   "name": "@tracelane/wdio",
-  "version": "0.1.0-alpha.4",
+  "version": "0.1.0-alpha.5",
   "description": "WebdriverIO Service that records rrweb sessions and writes a self-contained HTML report on failed tests. The user-facing tracelane integration for WDIO.",
   "license": "Apache-2.0",
   "type": "module",
@@ -16,7 +16,11 @@
       "import": "./dist/hooks.js"
     }
   },
-  "files": ["dist", "NOTICE", "README.md"],
+  "files": [
+    "dist",
+    "NOTICE",
+    "README.md"
+  ],
   "scripts": {
     "build": "tsc -p tsconfig.json && node scripts/build-rrweb-bundle.mjs",
     "typecheck": "tsc -p tsconfig.json --noEmit",
