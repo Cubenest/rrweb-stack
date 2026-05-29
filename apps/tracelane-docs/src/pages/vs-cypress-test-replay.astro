@@ -1,0 +1,145 @@
+---
+import Layout from '../layouts/Layout.astro';
+---
+
+<Layout title="tracelane vs Cypress Test Replay">
+  <h1>tracelane vs Cypress Test Replay</h1>
+  <p class="tagline">
+    Both replay a failed test run. The deltas are: which runners they work
+    with, where the artifact lives, and what you sign up for.
+  </p>
+
+  <p>
+    This page exists because someone comparing tools should be able to find an
+    honest side-by-side that the competitor's own page won't write. No FUD &mdash;
+    Cypress Test Replay is a genuinely good product for its target user. The
+    sections below say when each one fits.
+  </p>
+
+  <h2>At a glance</h2>
+
+  <table>
+    <thead>
+      <tr>
+        <th></th>
+        <th>tracelane</th>
+        <th>Cypress Test Replay</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><strong>Runner support</strong></td>
+        <td>WebdriverIO today. Playwright in Q3 2026, Cypress in Q4 2026 (JSON-output adapter, no overlap with Test Replay).</td>
+        <td>Cypress only.</td>
+      </tr>
+      <tr>
+        <td><strong>Where the artifact lives</strong></td>
+        <td>A single <code>.html</code> file on your filesystem. Self-contained &mdash; opens offline in any browser.</td>
+        <td>Cypress Cloud. Viewing requires a signed-in Cypress Cloud session.</td>
+      </tr>
+      <tr>
+        <td><strong>Cost</strong></td>
+        <td>Free. Apache 2.0.</td>
+        <td>Paid tier (priced per user / per Cypress Cloud plan).</td>
+      </tr>
+      <tr>
+        <td><strong>Signup</strong></td>
+        <td>None.</td>
+        <td>Cypress Cloud account, per-org billing setup.</td>
+      </tr>
+      <tr>
+        <td><strong>Retention</strong></td>
+        <td>As long as you keep the file. Your filesystem, your retention policy.</td>
+        <td>Plan-dependent. Replays expire after a window (commonly 30 days on lower tiers).</td>
+      </tr>
+      <tr>
+        <td><strong>Sharing</strong></td>
+        <td>Send the file. Email attachment, Slack DM, Jira upload, S3 bucket, USB stick. The file is the artifact.</td>
+        <td>Send a Cypress Cloud URL. The recipient signs in to view.</td>
+      </tr>
+      <tr>
+        <td><strong>Air-gapped CI</strong></td>
+        <td>Works. The CI runner writes the file; ship the artifact through whatever path you already use for CI logs.</td>
+        <td>Requires outbound network to Cypress Cloud.</td>
+      </tr>
+      <tr>
+        <td><strong>Replay UX</strong></td>
+        <td><a href="https://www.rrweb.io/" rel="noopener">rrweb-player</a> (open-source, scrubbable timeline, console panel, failed-network panel).</td>
+        <td>Cypress's purpose-built UI &mdash; tightly integrated with the Cypress test object model.</td>
+      </tr>
+      <tr>
+        <td><strong>Console capture</strong></td>
+        <td>rrweb console plugin. <code>log</code> / <code>info</code> / <code>warn</code> / <code>error</code> stack traces, in-timeline.</td>
+        <td>Yes.</td>
+      </tr>
+      <tr>
+        <td><strong>Network capture</strong></td>
+        <td>Failed responses (<code>status &gt;= 400</code>) via CDP. Degrades gracefully where CDP isn't available (cloud Selenium, Firefox, Safari).</td>
+        <td>Yes &mdash; tighter integration with Cypress's request layer.</td>
+      </tr>
+      <tr>
+        <td><strong>AI-readable</strong></td>
+        <td>The HTML file embeds the rrweb event blob as gzipped base64. An AI agent that opens the file (or has it piped via stdin) reads structured events, not pixels.</td>
+        <td>Available indirectly via the Cypress Cloud API (paid).</td>
+      </tr>
+      <tr>
+        <td><strong>Maturity</strong></td>
+        <td>Pre-1.0 (alpha as of May 2026). Active development.</td>
+        <td>Mature commercial product with years of production usage.</td>
+      </tr>
+      <tr>
+        <td><strong>Vendor support</strong></td>
+        <td>Community (GitHub issues + DCO-signed PRs).</td>
+        <td>Available on paid plans.</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <h2>When tracelane is the right choice</h2>
+
+  <ul>
+    <li>You use a runner other than Cypress &mdash; WebdriverIO today, Playwright soon, or you're maintaining multiple runners in the same org.</li>
+    <li>Your CI is air-gapped, or your compliance setup makes "shipping test data to a third-party cloud" a non-starter.</li>
+    <li>You want the replay artifact to live alongside your bug reports &mdash; in Jira attachments, in a shared drive, in an S3 bucket you already audit.</li>
+    <li>You want to <em>retain replays forever</em>, not according to a plan tier.</li>
+    <li>You want AI coding agents to read the failure directly &mdash; the events are in the same file, no API + auth dance.</li>
+    <li>You're cost-sensitive and OSS-first.</li>
+  </ul>
+
+  <h2>When Cypress Test Replay is the right choice</h2>
+
+  <ul>
+    <li>You're already on Cypress + Cypress Cloud and the org-wide org-wide test analytics + flake detection are part of your workflow.</li>
+    <li>You want a hosted UI where engineering managers and QA can browse runs across teams without anyone passing files around.</li>
+    <li>You need vendor SLAs and a support contract.</li>
+    <li>Cypress's specific test object model (commands, assertions, time-travel against the command queue) is core to how your team debugs &mdash; Test Replay's UI knows about all of it; tracelane's rrweb-player view is runner-agnostic.</li>
+  </ul>
+
+  <h2>Can you use both?</h2>
+
+  <p>
+    Yes. tracelane runs as a WDIO Service today; if you're a Cypress user
+    paying for Cypress Cloud + Test Replay, you wait for the Cypress
+    JSON-output adapter (target Q4 2026) which deliberately stays out of the
+    replay-rendering business and only exports the structured failure data
+    Test Replay doesn't surface in machine-readable form.
+  </p>
+
+  <h2>Why this page exists</h2>
+
+  <p>
+    The launch plan calls out comparison pages explicitly as a way to be
+    findable on the search intent that Cypress's own marketing won't capture
+    (&ldquo;cypress test replay alternative&rdquo;,
+    &ldquo;self-hosted test replay&rdquo;,
+    &ldquo;test replay open source&rdquo;). The text above is the honest answer
+    to &ldquo;which one should I pick?&rdquo; &mdash; a question I would have wanted
+    answered before I started building tracelane.
+  </p>
+
+  <p style="color: var(--fg-muted); font-size: 0.9rem; margin-top: 2rem;">
+    Found something inaccurate above? Open a PR on
+    <a href="https://github.com/Cubenest/rrweb-stack/blob/main/apps/tracelane-docs/src/pages/vs-cypress-test-replay.astro" rel="noopener">this page</a>
+    &mdash; the goal is accuracy, not advocacy.
+  </p>
+</Layout>
