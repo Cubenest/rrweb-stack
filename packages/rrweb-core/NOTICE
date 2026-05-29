@@ -11,5 +11,17 @@ This product includes software developed by:
   Used to provide getRecordConsolePlugin because the PostHog fork at
   0.0.34 doesn't bundle it (it shipped separately since upstream 2.x).
 
+This package contains code adapted from the PostHog network recording
+plugin (posthog-js), Copyright (c) 2025 PostHog Inc., licensed under
+the Apache-2.0 License. Original source:
+  https://github.com/PostHog/posthog-js/blob/main/packages/browser/src/extensions/replay/external/network-plugin.ts
+The adaptation strips PostHog-internal utility dependencies and rewires
+the body/header masking surface to use @cubenest/rrweb-core's own
+redactBody and redactNetworkHeaders helpers. PostHog's network plugin
+itself descends from rrweb-io/rrweb PR #1689 (stalled at upstream);
+the patch.ts utility traces back through PostHog → rrweb → Sentry
+(@sentry/utils/object.ts). The full chain of vendoring is preserved
+in src/plugins/network/record.ts and src/plugins/network/patch.ts.
+
 This product is licensed under the Apache License, Version 2.0.
 See the LICENSE file for details.
