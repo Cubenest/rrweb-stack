@@ -1,5 +1,11 @@
 # @peekdev/cli
 
+## 0.1.0-alpha.10
+
+### Patch Changes
+
+- @peekdev/mcp@0.1.0-alpha.6
+
 ## 0.1.0-alpha.9
 
 ### Patch Changes
