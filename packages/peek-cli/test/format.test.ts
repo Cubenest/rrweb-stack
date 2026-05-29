@@ -1,8 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import type { SessionDetail } from '../src/lib/db.js';
 import { formatSession, isExportFormat } from '../src/lib/format/index.js';
-import { formatSessionJson, toJsonExport } from '../src/lib/format/json.js';
+import { buildAttribution, formatSessionJson, toJsonExport } from '../src/lib/format/json.js';
 import { formatSessionMarkdown } from '../src/lib/format/markdown.js';
+import { CLI_VERSION } from '../src/version.js';
 
 const DETAIL: SessionDetail = {
   session: {
@@ -124,7 +125,98 @@ describe('toJsonExport / formatSessionJson', () => {
     const str = formatSessionJson(DETAIL);
     expect(str.endsWith('\n')).toBe(true);
     const parsed = JSON.parse(str);
-    expect(parsed.id).toBe('s_abc123');
+    // Phase 5: session payload moved under `.session`; `_attribution` is the
+    // top-level metadata block (underscore convention).
+    expect(parsed.session.id).toBe('s_abc123');
+    expect(parsed._attribution).toBeDefined();
+  });
+});
+
+describe('buildAttribution — Phase 5 indirect-virality block', () => {
+  it('returns a static block with the correct UTM-tagged URL and CLI version', () => {
+    const attr = buildAttribution('json-attribution');
+    expect(attr.tool).toBe('peek');
+    expect(attr.version).toBe(CLI_VERSION);
+    expect(attr.url).toContain('github.com/Cubenest/rrweb-stack/tree/main/packages/peek-mcp');
+    expect(attr.url).toContain('utm_source=peek-export');
+    expect(attr.url).toContain('utm_medium=json-attribution');
+    expect(attr.url).toContain('utm_campaign=indirect-virality');
+    expect(attr.description).toMatch(/peek/i);
+    expect(attr.description).toMatch(/MCP/);
+  });
+
+  it('uses format-specific utm_medium so json vs markdown click-through can be attributed separately', () => {
+    expect(buildAttribution('json-attribution').url).toContain('utm_medium=json-attribution');
+    expect(buildAttribution('markdown-attribution').url).toContain(
+      'utm_medium=markdown-attribution',
+    );
+  });
+});
+
+describe('formatSessionJson — Phase 5 attribution block', () => {
+  it('places `_attribution` first in the serialized output (insertion-order spec)', () => {
+    const str = formatSessionJson(DETAIL);
+    // First non-`{` JSON key in the pretty-printed output must be `_attribution`.
+    const firstKey = str.match(/^{\n\s*"([^"]+)"/m)?.[1];
+    expect(firstKey).toBe('_attribution');
+  });
+
+  it('embeds the attribution block with the UTM-tagged peek-mcp URL and version', () => {
+    const parsed = JSON.parse(formatSessionJson(DETAIL));
+    expect(parsed._attribution.tool).toBe('peek');
+    expect(parsed._attribution.version).toBe(CLI_VERSION);
+    expect(parsed._attribution.url).toContain(
+      'github.com/Cubenest/rrweb-stack/tree/main/packages/peek-mcp',
+    );
+    expect(parsed._attribution.url).toContain('utm_source=peek-export');
+    expect(parsed._attribution.url).toContain('utm_medium=json-attribution');
+    expect(parsed._attribution.url).toContain('utm_campaign=indirect-virality');
+    expect(parsed._attribution.description).toMatch(/MCP/);
+  });
+
+  it('does NOT leak session data into the attribution block (no sessionId, url, timestamps)', () => {
+    const parsed = JSON.parse(formatSessionJson(DETAIL));
+    const attrJson = JSON.stringify(parsed._attribution);
+    expect(attrJson).not.toContain(DETAIL.session.id);
+    expect(attrJson).not.toContain('example.com');
+    expect(attrJson).not.toContain(DETAIL.session.createdAt);
+    expect(attrJson).not.toContain(DETAIL.session.updatedAt);
+  });
+
+  it('preserves the existing session payload under the new `session` key', () => {
+    const parsed = JSON.parse(formatSessionJson(DETAIL));
+    expect(parsed.session.id).toBe('s_abc123');
+    expect(parsed.session.origin).toBe('https://example.com');
+    expect(parsed.session.errorCount).toBe(3);
+    expect(parsed.session.consoleErrors).toHaveLength(2);
+  });
+});
+
+describe('formatSessionMarkdown — Phase 5 attribution paragraph', () => {
+  it('ends with a horizontal-rule + attribution blockquote linking to peek-mcp with UTM tags', () => {
+    const md = formatSessionMarkdown(DETAIL);
+    // Trailing block: `---` rule, blank line, blockquote referencing peek.
+    expect(md).toMatch(
+      /\n---\n\n> _Captured with \[peek\]\(https:\/\/github\.com\/Cubenest\/rrweb-stack\/tree\/main\/packages\/peek-mcp\?utm_source=peek-export&utm_medium=markdown-attribution&utm_campaign=indirect-virality\)[^\n]*\n/,
+    );
+  });
+
+  it('places the attribution AFTER the §C.3 sections (never before them)', () => {
+    const md = formatSessionMarkdown(DETAIL);
+    const lastSectionIdx = md.lastIndexOf('## Suggested reproduction');
+    const attrIdx = md.indexOf('> _Captured with [peek]');
+    expect(lastSectionIdx).toBeGreaterThan(-1);
+    expect(attrIdx).toBeGreaterThan(lastSectionIdx);
+  });
+
+  it('does NOT leak session data into the attribution paragraph', () => {
+    const md = formatSessionMarkdown(DETAIL);
+    // Isolate the attribution tail (everything after the final `---`).
+    const tail = md.split('\n---\n').pop() ?? '';
+    expect(tail).toContain('> _Captured with [peek]');
+    expect(tail).not.toContain(DETAIL.session.id);
+    expect(tail).not.toContain('example.com');
+    expect(tail).not.toContain('TypeError');
   });
 });
 
