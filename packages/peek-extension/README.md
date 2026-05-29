@@ -1,8 +1,14 @@
 # @peekdev/extension
 
-peek's Chrome MV3 extension — side panel UI, per-site activation, MAIN-world
-rrweb recorder, and the native-messaging bridge to `peek-mcp`. **Loaded
-unpacked by alpha testers; Chrome Web Store submission is Phase 4–5.**
+> Your real browser, exposed to your AI coding agent over MCP — capture once, query forever, never leaves your machine.
+
+peek's Chrome MV3 extension — side panel UI, per-site activation, MAIN-world rrweb recorder, and the native-messaging bridge to [`@peekdev/mcp`](https://github.com/Cubenest/rrweb-stack/tree/main/packages/peek-mcp). The extension package is **not published to npm** — it's loaded unpacked by alpha testers, with Chrome Web Store submission landing in Phase 5. The user-facing install path is [`@peekdev/cli`](https://www.npmjs.com/package/@peekdev/cli):
+
+```sh
+npm install -g @peekdev/cli && peek init
+```
+
+`peek init` lays down the native messaging host + your AI client's MCP config; the extension installs from CWS (post-listing) or unpacked (now).
 
 ## Install (alpha)
 
