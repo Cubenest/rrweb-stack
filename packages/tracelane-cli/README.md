@@ -1,6 +1,8 @@
 # @tracelane/cli
 
-> One command to wire tracelane into your WebdriverIO project. Detects your runner + package manager, installs `@tracelane/wdio`, edits `wdio.conf.ts`, creates `tracelane-reports/`, ignores it in git. Idempotent and dry-runnable.
+> The reporter for your WebdriverIO, Playwright, and Cypress tests. Self-contained HTML for every run — replay failures, audit successes, attach to any bug tracker. No SaaS, no dashboard, no signup.
+
+One command to wire tracelane into your WebdriverIO project. Detects your runner + package manager, installs `@tracelane/wdio`, edits `wdio.conf.ts`, creates `tracelane-reports/`, ignores it in git. Idempotent and dry-runnable.
 
 [![npm](https://img.shields.io/npm/v/@tracelane/cli.svg)](https://www.npmjs.com/package/@tracelane/cli)
 [![downloads](https://img.shields.io/npm/dw/@tracelane/cli.svg)](https://www.npmjs.com/package/@tracelane/cli)
