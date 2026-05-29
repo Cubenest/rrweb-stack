@@ -334,13 +334,13 @@ Format: risk · likelihood (L/M/H) · impact (L/M/H) · mitigation · status
 
 **tracelane:**
 
-> Self-contained HTML replays for every failing test — open in a browser, attach to any bug tracker, no SaaS, no dashboard, no signup.
+> The reporter for your WebdriverIO, Playwright, and Cypress tests. Self-contained HTML for every run — replay failures, audit successes, attach to any bug tracker. No SaaS, no dashboard, no signup.
 
 **peek:**
 
 > Your real browser, exposed to your AI coding agent over MCP — capture once, query forever, never leaves your machine.
 
-These are durable, not clever. They name the artifact (HTML report / MCP-exposed browser), the consumer (any bug tracker / your AI agent), and the constraint that differentiates us from the alternative (no SaaS / never leaves your machine). They will outlive any clever one-liner.
+These are durable, not clever. They name the consumer (your WDIO/Playwright/Cypress tests / your AI agent), the artifact (HTML report per run / MCP-exposed browser), and the constraint that differentiates us from the alternative (no SaaS, no dashboard, no signup / never leaves your machine). tracelane is deliberately positioned as **the reporter** — failure replay is the headline use case but the artifact lands on every run, including green ones (audit trail, evidence-in-PR, "what changed between green and red"). They will outlive any clever one-liner.
 
 #### 7.2 Positioning principles (carry forward into all copy)
 
