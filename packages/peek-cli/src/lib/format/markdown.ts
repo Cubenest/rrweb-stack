@@ -12,8 +12,15 @@
 // `generate_playwright_repro` tools (Phase 3c). The CLI markdown export reads
 // only the extracted SQL rows, so it states where the richer data lives rather
 // than fabricating it.
+//
+// Phase 5 self-marketing: the export ends with an `---` rule + an attribution
+// blockquote so every Markdown export shared in a PR or attached to a ticket
+// is a tracked acquisition channel (UTM-tagged link to peek-mcp's install
+// path on GitHub — the install command IS the marketing artifact per the
+// indirect-virality research). The attribution is static — no session data.
 
 import type { ConsoleEventRow, NetworkEventRow, SessionDetail } from '../db.js';
+import { buildAttribution } from './json.js';
 
 function isoFromMs(tsMs: number): string {
   return new Date(tsMs).toISOString();
@@ -84,6 +91,19 @@ export function formatSessionMarkdown(detail: SessionDetail): string {
   lines.push('## Suggested reproduction');
   lines.push(
     `Generate a Playwright repro with \`peek sessions export ${session.id} --format playwright\`, or the MCP \`generate_playwright_repro\` tool.`,
+  );
+  lines.push('');
+
+  // Self-marketing attribution (Phase 5 indirect virality). Horizontal-rule
+  // separates it from the export body; blockquote keeps it visually distinct
+  // (won't be mistaken for a user-action line by an AI paste consumer). The
+  // link target is the install path on GitHub — that's where the reader
+  // sees `npm i @peekdev/mcp`.
+  const attribution = buildAttribution('markdown-attribution');
+  lines.push('---');
+  lines.push('');
+  lines.push(
+    `> _Captured with [peek](${attribution.url}) — your real browser, exposed to your AI coding agent over MCP._`,
   );
   lines.push('');
 

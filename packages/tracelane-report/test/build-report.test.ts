@@ -135,3 +135,48 @@ describe('buildReport — self-contained HTML (Task 2.9)', () => {
     expect(typeof r.MARKDOWN).toBe('string');
   });
 });
+
+describe('buildReport — self-marketing footer (Phase 5 indirect virality)', () => {
+  it('renders a footer linking to the Cubenest/rrweb-stack repo with UTM tags', () => {
+    const html = buildReport(sampleEvents(), META);
+    // Footer element exists, links to the install path (tracelane-wdio dir),
+    // and carries the three UTM params for downstream click attribution.
+    expect(html).toContain('<footer');
+    expect(html).toContain(
+      'https://github.com/Cubenest/rrweb-stack/tree/main/packages/tracelane-wdio',
+    );
+    expect(html).toContain('utm_source=tracelane-report');
+    expect(html).toContain('utm_medium=html-footer');
+    expect(html).toContain('utm_campaign=indirect-virality');
+    // Security: shared widely, never trust the click target.
+    expect(html).toMatch(/rel="noopener"/);
+    // Closes before </body>.
+    expect(html).toMatch(/<\/footer>\s*<\/body>/);
+  });
+
+  it('positions the footer AFTER the <main> replay content (not above it)', () => {
+    const html = buildReport(sampleEvents(), META);
+    const mainCloseIdx = html.indexOf('</main>');
+    const footerOpenIdx = html.indexOf('<footer');
+    expect(mainCloseIdx).toBeGreaterThan(-1);
+    expect(footerOpenIdx).toBeGreaterThan(-1);
+    expect(footerOpenIdx).toBeGreaterThan(mainCloseIdx);
+  });
+
+  it('keeps the footer non-intrusive (inline muted style, no external assets)', () => {
+    const html = buildReport(sampleEvents(), META);
+    // The footer line itself uses inline styles (offline, no external CSS).
+    const footerMatch = html.match(/<footer[^>]*>[\s\S]*?<\/footer>/);
+    expect(footerMatch).not.toBeNull();
+    const footerHtml = footerMatch?.[0] ?? '';
+    // Muted color (Tailwind gray-500 family) — visible but never grabs focus.
+    expect(footerHtml).toContain('#6b7280');
+    // No <script>, <link>, or remote asset reference inside the footer.
+    expect(footerHtml).not.toMatch(/<script/);
+    expect(footerHtml).not.toMatch(/<link/);
+    // The href is the only outbound URL in the footer.
+    const urls = footerHtml.match(/https?:\/\/[^\s"']+/g) ?? [];
+    expect(urls).toHaveLength(1);
+    expect(urls[0]).toContain('github.com/Cubenest/rrweb-stack');
+  });
+});
