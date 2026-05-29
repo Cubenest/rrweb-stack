@@ -113,6 +113,14 @@ export class TraceLaneSession {
     if (consolePluginOptions !== undefined) {
       recorderOptions.consolePluginOptions = consolePluginOptions;
     }
+    // Network plugin opt-in: when capture.network !== false (default), forward
+    // the user's networkOptions (or `{}` for the plugin's defaults — bodies +
+    // headers off, PerformanceObserver on). When capture.network === false we
+    // pass nothing, leaving the legacy CDP path as the only network channel.
+    if (this.captureNetwork) {
+      recorderOptions.networkPluginOptions =
+        (this.options.capture?.networkOptions as Record<string, unknown> | undefined) ?? {};
+    }
     if (this.options.mode !== undefined) {
       recorderOptions.mode = this.options.mode as Mode;
     }

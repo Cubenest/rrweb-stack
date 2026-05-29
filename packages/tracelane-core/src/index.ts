@@ -6,7 +6,7 @@ export type { BrowserExecutor } from './browser-executor.js';
 // Recorder controller — in-page buffer install + Node-polled drain (ADR-0006).
 export { createRecorder, DEFAULT_COOLDOWN_MS, DEFAULT_DRAIN_INTERVAL_MS } from './recorder.js';
 export type { FinalizeResult, Recorder, RecorderOptions, TestOutcome } from './recorder.js';
-export type { ConsolePluginOptions } from './page-script.js';
+export type { ConsolePluginOptions, NetworkPluginOptions } from './page-script.js';
 
 // Capture mode switch (ADR-0005).
 export { DEFAULT_MODE, resolveMode } from './mode.js';

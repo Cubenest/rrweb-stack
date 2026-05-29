@@ -1,15 +1,38 @@
 // User-facing options for the WDIO Service / hook factory (P1 PRD §M.1).
 
+import type { NetworkRecordOptions } from '@cubenest/rrweb-core';
 import type { ConsolePluginOptions, Mode } from '@tracelane/core';
 
 /** Which capture channels are enabled (P1 PRD §M.1). */
 export interface CaptureOptions {
   /** Record the rrweb session. Default true. */
   rrweb?: boolean;
-  /** Attach CDP and route failed responses into the console timeline. Default true. */
+  /**
+   * Capture network requests. Default `true`.
+   *
+   * When enabled (default), the in-page rrweb network plugin
+   * (`rrweb/network@1`) is registered alongside the recorder — captured
+   * via fetch/XHR wrappers + PerformanceObserver, framework-agnostic,
+   * no CDP required. The legacy CDP-based path (which routed failed
+   * responses through the console timeline) is preserved as a fallback
+   * but no longer the primary capture mechanism.
+   *
+   * Privacy defaults (inherited from `@cubenest/rrweb-core`): headers and
+   * bodies are NOT captured unless opted in via {@link networkOptions}.
+   */
   network?: boolean;
   /** Capture `console.*` via the rrweb console plugin. Default true. */
   console?: boolean;
+  /**
+   * Options forwarded to the in-page rrweb network plugin
+   * (`getRecordNetworkPlugin`). The full surface from
+   * `@cubenest/rrweb-core` is exposed: `recordHeaders`, `recordBody`,
+   * `maskRequestFn`, `payloadHostDenyList`, etc. Defaults are the
+   * plugin's defaults (privacy-first — headers + bodies off).
+   *
+   * Ignored when {@link network} is `false`.
+   */
+  networkOptions?: NetworkRecordOptions;
 }
 
 /** Options for {@link TraceLaneService} and {@link traceLaneHooks} (P1 PRD §M.1). */

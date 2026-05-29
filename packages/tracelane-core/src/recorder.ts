@@ -4,6 +4,7 @@ import { type Mode, resolveMode } from './mode.js';
 import {
   type ConsolePluginOptions,
   DEFAULT_CONSOLE_PLUGIN_OPTIONS,
+  type NetworkPluginOptions,
   tracelaneDrainScript,
   tracelaneInitScript,
   tracelaneNavScript,
@@ -29,6 +30,16 @@ export interface RecorderOptions {
   cooldownMs?: number;
   /** Options forwarded to the in-page console plugin. */
   consolePluginOptions?: ConsolePluginOptions;
+  /**
+   * Options forwarded to the in-page rrweb network plugin (`rrweb/network@1`).
+   *
+   * `undefined` (default) keeps the plugin OFF — the legacy CDP-based capture
+   * path stays in charge. Pass an object (even `{}` for plugin defaults) to
+   * register the plugin in the in-page recorder. Adapters wire this through
+   * from their user-facing options (e.g. `@tracelane/wdio`'s
+   * `capture.networkOptions`).
+   */
+  networkPluginOptions?: NetworkPluginOptions;
   /**
    * Capture mode (ADR-0005). Default `'failed'`. The `TRACELANE_MODE` env var
    * overrides this at {@link Recorder.finalize} time.
@@ -90,6 +101,7 @@ export function createRecorder(options: RecorderOptions): Recorder {
     drainIntervalMs = DEFAULT_DRAIN_INTERVAL_MS,
     cooldownMs = DEFAULT_COOLDOWN_MS,
     consolePluginOptions = DEFAULT_CONSOLE_PLUGIN_OPTIONS,
+    networkPluginOptions,
     mode: configMode,
   } = options;
 
@@ -106,6 +118,7 @@ export function createRecorder(options: RecorderOptions): Recorder {
       tracelaneInitScript as (...args: unknown[]) => number,
       cooldownMs,
       consolePluginOptions,
+      networkPluginOptions,
     );
   }
 

@@ -27,6 +27,17 @@ export const DEFAULT_CONSOLE_PLUGIN_OPTIONS: ConsolePluginOptions = {
 };
 
 /**
+ * Network-plugin options forwarded into the in-page rrweb network plugin.
+ *
+ * Typed as `unknown`-shaped here so `@tracelane/core` doesn't have to mirror
+ * the substrate's full type surface (those types live in `@cubenest/rrweb-core`
+ * and the adapter — `@tracelane/wdio` — is what types the user-facing
+ * passthrough). The init script forwards the value verbatim to
+ * `window.rrweb.getRecordNetworkPlugin(options)`.
+ */
+export type NetworkPluginOptions = Record<string, unknown>;
+
+/**
  * The in-page init routine (PRD §D.3 + ADR-0006). Idempotent across calls via a
  * monotonic `__tracelane__sessionId` stamp and a cooldown guard so hash-only /
  * HMR navigations don't double-init the recorder (the cooldown / re-injection
@@ -35,10 +46,17 @@ export const DEFAULT_CONSOLE_PLUGIN_OPTIONS: ConsolePluginOptions = {
  * Assumes `window.rrweb` is already defined (the recorder injects the rrweb
  * bundle string first). Returns the active session id so the Node side can
  * confirm whether a (re-)init actually took effect.
+ *
+ * `networkOptions === undefined` keeps the network plugin OFF (the legacy
+ * CDP-based path still applies). `networkOptions === {}` opts in with the
+ * plugin's defaults; any other object is forwarded verbatim. The plugin is
+ * only registered when `window.rrweb.getRecordNetworkPlugin` is present — so
+ * older bundles that pre-date the network-plugin export silently skip it.
  */
 export function tracelaneInitScript(
   cooldownMs: number,
   consoleOptions: ConsolePluginOptions,
+  networkOptions?: NetworkPluginOptions,
 ): number {
   const w = window as unknown as {
     rrweb?: {
@@ -46,6 +64,7 @@ export function tracelaneInitScript(
         addCustomEvent?: (tag: string, payload: unknown) => void;
       };
       getRecordConsolePlugin: (opts: unknown) => unknown;
+      getRecordNetworkPlugin?: (opts: unknown) => unknown;
     };
     __tracelane__events?: unknown[];
     __tracelane__inited?: number;
@@ -73,13 +92,20 @@ export function tracelaneInitScript(
         // ignore teardown errors from a destroyed page context
       }
     }
+    const plugins: unknown[] = [w.rrweb.getRecordConsolePlugin(consoleOptions)];
+    if (networkOptions !== undefined && typeof w.rrweb.getRecordNetworkPlugin === 'function') {
+      // Framework-agnostic network capture (replaces the CDP path for users on
+      // the in-page recorder). Emits EventType.Plugin events with
+      // `data.plugin === 'rrweb/network@1'`.
+      plugins.push(w.rrweb.getRecordNetworkPlugin(networkOptions));
+    }
     const stop = w.rrweb.record({
       emit(event: unknown) {
         // Never call console.* here — the console plugin patches console and
         // guards recursion (PRD §D.4).
         (w.__tracelane__events as unknown[]).push(event);
       },
-      plugins: [w.rrweb.getRecordConsolePlugin(consoleOptions)],
+      plugins,
     });
     w.__tracelane__stop = typeof stop === 'function' ? (stop as () => void) : undefined;
   }
