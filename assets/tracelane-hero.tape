@@ -1,30 +1,18 @@
 # tracelane README hero GIF — terminal portion.
 #
-# Records install + run + report-written sequence as a GIF for the
-# packages/tracelane-wdio/README.md hero. Output: assets/tracelane-hero.gif
+# Records the `npx @tracelane/cli init` wedge-amplifier flow against a real
+# (pre-staged) WebdriverIO fixture. Output: assets/tracelane-hero.gif
 #
-# PREREQ: vhs installed (brew install vhs OR see https://github.com/charmbracelet/vhs)
+# Run via: bash assets/record-tracelane-hero.sh
+# (the script stages the fixture + invokes vhs — don't run vhs directly)
 #
-# PREREQ: fixture project staged at ../tmp/tracelane-hero-demo/ — a real
-# WDIO project with @tracelane/wdio in devDeps and a deliberately-failing
-# spec at test/specs/login.e2e.ts. The simplest way to stage one:
-#
-#   mkdir -p /tmp/tracelane-hero-demo
-#   cd /tmp/tracelane-hero-demo
-#   npm init -y
-#   npm install --save-dev @wdio/cli @wdio/local-runner @wdio/mocha-framework \
-#                          webdriverio @tracelane/wdio
-#   # Edit wdio.conf.ts to add the TraceLaneService — see the package README
-#   # Add a deliberately-failing spec at test/specs/login.e2e.ts
-#   # Confirm `npx wdio run wdio.conf.ts` writes a report
-#
-# Then from the rrweb-stack repo root:
-#   cd /tmp/tracelane-hero-demo && vhs ${OLDPWD}/assets/tracelane-hero.tape
-#
-# The output GIF lands at ${OLDPWD}/assets/tracelane-hero.gif (i.e. inside
-# the rrweb-stack repo, ready to commit).
+# The recording shows: a WDIO project without tracelane → one command
+# wires it → the config diff. Does NOT actually run wdio inside the tape
+# (Chrome+chromedriver capture in vhs is flaky and Gate B7's static
+# /demo report already covers the "see a real report" side of the value
+# prop).
 
-Output ../tracelane-hero.gif
+Output "tracelane-hero.gif"
 
 Set FontSize 14
 Set Width 1200
@@ -41,36 +29,31 @@ Type "clear"
 Enter
 Show
 
-Sleep 800ms
+Sleep 700ms
 
-# Show the project layout
+# Show the project skeleton — viewer sees a plain WDIO project, no tracelane.
 Type "ls"
 Enter
-Sleep 1500ms
-
-# Install
-Type@80ms "npm install --save-dev @tracelane/wdio"
-Enter
 Sleep 1200ms
-# (in the staged demo the package is already installed, so this is fast)
 
-# Show the conf change (annotated)
-Type "# In wdio.conf.ts: services: [[TraceLaneService, { mode: 'failed' }]]"
+Type "cat package.json | jq '.devDependencies'"
 Enter
-Sleep 1500ms
+Sleep 2000ms
 
-# Run the suite
-Type@80ms "npx wdio run wdio.conf.ts"
+# The one-command install.
+Type "npx @tracelane/cli init --yes"
 Enter
-Sleep 6500ms
+Sleep 5500ms
 
-# Pause on the failed-test + report-written summary
-Sleep 1500ms
-
-# Show the produced report
-Type "ls tracelane-reports/"
+# Confirm tracelane is now wired in the config.
+Type "grep -A2 services: wdio.conf.ts"
 Enter
-Sleep 2500ms
+Sleep 2200ms
 
-# Final pause so the last frame is readable
+# And the reports dir exists + is gitignored.
+Type "ls -la tracelane-reports/ && grep tracelane .gitignore"
+Enter
+Sleep 2200ms
+
+# Final pause for the last frame.
 Sleep 1500ms

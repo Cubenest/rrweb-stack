@@ -445,7 +445,8 @@ function previewConfEdit(configPath: string): string | undefined {
 /** Help text for `tracelane init --help`. */
 export const INIT_HELP = `tracelane init - wire @tracelane/wdio into the project in this directory.
 
-Usage: npx tracelane init [options]
+Usage: npx @tracelane/cli init [options]   (one-off; recommended)
+       tracelane init [options]            (after 'npm i -D @tracelane/cli')
 
 Options:
   --runner <name>      Force runner choice (wdio|playwright|cypress).

@@ -12,10 +12,10 @@ One command to wire tracelane into your WebdriverIO project. Detects your runner
 
 ```sh
 cd your-wdio-project
-npx tracelane init
+npx @tracelane/cli init
 ```
 
-That's it. `npx tracelane init` does four things:
+That's it. `npx @tracelane/cli init` does four things:
 
 1. Detects WebdriverIO from `wdio.conf.{ts,js,mjs,cjs}` and your package manager from your lockfile.
 2. Runs the package manager's dev-add for `@tracelane/wdio` (`pnpm add -D` / `yarn add -D` / `npm install --save-dev` / `bun add -d`).
@@ -29,7 +29,7 @@ See the [@tracelane/wdio README](https://github.com/Cubenest/rrweb-stack/tree/ma
 ## Usage
 
 ```
-npx tracelane init [options]
+npx @tracelane/cli init [options]
 
 Options:
   --runner <name>      Force runner choice (wdio|playwright|cypress).
