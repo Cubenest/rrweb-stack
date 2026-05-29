@@ -579,7 +579,7 @@ Items that can only be done via a vendor web UI — no API, no CLI, no automatio
 
 #### Hosting + media (heavy-lift artifacts)
 
-- [ ] **tracelane hero GIF** — Gate B1. vhs tape scaffolded at `assets/tracelane-hero.tape`. Steps: `brew install vhs` → stage fixture per the tape file header → `vhs assets/tracelane-hero.tape` → commit `assets/tracelane-hero.gif` → reference it from `packages/tracelane-wdio/README.md` with the absolute `raw.githubusercontent.com` URL.
+- [x] ~~**tracelane hero GIF** — Gate B1. vhs tape scaffolded at `assets/tracelane-hero.tape`. Steps: `brew install vhs` → stage fixture per the tape file header → `vhs assets/tracelane-hero.tape` → commit `assets/tracelane-hero.gif` → reference it from `packages/tracelane-wdio/README.md` with the absolute `raw.githubusercontent.com` URL.~~ **Done 2026-05-29** — `assets/tracelane-hero.gif` (812 KB, under the 6 MB ceiling) captured via `bash assets/record-tracelane-hero.sh` against a real WDIO fixture in `/tmp/tracelane-hero-demo`. Referenced from `packages/tracelane-wdio/README.md` via the absolute raw.githubusercontent.com URL. Re-records are one command. Gate B is now fully green.
 - [ ] **peek hero GIF** — same pattern; Week 3-4 in §3.2.
 - [x] ~~**Demo URL** — Gate B7. Either host a real tracelane HTML report from `apps/tracelane-docs/` (low-friction; one Astro page), OR a Loom-style recording of peek in action. Pick one.~~ **Done 2026-05-29** — live at `apps/tracelane-docs/src/pages/demo.astro` + `public/demo/login-failure.html`. Wrapper page at `/demo`, raw report at `/demo/login-failure.html` (159 KB). Real rrweb capture from the e2e/smoke fixture, sed-redacted to strip the local FS path.
 
