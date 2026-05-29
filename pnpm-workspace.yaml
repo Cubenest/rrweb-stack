@@ -1,3 +1,20 @@
 packages:
   - "packages/*"
   - "apps/*"
+
+# Supply-chain cooldown: refuse to install a package whose latest version is
+# less than 7 days old. Defends against fast-detection compromises like
+# chalk/debug (Sep 8 2025, live ~2 hours), Shai-Hulud (Sep 15 2025), and
+# Shai-Hulud 2.0 (Nov 24 2025).
+#
+# Value is in minutes per pnpm docs (added in pnpm 10.16). The repo is
+# currently pinned to pnpm 9.14.4 via `packageManager` in package.json, so
+# this setting is **inert until a pnpm 10 bump**. We declare it now so the
+# bump is a one-line `packageManager` change rather than a multi-file edit;
+# in the meantime the primary cooldown is enforced by Renovate
+# (`minimumReleaseAge: 7 days` in renovate.json, plus 21 days for the
+# @posthog/rrweb-* lineage).
+#
+# Vulnerability-alert installs bypass this via the Renovate
+# `vulnerabilityAlerts.minimumReleaseAge: 0 days` override.
+minimumReleaseAge: 10080

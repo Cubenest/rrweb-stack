@@ -1,0 +1,32 @@
+@peekdev/extension
+Copyright 2026 Cubenest
+
+This extension is Apache-2.0 licensed. The Chrome Web Store distribution
+bundle (`.output/chrome-mv3/`) includes the following third-party software,
+each under its own license — reproduced here per the upstream MIT license
+notice-propagation requirement:
+
+- PostHog (https://posthog.com) — vendored rrweb fork, bundled (via esbuild)
+  into the MAIN-world recorder IIFE injected by this extension
+  (`.output/chrome-mv3/rrweb-recorder.js`):
+    @posthog/rrweb 0.0.34 (MIT License)
+    @posthog/rrweb-types 0.0.24 (MIT License)
+  Forked from upstream rrweb-io/rrweb 2.0.0-alpha.17. Re-exported through
+  @cubenest/rrweb-core.
+
+- rrweb-io contributors (https://github.com/rrweb-io/rrweb) — console-record
+  plugin, bundled into the MAIN-world recorder IIFE:
+    @rrweb/rrweb-plugin-console-record 2.0.0-alpha.20 (MIT License)
+
+- WiseLibs — better-sqlite3 (MIT License) — used by the @peekdev/mcp native
+  host the extension talks to over chrome.runtime.connectNative. Not bundled
+  into the extension itself (the native host is a separate npm package
+  installed by `peek install-native-host`), but listed here because the
+  extension is the primary user-facing surface that brings it into the
+  process tree.
+
+- Anthropic — @modelcontextprotocol/sdk (MIT License) — also part of the
+  paired @peekdev/mcp native host; not bundled into the extension.
+
+This product is licensed under the Apache License, Version 2.0.
+See the LICENSE file in the repo root for details.

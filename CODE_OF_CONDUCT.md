@@ -36,7 +36,12 @@ This Code of Conduct applies within all community spaces, and also applies when 
 
 ## Enforcement
 
-Instances of abusive, harassing, or otherwise unacceptable behavior may be reported to the community leaders responsible for enforcement at security@cubenest.in. All complaints will be reviewed and investigated promptly and fairly.
+Instances of abusive, harassing, or otherwise unacceptable behavior may be reported to the project maintainer via:
+
+- **GitHub Private Vulnerability Reporting** (the same channel used for security disclosures): <https://github.com/Cubenest/rrweb-stack/security/advisories/new> — pick "Code of Conduct" as the category.
+- If GitHub PVR is unavailable to you, a direct message to the maintainer's GitHub profile (<https://github.com/harry-harish>) is acceptable; please follow up with a PVR submission once contact is established so the report is logged auditably.
+
+Reports land with the project maintainer (harry-harish). All complaints will be reviewed and investigated promptly and fairly.
 
 All community leaders are obligated to respect the privacy and security of the reporter of any incident.
 
