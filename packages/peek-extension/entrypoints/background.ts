@@ -454,11 +454,6 @@ export default defineBackground({
             sendResponse(ackOk());
             return false;
           }
-          case 'recorder.net': {
-            handleRelayNet(message, sender);
-            sendResponse(ackOk());
-            return false;
-          }
           case 'recorder.shadow': {
             handleRelayShadow(message, sender);
             sendResponse(ackOk());
@@ -514,18 +509,6 @@ export default defineBackground({
           forwardToHost(networkAppend(ref, synth));
         }
       }
-    }
-
-    function handleRelayNet(
-      message: Extract<Cmd, { type: 'recorder.net' }>,
-      sender: chrome.runtime.MessageSender,
-    ): void {
-      const tabId = sender.tab?.id;
-      if (tabId === undefined) return;
-      const requests = message.records.filter((r) => r.kind === 'request').length;
-      stats.addNetwork(tabId, requests);
-      const ref = sessions.ensure(tabId, { url: sender.tab?.url, title: sender.tab?.title });
-      if (message.records.length > 0) forwardToHost(networkAppend(ref, message.records));
     }
 
     function handleRelayShadow(

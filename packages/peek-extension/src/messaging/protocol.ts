@@ -4,13 +4,14 @@
  * (per the WXT skill), so we hand-roll a small typed `sendCmd`.
  *
  * Chunk 3d-1 carried the shell commands (native-host status + a recorder-stats
- * placeholder). Chunk 3d-2 (this one) adds the ISOLATED-relay → SW capture
- * messages (`recorder.events` / `recorder.net` / `recorder.shadow`) that the SW
- * folds into per-tab RecorderStats and forwards over the native port. Chunk
- * 3d-3 adds the action-authorization + audit commands.
+ * placeholder). Chunk 3d-2 added the ISOLATED-relay → SW capture messages
+ * (`recorder.events` / `recorder.shadow`) that the SW folds into per-tab
+ * RecorderStats and forwards over the native port. Chunk 3d-3 added the
+ * action-authorization + audit commands. Phase 5 / alpha.6 (Task #72) removed
+ * the `recorder.net` channel — the rrweb network plugin emits its events on
+ * `recorder.events` directly, and `network-plugin-synth.ts` synthesizes the
+ * server-side `network.append` payloads from there.
  */
-
-import type { NetMessage } from '../recorder/messages.js';
 
 /** Live capture counters surfaced in the side panel (P2 PRD §D.3). */
 export interface RecorderStats {
@@ -55,7 +56,6 @@ export type Cmd =
   // ISOLATED relay → SW. `tabId` is filled by the SW from `sender.tab.id` (the
   // relay can't know its own tab id), so it's not on the wire shape.
   | { type: 'recorder.events'; events: unknown[]; console: RelayConsoleEvent[] }
-  | { type: 'recorder.net'; records: NetMessage[] }
   | { type: 'recorder.shadow'; reports: ShadowReport[] };
 
 /** A generic ack for fire-and-forget relay messages. */
@@ -70,7 +70,7 @@ export type CmdResponse<C extends Cmd> = C extends { type: 'getNativeHostState' 
   ? { state: NativeHostState }
   : C extends { type: 'getRecorderStats' }
     ? RecorderStats
-    : C extends { type: 'recorder.events' | 'recorder.net' | 'recorder.shadow' }
+    : C extends { type: 'recorder.events' | 'recorder.shadow' }
       ? RelayAck
       : never;
 

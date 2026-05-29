@@ -27,16 +27,21 @@ export default defineConfig({
     // keeps the install card clean and the CWS review fast.
     host_permissions: [],
     optional_host_permissions: ['https://*/*', 'http://*/*'],
+    // Pre-CWS-submission minimization (2026-05-29 triple scan, Architect §4).
+    // `alarms`, `offscreen`, `webRequest` were declared in the original
+    // manifest but never called from src/. CWS reviewers grep declared
+    // permissions and ask "where do you use this?" — the honest move is to
+    // remove them now and re-add each in the version that actually uses it.
+    // The same "less is more for CWS" principle that keeps host_permissions
+    // empty (ADR-0008) applies here. The full justifications stay in
+    // docs/peek/PERMISSION_JUSTIFICATION.md for when the features ship.
     permissions: [
       'activeTab',
       'scripting',
       'storage',
-      'alarms',
       'tabs',
       'sidePanel',
       'nativeMessaging',
-      'offscreen',
-      'webRequest',
       // P-14 (2026-05-28 QA walk): `debugger` MUST be in static `permissions`,
       // NOT `optional_permissions`. Chrome 121+ removed `debugger` from the
       // allowed set of MV3 optional permissions; Chrome silently drops the
@@ -53,13 +58,15 @@ export default defineConfig({
     action: {
       default_title: 'peek',
     },
-    // web_accessible_resources for the recorder scripts (P2 PRD §A.5). The
-    // bundles themselves (MAIN-world rrweb recorder + ISOLATED relay bridge)
-    // land in chunk 3d-2; the manifest declares their names now so the slots
-    // are reserved. WXT bundles entrypoints/injected/*.ts to injected/*.js.
+    // web_accessible_resources for the MAIN-world rrweb recorder (P2 PRD §A.5).
+    // `main-world-bridge.js` used to be reserved in this list too but the file
+    // was never produced (the ISOLATED relay ships as a content_scripts entry,
+    // not a WAR). Cleaned up 2026-05-29 (Manifest Auditor C-1) — declaring a
+    // WAR resource with no corresponding file on disk is a reviewable
+    // inconsistency that CWS reviewers flag.
     web_accessible_resources: [
       {
-        resources: ['rrweb-recorder.js', 'main-world-bridge.js'],
+        resources: ['rrweb-recorder.js'],
         matches: ['<all_urls>'],
       },
     ],

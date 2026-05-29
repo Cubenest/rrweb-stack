@@ -5,16 +5,9 @@ import {
   type ShadowReport,
   sendCmd,
 } from '../src/messaging/protocol';
-import {
-  type NetMessage,
-  type PeekMessage,
-  isNetMessage,
-  isPeekMessage,
-  isRrwebMessage,
-} from '../src/recorder/messages';
+import { type PeekMessage, isPeekMessage, isRrwebMessage } from '../src/recorder/messages';
 import { EventBatcher } from '../src/relay/batch';
 import { extractConsoleEvent, isConsolePluginEvent } from '../src/relay/console-extract';
-import { maskNetMessage } from '../src/relay/mask';
 import { collectShadowReports, getOpenOrClosedShadowRoot } from '../src/relay/shadow';
 
 /**
@@ -53,11 +46,16 @@ export default defineContentScript({
   noScriptStartedPostMessage: true,
   main(ctx) {
     // --- Batching + flush -------------------------------------------------
-    // Separate buffers per channel so a console-heavy page doesn't starve net
-    // records and vice versa. Each flush is one sendCmd to the SW.
+    // Separate buffers per channel so a console-heavy page doesn't starve
+    // rrweb events and vice versa. Each flush is one sendCmd to the SW.
+    //
+    // Network records used to ride a third `netBatch` channel populated by a
+    // MAIN-world fetch/XHR monkey-patch. Phase 5 / alpha.6 (Task #72) removed
+    // that path — the rrweb network plugin emits its events through the same
+    // rrweb event stream as everything else (`rrwebBatch`), and the SW's
+    // `network-plugin-synth.ts` materializes them onto `network.append`.
     const rrwebBatch = new EventBatcher<unknown>();
     const consoleBatch = new EventBatcher<RelayConsoleEvent>();
-    const netBatch = new EventBatcher<NetMessage>();
     const FLUSH_INTERVAL_MS = 1000;
 
     // Send a batch to the SW, swallowing the SW-asleep case (carry-in [10]):
@@ -79,9 +77,6 @@ export default defineContentScript({
           send({ type: 'recorder.events', events, console: consoleEvents });
         }
       }
-      if (!netBatch.isEmpty) {
-        send({ type: 'recorder.net', records: netBatch.drain() });
-      }
     };
 
     const timer = setInterval(flush, FLUSH_INTERVAL_MS);
@@ -98,12 +93,6 @@ export default defineContentScript({
 
       if (isRrwebMessage(msg)) {
         handleRrweb(msg.payload);
-        return;
-      }
-      if (isNetMessage(msg)) {
-        // MASK BEFORE BUFFERING — raw headers/bodies never sit in our buffer.
-        const masked = maskNetMessage(msg.payload);
-        if (netBatch.add(masked)) flush();
       }
     };
 
