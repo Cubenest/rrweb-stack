@@ -1,13 +1,15 @@
 # @tracelane/report
 
-The self-contained, offline HTML report builder for [`tracelane`](https://github.com/Cubenest/rrweb-stack/tree/main/packages/tracelane-core). Given a captured rrweb event stream plus test metadata, it produces a **single `.html` file** that:
+> The reporter for your WebdriverIO, Playwright, and Cypress tests. Self-contained HTML for every run — replay failures, audit successes, attach to any bug tracker. No SaaS, no dashboard, no signup.
+
+The self-contained, offline HTML report builder for [`tracelane`](https://github.com/Cubenest/rrweb-stack). Given a captured rrweb event stream plus test metadata, it produces a **single `.html` file** that:
 
 - opens in any browser, fully offline (no network fetch at view time);
 - embeds the [`rrweb-player`](https://www.npmjs.com/package/rrweb-player) UMD + CSS inline;
 - embeds the events as a gzipped, base64-encoded blob that is decompressed in-page with an inlined [`fflate`](https://github.com/101arrowz/fflate) gunzip;
 - renders console + network panels, a metadata header, and a "Copy as Markdown for AI paste" button.
 
-Not generally intended for direct consumption — depend on a product package (`@tracelane/wdio`) instead.
+**Not generally intended for direct consumption** — depend on a product package (`@tracelane/wdio`) instead. See the [`@tracelane/wdio` README](https://github.com/Cubenest/rrweb-stack/tree/main/packages/tracelane-wdio) for the integration guide.
 
 ## Usage
 

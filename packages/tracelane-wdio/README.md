@@ -1,6 +1,38 @@
 # @tracelane/wdio
 
-A [WebdriverIO](https://webdriver.io) **Service** that records an [rrweb](https://www.rrweb.io)-grade session of your test run and, on a failed test, writes a **single self-contained `.html` report** to `./tracelane-reports/` — replay, console panel, and failed-network panel, all offline in one file.
+> The reporter for your WebdriverIO, Playwright, and Cypress tests. Self-contained HTML for every run — replay failures, audit successes, attach to any bug tracker. No SaaS, no dashboard, no signup.
+
+[![npm](https://img.shields.io/npm/v/@tracelane/wdio.svg)](https://www.npmjs.com/package/@tracelane/wdio)
+[![downloads](https://img.shields.io/npm/dw/@tracelane/wdio.svg)](https://www.npmjs.com/package/@tracelane/wdio)
+[![license](https://img.shields.io/npm/l/@tracelane/wdio.svg)](https://github.com/Cubenest/rrweb-stack/blob/main/LICENSE)
+[![CI](https://github.com/Cubenest/rrweb-stack/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/Cubenest/rrweb-stack/actions/workflows/ci.yml)
+[![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/Cubenest/rrweb-stack/badge)](https://scorecard.dev/viewer/?uri=github.com/Cubenest/rrweb-stack)
+
+<!-- Hero GIF: run `vhs assets/tracelane-hero.tape` from repo root after the alpha.4 npm install fully resolves locally. See assets/README.md. -->
+
+```sh
+npm install --save-dev @tracelane/wdio
+```
+
+```ts
+// wdio.conf.ts
+import TraceLaneService from '@tracelane/wdio';
+
+export const config = {
+  // ...your existing config
+  services: [[TraceLaneService, { mode: 'failed' }]],
+};
+```
+
+Run your suite. On a failing test you get a single `.html` file at `./tracelane-reports/<spec>--<title>--<cid>-<ts>.html` — open it in any browser, fully offline. Replay the run with [rrweb-player](https://www.rrweb.io), inspect the console + failed-network panels, attach to your bug tracker, archive it forever. No upload, no signup, no cloud.
+
+## What this is NOT
+
+- Not Cypress Cloud, Replay.io, or Sentry Session Replay. There is no SaaS to host. There is no signup. There is no dashboard. There is no telemetry. The artifact is a single HTML file on your filesystem.
+- Not a reporter (in the `@wdio/reporter` sense). `tracelane` is a WDIO **Service** because only a Service can attach to the live browser, inject the rrweb recorder, drain the in-page buffer, and use CDP for network capture ([ADR-0004](https://github.com/Cubenest/rrweb-stack/blob/main/prds/adrs/0004-p1-wdio-service-not-reporter.md)). A paired Allure **Reporter** shim is planned for v1.1.
+- Not just for failures. `mode: 'all'` writes a report for every test — useful as a CI artifact, evidence in a PR, or a "what changed between green and red" diff.
+
+## Full example
 
 ```ts
 // wdio.conf.ts
@@ -32,14 +64,6 @@ export const config: Options.Testrunner = {
 };
 ```
 
-Run your suite. On a failing Chrome+Mocha test you get `./tracelane-reports/<spec>--<title>--<cid>-<ts>.html` — open it in any browser, fully offline.
-
-## Install
-
-```sh
-pnpm add -D @tracelane/wdio webdriverio @wdio/cli @wdio/local-runner @wdio/mocha-framework
-```
-
 `webdriverio` and `@wdio/types` are **peer dependencies** (`^9.0.0`); you already have them in a WDIO project.
 
 ## How it works
@@ -66,7 +90,7 @@ The options type is published — `import type { TraceLaneOptions } from '@trace
 
 ## Hook-factory alternative (no Service)
 
-For setups that can't register a Service, the **same logic** is available as plain `wdio.conf.ts` hook functions ([ADR-0004](https://github.com/Cubenest/rrweb-stack/blob/main/prds/adrs/0004-p1-wdio-service-not-reporter.md)):
+For setups that can't register a Service, the **same logic** is available as plain `wdio.conf.ts` hook functions:
 
 ```ts
 import { traceLaneHooks } from '@tracelane/wdio/hooks';
@@ -87,21 +111,9 @@ export const config: Options.Testrunner = {
 };
 ```
 
-## FAQ — Why is this a Service and not a Reporter?
-
-Because only a **Service** can do what `tracelane` needs ([ADR-0004](https://github.com/Cubenest/rrweb-stack/blob/main/prds/adrs/0004-p1-wdio-service-not-reporter.md)):
-
-| | Service (`Services.ServiceInstance`) | Reporter (`@wdio/reporter`) |
-|---|---|---|
-| Access to live `browser` in worker hooks | **Yes** | No — reporters run in the launcher process |
-| `browser.execute(...)` to inject rrweb / drain the buffer | **Yes** | No |
-| `browser.cdp(...)` for network capture | **Yes** | No |
-
-A Reporter receives only serialized lifecycle events (`testFail`, `testEnd`, …) in the launcher process — it has no page handle, so it can't inject rrweb, drain the in-page buffer, or attach CDP. (`wdio-allure-reporter` hit exactly this wall and had to add a runtime-side `addAttachment` helper to bridge browser access.) A paired Allure **Reporter** shim is planned for v1.1 to push `tracelane` artifacts into Allure's `addAttachment` API — that's a Reporter-shaped problem; capture is not.
-
 ## Network capture
 
-Failed responses (`status >= 400`) are routed into the report's console timeline (prefixed `[tracelane.net]`, [P1 PRD §E.2](https://github.com/Cubenest/rrweb-stack/blob/main/prds/compass_artifact_wf-d53d32da-17e9-41b5-bb70-21dd1bf648c6_text_markdown.md)). This needs `browser.cdp(...)`, which a separate WDIO service provides:
+Failed responses (`status >= 400`) are routed into the report's console timeline (prefixed `[tracelane.net]`). This needs `browser.cdp(...)`, which a separate WDIO service provides:
 
 - **WDIO 8:** add `['devtools', {}]` via `@wdio/devtools-service@8`.
 - **WDIO 9:** `@wdio/devtools-service` has no stable v9 line (it stabilized at v10); use the v10 service or a CDP-capable session. **If `browser.cdp` is unavailable, `tracelane` degrades gracefully to rrweb + console capture** — the report is still produced, just without the network panel.
@@ -123,16 +135,23 @@ Cloud Selenium vendors typically don't expose CDP; rrweb + console capture still
 | Firefox | Yes | No (CDP is Chromium-only) |
 | Safari | Yes | No |
 
-## Versioning
+## Playwright + Cypress
 
-Semantic Versioning. Currently `0.1.0-alpha.0` (pre-release; the API may shift before `1.0.0`).
+The tagline says Playwright and Cypress because the design is portable across runners — same `@tracelane/core` engine, different glue. Tracking issues:
 
-## Telemetry
+- **`@tracelane/playwright`** — Playwright Reporter implementing `onTestEnd` + `onAttachment` for shareable HTML. Targeted for week 2-3 of the public launch.
+- **`@tracelane/cypress`** — JSON-output adapter only (no Cypress Test Replay overlap). Targeted for week 11.
 
-None. `tracelane` collects and sends nothing; reports are written to your local `outDir` only.
+Watch the [release notes](https://github.com/Cubenest/rrweb-stack/releases) on `Cubenest/rrweb-stack` or follow `@cubenest_in` on X (when announced).
+
+## Versioning & telemetry
+
+Semantic Versioning. Currently `0.1.0-alpha.x` (pre-release; the API may shift before `1.0.0`). See [SUPPORTED.md](https://github.com/Cubenest/rrweb-stack/blob/main/SUPPORTED.md) for the compatibility matrix.
+
+**No telemetry.** `tracelane` collects and sends nothing; reports are written to your local `outDir` only. The generated HTML report includes a footer crediting the tool; you can suppress it with `report: { footer: false }` (v1.1+).
 
 ## License
 
 Apache 2.0. The bundled rrweb engine + console plugin remain MIT-licensed; see `NOTICE`.
 
-Contributions are accepted under the [Developer Certificate of Origin (DCO)](https://developercertificate.org/) — sign your commits with `git commit -s`.
+Contributions are accepted under the [Developer Certificate of Origin (DCO)](https://developercertificate.org/) — sign your commits with `git commit -s`. See [CONTRIBUTING.md](https://github.com/Cubenest/rrweb-stack/blob/main/CONTRIBUTING.md) + [SECURITY.md](https://github.com/Cubenest/rrweb-stack/blob/main/SECURITY.md).
