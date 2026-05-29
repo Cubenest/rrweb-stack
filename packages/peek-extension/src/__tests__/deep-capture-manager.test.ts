@@ -122,11 +122,18 @@ describe('DeepCaptureManager — attach lifecycle', () => {
     expect(bodies).toHaveLength(0);
   });
 
-  it('detach() of a never-attached tab is a no-op', async () => {
+  // P-17 (2026-05-29 QA walk): detach() is now defensive — ALWAYS calls
+  // chrome.debugger.detach, even if the manager doesn't have the tab in
+  // #attached. The MV3 SW restart wipes #attached but Chrome-level
+  // debugger attachments persist; without this, toggle-off leaves yellow
+  // banners on background tabs.
+  it('detach() of a never-attached tab still calls chrome.debugger.detach (P-17 defensive)', async () => {
     const fk = fakeDebugger();
     const mgr = new DeepCaptureManager({ debugger: fk.surface, onBody: () => undefined });
     await mgr.detach(42);
-    expect(fk.detaches).toEqual([]);
+    expect(fk.detaches).toEqual([{ tabId: 42 }]);
+    // Still a no-op for the manager's internal state.
+    expect(mgr.attachedTabs).toEqual([]);
   });
 
   it('detachAll() releases every attached tab', async () => {
@@ -144,55 +151,55 @@ describe('DeepCaptureManager — attach lifecycle', () => {
   // disabled origin, not just the active one. Without this, background tabs of
   // the disabled origin keep capturing response bodies until the user
   // activates one.
-  it('detachOrigin() detaches every attached tab whose URL matches that origin', async () => {
+  //
+  // Post P-17 (2026-05-29) the manager no longer iterates `#attached` for
+  // origin filtering — the caller (background.ts SW) enumerates
+  // `chrome.tabs.query({})` and passes the matching tabIds in. We do this
+  // because the MV3 SW restart wipes `#attached` but Chrome-level debugger
+  // attachments persist (yellow banners stick around).
+  it('detachOrigin() detaches every tab in the caller-supplied list', async () => {
     const fk = fakeDebugger();
     const mgr = new DeepCaptureManager({ debugger: fk.surface, onBody: () => undefined });
     await mgr.attach(10);
     await mgr.attach(11);
     await mgr.attach(20);
 
-    const urlByTab: Record<number, string> = {
-      10: 'https://example.com/a',
-      11: 'https://example.com/b',
-      20: 'https://other.com/c',
-    };
-    const detached = await mgr.detachOrigin(
-      'https://example.com',
-      async (tabId) => urlByTab[tabId],
-    );
+    // Caller (the SW) already filtered chrome.tabs.query({}) by origin and
+    // determined that tabs 10 + 11 are the example.com ones; 20 is other.com.
+    const detached = await mgr.detachOrigin('https://example.com', [10, 11]);
 
     expect([...detached].sort()).toEqual([10, 11]);
     expect([...mgr.attachedTabs].sort()).toEqual([20]);
     expect(fk.detaches.map((d) => d.tabId).sort()).toEqual([10, 11]);
   });
 
-  it('detachOrigin() skips tabs whose URL is now unresolvable (closed/gone)', async () => {
+  it('detachOrigin() detaches tabs the manager never tracked (SW-restart, P-17 fix)', async () => {
     const fk = fakeDebugger();
     const mgr = new DeepCaptureManager({ debugger: fk.surface, onBody: () => undefined });
-    await mgr.attach(30);
-    await mgr.attach(31);
+    // Simulate the SW-restart aftermath: Chrome has the debugger attached to
+    // tabs 30 + 31 (the manager attached them BEFORE the restart, then the
+    // SW died and lost its in-memory Map). The new manager instance is empty:
+    expect(mgr.attachedTabs).toEqual([]);
 
-    const detached = await mgr.detachOrigin('https://example.com', async (tabId) => {
-      if (tabId === 30) return 'https://example.com/x';
-      throw new Error('tab gone');
-    });
-    expect([...detached]).toEqual([30]);
-    expect(mgr.attachedTabs).toEqual([31]); // 31 is left alone (URL unknown)
+    // Caller passes the tabIds it found via chrome.tabs.query({}) — manager
+    // must still call chrome.debugger.detach on them so the yellow banner
+    // goes away.
+    const detached = await mgr.detachOrigin('https://example.com', [30, 31]);
+
+    expect([...detached].sort()).toEqual([30, 31]);
+    expect(fk.detaches.map((d) => d.tabId).sort()).toEqual([30, 31]);
   });
 
-  it('detachOrigin() leaves OTHER origins attached and does nothing on a no-match origin', async () => {
+  it('detachOrigin() of an empty list is a no-op', async () => {
     const fk = fakeDebugger();
     const mgr = new DeepCaptureManager({ debugger: fk.surface, onBody: () => undefined });
     await mgr.attach(40);
     await mgr.attach(41);
-    const urlByTab: Record<number, string> = {
-      40: 'https://a.test/',
-      41: 'https://b.test/',
-    };
-    const detached = await mgr.detachOrigin(
-      'https://nothing.test',
-      async (tabId) => urlByTab[tabId],
-    );
+
+    // Caller queried chrome.tabs.query({}) and found NO tabs matching the
+    // (just-disabled) origin — nothing to do.
+    const detached = await mgr.detachOrigin('https://nothing.test', []);
+
     expect(detached).toEqual([]);
     expect([...mgr.attachedTabs].sort()).toEqual([40, 41]);
     expect(fk.detaches).toEqual([]);

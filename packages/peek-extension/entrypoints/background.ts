@@ -382,19 +382,35 @@ export default defineBackground({
       });
 
       // (2) DEEP-CAPTURE DISABLE — detach every tab of every removed origin.
+      //
+      // P-17 (2026-05-29 QA walk): we enumerate via `chrome.tabs.query({})`,
+      // NOT the manager's in-memory `#attached` Map. The Map is wiped when
+      // the MV3 service worker restarts (every ~30s of inactivity), but
+      // Chrome-level debugger attachments survive — so iterating `#attached`
+      // missed background tabs after any SW lifecycle event. Querying ALL
+      // open tabs and filtering by origin guarantees that every yellow
+      // banner for the disabled origin disappears immediately.
+      // `chrome.debugger.detach` is idempotent — it throws "Debugger is not
+      // attached" for tabs that weren't actually attached, which the
+      // manager's `detach()` swallows.
       const removed = diffRemovedOrigins(change.oldValue, change.newValue);
       if (removed.length === 0) return;
       const mgr = deepCapture;
       if (mgr === null) return; // manager never built — nothing attached anyway
       for (const origin of removed) {
-        void mgr.detachOrigin(origin, async (tabId) => {
-          try {
-            const tab = await chrome.tabs.get(tabId);
-            return tab.url;
-          } catch {
-            return undefined; // tab is gone — let detach-on-close handle it
+        void (async () => {
+          const tabs = await chrome.tabs.query({});
+          const tabIds: number[] = [];
+          for (const t of tabs) {
+            if (typeof t.id !== 'number' || !t.url) continue;
+            try {
+              if (originFromUrl(t.url) === origin) tabIds.push(t.id);
+            } catch {
+              // unparseable URL (chrome://, about:blank, etc.) — skip
+            }
           }
-        });
+          await mgr.detachOrigin(origin, tabIds);
+        })();
       }
     });
 
