@@ -46,6 +46,12 @@ jobs:
     runs-on: ubuntu-latest
     # Do not fail the overall workflow if the browser E2E is flaky/unavailable.
     continue-on-error: true
+    # Hard cap so a hung WDIO worker (e.g., chromedriver missing) can't sit
+    # consuming a runner for 6 hours. WDIO 9 has no default connect-phase
+    # timeout; if Chrome can't start, the worker waits indefinitely. 15 min
+    # is generous for the single-spec smoke run that completes in ~30s when
+    # the runtime is healthy.
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4
       - uses: pnpm/action-setup@f40ffcd9367d9f12939873eb1018b921a783ffaa  # v4
@@ -53,11 +59,18 @@ jobs:
         with:
           node-version: '24'
           cache: pnpm
-      # ubuntu-latest ships Chrome; pin it explicitly so the run is reproducible
-      # and chromedriver auto-management has a known browser to match.
+      # ubuntu-latest ships Chrome; pin it explicitly so the run is reproducible.
+      # `install-chromedriver: true` is REQUIRED — the action defaults to false,
+      # which leaves the runner with Chrome installed but no chromedriver in
+      # PATH. WDIO 9 then silently hangs trying to talk to a non-existent
+      # driver (no service registered to auto-download one; @wdio/chromedriver-
+      # service is not in this package's devDeps). The May 29 2026 CI hang was
+      # exactly this failure mode — every e2e-wdio run cancelled at the
+      # `Execution of 1 workers started` line with zero output thereafter.
       - uses: browser-actions/setup-chrome@19ae4b339ee18925ab85cf12c1041150ea4a44c8  # v1
         with:
           chrome-version: stable
+          install-chromedriver: true
       - run: pnpm install --frozen-lockfile
       # The recorder bundle + workspace deps must be built before the E2E.
       - run: pnpm build
@@ -71,6 +84,10 @@ jobs:
   e2e-peek:
     runs-on: ubuntu-latest
     continue-on-error: true
+    # Same hard cap as e2e-wdio for the same reason: Playwright's persistent-
+    # context launches can hang on missing chromium binary downloads or MV3
+    # extension load failures. The spec completes in ~30s when healthy.
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4
       - uses: pnpm/action-setup@f40ffcd9367d9f12939873eb1018b921a783ffaa  # v4
