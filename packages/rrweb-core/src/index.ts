@@ -86,3 +86,22 @@ export type { SessionChunk, SessionStore, SessionStoreOptions } from './persiste
 
 // Compatibility matrix
 export { COMPATIBILITY_MATRIX, type CompatEntry } from './compat/index.js';
+
+// Framework-agnostic rrweb network capture plugin (PR #1689 vendored).
+// Emits EventType.Plugin events with name 'rrweb/network@1' from any
+// recorder running anywhere (extension MAIN-world, WDIO Service,
+// future Playwright/Cypress integration).
+export {
+  getRecordNetworkPlugin,
+  NETWORK_PLUGIN_NAME,
+} from './plugins/network/index.js';
+export type {
+  CapturedNetworkRequest,
+  InitiatorType as NetworkInitiatorType,
+  MaskRequestFn as NetworkMaskRequestFn,
+  NetworkData,
+  NetworkHeaders,
+  NetworkRecordOptions,
+  RecordBodyOption as NetworkRecordBodyOption,
+  RecordHeadersOption as NetworkRecordHeadersOption,
+} from './plugins/network/index.js';
