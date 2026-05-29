@@ -1,0 +1,11 @@
+rrweb-stack
+Copyright 2026 Cubenest
+
+@tracelane/cli — the `tracelane` scaffolding CLI. Detects the user's test runner
+and wires @tracelane/wdio into wdio.conf.* in a single `npx tracelane init`
+invocation. Pure Node; no third-party runtime dependencies (uses only
+node:* primitives for argv parsing, file I/O, prompts, and the package-manager
+install spawn).
+
+This product is licensed under the Apache License, Version 2.0.
+See the LICENSE file for details.
