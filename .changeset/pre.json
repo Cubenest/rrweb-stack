@@ -6,6 +6,7 @@
     "@peekdev/extension": "0.1.0-alpha.0",
     "@peekdev/mcp": "0.1.0-alpha.0",
     "@cubenest/rrweb-core": "0.1.0-alpha.0",
+    "@tracelane/cli": "0.1.0-alpha.0",
     "@tracelane/core": "0.1.0-alpha.0",
     "@tracelane/report": "0.1.0-alpha.0",
     "@tracelane/wdio": "0.1.0-alpha.0",

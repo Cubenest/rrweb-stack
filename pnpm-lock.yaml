@@ -168,6 +168,12 @@ importers:
         specifier: ^25.0.1
         version: 25.0.1
 
+  packages/tracelane-cli:
+    devDependencies:
+      '@types/node':
+        specifier: ^22.10.0
+        version: 22.19.19
+
   packages/tracelane-core:
     dependencies:
       '@cubenest/rrweb-core':
