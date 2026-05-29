@@ -11,6 +11,17 @@
 <!-- Hero GIF: run `vhs assets/tracelane-hero.tape` from repo root after the alpha.4 npm install fully resolves locally. See assets/README.md. -->
 
 ```sh
+cd your-wdio-project
+npx tracelane init
+```
+
+That's it. [`npx tracelane init`](https://www.npmjs.com/package/@tracelane/cli) detects your runner, installs `@tracelane/wdio`, edits `wdio.conf.ts` in place, and gitignores the reports directory. Idempotent (re-run is a no-op) and dry-runnable (`--dry-run`).
+
+Run your suite. On a failing test you get a single `.html` file at `./tracelane-reports/<spec>--<title>--<cid>-<ts>.html` — open it in any browser, fully offline. Replay the run with [rrweb-player](https://www.rrweb.io), inspect the console + failed-network panels, attach to your bug tracker, archive it forever. No upload, no signup, no cloud.
+
+### Or wire it manually
+
+```sh
 npm install --save-dev @tracelane/wdio
 ```
 
@@ -24,7 +35,7 @@ export const config = {
 };
 ```
 
-Run your suite. On a failing test you get a single `.html` file at `./tracelane-reports/<spec>--<title>--<cid>-<ts>.html` — open it in any browser, fully offline. Replay the run with [rrweb-player](https://www.rrweb.io), inspect the console + failed-network panels, attach to your bug tracker, archive it forever. No upload, no signup, no cloud.
+Same result — `npx tracelane init` is just the orchestration that does the lines above for you.
 
 ## What this is NOT
 
