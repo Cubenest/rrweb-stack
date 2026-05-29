@@ -608,3 +608,15 @@ Items that can only be done via a vendor web UI — no API, no CLI, no automatio
 ---
 
 *Use this section as a working checklist. When a row clears, leave the line struck through (`~~`) with the completion date — that preserves "we did this" for the post-mortem rather than deleting history.*
+
+---
+
+### 12. Post-launch backlog (Phase 6 candidates — NOT in scope for Phase 5)
+
+Captured during Phase 5 work; explicitly deferred to keep launch motion focused. Don't start any of these during launch weeks 1-6 unless the maintainer redirects.
+
+- **`@tracelane/report` UI revamp** — surfaced 2026-05-29 during Gate B7 demo regen. The generated HTML report works but is visually basic compared to Cypress Test Replay / Replay.io / Sentry Session Replay. Candidates to scope before starting: side-by-side player + panels layout, filter/sort/search in Network + Console panels, timeline marker at the assertion-failure timestamp, dark-mode default, scannable metadata header, polished "Copy as Markdown for AI" UX, mobile-responsive layout, "what failed" landing section above the player. Constraints to preserve: single self-contained HTML, 25 MB cap, no runtime fetch, Apache-2.0 license compatibility. See [`packages/tracelane-report/src/{template,html,panels}.ts`](../packages/tracelane-report/src/) as the implementation surface.
+- **rrweb network plugin upstream contribution** — the trimmed PostHog plugin in `@cubenest/rrweb-core/src/plugins/network/` is a candidate for upstream rrweb#1689 once the upstream maintainers re-engage (Feb 2026 stall confirmed). Worth a maintainer ping in 60-90 days.
+- **Defensive squat of unscoped `tracelane` npm name** — currently available (`npm view tracelane` returns 404). Would let `npx tracelane init` work without the `@tracelane/cli` scope. Defer until post-1.0 to avoid pre-1.0 name-pollution.
+- **peek MCP write-path Phase 6** — Task #71's phase 3 (peek-extension network-plugin migration) is the more immediate peek work. The MCP write-path (Levels 4-5: execute_action / request_authorization with destructive blocklist override) is a separate Phase 6 ship.
+- **CWS submission for `@peekdev/extension`** — Unlisted submission first, Public after one alpha cycle. Tracked in §11 punch list under Marketplace + listings; called out here too because it's the largest Phase 6 user-action item.
