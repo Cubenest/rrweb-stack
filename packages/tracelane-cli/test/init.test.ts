@@ -132,8 +132,10 @@ describe('runInitProgrammatic — WDIO happy path', () => {
     // No backup leftover on success
     expect(existsSync(join(dir, 'wdio.conf.ts.tracelane-init.backup'))).toBe(false);
 
-    // Success line printed
-    expect(s.out()).toMatch(/done\.\nNext: run your test suite/);
+    // Success line printed — the message now includes a literal copy-paste
+    // `Run: npx wdio run <conf>` command so the user knows exactly what to
+    // run after init (per the 2026-05-29 code-review fix on goal-5 wording).
+    expect(s.out()).toMatch(/done\.\nRun: npx wdio run wdio\.conf\.ts/);
   });
 
   it('respects --skip-install (no spawn, but conf/dir/gitignore still happen)', async () => {
