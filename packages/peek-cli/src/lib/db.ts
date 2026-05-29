@@ -123,6 +123,67 @@ export function listSessions(db: Database, options: ListSessionsOptions = {}): S
   return rows.map(mapSession);
 }
 
+/** A list row enriched with the per-session aggregate error counts (P-18 fix). */
+export interface SessionRowWithCounts extends SessionRow {
+  /** Console rows with level = 'error' (matches getSessionCounts.consoleErrors). */
+  readonly consoleCount: number;
+  /** Network rows with status >= 400 OR error_text IS NOT NULL (matches networkErrors). */
+  readonly networkCount: number;
+}
+
+/**
+ * List sessions WITH the per-row console + network error counts in a SINGLE
+ * query (P-18 alpha.8 fix). The `peek sessions list --json` path needs the
+ * counts on each row — they're the most actionable signal for an AI consumer
+ * deciding which session to drill into. The naive approach (call
+ * `getSessionCounts` per row) is N+1: 2 child-table queries × default 20 rows
+ * = 40 queries per list. This LEFT JOIN aggregates both child tables in one
+ * statement; both have an existing `(session_id, …)` index (migration 0001:
+ * `idx_console_events_session` + `idx_network_events_session`) so the join
+ * stays sub-millisecond on thousands of sessions.
+ *
+ * Error definitions MUST match {@link getSessionCounts} exactly — otherwise
+ * `peek sessions list --json` and `peek sessions show <id>` would disagree on
+ * how many errors a session has, which would confuse downstream tooling.
+ *   console error  := level = 'error'
+ *   network error  := status >= 400 OR error_text IS NOT NULL
+ */
+export function listSessionsWithCounts(
+  db: Database,
+  options: ListSessionsOptions = {},
+): SessionRowWithCounts[] {
+  const limit = options.limit ?? 20;
+  const params: Array<string | number> = [];
+  // The two correlated COUNT(*) subqueries inline are simpler than two LEFT
+  // JOINs against derived tables AND let SQLite use the (session_id, ...)
+  // indexes for each row directly. With LIMIT applied to the outer query the
+  // subqueries run at most `limit` times per side — bounded the same way the
+  // naive N+1 was, but in one statement (no JS-side loop, no per-row prepare).
+  let sql = `
+    SELECT
+      s.*,
+      (SELECT COUNT(*) FROM console_events
+        WHERE session_id = s.id AND level = 'error') AS console_count,
+      (SELECT COUNT(*) FROM network_events
+        WHERE session_id = s.id AND (status >= 400 OR error_text IS NOT NULL)) AS network_count
+    FROM sessions s
+  `;
+  if (options.origin !== undefined) {
+    sql += ' WHERE s.origin = ?';
+    params.push(options.origin);
+  }
+  sql += ' ORDER BY s.updated_at DESC, s.created_at DESC LIMIT ?';
+  params.push(limit);
+  const rows = db.prepare(sql).all(...params) as Array<
+    RawSessionRow & { console_count: number; network_count: number }
+  >;
+  return rows.map((r) => ({
+    ...mapSession(r),
+    consoleCount: r.console_count,
+    networkCount: r.network_count,
+  }));
+}
+
 /** Fetch one session's metadata, or `undefined` if no such id. */
 export function getSession(db: Database, id: string): SessionRow | undefined {
   const row = db.prepare('SELECT * FROM sessions WHERE id = ?').get(id) as
