@@ -9,6 +9,13 @@ build/
 .vercel/
 # Astro (apps/*-docs) — generated content-types + build cache.
 .astro/
+# Maintainer's local hand-copy of the built peek extension (the canonical
+# build output is at packages/peek-extension/.output/ which `.output/` above
+# already catches; this entry guards against an additional copy that gets
+# manually rsynced next to the package source for chrome://extensions loads).
+# Without this, lefthook biome chokes trying to lint the bundled minified
+# output on every commit.
+packages/peek-extension/chrome-mv3/
 .DS_Store
 .idea/
 .vscode/*
