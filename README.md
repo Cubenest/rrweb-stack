@@ -4,7 +4,7 @@ Two OSS products on one rrweb-based substrate. Both ship as `npm` packages today
 
 | Product | One line | Install |
 |---|---|---|
-| **[tracelane](packages/tracelane-wdio/)** | The reporter for your WebdriverIO, Playwright, and Cypress tests. Self-contained HTML for every run — replay failures, audit successes, attach to any bug tracker. No SaaS, no dashboard, no signup. | `npx tracelane init` |
+| **[tracelane](packages/tracelane-wdio/)** | The reporter for your WebdriverIO, Playwright, and Cypress tests. Self-contained HTML for every run — replay failures, audit successes, attach to any bug tracker. No SaaS, no dashboard, no signup. | `npx @tracelane/cli init` |
 | **[peek](packages/peek-cli/)** | Your real browser, exposed to your AI coding agent over MCP — capture once, query forever, never leaves your machine. | `npm install -g @peekdev/cli && npx peek init` |
 
 [![CI](https://github.com/Cubenest/rrweb-stack/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/Cubenest/rrweb-stack/actions/workflows/ci.yml)

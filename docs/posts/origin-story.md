@@ -41,7 +41,7 @@ This is alpha. Every package version starts with `0.1.0-alpha.` The API may shif
 ## How to start
 
 ```sh
-npx tracelane init       # WebdriverIO project: install + wire in one command
+npx @tracelane/cli init  # WebdriverIO project: install + wire in one command
 npm i -g @peekdev/cli    # peek: CLI install, then `peek init` wires the MCP
 ```
 
