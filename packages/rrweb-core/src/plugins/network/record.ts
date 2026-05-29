@@ -230,7 +230,7 @@ function normalizeOptions(opts: NetworkRecordOptions | undefined): NormalizedNet
       opts?.recordInitialRequests ?? defaultNetworkOptions.recordInitialRequests,
     recordHeaders: opts?.recordHeaders ?? defaultNetworkOptions.recordHeaders,
     recordBody: opts?.recordBody ?? defaultNetworkOptions.recordBody,
-    recordPerformance: opts?.recordPerformance ?? defaultNetworkOptions.recordPerformance,
+    capturePerformance: opts?.capturePerformance ?? defaultNetworkOptions.capturePerformance,
     performanceEntryTypeToObserve:
       opts?.performanceEntryTypeToObserve ?? defaultNetworkOptions.performanceEntryTypeToObserve,
     initiatorTypes: opts?.initiatorTypes ?? defaultNetworkOptions.initiatorTypes,
@@ -248,7 +248,7 @@ function initPerformanceObserver(
   win: IWindow,
   options: NormalizedNetworkOptions,
 ): listenerHandler {
-  if (!options.recordPerformance) {
+  if (!options.capturePerformance) {
     return () => {
       /* no-op */
     };
@@ -486,12 +486,18 @@ function initXhrObserver(
           return originalSend(body);
         };
 
-        // Cleanup function to remove all event listeners and prevent memory leaks.
+        // Cleanup function to remove all event listeners and prevent memory
+        // leaks. Listener references MUST match what was passed to
+        // addEventListener — `removeEventListener` silently no-ops on a
+        // mismatched reference. PostHog's upstream had this bug (passing
+        // `cleanup` to remove listeners added with `errorCleanup`); the
+        // fix here is intentional, do not "simplify" by reverting to a
+        // single function reference for both add and remove.
         const cleanup = () => {
           this.removeEventListener('readystatechange', readyStateListener);
-          this.removeEventListener('error', cleanup);
+          this.removeEventListener('error', errorCleanup);
           this.removeEventListener('abort', errorCleanup);
-          this.removeEventListener('timeout', cleanup);
+          this.removeEventListener('timeout', errorCleanup);
         };
 
         // For aborted/errored requests, emit a synthetic record so the
@@ -824,24 +830,57 @@ interface PrepareRequestArgs {
 
 function prepareRequest(args: PrepareRequestArgs): CapturedNetworkRequest[] {
   const { entry, method, status, networkRequest, isInitial, url, initiatorType } = args;
+  // Browser-side `entry.startTime` / `entry.responseEnd` are PerformanceEntry
+  // API reads — these are NOT our wire-format field names. We capture them
+  // into local `start`/`end` and rewrite them as `requestMadeAt`/`responseEnd`
+  // on the emitted CapturedNetworkRequest.
   const start = entry ? entry.startTime : args.start;
   const end = entry ? entry.responseEnd : args.end;
 
   const timeOrigin = Math.floor(Date.now() - performance.now());
   const timestamp = Math.floor(timeOrigin + (start || 0));
 
+  // Strip browser PerformanceEntry property names from the spread so we
+  // don't leak `startTime`/`endTime`/`responseEnd` etc. alongside our
+  // wire-format names. Anything we want from the entry, we copy
+  // explicitly below.
   const entryJSON: Record<string, unknown> = entry ? entry.toJSON() : { name: url ?? '' };
+  const PERF_ENTRY_NATIVE_KEYS = new Set([
+    'startTime',
+    'endTime',
+    'responseEnd',
+    'duration',
+    'transferSize',
+    'initiatorType',
+    'entryType',
+    'name',
+  ]);
+  const safeSpread: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(entryJSON)) {
+    if (!PERF_ENTRY_NATIVE_KEYS.has(k)) safeSpread[k] = v;
+  }
 
   const baseName = typeof entryJSON.name === 'string' ? entryJSON.name : (url ?? '');
 
-  // Order matters: the spread of `entryJSON` is FIRST so explicit fields
+  // Modern Chrome (and other browsers with TAO-allowed timings) expose
+  // `responseStatus` on the entry. In default mode (no fetch/XHR
+  // wrapping), this is the ONLY status info we get — without it, the
+  // emitted record has `status: undefined` and replay tooling can't
+  // distinguish success from failure. Read it here so the default
+  // PerformanceObserver-only mode is meaningfully informative.
+  const entryResponseStatus =
+    entry && 'responseStatus' in entry
+      ? (entry as ObservedPerformanceEntry).responseStatus
+      : undefined;
+
+  // Order matters: the spread of `safeSpread` is FIRST so explicit fields
   // below (method/status/headers/body/isInitial) take precedence over
   // anything the browser puts into `toJSON()`.
   const baseRequest: CapturedNetworkRequest = {
-    ...entryJSON,
+    ...safeSpread,
     name: baseName,
-    startTime: isUndefined(start) ? undefined : Math.round(start),
-    endTime: isUndefined(end) ? undefined : Math.round(end),
+    requestMadeAt: isUndefined(start) ? undefined : Math.round(start),
+    responseEnd: isUndefined(end) ? undefined : Math.round(end),
     timeOrigin,
     timestamp,
     method,
@@ -850,7 +889,7 @@ function prepareRequest(args: PrepareRequestArgs): CapturedNetworkRequest[] {
       : entry
         ? (entry.initiatorType as InitiatorType)
         : undefined,
-    status,
+    status: status ?? entryResponseStatus,
     requestHeaders: networkRequest.requestHeaders,
     requestBody: networkRequest.requestBody,
     responseHeaders: networkRequest.responseHeaders,
@@ -870,7 +909,7 @@ function prepareRequest(args: PrepareRequestArgs): CapturedNetworkRequest[] {
       requests.push({
         timeOrigin,
         timestamp,
-        startTime: Math.round(entry.startTime),
+        requestMadeAt: Math.round(entry.startTime),
         name: timing.name,
         duration: timing.duration,
         // Synthetic entry type so consumers can correlate to a parent
@@ -1026,9 +1065,12 @@ function initNetworkObserver(
     }
   };
 
-  // Reset the inflight counter on every "tick" so the cap is per-flush,
-  // not all-time. We hook into queueMicrotask so the counter resets in
-  // a defined order relative to the wrappers.
+  // Reset the inflight counter periodically so the `maxRequestsPerBatch`
+  // cap is a rolling-window cap rather than a session-lifetime cap. We
+  // use `setInterval` at 1s intervals (not microtask scheduling — that
+  // would reset between every emission inside a single
+  // PerformanceObserver flush, which is the case we actually want to
+  // cap).
   const resetCounter = () => {
     inflightCount = 0;
   };
