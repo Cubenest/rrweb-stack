@@ -1,0 +1,114 @@
+# @peekdev/mcp
+
+> Your real browser, exposed to your AI coding agent over MCP — capture once, query forever, never leaves your machine.
+
+[![npm](https://img.shields.io/npm/v/@peekdev/mcp.svg)](https://www.npmjs.com/package/@peekdev/mcp)
+[![downloads](https://img.shields.io/npm/dw/@peekdev/mcp.svg)](https://www.npmjs.com/package/@peekdev/mcp)
+[![license](https://img.shields.io/npm/l/@peekdev/mcp.svg)](https://github.com/Cubenest/rrweb-stack/blob/main/LICENSE)
+[![CI](https://github.com/Cubenest/rrweb-stack/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/Cubenest/rrweb-stack/actions/workflows/ci.yml)
+
+`@peekdev/mcp` is **two things in one binary**:
+
+1. The **stdio MCP server** that AI coding agents (Claude Code, Cursor, Cline, Windsurf, Continue, Zed) speak to when querying your captured browser sessions.
+2. The **native messaging host** that Chrome's MV3 extension speaks to when writing into `~/.peek/sessions.db`.
+
+The same binary handles both roles — chosen by argv. You don't install this package directly in normal use; the [`@peekdev/cli`](https://www.npmjs.com/package/@peekdev/cli) `peek init` wizard wires it into your AI client's MCP config and into Chrome's `NativeMessagingHosts/`.
+
+## You probably want `@peekdev/cli` instead
+
+```sh
+npm install -g @peekdev/cli
+peek init
+```
+
+Read on if you're configuring the MCP server manually, building tooling against it, or want the protocol/tool reference.
+
+## What this is NOT
+
+- Not a remote MCP server. Peek is **local-only**: stdio transport over a child-process pipe. There is no HTTP listener, no SSE endpoint, no remote auth. The MCP transport spec's Streamable HTTP variant is out of scope by design.
+- Not a write-by-default tool. Read tools are unauthenticated; write tools (clicks, inputs, navigation, destructive actions) require explicit per-action authorization, recorded in `~/.peek/audit.log`.
+- Not a wrapper around Chrome DevTools Protocol. The server reads recorded events from SQLite; the extension owns capture. No live `chrome.debugger` access from the MCP server.
+
+## Manual MCP-client config
+
+If `peek init` doesn't recognize your client, paste this into your client's MCP server registry:
+
+```json
+{
+  "mcpServers": {
+    "peek": {
+      "command": "npx",
+      "args": ["-y", "@peekdev/mcp"],
+      "env": {
+        "PEEK_HOME": "~/.peek"
+      }
+    }
+  }
+}
+```
+
+For Claude Code, this goes in `~/.claude/mcp_servers.json` (per-project) or via `claude mcp add`. For Cursor: `~/Library/Application Support/Cursor/User/mcp_servers.json` (macOS). For Continue: in your `~/.continue/config.json` under `experimental.modelContextProtocolServers`.
+
+## What the AI agent can do
+
+| Tool | Action | Authorization |
+|---|---|---|
+| `list_sessions` | List recent recording sessions | none |
+| `get_session_metadata` | Get one session's metadata + counts | none |
+| `get_session_console_errors` | Filter console messages by level / time | none |
+| `get_session_network_errors` | Filter failed network requests (status >= 400) | none |
+| `get_session_events` | Return rrweb event slices for a time window | none |
+| `get_dom_snapshot` | Reconstruct the DOM at a given timestamp | none |
+| `search_session` | Free-text search across console + network for a session | none |
+| `generate_playwright_repro` | Emit a Playwright `.spec.ts` reproducing user actions | none |
+| `execute_action` | Click / input / navigate in the live tab | per-action user prompt |
+| `request_authorization` | Ask the user to permit a destructive action | per-action user prompt |
+
+The full tool list is exposed via the MCP `tools/list` request (spec 2025-11-25 + back-compat for 2025-03-26). Tool docs ship with the binary via `tools/list` response `description` fields.
+
+## Permission model (the five levels)
+
+| Level | What it allows | Default |
+|---|---|---|
+| 1 — Read | Query the DB, reconstruct DOM, search events | enabled |
+| 2 — Read with confirm | (none currently mapped) | n/a |
+| 3 — Constrained write | Click whitelisted selectors | disabled |
+| 4 — Broad write | Click any selector, type text, navigate | disabled |
+| 5 — Destructive | Submit forms, navigate cross-origin, file uploads | disabled |
+
+Levels 3-5 require explicit per-action authorization via `request_authorization`. Every authorized action is appended to `~/.peek/audit.log` (JSONL — `peek audit log --json` prints it). There is a hardcoded destructive-action blocklist (`window.close`, `document.write`, etc.) that cannot be authorized.
+
+## Database
+
+`~/.peek/sessions.db` — SQLite (better-sqlite3, WAL mode). Schema in `src/db/migrations/`. The CLI opens this DB read-mostly; the native host writes it during extension capture; the MCP server reads it for tool calls.
+
+The native host is the **only writer**. The CLI and MCP server only read (except for the audit log, which is append-only JSONL on disk, not in the DB).
+
+## Subpath exports
+
+For consumers building tooling on top of peek:
+
+```ts
+import { generatePlaywrightRepro } from '@peekdev/mcp/mcp/playwright-repro';
+import { loadSessionEvents } from '@peekdev/mcp/mcp/event-blobs';
+import { openDb } from '@peekdev/mcp/db';
+import { startNativeHost } from '@peekdev/mcp/native-host';
+```
+
+These are the subpath exports the `@peekdev/cli` package uses. API surface is small but stable.
+
+## Versioning & compatibility
+
+Semantic Versioning. Currently `0.1.0-alpha.x` — pre-release; tool schemas are stable in spirit but new tools may land in patch releases. See [SUPPORTED.md](https://github.com/Cubenest/rrweb-stack/blob/main/SUPPORTED.md) for the compatibility matrix (MCP protocol versions, Chrome stable channels, Node versions).
+
+## Privacy
+
+Local-only. No network destinations. No telemetry. The MCP transport is stdio over a child-process pipe — your AI client launches `peek-mcp`, talks to it over stdin/stdout, and kills it when done. The binary holds no persistent state outside `~/.peek/`.
+
+Full data-handling policy: [`docs/peek/PRIVACY_POLICY.md`](https://github.com/Cubenest/rrweb-stack/blob/main/docs/peek/PRIVACY_POLICY.md). Threat model: [`docs/peek/THREATMODEL.md`](https://github.com/Cubenest/rrweb-stack/blob/main/docs/peek/THREATMODEL.md).
+
+## License
+
+Apache 2.0. The bundled rrweb engine remains MIT-licensed; see `NOTICE`.
+
+Contributions are accepted under the [Developer Certificate of Origin (DCO)](https://developercertificate.org/) — sign your commits with `git commit -s`. See [CONTRIBUTING.md](https://github.com/Cubenest/rrweb-stack/blob/main/CONTRIBUTING.md) + [SECURITY.md](https://github.com/Cubenest/rrweb-stack/blob/main/SECURITY.md).
