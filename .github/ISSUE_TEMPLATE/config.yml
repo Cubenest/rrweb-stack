@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Security vulnerability
+    url: https://github.com/Cubenest/rrweb-stack/security/advisories/new
+    about: Report a security issue privately via GitHub Private Vulnerability Reporting. Do NOT file a public issue for security findings.
+  - name: Questions / discussion
+    url: https://github.com/Cubenest/rrweb-stack/discussions
+    about: For questions, design discussion, or "how do I do X" — discussions, not issues. (Note: discussions may not be enabled yet; fall back to opening a bug if so.)

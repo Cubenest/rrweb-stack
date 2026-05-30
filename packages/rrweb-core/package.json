@@ -2,7 +2,20 @@
   "name": "@cubenest/rrweb-core",
   "version": "0.1.0-alpha.3",
   "description": "Shared rrweb-based capture substrate for tracelane and peek.",
+  "keywords": [
+    "rrweb",
+    "session-replay",
+    "browser-recording",
+    "dom-capture",
+    "posthog-rrweb-fork",
+    "masking",
+    "capture-substrate"
+  ],
   "license": "Apache-2.0",
+  "funding": {
+    "type": "github",
+    "url": "https://github.com/sponsors/harry-harish"
+  },
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -12,11 +25,7 @@
       "import": "./dist/index.js"
     }
   },
-  "files": [
-    "dist",
-    "NOTICE",
-    "README.md"
-  ],
+  "files": ["dist", "NOTICE", "README.md"],
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",

@@ -2,7 +2,21 @@
   "name": "@peekdev/cli",
   "version": "0.1.0-alpha.12",
   "description": "peek command-line tool. A thin read-mostly client of the native host's ~/.peek/sessions.db (ADR-0007): status, sessions list/show/export/delete, the `peek init` MCP-client wizard, and `peek audit log`.",
+  "keywords": [
+    "peek",
+    "mcp",
+    "model-context-protocol",
+    "browser",
+    "claude-code",
+    "cursor",
+    "ai-coding-agent",
+    "session-replay"
+  ],
   "license": "Apache-2.0",
+  "funding": {
+    "type": "github",
+    "url": "https://github.com/sponsors/harry-harish"
+  },
   "type": "module",
   "bin": {
     "peek": "./dist/index.js"
@@ -15,11 +29,7 @@
       "import": "./dist/index.js"
     }
   },
-  "files": [
-    "dist",
-    "NOTICE",
-    "README.md"
-  ],
+  "files": ["dist", "NOTICE", "README.md"],
   "scripts": {
     "build": "tsc -p tsconfig.json && node ./scripts/postbuild.mjs",
     "typecheck": "tsc -p tsconfig.json --noEmit",

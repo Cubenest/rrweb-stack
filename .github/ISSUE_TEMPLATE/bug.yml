@@ -1,0 +1,80 @@
+name: Bug report
+description: A package isn't behaving the way the README says it should.
+title: "bug: "
+labels: ["bug", "triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to file a bug. Please confirm the basics below so we can triage fast.
+
+        For security vulnerabilities, do NOT file here — use [GitHub Private Vulnerability Reporting](https://github.com/Cubenest/rrweb-stack/security/advisories/new).
+  - type: dropdown
+    id: package
+    attributes:
+      label: Affected package
+      description: Which package is the bug in? If multiple, file one issue per package.
+      options:
+        - "@cubenest/rrweb-core"
+        - "@tracelane/cli"
+        - "@tracelane/core"
+        - "@tracelane/report"
+        - "@tracelane/wdio"
+        - "@peekdev/cli"
+        - "@peekdev/mcp"
+        - peek-extension (Chrome MV3)
+        - tracelane-upload-report-action (GitHub Action)
+        - Other / not sure
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Package version
+      description: Output of `npm ls <package>` or the version from `package.json`. Pin to the version where you saw the bug.
+      placeholder: "e.g. @tracelane/wdio@0.1.0-alpha.10"
+    validations:
+      required: true
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: Concrete description. What did you expect? What did you see instead?
+      placeholder: |
+        Expected: ...
+        Got: ...
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Reproduction
+      description: |
+        Smallest possible setup that triggers the bug. A repo link is gold; otherwise a CodeSandbox/StackBlitz or a paste of the offending config + the failing command output.
+
+        Include Node version (`node -v`), OS, and (for `@tracelane/wdio`) WebdriverIO version.
+      placeholder: |
+        Node: 22.x
+        OS: macOS 14.5
+        WDIO: 9.x
+        Steps:
+          1. ...
+          2. ...
+          3. ...
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs / error output
+      description: Paste the relevant stack trace, console output, or error message. Trim to the relevant lines if huge.
+      render: shell
+  - type: checkboxes
+    id: prerequisites
+    attributes:
+      label: Prerequisites
+      options:
+        - label: I've checked existing issues (open + closed) for duplicates
+          required: true
+        - label: This is reproducible on the latest published alpha
+          required: false

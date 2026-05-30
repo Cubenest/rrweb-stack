@@ -1,0 +1,62 @@
+name: Feature / integration request
+description: Suggest a new feature or an integration with another tool.
+title: "feat: "
+labels: ["enhancement", "triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Before filing: have you read [`CONTRIBUTING.md`](https://github.com/Cubenest/rrweb-stack/blob/main/CONTRIBUTING.md), specifically the "Suggesting a new integration target" section? Some integration types are explicitly out-of-scope for the side-project posture (`docs/SUSTAINABILITY.md`).
+
+        For commercial integrations (BrowserStack, Sauce Labs, hosted bug trackers) please describe the scope you're willing to maintain.
+  - type: dropdown
+    id: package
+    attributes:
+      label: Which package does this affect?
+      options:
+        - "@cubenest/rrweb-core"
+        - "@tracelane/cli"
+        - "@tracelane/core"
+        - "@tracelane/report"
+        - "@tracelane/wdio"
+        - "@peekdev/cli"
+        - "@peekdev/mcp"
+        - peek-extension
+        - tracelane-upload-report-action
+        - New package proposal
+        - Cross-cutting / docs
+    validations:
+      required: true
+  - type: textarea
+    id: problem
+    attributes:
+      label: The problem
+      description: |
+        What use case is currently hard / impossible? Concrete scenario, not abstract.
+      placeholder: |
+        When I'm doing X with tool Y, I can't ...
+    validations:
+      required: true
+  - type: textarea
+    id: proposed
+    attributes:
+      label: Proposed solution
+      description: |
+        What API / config / workflow would solve it? If you have a draft, sketch it. If you're not sure, that's fine — describe the outcome.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: |
+        What other workarounds did you consider? Why don't they work?
+  - type: checkboxes
+    id: prerequisites
+    attributes:
+      label: Prerequisites
+      options:
+        - label: I've checked existing issues for related requests
+          required: true
+        - label: I've read `docs/SUSTAINABILITY.md` and understand this is a side-project — no SLA on response time
+          required: true
