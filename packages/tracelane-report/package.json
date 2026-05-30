@@ -1,6 +1,6 @@
 {
   "name": "@tracelane/report",
-  "version": "0.1.0-alpha.7",
+  "version": "0.1.0-alpha.8",
   "description": "Self-contained, offline HTML report builder for tracelane. Embeds the rrweb player and a gzipped event blob into a single .html file.",
   "license": "Apache-2.0",
   "type": "module",
@@ -12,7 +12,11 @@
       "import": "./dist/index.js"
     }
   },
-  "files": ["dist", "NOTICE", "README.md"],
+  "files": [
+    "dist",
+    "NOTICE",
+    "README.md"
+  ],
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",

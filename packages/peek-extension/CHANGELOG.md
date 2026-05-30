@@ -1,5 +1,12 @@
 # @peekdev/extension
 
+## 0.1.0-alpha.7
+
+### Patch Changes
+
+- Updated dependencies [e12fb25]
+  - @cubenest/rrweb-core@0.1.0-alpha.3
+
 ## 0.1.0-alpha.6
 
 ### Patch Changes
