@@ -1,5 +1,12 @@
 # @peekdev/mcp
 
+## 0.1.0-alpha.7
+
+### Patch Changes
+
+- Updated dependencies [5e5674b]
+  - @cubenest/rrweb-core@0.1.0-alpha.3
+
 ## 0.1.0-alpha.6
 
 ### Patch Changes
