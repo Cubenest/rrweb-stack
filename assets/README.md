@@ -9,9 +9,11 @@ Generated artifacts (`.gif`, `.png`, `.webm`) **are committed**. The sources use
 | File | Used by | How to regenerate |
 |---|---|---|
 | `tracelane-hero.tape` | `packages/tracelane-wdio/README.md` (hero GIF) | see "Recording tracelane-hero.gif" below |
-| `tracelane-hero.gif` (committed once recorded) | same | same |
-
-`peek-hero.tape` + `peek-hero.gif` land in a future launch motion chunk.
+| `tracelane-hero.gif` | same | same |
+| `record-tracelane-hero.sh` | (driver script) | invoked manually; see below |
+| `peek-hero.tape` | `packages/peek-cli/README.md` (hero GIF) | see "Recording peek-hero.gif" below |
+| `peek-hero.gif` | same | same |
+| `record-peek-hero.sh` | (driver script) | invoked manually; see below |
 
 ## Recording `tracelane-hero.gif`
 
@@ -51,6 +53,36 @@ git push origin main
 #    Use the absolute raw.githubusercontent URL — npm doesn't render
 #    relative image paths from package READMEs.
 ```
+
+## Recording `peek-hero.gif`
+
+The GIF demonstrates the read side of peek: a recorded browser session appears as a queryable structured artifact your AI agent (or you, via the CLI) can drill into. Shows `peek sessions list` → `peek sessions show ... --format markdown` → `... --format json`. The install half (`npx peek init`) is covered in the README install code block; the init wizard is interactive (multiSelect prompts) and doesn't record cleanly in 15 seconds.
+
+Target: under 15 seconds, under 6 MB (Gate B1). The current take is ~660 KB.
+
+```sh
+# 1. Install vhs + sqlite3 (sqlite3 ships preinstalled on macOS).
+brew install vhs
+
+# 2. Run the driver. It builds @peekdev/cli from the monorepo, seeds three
+#    synthetic sessions in a /tmp fixture sessions.db, then invokes vhs.
+bash assets/record-peek-hero.sh
+
+# 3. Verify size + duration.
+ls -lh assets/peek-hero.gif
+# Target: under 6 MB, under 15 seconds.
+
+# 4. Commit + push.
+git add assets/peek-hero.gif
+git commit -s -m "chore(assets): re-record peek hero GIF"
+git push origin main
+
+# 5. The hero is already referenced from packages/peek-cli/README.md via
+#    https://raw.githubusercontent.com/Cubenest/rrweb-stack/main/assets/peek-hero.gif
+#    so a fresh `.gif` flows through the CDN within a few minutes.
+```
+
+Why a fixture sessions.db: the maintainer's real `~/.peek/sessions.db` contains private browsing history. The driver script never touches it — it sets `HOME=/tmp/peek-hero-demo` for the vhs run and seeds `$HOME/.peek/sessions.db` from scratch each time. The three seeded sessions (a `shop.example.com` checkout with a 404, a `localhost:3000/dashboard` with a React TypeError, and a clean GitHub read) are intentionally generic.
 
 ## Conventions
 

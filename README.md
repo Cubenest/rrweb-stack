@@ -9,7 +9,11 @@ Two OSS products on one rrweb-based substrate. Both ship as `npm` packages today
 
 ![tracelane install — one command](https://raw.githubusercontent.com/Cubenest/rrweb-stack/main/assets/tracelane-hero.gif)
 
-*Above: `npx @tracelane/cli init` in a real WebdriverIO project — detect runner, install, edit `wdio.conf.ts`, ignore reports dir. peek's equivalent hero GIF lands in a future launch motion chunk.*
+*Above: `npx @tracelane/cli init` in a real WebdriverIO project — detect runner, install, edit `wdio.conf.ts`, ignore reports dir.*
+
+![peek query — sessions are structured data](https://raw.githubusercontent.com/Cubenest/rrweb-stack/main/assets/peek-hero.gif)
+
+*Above: `peek sessions list` then `peek sessions show ... --format markdown` — a recorded browser session as queryable structured output, AI-ready.*
 
 [![CI](https://github.com/Cubenest/rrweb-stack/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/Cubenest/rrweb-stack/actions/workflows/ci.yml)
 [![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/Cubenest/rrweb-stack/badge)](https://scorecard.dev/viewer/?uri=github.com/Cubenest/rrweb-stack)

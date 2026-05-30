@@ -7,7 +7,7 @@
 [![license](https://img.shields.io/npm/l/@peekdev/cli.svg)](https://github.com/Cubenest/rrweb-stack/blob/main/LICENSE)
 [![CI](https://github.com/Cubenest/rrweb-stack/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/Cubenest/rrweb-stack/actions/workflows/ci.yml)
 
-<!-- Hero GIF (peek): `npx peek init` → MCP visible in Claude Code → "what's in my latest session?" returning real data. Tape file lives in `assets/`; record per the README there. -->
+![peek sessions list and drill-down — three real sessions, console + network errors, markdown-formatted output for AI paste](https://raw.githubusercontent.com/Cubenest/rrweb-stack/main/assets/peek-hero.gif)
 
 ```sh
 npm install -g @peekdev/cli
