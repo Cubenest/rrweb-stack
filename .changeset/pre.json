@@ -21,6 +21,8 @@
     "phase4c-loop4-p16-k4",
     "phase4c-loop5-p17",
     "phase4c-qa-fixes",
+    "phase5-broken-prds-links-strip",
+    "phase5-hero-gif-tracelane-cli",
     "phase5-network-plugin-phase2-tracelane",
     "phase5-network-plugin-phase3-peek",
     "phase5-npx-tracelane-init-fix",
