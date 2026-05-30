@@ -7,6 +7,10 @@ Two OSS products on one rrweb-based substrate. Both ship as `npm` packages today
 | **[tracelane](packages/tracelane-wdio/)** | The reporter for your WebdriverIO, Playwright, and Cypress tests. Self-contained HTML for every run — replay failures, audit successes, attach to any bug tracker. No SaaS, no dashboard, no signup. | `npx @tracelane/cli init` |
 | **[peek](packages/peek-cli/)** | Your real browser, exposed to your AI coding agent over MCP — capture once, query forever, never leaves your machine. | `npm install -g @peekdev/cli && npx peek init` |
 
+![tracelane install — one command](https://raw.githubusercontent.com/Cubenest/rrweb-stack/main/assets/tracelane-hero.gif)
+
+*Above: `npx @tracelane/cli init` in a real WebdriverIO project — detect runner, install, edit `wdio.conf.ts`, ignore reports dir. peek's equivalent hero GIF lands in a future launch motion chunk.*
+
 [![CI](https://github.com/Cubenest/rrweb-stack/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/Cubenest/rrweb-stack/actions/workflows/ci.yml)
 [![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/Cubenest/rrweb-stack/badge)](https://scorecard.dev/viewer/?uri=github.com/Cubenest/rrweb-stack)
 [![License](https://img.shields.io/github/license/Cubenest/rrweb-stack.svg)](LICENSE)
@@ -37,7 +41,7 @@ Docs: [apps/peek-docs/](apps/peek-docs/).
 
 ## Shared substrate
 
-`@cubenest/rrweb-core` — vendored PostHog rrweb fork, PII masking primitives, large-DOM throttling, screenshot fallback, network/console capture abstractions, compression helpers. Used by both products. See [ADR-0002](prds/adrs/0002-rrweb-posthog-fork-substrate.md).
+`@cubenest/rrweb-core` — vendored PostHog rrweb fork, PII masking primitives, large-DOM throttling, screenshot fallback, network/console capture abstractions, compression helpers. Used by both products. The fork is pinned by SHA + the substrate's NOTICE attributes both PostHog's plugin lineage and the upstream rrweb roots.
 
 ## Why two products, one repo
 
@@ -46,7 +50,7 @@ Same recording engine, same trust model, two different consumer surfaces:
 - **tracelane** ships test-time captures into a self-contained HTML artifact your team and AI agents can read offline.
 - **peek** ships live-browser captures into an MCP server your AI coding agent can query.
 
-Shared upstream means one fork to track, one masking surface to harden, one license + DCO + security policy. See [`prds/shared-preamble.md`](prds/shared-preamble.md) for the long form.
+Shared upstream means one fork to track, one masking surface to harden, one license + DCO + security policy.
 
 ## Pre-launch state
 
