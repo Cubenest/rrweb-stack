@@ -20,7 +20,7 @@ These are side projects. They do not have a fixed deadline, OKR, or marketing bu
 
 - **No service-level agreement on response time.** Issues, PRs, and security reports are addressed when the owner has bandwidth. Time-sensitive reports (security, broken-on-latest-Chrome) get priority; everything else gets best-effort.
 - **No promised release cadence.** Each package releases on Changesets, independently, when there is something worth shipping.
-- **No paid infrastructure.** No SaaS, no central server, no usage telemetry, no operating cost. The cost of doing nothing for a quarter approaches zero by design (see `prds/shared-preamble.md` §4).
+- **No paid infrastructure.** No SaaS, no central server, no usage telemetry, no operating cost. The cost of doing nothing for a quarter approaches zero by design.
 - **Pinned upstream substrate.** The vendored `@posthog/rrweb` fork in `@cubenest/rrweb-core` moves only when the core package ships a new release. Consumers are not exposed to upstream churn.
 
 If you are evaluating either product for production use, treat them as you would any unmaintained-quality alpha-tier OSS: pin the version, audit before adopting, and be prepared to fork if the project goes quiet.
@@ -129,8 +129,7 @@ attack hits is the project. We do the cheap part now.
 
 ## Source
 
-- `prds/shared-preamble.md` §4 "Side-project framing and sustainability"
-- `prds/IMPLEMENTATION_PLAN.md` Task 4.6
 - Tracking issue for second-maintainer recruitment: https://github.com/Cubenest/rrweb-stack/issues/9
-- OSS Maintenance Field Manual (one of the four research docs informing
-  the Phase 5 launch plan)
+- The OSS Maintenance Field Manual informed the side-project posture +
+  cadence above; the project's internal planning + implementation tracking
+  documents are maintainer-private.

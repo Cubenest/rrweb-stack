@@ -40,7 +40,7 @@ Same result — `npx @tracelane/cli init` is just the orchestration that does th
 ## What this is NOT
 
 - Not Cypress Cloud, Replay.io, or Sentry Session Replay. There is no SaaS to host. There is no signup. There is no dashboard. There is no telemetry. The artifact is a single HTML file on your filesystem.
-- Not a reporter (in the `@wdio/reporter` sense). `tracelane` is a WDIO **Service** because only a Service can attach to the live browser, inject the rrweb recorder, drain the in-page buffer, and use CDP for network capture ([ADR-0004](https://github.com/Cubenest/rrweb-stack/blob/main/prds/adrs/0004-p1-wdio-service-not-reporter.md)). A paired Allure **Reporter** shim is planned for v1.1.
+- Not a reporter (in the `@wdio/reporter` sense). `tracelane` is a WDIO **Service** because only a Service can attach to the live browser, inject the rrweb recorder, drain the in-page buffer, and use CDP for network capture. A paired Allure **Reporter** shim is planned for v1.1.
 - Not just for failures. `mode: 'all'` writes a report for every test — useful as a CI artifact, evidence in a PR, or a "what changed between green and red" diff.
 
 ## Full example
@@ -80,8 +80,8 @@ export const config: Options.Testrunner = {
 ## How it works
 
 - On the first test, the Service injects an rrweb recorder bundle into the page and installs an in-page event buffer (`window.__tracelane__events`).
-- The Node side drains that buffer on a poll (default every 5 s) and on every `afterTest`, re-injecting on navigation ([ADR-0006](https://github.com/Cubenest/rrweb-stack/blob/main/prds/adrs/0006-p1-in-page-buffer-node-polled.md)).
-- In `failed` mode (default) a passing test discards its buffer; a failing test's buffer is handed to [`@tracelane/report`](https://github.com/Cubenest/rrweb-stack/tree/main/packages/tracelane-report), which builds the single offline HTML (≤ 25 MB, [ADR-0005](https://github.com/Cubenest/rrweb-stack/blob/main/prds/adrs/0005-p1-failed-only-self-contained-html.md)).
+- The Node side drains that buffer on a poll (default every 5 s) and on every `afterTest`, re-injecting on navigation.
+- In `failed` mode (default) a passing test discards its buffer; a failing test's buffer is handed to [`@tracelane/report`](https://github.com/Cubenest/rrweb-stack/tree/main/packages/tracelane-report), which builds the single offline HTML (≤ 25 MB).
 
 ## Options
 

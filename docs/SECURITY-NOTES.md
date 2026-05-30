@@ -80,4 +80,4 @@ If a new high-or-critical lands inside a runtime path of a published package, tr
 
 ## Source
 
-Plan task reference: `prds/IMPLEMENTATION_PLAN.md` Task 4.5 ("Pre-publish security review").
+Authored as part of the pre-publish security review (Phase 4a). Maintainer-private planning tracks the underlying tasks.
