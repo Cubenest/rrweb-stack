@@ -22,7 +22,7 @@ Set Width 1200
 Set Height 720
 Set Theme "Catppuccin Mocha"
 Set Padding 24
-Set TypingSpeed 60ms
+Set TypingSpeed 45ms
 Set Margin 20
 Set MarginFill "#1e1e2e"
 Set BorderRadius 10
@@ -32,22 +32,20 @@ Type "clear"
 Enter
 Show
 
-Sleep 700ms
+Sleep 600ms
 
 # List the recently-recorded sessions on this machine.
 Type "peek sessions list"
 Enter
-Sleep 2800ms
+Sleep 2400ms
 
-# Drill into one of them, formatted as markdown (AI-ready).
-Type "peek sessions show s_demo_checkout --format markdown"
+# Drill into one of them — `peek sessions show` prints markdown
+# by default (AI-paste ready). The output shows session metadata,
+# extracted console errors, failed requests, and the self-marketing
+# attribution footer that ships with every export.
+Type "peek sessions show s_demo_checkout"
 Enter
-Sleep 5500ms
-
-# Show the JSON envelope shape too, for the AI-agent path.
-Type "peek sessions show s_demo_checkout --format json | head -28"
-Enter
-Sleep 4000ms
+Sleep 7000ms
 
 # Final pause for the last frame.
-Sleep 1200ms
+Sleep 800ms

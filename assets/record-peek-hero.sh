@@ -59,14 +59,28 @@ fi
 
 # --- Seed the fixture sessions.db ---------------------------------------
 
-echo "[seed] resetting $PEEK_HOME and seeding 3 demo sessions"
+echo "[seed] resetting $PEEK_HOME"
 rm -rf "$DEMO_DIR"
 mkdir -p "$PEEK_HOME"
 
-# Apply the schema. peek-cli reads from this DB; the schema is defined by
-# @peekdev/mcp's migrations (the native host owns the writes in production).
-sqlite3 "$DB_PATH" < "$REPO_ROOT/packages/peek-mcp/src/db/migrations/0001_initial.sql"
-sqlite3 "$DB_PATH" < "$REPO_ROOT/packages/peek-mcp/src/db/migrations/0002_network_bodies.sql"
+# Bootstrap the DB by letting peek-cli itself create + migrate it. Running
+# `peek sessions list` against an empty $HOME triggers openDb() which:
+#   1. Creates the sessions.db file via better-sqlite3
+#   2. Runs the @peekdev/mcp migrations (0001_initial, 0002_network_bodies)
+#   3. Records each migration in the meta-migrations table
+#
+# Doing it this way (instead of `sqlite3 < 0001_initial.sql`) keeps the
+# migrations bookkeeping consistent — otherwise a later `openDb()` would
+# try to re-apply 0001 and throw "table sessions already exists".
+echo "[seed] bootstrapping schema via peek-cli (creates DB + applies migrations)"
+HOME="$DEMO_DIR" "$CLI_BIN" sessions list >/dev/null 2>&1 || true
+
+if [ ! -f "$DB_PATH" ]; then
+  echo "ERROR: peek-cli did not create $DB_PATH" >&2
+  exit 1
+fi
+
+echo "[seed] inserting 3 demo sessions"
 
 # Seed three plausible sessions.
 # Timestamps: today at 14:00, 13:32, 11:05 UTC (recent enough to look "live").
