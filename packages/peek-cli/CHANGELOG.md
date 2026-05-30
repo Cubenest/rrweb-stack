@@ -1,5 +1,94 @@
 # @peekdev/cli
 
+## 0.1.0-alpha.14
+
+### Patch Changes
+
+- e734583: Wire up docs subdomains now that `tracelane.cubenest.in` + `peek.cubenest.in`
+  are live on Vercel (both returning HTTP/2 200, served via fresh CNAMEs to
+  `cname.vercel-dns.com`, deployed from the same `Cubenest/rrweb-stack` repo
+  that publishes these npm packages).
+
+  Per-package change is identical and minimal:
+  - Insert a single `Docs: <hosted-url>` line in the README right below the
+    hero GIF / above-the-fold install snippet.
+  - Update `package.json` `homepage` to point at the deployed docs site
+    instead of the GitHub README. The previous recursive
+    `github.com/.../tree/main/packages/<name>#readme` value was correct but
+    awkward (npm landing page → GitHub README → which then linked back to
+    install instructions); now the npm landing page's "homepage" link goes
+    straight to the right product's docs.
+
+  | Package           | Docs URL                        |
+  | ----------------- | ------------------------------- |
+  | `@tracelane/wdio` | <https://tracelane.cubenest.in> |
+  | `@tracelane/cli`  | <https://tracelane.cubenest.in> |
+  | `@peekdev/cli`    | <https://peek.cubenest.in>      |
+  | `@peekdev/mcp`    | <https://peek.cubenest.in>      |
+
+  Companion (non-published) changes shipped in the same commit:
+  - Root `README.md` "Docs:" lines updated from relative `apps/*-docs/`
+    links to the hosted URLs, with the source-tree path kept in
+    parentheses for contributors.
+  - GitHub repo `homepageUrl` set to `https://cubenest.in` via
+    `gh repo edit Cubenest/rrweb-stack --homepage` (the umbrella, not
+    one of the two products — both are equally first-class).
+  - `assets/og-card.png` committed as the canonical social-preview source
+    (1200×630, 32 KB, generated from the captured prompt). Repo-level
+    GitHub social-preview upload (Settings → Social preview) is a separate
+    one-click action by the maintainer — the file is committed so re-uploads
+    - re-renders are reproducible.
+  - `assets/README.md` updated to list `og-card.png` alongside the hero
+    GIF assets.
+
+  `@cubenest/rrweb-core`, `@tracelane/core`, and `@tracelane/report` are
+  intentionally NOT in this changeset — their READMEs didn't need
+  Docs links (they're "internal substrate" packages that disclaim direct
+  consumption), and their `homepage` fields pointing at the GitHub README
+  remain appropriate for the shared-substrate framing.
+
+- 113accd: Embed peek hero GIF at the top of the @peekdev/cli npm landing page.
+
+  Closes the Gate B1 peek hero requirement from launch plan §3.2 (Week
+  3-4). Hero shows the read side of peek's value: a recorded browser
+  session as queryable, structured output. The 15-second flow:
+
+  $ peek sessions list
+  → 3 recent sessions (shop.example.com checkout, localhost:3000
+  dashboard, github.com docs read) with error counts
+
+  $ peek sessions show s_demo_checkout --format markdown
+  → markdown summary with console errors (Stripe.js loaded twice +
+  404 from /api/checkout/confirm), network errors (404 + 500),
+  and the indirect-virality attribution footer
+
+  $ peek sessions show s_demo_checkout --format json | head -28
+  → JSON envelope with the top-level `_attribution` block
+
+  The install half (`npx peek init`) is covered in the README install
+  code block; the wizard's interactive multiSelect prompts don't record
+  cleanly in vhs inside the 15-second budget.
+
+  Asset is ~660 KB (under the 6 MB Gate B1 ceiling). 1200x720, no
+  narration, no Claude Code chat UI -- terminal-only.
+
+  Scaffolding shipped alongside (in `assets/`):
+  - `peek-hero.tape` -- the vhs script
+  - `record-peek-hero.sh` -- driver that builds @peekdev/cli from the
+    monorepo, seeds three synthetic sessions in a /tmp fixture
+    sessions.db (never touches the maintainer's real ~/.peek), and
+    invokes vhs. Re-records are one command.
+
+  Root README also picks up the peek GIF alongside tracelane's, replacing
+  the "peek's equivalent hero GIF lands in a future launch motion chunk"
+  placeholder text.
+
+  Docs only; no @peekdev/cli code change. Patch bump lands the embedded
+  image on the npm landing page.
+
+- Updated dependencies [e734583]
+  - @peekdev/mcp@0.1.0-alpha.9
+
 ## 0.1.0-alpha.13
 
 ### Patch Changes
