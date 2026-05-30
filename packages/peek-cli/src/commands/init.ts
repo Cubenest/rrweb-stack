@@ -8,6 +8,7 @@
 
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
+import { join } from 'node:path';
 import { parseArgs } from 'node:util';
 import {
   type InstallTarget,
@@ -19,6 +20,7 @@ import {
   realSink,
   resolveInstallTargets,
 } from '@peekdev/mcp/native-host';
+import { installSkill } from '../lib/claude-skill.js';
 import {
   chromeExtensionOrigin,
   extractDevId,
@@ -84,7 +86,7 @@ function writeClientConfig(client: DetectedClient): WriteOutcome {
   }
 }
 
-async function configureClients(homeDir: string, cwd: string): Promise<void> {
+async function configureClients(homeDir: string, cwd: string): Promise<DetectedClient[]> {
   const detected = detectClients(homeDir, cwd, existsSync);
   const present = detected.filter((c) => c.exists);
 
@@ -109,7 +111,7 @@ async function configureClients(homeDir: string, cwd: string): Promise<void> {
 
   if (chosen.length === 0) {
     process.stdout.write('No clients selected; skipping MCP config.\n');
-    return;
+    return [];
   }
 
   for (const client of chosen) {
@@ -141,6 +143,60 @@ async function configureClients(homeDir: string, cwd: string): Promise<void> {
     } else {
       process.stdout.write(`  ✗ ${client.label}: ${client.configPath} — ${res.error}\n`);
     }
+  }
+
+  return chosen;
+}
+
+/**
+ * Drop the peek Claude Code Skill (SKILL.md) into `~/.claude/skills/peek/`.
+ *
+ * The skill guides Claude Code on when to reach for peek's MCP tools — it's
+ * complementary to the `mcpServers.peek` block written by configureClients
+ * (the latter exposes the tools; the skill teaches Claude when to use them).
+ *
+ * Runs when Claude Code is among the just-configured clients OR already has
+ * `~/.claude.json` (i.e. the user has Claude Code installed regardless of
+ * whether they re-selected it in this run). Skipped via `--skip-skill`.
+ *
+ * Idempotent: re-running over an identical file is a no-op.
+ */
+function installClaudeSkill(homeDir: string, chosenClients: DetectedClient[]): void {
+  const claudeChosen = chosenClients.some((c) => c.id === 'claude-code');
+  const claudeConfigExists = existsSync(join(homeDir, '.claude.json'));
+  if (!claudeChosen && !claudeConfigExists) {
+    // No Claude Code on this machine + the user didn't ask to configure it.
+    // Don't write a skill for a tool they don't have.
+    return;
+  }
+
+  const result = installSkill(homeDir, {
+    fileExists: existsSync,
+    readFile: (p) => readFileSync(p, 'utf8'),
+    mkdir: (p) => mkdirSync(p, { recursive: true }),
+    writeFile: (p, c) => atomicWriteFileSync(p, c),
+  });
+
+  switch (result.status) {
+    case 'wrote':
+      process.stdout.write(`  ✔ Wrote Claude Code skill: ${result.target}\n`);
+      break;
+    case 'updated':
+      process.stdout.write(`  ✔ Refreshed Claude Code skill: ${result.target}\n`);
+      break;
+    case 'unchanged':
+      process.stdout.write(`  · Claude Code skill already current: ${result.target}\n`);
+      break;
+    case 'source_missing':
+      // Should never happen in a published tarball — postbuild copies it in.
+      // If it does (e.g. broken local dev environment), say so but don't fail.
+      process.stdout.write(
+        `  ! Claude Code skill source missing at ${result.source}; skipped. (Reinstall @peekdev/cli.)\n`,
+      );
+      break;
+    case 'error':
+      process.stdout.write(`  ✗ Claude Code skill: ${result.target} — ${result.error}\n`);
+      break;
   }
 }
 
@@ -307,6 +363,7 @@ export async function runInit(argv: string[]): Promise<number> {
     options: {
       'skip-native-host': { type: 'boolean' },
       'skip-clients': { type: 'boolean' },
+      'skip-skill': { type: 'boolean' },
     },
     allowPositionals: false,
   });
@@ -317,8 +374,13 @@ export async function runInit(argv: string[]): Promise<number> {
 
   process.stdout.write('peek init — configure MCP clients + the native messaging host.\n\n');
 
+  let chosenClients: DetectedClient[] = [];
   if (!values['skip-clients']) {
-    await configureClients(homeDir, cwd);
+    chosenClients = await configureClients(homeDir, cwd);
+  }
+
+  if (!values['skip-skill']) {
+    installClaudeSkill(homeDir, chosenClients);
   }
 
   if (!values['skip-native-host']) {

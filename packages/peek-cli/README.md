@@ -77,6 +77,12 @@ Full data-handling policy: [`docs/peek/PRIVACY_POLICY.md`](https://github.com/Cu
 
 If your client isn't auto-detected, `peek init` prints the JSON config you can paste manually. The MCP server speaks the standard stdio protocol (spec 2025-11-25 + 2025-03-26 back-compat).
 
+### Claude Code skill
+
+When Claude Code is among the configured clients (or `~/.claude.json` already exists), `peek init` also drops a SKILL.md into `~/.claude/skills/peek/`. Claude Code loads it on session start and uses it to decide *when* to reach for peek's MCP tools — investigating an error from a manual repro, generating a Playwright test from a session, querying DOM state at a past moment, etc.
+
+The skill is idempotent on re-run (no-op when the on-disk content matches the bundled source). Skip the install with `peek init --skip-skill`. Want it without running `peek init`? See the curl-able recipe at [`docs/peek/distribution/claude-code-skill.md`](https://github.com/Cubenest/rrweb-stack/blob/main/docs/peek/distribution/claude-code-skill.md).
+
 ## Versioning & compatibility
 
 Semantic Versioning. Currently `0.1.0-alpha.x` — pre-release; the CLI surface is stable in spirit but flags may rename. See [SUPPORTED.md](https://github.com/Cubenest/rrweb-stack/blob/main/SUPPORTED.md) for the compatibility matrix.
