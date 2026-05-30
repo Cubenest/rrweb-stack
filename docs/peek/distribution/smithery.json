@@ -1,6 +1,10 @@
 {
-  "$comment": "Pre-fill for Smithery MCP server registration (Task 3.30). DRAFT — DO NOT SUBMIT until Phase 5 launch. The Smithery server schema lives at https://smithery.ai/docs/build/project-config and is captured in `smithery.yaml` at the root of an MCP server repo. This file holds the same fields in JSON form so the agent that lands the submission PR can transcribe them verbatim. Verify field names against the latest Smithery schema before submitting — Smithery has changed schema versions in the past (v1 → v2 transition documented in their changelog).",
+  "$comment": "Schema audit performed 2026-05-30. Submission flow has changed since the 2025 draft of this file: Smithery no longer documents a `smithery.yaml` repo file. Current docs (https://smithery.ai/docs/build/publish) describe TWO publishing paths — (1) a public HTTPS endpoint registered at https://smithery.ai/new, and (2) a local-stdio path via an MCPB (.mcpb) bundle uploaded via the `smithery mcp publish` CLI. peek is stdio-only (ADR-0007 — no HTTP listener by design), so the MCPB path is the one to use. This file documents that path. The structured fields below feed both the upload form and the CLI metadata; transcribe them at submission time. Confirm field names against the live docs at submission.",
+  "submission_method": "mcpb-bundle-via-cli",
+  "submission_url": "https://smithery.ai/new",
+  "cli_command": "smithery mcp publish ./peek-mcp.mcpb -n cubenest/peek",
   "name": "peek",
+  "namespaced_name": "cubenest/peek",
   "displayName": "peek",
   "description": "Bring your real authenticated browser session to AI coding agents. Local-first MCP server backed by a Chrome MV3 extension that records rrweb + console + network into a local SQLite database. No telemetry, no cloud — sessions stay on the user's machine.",
   "homepage": "https://github.com/Cubenest/rrweb-stack/tree/main/packages/peek-mcp",
@@ -8,7 +12,16 @@
   "license": "Apache-2.0",
   "author": "Cubenest",
   "category": "developer-tools",
-  "tags": ["browser", "rrweb", "session-recording", "chrome-extension", "local-first", "privacy"],
+  "pricing": "free",
+  "tags": [
+    "browser",
+    "rrweb",
+    "session-recording",
+    "chrome-extension",
+    "local-first",
+    "privacy",
+    "session-replay"
+  ],
   "transport": "stdio",
   "runtime": "node",
   "install": {
@@ -41,26 +54,53 @@
   },
   "tools": [
     {
-      "name": "peek_sessions_list",
-      "description": "List recorded browser sessions in the local SQLite database."
+      "name": "list_recent_sessions",
+      "description": "List recently recorded browser sessions, newest first."
     },
     {
-      "name": "peek_session_get",
-      "description": "Fetch a recorded session by id — DOM events, console, network metadata, optional masked bodies."
+      "name": "get_session_summary",
+      "description": "LLM-readable narrative summary of one session: pages visited, click/input counts, navigations, error counts."
     },
     {
-      "name": "peek_execute_action",
-      "description": "Dispatch a UI action to a recorded site, gated by the per-origin permission model (Level 0-4) and the destructive-action blocklist."
+      "name": "get_session_console_errors",
+      "description": "List console error messages recorded in a session, oldest first."
     },
     {
-      "name": "peek_request_authorization",
-      "description": "Request user confirmation in the extension's side panel before executing a sensitive action."
+      "name": "get_session_network_errors",
+      "description": "List failed/notable network requests in a session (status >= statusGte or network error)."
+    },
+    {
+      "name": "get_user_action_before_error",
+      "description": "Show the last N user actions (click/type/navigate) before a console error."
+    },
+    {
+      "name": "generate_playwright_repro",
+      "description": "Generate a runnable Playwright test from the user actions in a session, optionally limited to a time window."
+    },
+    {
+      "name": "get_dom_snapshot",
+      "description": "Reconstruct the DOM at a timestamp (or selector subtree within it) and return it as HTML."
+    },
+    {
+      "name": "query_dom_history",
+      "description": "Timeline of attribute and/or text changes for a selector's node over a session."
+    },
+    {
+      "name": "request_authorization",
+      "description": "Ask the user to authorize an action via the extension side panel (Level 3 act-with-confirm); returns a one-shot confirmToken. Recorded in ~/.peek/audit.log."
+    },
+    {
+      "name": "execute_action",
+      "description": "Execute an action in the user's browser. Requires per-origin permission Level 3+; destructive-action blocklist always prompts. Recorded in ~/.peek/audit.log."
     }
   ],
+  "TODO_AFTER_CWS": [
+    "Once the Chrome Web Store listing for the companion extension is live, add the CWS URL to the description body so reviewers can install both halves of peek in one flow.",
+    "If Smithery's submission form prompts for a 'companion app store URL', paste the CWS listing URL there."
+  ],
   "TODO_VERIFY": [
-    "Smithery may require a `mcpVersion` field aligned with the @modelcontextprotocol/sdk version we ship.",
-    "Smithery may require a `pricing` field (typically `free` for OSS).",
-    "Confirm `category` against Smithery's enumerated list at submission time (developer-tools is most likely correct).",
-    "Smithery may require a public Chrome Web Store URL for the companion extension — add once the CWS listing is live (Phase 4-5)."
+    "An MCPB (.mcpb) bundle for @peekdev/mcp does not exist yet — peek-mcp currently ships as an npm tarball. The bundle has to be produced at submission time (the @anthropic-ai/mcpb tooling, or hand-rolled per the MCPB spec). FLAG TO MAINTAINER: this is a Phase 5 follow-up that has to happen BEFORE the Smithery submission; the other three registries don't need it.",
+    "Smithery's 'category' enum may have moved off 'developer-tools' (live form should be cross-checked at submission time). If the closest match has changed (e.g. 'utilities', 'browser-automation'), use that.",
+    "If Smithery auto-scans the MCPB for tool metadata it will overwrite the descriptions above; only the bundle's manifest matters for what users see. If it does NOT auto-scan, paste the tools[] array verbatim into the form."
   ]
 }

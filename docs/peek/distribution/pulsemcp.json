@@ -1,12 +1,17 @@
 {
-  "$comment": "Pre-fill for PulseMCP server registration (Task 3.30). DRAFT — DO NOT SUBMIT until Phase 5 launch. PulseMCP's primary discovery path is automated scraping of npm packages with the `mcp` keyword (per the distribution doc: 'PulseMCP scrapes daily from npm with the mcp keyword'). They also accept manual submissions via https://www.pulsemcp.com/submit which require the fields below. Confirm the exact submission form at submission time.",
+  "$comment": "Schema audit performed 2026-05-30. PulseMCP's current submission form (https://www.pulsemcp.com/submit) accepts only a single URL — they then automate the rest. PulseMCP's API docs (https://www.pulsemcp.com/api) confirm two ingestion paths: (1) manual submission via the form's URL field, (2) automatic ingestion from the official MCP Registry at registry.modelcontextprotocol.io. The earlier draft's claim of 'scrapes npm for the mcp keyword' is not corroborated by their current docs — that path may have been retired in favor of the official-registry feed. The metadata below is the SOURCE CONTENT a maintainer can paste into the form's free-text fields (description / categories) if the form prompts for them, or use to write the curated entry once PulseMCP picks the listing up. Submit the npm registry listing for @peekdev/mcp as the URL.",
+  "submission_method": "url-only-form",
+  "submission_url_to_paste": "https://www.npmjs.com/package/@peekdev/mcp",
+  "fallback_submission_url": "https://github.com/Cubenest/rrweb-stack/tree/main/packages/peek-mcp",
+  "submission_form": "https://www.pulsemcp.com/submit",
+  "automatic_ingest_note": "PulseMCP ingests the official MCP Registry daily — if peek is published to registry.modelcontextprotocol.io first (see modelcontextprotocol-servers.md), PulseMCP should auto-discover it within ~24h. Check before submitting the form manually to avoid duplicates.",
   "name": "peek",
   "slug": "peek",
   "npm_package": "@peekdev/mcp",
   "github_repository": "https://github.com/Cubenest/rrweb-stack",
   "homepage": "https://github.com/Cubenest/rrweb-stack/tree/main/packages/peek-mcp",
   "short_description": "Bring your real authenticated browser session to AI coding agents. Local-first MCP server + Chrome extension.",
-  "long_description": "peek lets AI coding assistants see (and optionally drive) the user's actual logged-in browser. A Chrome MV3 extension records the session (rrweb DOM + console + network metadata, with PII masking) and ships it through a native-messaging stdio bridge to a local MCP server (`peek-mcp`). All data stays on the user's machine — sessions are persisted to a local SQLite database at `~/.peek/sessions.db`. Per-origin opt-in, five permission levels (Off → YOLO), and a destructive-action blocklist gate every action the agent can take.\n\nUse cases: debugging a flaky login flow with Claude Code, asking Cursor to reproduce a bug a teammate saw, having Cline scaffold a Playwright test from a session you just recorded, letting Windsurf walk through an admin dashboard you have access to but the agent does not.\n\nSee the privacy policy at docs/peek/PRIVACY_POLICY.md.",
+  "long_description": "peek lets AI coding assistants see (and optionally drive) the user's actual logged-in browser. A Chrome MV3 extension records the session (rrweb DOM + console + network metadata, with PII masking) and ships it through a native-messaging stdio bridge to a local MCP server (`peek-mcp`). All data stays on the user's machine — sessions are persisted to a local SQLite database at `~/.peek/sessions.db`. Per-origin opt-in, five permission levels (Off -> YOLO), and a destructive-action blocklist gate every action the agent can take.\n\nUse cases: debugging a flaky login flow with Claude Code, asking Cursor to reproduce a bug a teammate saw, having Cline scaffold a Playwright test from a session you just recorded, letting Windsurf walk through an admin dashboard you have access to but the agent does not.\n\nSee the privacy policy at docs/peek/PRIVACY_POLICY.md.",
   "license": "Apache-2.0",
   "transport": "stdio",
   "language": "TypeScript",
@@ -24,20 +29,32 @@
     "claude_desktop": "Add `peek` to `claude_desktop_config.json` -> `mcpServers`: `{ \"command\": \"npx\", \"args\": [\"-y\", \"@peekdev/mcp\"] }`",
     "claude_code": "claude mcp add peek -- npx -y @peekdev/mcp",
     "cursor": "Add to `.cursor/mcp.json` -> `mcpServers`: `{ \"command\": \"npx\", \"args\": [\"-y\", \"@peekdev/mcp\"] }`",
-    "extension": "Install the companion Chrome extension via the Chrome Web Store (link added at Phase 5 launch) — peek-mcp requires it to capture sessions."
+    "extension": "Install the companion Chrome extension via the Chrome Web Store (link added once the CWS listing is approved) — peek-mcp requires it to capture sessions."
   },
   "tools": [
-    "peek_sessions_list",
-    "peek_session_get",
-    "peek_execute_action",
-    "peek_request_authorization"
+    "list_recent_sessions",
+    "get_session_summary",
+    "get_session_console_errors",
+    "get_session_network_errors",
+    "get_user_action_before_error",
+    "generate_playwright_repro",
+    "get_dom_snapshot",
+    "query_dom_history",
+    "request_authorization",
+    "execute_action"
   ],
-  "screenshots": [
-    "$TODO add screenshots/peek-sidepanel.png + screenshots/peek-session-view.png once the alpha UI freezes (Phase 3e is the prep chunk; UI screenshots come in Phase 4)."
+  "quality_signals": [
+    "Apache-2.0 OSS, public repo at https://github.com/Cubenest/rrweb-stack",
+    "Published privacy policy + threat model at docs/peek/PRIVACY_POLICY.md and docs/peek/THREATMODEL.md",
+    "Test suite: 198 mcp + 256 extension green at submission time; CI runs Playwright persistent-context smoke",
+    "No telemetry, no cloud — entirely local; verifiable from the source (no network destinations in `packages/peek-mcp/src/`)"
+  ],
+  "TODO_AFTER_CWS": [
+    "Once the Chrome Web Store listing is live, the long_description's 'extension' install line can be updated with the actual CWS URL.",
+    "PulseMCP listings can show a 'gallery image' (typically 1280x640 PNG); the CWS submission assets will satisfy this — re-use them once they're produced."
   ],
   "TODO_VERIFY": [
-    "PulseMCP may require a 'gallery image' (1280×640 PNG) — produce alongside the CWS submission assets.",
-    "PulseMCP filters out 'low quality implementations' per their own stats page; the listing should explicitly mention the OSS license + tests + the published audit trail to clear that filter.",
-    "Confirm field names against the live submission form before Phase 5 (their form has evolved across 2024-2026)."
+    "PulseMCP filters out 'low quality implementations' per their stats page. The quality_signals[] above are the maintainer's pitch — confirm they're surfaced in the listing once it lands.",
+    "If PulseMCP's auto-ingest from the MCP Registry already picked up peek before this manual submission, skip the form to avoid a duplicate. Check at https://www.pulsemcp.com/servers?q=peek first."
   ]
 }

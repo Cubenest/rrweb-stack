@@ -107,6 +107,24 @@ Local-only. No network destinations. No telemetry. The MCP transport is stdio ov
 
 Full data-handling policy: [`docs/peek/PRIVACY_POLICY.md`](https://github.com/Cubenest/rrweb-stack/blob/main/docs/peek/PRIVACY_POLICY.md). Threat model: [`docs/peek/THREATMODEL.md`](https://github.com/Cubenest/rrweb-stack/blob/main/docs/peek/THREATMODEL.md).
 
+## Distribution (maintainer-facing)
+
+> This section is for the maintainer's submission workflow at Phase 5 launch.
+> If you're a user, you don't need any of this — just `npx @peekdev/cli init`.
+
+peek is listed (or queued for listing) on the discovery surfaces below.
+Each linked file is a **submission scaffold** with pre-filled metadata
+audited against the registry's current schema as of 2026-05-30 — not a
+user-facing install guide.
+
+- [Official MCP Registry submission](https://github.com/Cubenest/rrweb-stack/blob/main/docs/peek/distribution/modelcontextprotocol-servers.md) — `server.json` for `registry.modelcontextprotocol.io` via `mcp-publisher` CLI. Downstream registries (PulseMCP, others) ingest from here.
+- [PulseMCP submission](https://github.com/Cubenest/rrweb-stack/blob/main/docs/peek/distribution/pulsemcp.json) — URL-only form + auto-ingest from the MCP Registry.
+- [Smithery submission](https://github.com/Cubenest/rrweb-stack/blob/main/docs/peek/distribution/smithery.json) — MCPB bundle uploaded via `smithery mcp publish`.
+- [mcp.so submission](https://github.com/Cubenest/rrweb-stack/blob/main/docs/peek/distribution/mcp-so.md) — web-form submission with the source content paste-ready.
+- [Claude Code skill standalone install](https://github.com/Cubenest/rrweb-stack/blob/main/docs/peek/distribution/claude-code-skill.md) — curl recipe for users who want the Claude Code skill without running `peek init`.
+
+Launch order is documented in [`docs/peek/distribution/README.md`](https://github.com/Cubenest/rrweb-stack/blob/main/docs/peek/distribution/README.md) (CWS first, then the MCP-registry fan-out).
+
 ## License
 
 Apache 2.0. The bundled rrweb engine remains MIT-licensed; see `NOTICE`.
