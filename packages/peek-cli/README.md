@@ -83,6 +83,25 @@ When Claude Code is among the configured clients (or `~/.claude.json` already ex
 
 The skill is idempotent on re-run (no-op when the on-disk content matches the bundled source). Skip the install with `peek init --skip-skill`. Want it without running `peek init`? See the curl-able recipe at [`docs/peek/distribution/claude-code-skill.md`](https://github.com/Cubenest/rrweb-stack/blob/main/docs/peek/distribution/claude-code-skill.md).
 
+### Cursor — project-level recipe
+
+`peek init` writes Cursor's MCP server entry to the global config at `~/.cursor/mcp.json` — every project opened in Cursor inherits it. If you'd rather scope peek to one project (a repo where peek captures matter but other repos on the same machine should not surface the tools), drop a `.cursor/mcp.json` into the workspace root:
+
+```json
+{
+  "mcpServers": {
+    "peek": {
+      "command": "npx",
+      "args": ["-y", "@peekdev/mcp"]
+    }
+  }
+}
+```
+
+Commit it or add it to `.gitignore` — Cursor reads either. Cursor's docs document the global file as "tools available everywhere" and the project file as "project-specific tools" (see [docs.cursor.com/context/mcp](https://cursor.com/docs/context/mcp) for current merge semantics).
+
+This is the same block `peek init` writes to the global file, so the two configs are interchangeable. You still need the [Peek Chrome extension](https://chromewebstore.google.com/) installed and the native messaging host registered — run `peek init --skip-clients` if you want the host installed without touching any MCP config.
+
 ## Versioning & compatibility
 
 Semantic Versioning. Currently `0.1.0-alpha.x` — pre-release; the CLI surface is stable in spirit but flags may rename. See [SUPPORTED.md](https://github.com/Cubenest/rrweb-stack/blob/main/SUPPORTED.md) for the compatibility matrix.
