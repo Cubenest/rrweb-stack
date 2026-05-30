@@ -8,8 +8,9 @@ visible.
 
 This file enumerates the attack surfaces and existing / outstanding
 mitigations for `@peekdev/extension`, `@peekdev/mcp`, and `@peekdev/cli`.
-It is referenced from [`docs/PHASE_5_LAUNCH_PLAN.md`](../PHASE_5_LAUNCH_PLAN.md)
-Gate A and from [`SECURITY.md`](../../SECURITY.md).
+Cross-referenced from [`SECURITY.md`](../../SECURITY.md) and the
+project's pre-launch supply-chain hygiene controls (see
+`docs/SUSTAINABILITY.md` §"Pre-launch hygiene controls").
 
 When this stub is replaced, follow the format described in the OSS
 Maintenance Field Manual §5.3 — one surface per row in each table,
@@ -92,5 +93,5 @@ real threat model is written.
 - [`docs/peek/PERMISSION_JUSTIFICATION.md`](PERMISSION_JUSTIFICATION.md)
 - [`docs/SECURITY-NOTES.md`](../SECURITY-NOTES.md)
 - [`SECURITY.md`](../../SECURITY.md)
-- [`docs/PHASE_5_LAUNCH_PLAN.md`](../PHASE_5_LAUNCH_PLAN.md) Gate A
+- [`docs/SUSTAINABILITY.md`](../SUSTAINABILITY.md) §"Pre-launch hygiene controls"
 - ADR-0007 / 0008 / 0009 / 0010

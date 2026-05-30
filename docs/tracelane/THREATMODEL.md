@@ -8,9 +8,10 @@ visible.
 
 This file enumerates the attack surfaces and existing / outstanding
 mitigations for `@tracelane/core`, `@tracelane/report`, and
-`@tracelane/wdio`. It is referenced from
-[`docs/PHASE_5_LAUNCH_PLAN.md`](../PHASE_5_LAUNCH_PLAN.md) Gate A and from
-[`SECURITY.md`](../../SECURITY.md).
+`@tracelane/wdio`. Cross-referenced from
+[`SECURITY.md`](../../SECURITY.md) and the project's pre-launch
+supply-chain hygiene controls (see `docs/SUSTAINABILITY.md` §"Pre-launch
+hygiene controls").
 
 When this stub is replaced, follow the format described in the OSS
 Maintenance Field Manual §5.3 — one surface per row in each table,
@@ -90,6 +91,6 @@ explicit grade (`mitigated` / `partial` / `accepted` / `open`), and a
 
 - [`docs/SECURITY-NOTES.md`](../SECURITY-NOTES.md)
 - [`SECURITY.md`](../../SECURITY.md)
-- [`docs/PHASE_5_LAUNCH_PLAN.md`](../PHASE_5_LAUNCH_PLAN.md) Gate A
+- [`docs/SUSTAINABILITY.md`](../SUSTAINABILITY.md) §"Pre-launch hygiene controls"
 - `packages/tracelane-wdio/NOTICE`
 - `packages/tracelane-report/NOTICE`

@@ -11,7 +11,7 @@ Generated artifacts (`.gif`, `.png`, `.webm`) **are committed**. The sources use
 | `tracelane-hero.tape` | `packages/tracelane-wdio/README.md` (hero GIF) | see "Recording tracelane-hero.gif" below |
 | `tracelane-hero.gif` (committed once recorded) | same | same |
 
-`peek-hero.tape` + `peek-hero.gif` land in Week 3-4 per `docs/PHASE_5_LAUNCH_PLAN.md` row 3-4.
+`peek-hero.tape` + `peek-hero.gif` land in a future launch motion chunk.
 
 ## Recording `tracelane-hero.gif`
 

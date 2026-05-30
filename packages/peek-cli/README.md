@@ -7,7 +7,7 @@
 [![license](https://img.shields.io/npm/l/@peekdev/cli.svg)](https://github.com/Cubenest/rrweb-stack/blob/main/LICENSE)
 [![CI](https://github.com/Cubenest/rrweb-stack/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/Cubenest/rrweb-stack/actions/workflows/ci.yml)
 
-<!-- Hero GIF lands in Week 3-4 per docs/PHASE_5_LAUNCH_PLAN.md — `npx peek init` → MCP visible in Claude Code → "what's in my latest session?" returning real data. See assets/README.md. -->
+<!-- Hero GIF (peek): `npx peek init` → MCP visible in Claude Code → "what's in my latest session?" returning real data. Tape file lives in `assets/`; record per the README there. -->
 
 ```sh
 npm install -g @peekdev/cli

@@ -50,7 +50,7 @@ Shared upstream means one fork to track, one masking surface to harden, one lice
 
 ## Pre-launch state
 
-Pre-1.0. Alpha packages live on npm. Branch protection is on `main` (PR + CI + DCO + linear history). All workflows use Trusted Publishing OIDC + SLSA provenance. Renovate runs with a 7-day cooldown (21 days for the `@posthog/rrweb` lineage) and `config:best-practices`. See [`docs/PHASE_5_LAUNCH_PLAN.md`](docs/PHASE_5_LAUNCH_PLAN.md) for the public-launch sequence.
+Pre-1.0. Alpha packages live on npm. Branch protection is on `main` (PR + CI + DCO + linear history). All workflows use Trusted Publishing OIDC + SLSA provenance. Renovate runs with a 7-day cooldown (21 days for the `@posthog/rrweb` lineage) and `config:best-practices`. Public launch motion is in progress.
 
 ## Contributing
 
