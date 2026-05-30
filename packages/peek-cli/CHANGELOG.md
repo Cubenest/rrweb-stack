@@ -1,5 +1,68 @@
 # @peekdev/cli
 
+## 0.1.0-alpha.13
+
+### Patch Changes
+
+- 96a4b24: Add `keywords` and `funding` to every published package.json.
+
+  All 7 packages previously shipped with empty `keywords: []` arrays and
+  no `funding` field. The audit pass surfaced this as a discoverability
+  gap on the npm side — npm search ranks heavily on keywords, and the
+  "fund this package" badge only appears when `funding` is set in the
+  manifest.
+
+  Keywords picked per package to match real npm search intent (e.g.
+  `rrweb`, `mcp`, `webdriverio`, `claude-code`, `session-replay`), 6–10
+  each. Funding points uniformly at the GitHub Sponsors profile
+  (`https://github.com/sponsors/harry-harish`) so npm renders the badge
+  and `npm fund` resolves to a working URL across the whole monorepo.
+
+  No code change; no API change. README and package source are
+  unchanged. Patch bumps land the corrected metadata on the npm listing
+  the next time the Version Packages PR is consumed.
+
+  Companion changes (not visible on npm but shipped to the public repo
+  in the same commit):
+  - `.github/FUNDING.yml` (`github: [harry-harish]`) so the GitHub
+    Sponsors button appears on the repo header
+  - `.github/ISSUE_TEMPLATE/{config,bug,feature}.yml` so new issues are
+    guided and the security path correctly redirects to GHSA
+  - `.mcp.json` at repo root so the cursor.directory auto-detector can
+    pick up peek when the maintainer submits the repo (per the
+    Week 2-3 cursor.directory recipe shipped earlier today)
+  - Repo description + topics updated via `gh repo edit` (separate
+    audit-trail step, no commit needed)
+
+- d1879ac: Document the project-level Cursor `.cursor/mcp.json` recipe.
+
+  `peek init` writes Cursor's MCP server block to the global config at
+  `~/.cursor/mcp.json`. Some users prefer to scope peek per-project — a
+  project-level `.cursor/mcp.json` at the workspace root is the supported
+  alternative. New README subsection under "Supported AI clients" walks
+  through the trade-off (global vs project), shows the exact JSON, and
+  points to `peek init --skip-clients` as the way to install the native
+  messaging host without writing any MCP config.
+
+  The recipe is documentation only — no code changes to `@peekdev/cli`.
+  The block shown in the README is byte-identical to `PEEK_MCP_BLOCK` in
+  `src/lib/init-config.ts`, so the two configs remain interchangeable.
+
+  Companion artifact at `docs/peek/distribution/cursor-directory-submission.md`
+  documents the (maintainer-side) cursor.directory submission flow: the
+  2026 migration from `pontusab/cursor.directory` to
+  `cursor/community-plugins` switched the contract from "open a PR" to
+  "submit the repo URL via the web form and let the auto-detector find
+  `.mcp.json` at repo root." The doc captures the exact `.mcp.json` shape
+  to ship on `Cubenest/rrweb-stack` and the per-launch checklist before
+  the maintainer triggers the submission.
+
+  Per launch plan §3.2, this is the Week 2-3 peek/Cursor ship.
+
+- Updated dependencies [96a4b24]
+- Updated dependencies [be1290b]
+  - @peekdev/mcp@0.1.0-alpha.8
+
 ## 0.1.0-alpha.12
 
 ### Patch Changes

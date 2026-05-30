@@ -1,6 +1,6 @@
 {
   "name": "@tracelane/core",
-  "version": "0.1.0-alpha.7",
+  "version": "0.1.0-alpha.8",
   "description": "Framework-agnostic rrweb recording engine for tracelane. Wraps a per-framework browser object behind a common BrowserExecutor interface.",
   "keywords": [
     "tracelane",
@@ -25,7 +25,11 @@
       "import": "./dist/index.js"
     }
   },
-  "files": ["dist", "NOTICE", "README.md"],
+  "files": [
+    "dist",
+    "NOTICE",
+    "README.md"
+  ],
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",

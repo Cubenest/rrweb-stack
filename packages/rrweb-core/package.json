@@ -1,6 +1,6 @@
 {
   "name": "@cubenest/rrweb-core",
-  "version": "0.1.0-alpha.3",
+  "version": "0.1.0-alpha.4",
   "description": "Shared rrweb-based capture substrate for tracelane and peek.",
   "keywords": [
     "rrweb",
@@ -25,7 +25,11 @@
       "import": "./dist/index.js"
     }
   },
-  "files": ["dist", "NOTICE", "README.md"],
+  "files": [
+    "dist",
+    "NOTICE",
+    "README.md"
+  ],
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
