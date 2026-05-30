@@ -1,6 +1,6 @@
 {
   "name": "@peekdev/cli",
-  "version": "0.1.0-alpha.13",
+  "version": "0.1.0-alpha.14",
   "description": "peek command-line tool. A thin read-mostly client of the native host's ~/.peek/sessions.db (ADR-0007): status, sessions list/show/export/delete, the `peek init` MCP-client wizard, and `peek audit log`.",
   "keywords": [
     "peek",
@@ -29,7 +29,11 @@
       "import": "./dist/index.js"
     }
   },
-  "files": ["dist", "NOTICE", "README.md"],
+  "files": [
+    "dist",
+    "NOTICE",
+    "README.md"
+  ],
   "scripts": {
     "build": "tsc -p tsconfig.json && node ./scripts/postbuild.mjs",
     "typecheck": "tsc -p tsconfig.json --noEmit",
