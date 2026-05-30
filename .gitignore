@@ -31,10 +31,15 @@ playwright-report/
 .env.*
 !.env.example
 .changeset/.cache/
-# Maintainer-private docs that don't belong in the public repo. Things like
-# the operational launch plan (contact lists, day-90 thresholds, anti-pattern
-# floor) and the personal-blog draft for harish.dev. The repo went public on
-# 2026-05-29; this directory was added 2026-05-30 to host the docs that
-# moved out of `docs/` in the audit-cleanup pass. Anything dropped here
-# stays on the maintainer's machine and is never committed.
+# Symlink to the maintainer-private companion repo (Cubenest/rrweb-stack-private)
+# documented in CLAUDE.md. Convention: clone both repos as siblings on the dev
+# machine + `ln -s ../rrweb-stack-private _context`. The symlink lives in the
+# working tree but is never tracked. CI runners + contributors without access
+# see a dangling symlink and gracefully degrade.
+_context
+_context/
+# (Pre-_context/ migration) Previously used local-only directory for the same
+# launch plan + origin-story content. Now lives in the companion repo at
+# `_context/docs/`. Pattern retained so any leftover local copies stay
+# untracked.
 docs-private/
