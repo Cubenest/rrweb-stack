@@ -210,12 +210,12 @@ posture:
 ## Suggesting a new integration target
 
 Each product caps itself at **5 active first-party integrations** — see
-the integration-led GTM strategy summarised in
-[`docs/SUSTAINABILITY.md`](docs/SUSTAINABILITY.md) and detailed in
-`docs/tracelence-peek-dev-distribution.md`. The Phase 5 launch plan
-(authored in parallel as `docs/PHASE_5_LAUNCH_PLAN.md` — forward
-reference; may not exist at the moment you read this) tracks which
-slots are filled.
+the integration-led GTM posture summarised in
+[`docs/SUSTAINABILITY.md`](docs/SUSTAINABILITY.md). The maintainer
+tracks integration-slot occupancy in a private operational doc; the
+public-side signal is whether the package is published under
+`@tracelane/*` or `@peekdev/*` and listed under "Packages" in the root
+README.
 
 To propose a new integration:
 

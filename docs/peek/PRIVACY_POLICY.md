@@ -109,12 +109,13 @@ particularly:
   writers.
 
 No build phase, no installer, and no runtime path makes network calls to
-any host outside `chrome.runtime.connectNative('com.peekdev.host')`.
+any host outside `chrome.runtime.connectNative('com.cubenest.peek')`.
 
 ## Contact
 
-For questions or to report a privacy issue, open an issue on the
-repository or email [redacted-maintainer-email].
+For questions, open an issue on the [repository](https://github.com/Cubenest/rrweb-stack/issues).
+
+To report a privacy or security vulnerability, please use [GitHub's private vulnerability reporting](https://github.com/Cubenest/rrweb-stack/security/advisories/new) per the [`SECURITY.md`](https://github.com/Cubenest/rrweb-stack/blob/main/SECURITY.md) policy — coordinated disclosure with a 3-business-day acknowledgement target.
 
 ## Changes
 

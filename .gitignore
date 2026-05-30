@@ -31,3 +31,10 @@ playwright-report/
 .env.*
 !.env.example
 .changeset/.cache/
+# Maintainer-private docs that don't belong in the public repo. Things like
+# the operational launch plan (contact lists, day-90 thresholds, anti-pattern
+# floor) and the personal-blog draft for harish.dev. The repo went public on
+# 2026-05-29; this directory was added 2026-05-30 to host the docs that
+# moved out of `docs/` in the audit-cleanup pass. Anything dropped here
+# stays on the maintainer's machine and is never committed.
+docs-private/

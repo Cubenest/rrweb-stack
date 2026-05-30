@@ -85,8 +85,7 @@ Reading this document does not mean these projects will fail. It means they are 
 ## Pre-launch hygiene 2026-05-29
 
 The following supply-chain hygiene controls landed in a single batched commit
-ahead of the public push (Phase 5 launch gate A — see
-[`PHASE_5_LAUNCH_PLAN.md`](PHASE_5_LAUNCH_PLAN.md)). None are code changes;
+ahead of the public push (Phase 5 pre-launch gate A). None are code changes;
 all are docs / config / CI hardening from the OSS Maintenance Field Manual.
 
 - **`SECURITY.md`** rewritten — GitHub Private Vulnerability Reporting as
