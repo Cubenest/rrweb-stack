@@ -32,11 +32,7 @@
       "import": "./dist/hooks.js"
     }
   },
-  "files": [
-    "dist",
-    "NOTICE",
-    "README.md"
-  ],
+  "files": ["dist", "NOTICE", "README.md"],
   "scripts": {
     "build": "tsc -p tsconfig.json && node scripts/build-rrweb-bundle.mjs",
     "typecheck": "tsc -p tsconfig.json --noEmit",
@@ -72,5 +68,5 @@
     "url": "https://github.com/Cubenest/rrweb-stack",
     "directory": "packages/tracelane-wdio"
   },
-  "homepage": "https://github.com/Cubenest/rrweb-stack/tree/main/packages/tracelane-wdio#readme"
+  "homepage": "https://tracelane.cubenest.in"
 }

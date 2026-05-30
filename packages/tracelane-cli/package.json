@@ -1,7 +1,7 @@
 {
   "name": "@tracelane/cli",
   "version": "0.1.0-alpha.5",
-  "description": "tracelane scaffolding CLI. `npx tracelane init` detects your test runner (WDIO / Playwright / Cypress) and wires @tracelane/wdio into wdio.conf.* in one command — the published path from `npm install` + manual conf edit to a single npx invocation.",
+  "description": "tracelane scaffolding CLI. `npx tracelane init` detects your test runner (WDIO / Playwright / Cypress) and wires @tracelane/wdio into wdio.conf.* in one command \u2014 the published path from `npm install` + manual conf edit to a single npx invocation.",
   "keywords": [
     "tracelane",
     "testing",
@@ -29,11 +29,7 @@
       "import": "./dist/index.js"
     }
   },
-  "files": [
-    "dist",
-    "NOTICE",
-    "README.md"
-  ],
+  "files": ["dist", "NOTICE", "README.md"],
   "scripts": {
     "build": "tsc -p tsconfig.json && node ./scripts/postbuild.mjs",
     "typecheck": "tsc -p tsconfig.json --noEmit",
@@ -52,5 +48,5 @@
     "url": "https://github.com/Cubenest/rrweb-stack",
     "directory": "packages/tracelane-cli"
   },
-  "homepage": "https://github.com/Cubenest/rrweb-stack/tree/main/packages/tracelane-cli#readme"
+  "homepage": "https://tracelane.cubenest.in"
 }

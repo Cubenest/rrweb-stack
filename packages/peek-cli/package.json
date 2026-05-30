@@ -29,11 +29,7 @@
       "import": "./dist/index.js"
     }
   },
-  "files": [
-    "dist",
-    "NOTICE",
-    "README.md"
-  ],
+  "files": ["dist", "NOTICE", "README.md"],
   "scripts": {
     "build": "tsc -p tsconfig.json && node ./scripts/postbuild.mjs",
     "typecheck": "tsc -p tsconfig.json --noEmit",
@@ -56,5 +52,5 @@
     "url": "https://github.com/Cubenest/rrweb-stack",
     "directory": "packages/peek-cli"
   },
-  "homepage": "https://github.com/Cubenest/rrweb-stack/tree/main/packages/peek-cli#readme"
+  "homepage": "https://peek.cubenest.in"
 }

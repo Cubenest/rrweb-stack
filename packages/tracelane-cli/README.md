@@ -12,6 +12,8 @@ One command to wire tracelane into your WebdriverIO project. Detects your runner
 
 ![tracelane init — one command](https://raw.githubusercontent.com/Cubenest/rrweb-stack/main/assets/tracelane-hero.gif)
 
+Docs: <https://tracelane.cubenest.in>
+
 ```sh
 cd your-wdio-project
 npx @tracelane/cli init

@@ -14,6 +14,7 @@ Generated artifacts (`.gif`, `.png`, `.webm`) **are committed**. The sources use
 | `peek-hero.tape` | `packages/peek-cli/README.md` (hero GIF) | see "Recording peek-hero.gif" below |
 | `peek-hero.gif` | same | same |
 | `record-peek-hero.sh` | (driver script) | invoked manually; see below |
+| `og-card.png` | GitHub repo social-preview image (Settings → Social preview) | 1200×630 PNG generated via visual-AI tool from the prompt in `_context/docs/research/` (or re-render with the prompt + a current tool) |
 
 ## Recording `tracelane-hero.gif`
 

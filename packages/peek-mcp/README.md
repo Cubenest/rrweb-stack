@@ -7,6 +7,8 @@
 [![license](https://img.shields.io/npm/l/@peekdev/mcp.svg)](https://github.com/Cubenest/rrweb-stack/blob/main/LICENSE)
 [![CI](https://github.com/Cubenest/rrweb-stack/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/Cubenest/rrweb-stack/actions/workflows/ci.yml)
 
+Docs: <https://peek.cubenest.in>
+
 `@peekdev/mcp` is **two things in one binary**:
 
 1. The **stdio MCP server** that AI coding agents (Claude Code, Cursor, Cline, Windsurf, Continue, Zed) speak to when querying your captured browser sessions.

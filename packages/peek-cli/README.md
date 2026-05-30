@@ -9,6 +9,8 @@
 
 ![peek sessions list and drill-down — three real sessions, console + network errors, markdown-formatted output for AI paste](https://raw.githubusercontent.com/Cubenest/rrweb-stack/main/assets/peek-hero.gif)
 
+Docs: <https://peek.cubenest.in>
+
 ```sh
 npm install -g @peekdev/cli
 peek init

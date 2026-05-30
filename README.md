@@ -31,7 +31,7 @@ Two OSS products on one rrweb-based substrate. Both ship as `npm` packages today
 | [`@tracelane/core`](packages/tracelane-core/) | alpha | Framework-agnostic capture engine — depended on by the adapters |
 | [`@tracelane/report`](packages/tracelane-report/) | alpha | Self-contained HTML report builder |
 
-Docs: [apps/tracelane-docs/](apps/tracelane-docs/). The [tracelane-wdio README](packages/tracelane-wdio/README.md) is the right starting point.
+Docs: [tracelane.cubenest.in](https://tracelane.cubenest.in) (source under [`apps/tracelane-docs/`](apps/tracelane-docs/)). The [tracelane-wdio README](packages/tracelane-wdio/README.md) is the right starting point.
 
 ### peek
 
@@ -41,7 +41,7 @@ Docs: [apps/tracelane-docs/](apps/tracelane-docs/). The [tracelane-wdio README](
 | [`@peekdev/mcp`](packages/peek-mcp/) | alpha | stdio MCP server — exposes captured sessions to Claude Code, Cursor, Cline, Windsurf |
 | [`peek-extension`](packages/peek-extension/) | alpha (CWS submission pending) | Chrome MV3 extension — the real browser, recorded |
 
-Docs: [apps/peek-docs/](apps/peek-docs/).
+Docs: [peek.cubenest.in](https://peek.cubenest.in) (source under [`apps/peek-docs/`](apps/peek-docs/)).
 
 ## Shared substrate
 
