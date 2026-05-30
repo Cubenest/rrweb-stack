@@ -204,29 +204,10 @@ const FULL_SNAPSHOT_NODE = {
                       childNodes: [{ type: 3, textContent: 'Place order', id: 33 }],
                       id: 32,
                     },
-                    {
-                      type: 2,
-                      tagName: 'div',
-                      attributes: { class: 'err', 'data-test': 'error' },
-                      childNodes: [
-                        {
-                          type: 2,
-                          tagName: 'strong',
-                          attributes: {},
-                          childNodes: [
-                            { type: 3, textContent: 'Order could not be confirmed.', id: 36 },
-                          ],
-                          id: 35,
-                        },
-                        {
-                          type: 3,
-                          textContent:
-                            ' The server returned an internal error (500). Please try again in a moment.',
-                          id: 37,
-                        },
-                      ],
-                      id: 34,
-                    },
+                    // NOTE: the error banner (id 34-37) is intentionally NOT in
+                    // the initial snapshot — it's inserted later via a Mutation
+                    // event triggered by the click on the Place-order button, so
+                    // the replay actually animates instead of being a static frame.
                   ],
                   id: 12,
                 },
@@ -344,10 +325,96 @@ const events = [
     },
     timestamp: T0 + 134_500,
   },
-  // A final event so lastTs is the failure moment.
+  // ---- User interaction → mutation flow ---------------------------------
+  //
+  // The replay needs incremental events between the FullSnapshot and the
+  // failure for the player to actually animate. Story:
+  //   ~1:55  cursor moves toward the Place-order button (MouseMove)
+  //   ~1:58  cursor hovers over the button
+  //   ~2:13  user clicks (MouseInteraction Click on node id 32)
+  //   ~2:14  error banner appears as a child of the .card (Mutation add)
+  //
+  // IncrementalSource: 0 = Mutation, 1 = MouseMove, 2 = MouseInteraction.
+  // MouseInteractions: 2 = Click.
+
+  // Cursor approaches the button. Positions array carries timeOffset relative
+  // to the event's timestamp so the player can render smooth interpolation.
   {
     type: EventType.IncrementalSnapshot,
-    data: { source: 2 },
+    data: {
+      source: 1, // MouseMove
+      positions: [
+        { x: 600, y: 280, id: 12, timeOffset: -800 },
+        { x: 560, y: 320, id: 12, timeOffset: -600 },
+        { x: 520, y: 360, id: 12, timeOffset: -400 },
+        { x: 490, y: 400, id: 32, timeOffset: -200 },
+        { x: 480, y: 430, id: 32, timeOffset: 0 },
+      ],
+    },
+    timestamp: T0 + 115_000,
+  },
+  // User clicks "Place order".
+  {
+    type: EventType.IncrementalSnapshot,
+    data: {
+      source: 2, // MouseInteraction
+      type: 2, // Click
+      id: 32, // button node id
+      x: 480,
+      y: 430,
+    },
+    timestamp: T0 + 133_500,
+  },
+  // After the network request fails (the 500 console + network plugin events
+  // above), the page inserts the error banner. Mutation `adds` -> a new node
+  // appended to the .card (parentId 12), nextId null = append at end.
+  {
+    type: EventType.IncrementalSnapshot,
+    data: {
+      source: 0, // Mutation
+      texts: [],
+      attributes: [],
+      removes: [],
+      adds: [
+        {
+          parentId: 12,
+          nextId: null,
+          node: {
+            type: 2, // Element
+            tagName: 'div',
+            attributes: { class: 'err', 'data-test': 'error' },
+            childNodes: [
+              {
+                type: 2,
+                tagName: 'strong',
+                attributes: {},
+                childNodes: [
+                  { type: 3, textContent: 'Order could not be confirmed.', id: 36 },
+                ],
+                id: 35,
+              },
+              {
+                type: 3,
+                textContent:
+                  ' The server returned an internal error (500). Please try again in a moment.',
+                id: 37,
+              },
+            ],
+            id: 34,
+          },
+        },
+      ],
+    },
+    timestamp: T0 + 134_500,
+  },
+  // Trailing event so lastTs is exactly the failure moment (drives the
+  // timeline-strip's amber marker position).
+  {
+    type: EventType.IncrementalSnapshot,
+    data: {
+      source: 1, // MouseMove — single stationary frame after the failure
+      positions: [{ x: 480, y: 430, id: 34, timeOffset: 0 }],
+    },
     timestamp: T0 + 134_812,
   },
 ];
