@@ -29,15 +29,220 @@ const OUT_PATH = join(
 
 // ---- Synthetic event stream ----------------------------------------------
 //
-// Three events so the player has a real timeline. Real recordings ship
-// thousands of events; here we just need two timestamps far enough apart that
-// the timeline strip + failure marker render meaningfully, plus a couple of
-// console + network plugin events for the panels.
-//
 // The Meta event sets the recorded page's URL + viewport. The FullSnapshot is
-// a stub DOM tree the player needs to mount. The plugin events feed the
-// panel extraction functions in `panels.ts`.
+// a minimal-but-real DOM tree that rrweb-player can actually rebuild + render
+// (an empty `childNodes` array crashes rrweb-snapshot's rebuildFullSnapshot
+// with `can't access property "insertBefore", e is null`). The plugin events
+// feed the panel extraction functions in `panels.ts`.
+//
+// rrweb NodeType: 0 = Document, 1 = DocumentType, 2 = Element, 3 = Text.
+// Every node needs a unique numeric `id`. We hand-roll a small checkout-page
+// shell that visually matches the failure scenario described in the meta:
+// confirm-order card with a "Place order" button + an error banner.
 const T0 = 1735603200000; // 2025-12-31T00:00:00Z — a fixed timestamp for reproducibility
+
+const DEMO_PAGE_CSS = [
+  'body{margin:0;font-family:system-ui,-apple-system,Segoe UI,sans-serif;color:#111827;background:#f3f4f6;line-height:1.5}',
+  '.container{max-width:540px;margin:64px auto;padding:0 24px}',
+  '.card{background:#fff;border:1px solid #e5e7eb;border-radius:12px;padding:32px;box-shadow:0 1px 3px rgba(0,0,0,0.06)}',
+  'h1{font-size:22px;margin:0 0 6px;font-weight:600;color:#111827}',
+  'p.lede{color:#6b7280;margin:0 0 24px;font-size:14px}',
+  '.row{display:flex;justify-content:space-between;padding:10px 0;border-top:1px solid #f3f4f6;font-size:14px}',
+  '.row:first-of-type{border-top:0}',
+  '.row .k{color:#6b7280}',
+  '.row .v{color:#111827;font-weight:500}',
+  '.total{margin-top:16px;padding-top:16px;border-top:2px solid #e5e7eb;display:flex;justify-content:space-between;font-size:16px;font-weight:600}',
+  '.btn{display:block;width:100%;background:#1f2937;color:#fff;border:0;padding:14px;border-radius:8px;font-size:14px;font-weight:600;margin-top:24px;cursor:pointer;font-family:inherit}',
+  '.btn:hover{background:#111827}',
+  '.err{margin-top:16px;padding:14px;border-radius:8px;background:#fef2f2;border-left:3px solid #dc2626;color:#7f1d1d;font-size:13px;line-height:1.5}',
+  '.err strong{color:#991b1b}',
+].join('');
+
+const FULL_SNAPSHOT_NODE = {
+  type: 0, // Document
+  childNodes: [
+    { type: 1, name: 'html', publicId: '', systemId: '', id: 2 },
+    {
+      type: 2, // Element <html>
+      tagName: 'html',
+      attributes: { lang: 'en' },
+      childNodes: [
+        {
+          type: 2, // Element <head>
+          tagName: 'head',
+          attributes: {},
+          childNodes: [
+            {
+              type: 2,
+              tagName: 'meta',
+              attributes: { charset: 'utf-8' },
+              childNodes: [],
+              id: 5,
+            },
+            {
+              type: 2,
+              tagName: 'title',
+              attributes: {},
+              childNodes: [{ type: 3, textContent: 'Checkout — example shop', id: 7 }],
+              id: 6,
+            },
+            {
+              type: 2,
+              tagName: 'style',
+              attributes: {},
+              childNodes: [{ type: 3, textContent: DEMO_PAGE_CSS, id: 9 }],
+              id: 8,
+            },
+          ],
+          id: 4,
+        },
+        {
+          type: 2, // Element <body>
+          tagName: 'body',
+          attributes: {},
+          childNodes: [
+            {
+              type: 2,
+              tagName: 'div',
+              attributes: { class: 'container' },
+              childNodes: [
+                {
+                  type: 2,
+                  tagName: 'div',
+                  attributes: { class: 'card' },
+                  childNodes: [
+                    {
+                      type: 2,
+                      tagName: 'h1',
+                      attributes: {},
+                      childNodes: [{ type: 3, textContent: 'Confirm your order', id: 14 }],
+                      id: 13,
+                    },
+                    {
+                      type: 2,
+                      tagName: 'p',
+                      attributes: { class: 'lede' },
+                      childNodes: [
+                        {
+                          type: 3,
+                          textContent: 'Review and place your order. Your card will be charged once you confirm.',
+                          id: 16,
+                        },
+                      ],
+                      id: 15,
+                    },
+                    {
+                      type: 2,
+                      tagName: 'div',
+                      attributes: { class: 'row' },
+                      childNodes: [
+                        {
+                          type: 2,
+                          tagName: 'span',
+                          attributes: { class: 'k' },
+                          childNodes: [{ type: 3, textContent: 'Wireless earbuds (1)', id: 19 }],
+                          id: 18,
+                        },
+                        {
+                          type: 2,
+                          tagName: 'span',
+                          attributes: { class: 'v' },
+                          childNodes: [{ type: 3, textContent: '$59.00', id: 21 }],
+                          id: 20,
+                        },
+                      ],
+                      id: 17,
+                    },
+                    {
+                      type: 2,
+                      tagName: 'div',
+                      attributes: { class: 'row' },
+                      childNodes: [
+                        {
+                          type: 2,
+                          tagName: 'span',
+                          attributes: { class: 'k' },
+                          childNodes: [{ type: 3, textContent: 'Charging dock (1)', id: 24 }],
+                          id: 23,
+                        },
+                        {
+                          type: 2,
+                          tagName: 'span',
+                          attributes: { class: 'v' },
+                          childNodes: [{ type: 3, textContent: '$25.12', id: 26 }],
+                          id: 25,
+                        },
+                      ],
+                      id: 22,
+                    },
+                    {
+                      type: 2,
+                      tagName: 'div',
+                      attributes: { class: 'total' },
+                      childNodes: [
+                        {
+                          type: 2,
+                          tagName: 'span',
+                          attributes: {},
+                          childNodes: [{ type: 3, textContent: 'Total', id: 29 }],
+                          id: 28,
+                        },
+                        {
+                          type: 2,
+                          tagName: 'span',
+                          attributes: {},
+                          childNodes: [{ type: 3, textContent: '$84.12', id: 31 }],
+                          id: 30,
+                        },
+                      ],
+                      id: 27,
+                    },
+                    {
+                      type: 2,
+                      tagName: 'button',
+                      attributes: { class: 'btn', type: 'button', 'data-test': 'place-order' },
+                      childNodes: [{ type: 3, textContent: 'Place order', id: 33 }],
+                      id: 32,
+                    },
+                    {
+                      type: 2,
+                      tagName: 'div',
+                      attributes: { class: 'err', 'data-test': 'error' },
+                      childNodes: [
+                        {
+                          type: 2,
+                          tagName: 'strong',
+                          attributes: {},
+                          childNodes: [
+                            { type: 3, textContent: 'Order could not be confirmed.', id: 36 },
+                          ],
+                          id: 35,
+                        },
+                        {
+                          type: 3,
+                          textContent:
+                            ' The server returned an internal error (500). Please try again in a moment.',
+                          id: 37,
+                        },
+                      ],
+                      id: 34,
+                    },
+                  ],
+                  id: 12,
+                },
+              ],
+              id: 11,
+            },
+          ],
+          id: 10,
+        },
+      ],
+      id: 3,
+    },
+  ],
+  id: 1,
+};
+
 const events = [
   {
     type: EventType.Meta,
@@ -51,7 +256,7 @@ const events = [
   {
     type: EventType.FullSnapshot,
     data: {
-      node: { type: 0, childNodes: [], id: 1 },
+      node: FULL_SNAPSHOT_NODE,
       initialOffset: { left: 0, top: 0 },
     },
     timestamp: T0 + 50,
