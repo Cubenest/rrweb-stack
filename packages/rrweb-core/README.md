@@ -4,8 +4,6 @@ Shared rrweb-based capture substrate. Used by [`tracelane`](https://github.com/C
 
 ## What's in here
 
-See [ADR-0002](https://github.com/Cubenest/rrweb-stack/blob/main/prds/adrs/0002-rrweb-posthog-fork-substrate.md) for the full inventory.
-
 - Vendored PostHog rrweb fork (`@posthog/rrweb@0.0.34`)
 - PII masking primitives (selectors + regex bank + body/header redaction)
 - Large-DOM throttling defaults (mutation guard, data-URL guard, single-event size cap)
@@ -19,7 +17,7 @@ See [ADR-0002](https://github.com/Cubenest/rrweb-stack/blob/main/prds/adrs/0002-
 
 ## Versioning
 
-Independent semver. Breaking changes are coordinated across `tracelane` and `peek` releases per [ADR-0002](https://github.com/Cubenest/rrweb-stack/blob/main/prds/adrs/0002-rrweb-posthog-fork-substrate.md).
+Independent semver. Breaking changes are coordinated across `tracelane` and `peek` releases.
 
 ## License
 

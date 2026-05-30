@@ -32,8 +32,6 @@ const html = buildReport(events, {
 
 ## Design
 
-See [P1 PRD §F](https://github.com/Cubenest/rrweb-stack/blob/main/prds/compass_artifact_wf-d53d32da-17e9-41b5-bb70-21dd1bf648c6_text_markdown.md) and [ADR-0005](https://github.com/Cubenest/rrweb-stack/blob/main/prds/adrs/0005-p1-failed-only-self-contained-html.md).
-
 - **Player:** `rrweb-player@1.0.0-alpha.4` (upstream). `@posthog/rrweb-player` was the natural lineage match for the `@cubenest/rrweb-core` substrate fork, but every published version pins an unpublished dependency (`@posthog/rrweb-packer@0.0.0`, 404) and is therefore uninstallable. Upstream `rrweb-player` descends from the same rrweb 2.x line (`2.0.0-alpha.x`) that the substrate's `@posthog/rrweb@0.0.34` was forked from (`2.0.0-alpha.17`), so the recorded event shape replays correctly.
 - **Decompression:** the build side uses `@cubenest/rrweb-core`'s `compress()` (fflate gzip); the view side inlines fflate's browser `gunzipSync` for a small (~8 KB) offline decompressor.
 - **Asset inlining:** the player UMD/CSS and the fflate gunzip source are read from `node_modules` at build time (`fs.readFileSync`) — never hand-pasted into source.

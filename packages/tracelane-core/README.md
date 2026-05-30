@@ -16,10 +16,10 @@ See the [`@tracelane/wdio` README](https://github.com/Cubenest/rrweb-stack/tree/
 
 ## What's in here
 
-- `BrowserExecutor` — the framework-agnostic surface that adapters implement (see [ADR-0004](https://github.com/Cubenest/rrweb-stack/blob/main/prds/adrs/0004-p1-wdio-service-not-reporter.md)).
-- Recorder controller — in-page buffer install + Node-polled drain (see [ADR-0006](https://github.com/Cubenest/rrweb-stack/blob/main/prds/adrs/0006-p1-in-page-buffer-node-polled.md)).
+- `BrowserExecutor` — the framework-agnostic surface that adapters implement.
+- Recorder controller — in-page buffer install + Node-polled drain.
 - Navigation re-injection with a 250ms cooldown + `tracelane.nav` boundary events.
-- Mode switch (`'failed' | 'all'`) and a 25 MB FullSnapshot-preserving report-size guard (see [ADR-0005](https://github.com/Cubenest/rrweb-stack/blob/main/prds/adrs/0005-p1-failed-only-self-contained-html.md)).
+- Mode switch (`'failed' | 'all'`) and a 25 MB FullSnapshot-preserving report-size guard.
 
 Built on [`@cubenest/rrweb-core`](https://github.com/Cubenest/rrweb-stack/tree/main/packages/rrweb-core).
 
