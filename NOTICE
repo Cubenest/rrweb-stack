@@ -18,6 +18,14 @@ This product includes software developed by:
 - 101arrowz — fflate (MIT License) — gzip / gunzip used by both report
   generation and recorder compression.
 
+- Google Inc. + Universal Thirst — Fraunces (SIL Open Font License 1.1) —
+  variable serif font embedded by @tracelane/report into report HTML for
+  the editorial-postmortem hero headline + section heads.
+
+- Philipp Nurullin + JetBrains — JetBrains Mono (SIL Open Font License 1.1)
+  — variable monospace font embedded by @tracelane/report into report HTML
+  for all data rows, metadata, and panel content.
+
 - WiseLibs — better-sqlite3 (MIT License) — local-first storage used by
   @peekdev/cli and @peekdev/mcp.
 

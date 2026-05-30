@@ -1,11 +1,14 @@
-// Metadata header (Task 2.11).
+// Metadata header (Task 2.11 + Phase 6 hero rewrite).
 //
 // Two responsibilities:
 //   • resolveCiMetadata — fill commit SHA + build URL from CI env vars when the
 //     caller didn't supply them (GITHUB_SHA / CI_COMMIT_SHA, and common build
 //     URL conventions for GitHub Actions + GitLab CI).
-//   • renderMetaHeader — the <header class="meta"> markup (spec, title, status,
-//     duration, browser, viewport, commit, build URL), HTML-escaped.
+//   • renderHero — the new editorial-postmortem `<section class="hero">` markup:
+//     eyebrow strip (status + spec + duration + browser), serif headline with
+//     the test title + status framing, monospace error block, then the
+//     `.meta-strip` of small key-value pairs (spec / commit / build / captured /
+//     events). HTML-escaped throughout; javascript: URLs become text, not links.
 
 import { escapeHtml } from './html.js';
 import type { ReportMeta } from './types.js';
@@ -58,10 +61,6 @@ function formatDuration(ms: number): string {
   return `${m}m ${Math.round(s - m * 60)}s`;
 }
 
-function row(term: string, value: string): string {
-  return `<dt>${escapeHtml(term)}</dt><dd>${value}</dd>`;
-}
-
 /**
  * Whether `url` is safe to use as an `href`. Only http(s) — blocks `javascript:`,
  * `data:`, `vbscript:` etc. The build URL is sourced from CI env vars
@@ -78,32 +77,106 @@ function isSafeUrl(url: string): boolean {
   }
 }
 
-/** Render the metadata header markup (P1 PRD §F.1). */
-export function renderMetaHeader(meta: ReportMeta): string {
-  const rows: string[] = [];
-  if (meta.spec) rows.push(row('Spec', escapeHtml(meta.spec)));
+/** A status's human-facing display verb in the headline ("failed" → "failed"). */
+function statusVerb(status: string): string {
+  switch (status) {
+    case 'failed':
+      return 'failed';
+    case 'broken':
+      return 'errored';
+    case 'passed':
+      return 'passed';
+    case 'skipped':
+      return 'was skipped';
+    default:
+      return status;
+  }
+}
+
+/** Format an ISO timestamp into a compact "2026-05-30 18:47 UTC" rendering. */
+function formatCapturedAt(d: Date): string {
+  const pad = (n: number): string => String(n).padStart(2, '0');
+  return (
+    `${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())} ` +
+    `${pad(d.getUTCHours())}:${pad(d.getUTCMinutes())} UTC`
+  );
+}
+
+/** Build one `.meta-strip .item` block: label + value, value may contain HTML. */
+function stripItem(label: string, valueHtml: string): string {
+  return `<div class="item"><span class="label">${escapeHtml(label)}</span><span class="value">${valueHtml}</span></div>`;
+}
+
+/**
+ * Render the new hero + meta-strip (Phase 6).
+ *
+ * Replaces the old `<header class="meta">` shape. The visible structure:
+ *
+ *   <section class="hero">
+ *     <div class="eyebrow">…status pill + spec + duration + browser…</div>
+ *     <h1 class="what">…title with <em> emphasized inside…</h1>
+ *     <pre class="error-message">…verbatim error stack trace…</pre>
+ *     <div class="meta-strip">…6 small key-value items…</div>
+ *   </section>
+ *
+ * The status pill keeps `class="status <status>"` so existing test assertions
+ * for "class=\"status failed\"" still match; the commit value still ships
+ * inside `<code>` and the buildUrl still becomes an `<a href="…">` for safe
+ * URLs only.
+ *
+ * `eventCount` is rendered when non-undefined; the caller (template.ts) passes
+ * `events.length` after `pruneToSizeBudget` runs.
+ */
+export function renderHero(meta: ReportMeta, eventCount?: number, capturedAt?: Date): string {
+  // ---- Eyebrow row -------------------------------------------------------
+  // Status pill (always shown), then spec / duration / browser separated by
+  // thin dividers. Each piece is optional except the status.
+  const eyebrowBits: string[] = [
+    `<span class="dot" aria-hidden="true"></span><span class="status ${escapeHtml(meta.status)}">test ${escapeHtml(statusVerb(meta.status))}</span>`,
+  ];
+  if (meta.spec) eyebrowBits.push(`<span>${escapeHtml(meta.spec)}</span>`);
   if (meta.durationMs !== undefined)
-    rows.push(row('Duration', escapeHtml(formatDuration(meta.durationMs))));
-
+    eyebrowBits.push(`<span>${escapeHtml(formatDuration(meta.durationMs))}</span>`);
   const browser = [meta.browserName, meta.browserVersion].filter(Boolean).join(' ');
-  if (browser) rows.push(row('Browser', escapeHtml(browser)));
-  if (meta.viewport) {
-    rows.push(row('Viewport', escapeHtml(`${meta.viewport.width} × ${meta.viewport.height}`)));
+  if (browser || meta.viewport) {
+    const browserBits = [
+      browser,
+      meta.viewport ? `${meta.viewport.width}×${meta.viewport.height}` : '',
+    ]
+      .filter(Boolean)
+      .join(' · ');
+    eyebrowBits.push(`<span>${escapeHtml(browserBits)}</span>`);
   }
-  if (meta.commitSha) rows.push(row('Commit', `<code>${escapeHtml(meta.commitSha)}</code>`));
+  const eyebrow = `<div class="eyebrow">${eyebrowBits.join('<span class="sep" aria-hidden="true">/</span>')}</div>`;
+
+  // ---- Headline ----------------------------------------------------------
+  // Format: "<test title> — <emphasized status verb>." Always one sentence; the
+  // emphasized clause is the colour-of-the-failure-state moment.
+  const headline = `<h1 class="what">${escapeHtml(meta.title)} <em>${escapeHtml(statusVerb(meta.status))}</em>.</h1>`;
+
+  // ---- Error block (when present) ---------------------------------------
+  const errorBlock = meta.error ? `<pre class="error-message">${escapeHtml(meta.error)}</pre>` : '';
+
+  // ---- Meta strip --------------------------------------------------------
+  const stripItems: string[] = [];
+  if (meta.spec) stripItems.push(stripItem('Spec', escapeHtml(meta.spec)));
+  if (meta.durationMs !== undefined)
+    stripItems.push(stripItem('Duration', escapeHtml(formatDuration(meta.durationMs))));
+  if (meta.commitSha)
+    stripItems.push(stripItem('Commit', `<code>${escapeHtml(meta.commitSha)}</code>`));
   if (meta.buildUrl) {
-    const escaped = escapeHtml(meta.buildUrl);
-    // Only render a clickable link for http(s); a non-http(s) URL (e.g. a
-    // crafted `javascript:`) is shown as escaped text with no href.
-    const value = isSafeUrl(meta.buildUrl) ? `<a href="${escaped}">${escaped}</a>` : escaped;
-    rows.push(row('Build', value));
+    const escapedHref = escapeHtml(meta.buildUrl);
+    const value = isSafeUrl(meta.buildUrl)
+      ? `<a href="${escapedHref}">${escapedHref}</a>`
+      : escapedHref;
+    stripItems.push(stripItem('Build', value));
   }
+  const capturedDate = capturedAt ?? new Date();
+  stripItems.push(stripItem('Captured', escapeHtml(formatCapturedAt(capturedDate))));
+  if (eventCount !== undefined) {
+    stripItems.push(stripItem('Events', escapeHtml(eventCount.toLocaleString('en-US'))));
+  }
+  const strip = stripItems.length ? `<div class="meta-strip">${stripItems.join('')}</div>` : '';
 
-  const error = meta.error ? `<div class="error">${escapeHtml(meta.error)}</div>` : '';
-
-  return `<header class="meta">
-<h1>${escapeHtml(meta.title)} <span class="status ${escapeHtml(meta.status)}">${escapeHtml(meta.status)}</span></h1>
-${rows.length ? `<dl>${rows.join('')}</dl>` : ''}
-${error}
-</header>`;
+  return `<section class="hero">${eyebrow}${headline}${errorBlock}${strip}</section>`;
 }

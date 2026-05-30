@@ -10,6 +10,14 @@ This product includes software developed by:
     rrweb-player 1.0.0-alpha.4 (MIT License) — UMD + CSS inlined into report HTML.
 - fflate (https://github.com/101arrowz/fflate) 0.8.x (MIT License) —
     browser gunzip build inlined into report HTML for offline decompression.
+- Google Inc. + Universal Thirst — Fraunces (SIL Open Font License 1.1) —
+    variable serif font, latin charset (normal + italic styles), embedded
+    into report HTML as base64 woff2 inside @font-face rules. Used for the
+    hero headline + section heads. Source: @fontsource-variable/fraunces.
+- Philipp Nurullin + JetBrains — JetBrains Mono (SIL Open Font License 1.1)
+    — variable monospace font, latin charset (normal style only), embedded
+    the same way. Used for all data rows + metadata. Source:
+    @fontsource-variable/jetbrains-mono.
 
 This product is licensed under the Apache License, Version 2.0.
 See the LICENSE file for details.

@@ -12,9 +12,21 @@
 // convention (established in sub-phase 2a). Only the exact surface used here is
 // declared; widen it deliberately if more Node API is needed.
 
+/**
+ * Minimal `Buffer`-like surface used to base64-encode binary asset reads
+ * (the variable woff2 files inlined into the report — Phase 6). We declare
+ * only the `.toString(encoding)` method we actually call.
+ */
+interface BinaryBuffer {
+  toString(encoding: 'base64'): string;
+}
+
 declare module 'node:fs' {
   /** Read a file synchronously and return its UTF-8 decoded contents. */
   export function readFileSync(path: string | URL, encoding: 'utf8'): string;
+  /** Read a file synchronously without an encoding — returns a Buffer-like
+   *  object that supports `.toString('base64')`. Used for woff2 fonts. */
+  export function readFileSync(path: string | URL): BinaryBuffer;
 }
 
 declare module 'node:module' {

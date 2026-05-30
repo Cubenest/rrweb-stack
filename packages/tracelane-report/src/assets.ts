@@ -1,10 +1,12 @@
-// Build-time asset loaders (Task 2.8 + 2.9).
+// Build-time asset loaders (Task 2.8 + 2.9 + Phase 6 report-revamp fonts).
 //
-// The self-contained report inlines three vendored assets so it opens fully
-// offline with nothing fetched at view time:
-//   1. the rrweb-player UMD  (defines `window.rrwebPlayer`)   — Task 2.8
-//   2. the rrweb-player CSS                                    — Task 2.8
-//   3. the fflate UMD gunzip (defines `window.fflate`)         — Task 2.9
+// The self-contained report inlines vendored assets so it opens fully offline
+// with nothing fetched at view time:
+//   1. the rrweb-player UMD  (defines `window.rrwebPlayer`)            — Task 2.8
+//   2. the rrweb-player CSS                                             — Task 2.8
+//   3. the fflate UMD gunzip (defines `window.fflate`)                  — Task 2.9
+//   4. Fraunces Variable (latin, weight 100-900, normal + italic)       — Phase 6
+//   5. JetBrains Mono Variable (latin, weight 100-800, normal)          — Phase 6
 //
 // Each is read from the installed package via `require.resolve`, NOT hand-pasted
 // into source (the assets are large and would bloat/obscure the diff, and they
@@ -76,4 +78,64 @@ export function loadPlayerCss(): string {
  */
 export function loadFflateGunzipSource(): string {
   return readUmdViaUnpkg('fflate');
+}
+
+// ---------------------------------------------------------------------------
+// Font assets (Phase 6 report-revamp).
+//
+// The new report design pairs Fraunces (serif, OFL-1.1) for the hero "what
+// failed" headline + section heads with JetBrains Mono (mono, OFL-1.1) for all
+// data rows. Both are read as variable-axis woff2 files from `@fontsource-
+// variable/*` and embedded as base64 `url(data:font/woff2;base64,…)` inside the
+// SHELL_CSS `@font-face` rules — same offline-first posture as the player UMD.
+// ---------------------------------------------------------------------------
+
+/**
+ * Read a woff2 file out of an `@fontsource-variable/*` package and return its
+ * base64-encoded contents. The fontsource packages don't expose the woff2
+ * files via their `exports` map directly (the `./files/*.woff2` mapping uses a
+ * glob), so we walk to the file via the package's own `package.json` path.
+ */
+function readFontBase64(packageName: string, fileName: string): string {
+  const pkgJsonPath = localRequire.resolve(`${packageName}/package.json`);
+  const pkgDirUrl = pathToFileURL(pkgJsonPath.slice(0, pkgJsonPath.lastIndexOf('/') + 1));
+  const fontUrl = new URL(`./files/${fileName}`, pkgDirUrl);
+  const fontPath = fileURLToPath(fontUrl);
+  const pkgDirPath = fileURLToPath(pkgDirUrl);
+  if (!fontPath.startsWith(pkgDirPath)) {
+    throw new Error(`${packageName}: font file escapes the package directory`);
+  }
+  return readFileSync(fontPath).toString('base64');
+}
+
+/**
+ * Fraunces Variable (weight axis 100-900, latin charset, normal style).
+ * SIL OFL-1.1 — credited in NOTICE. ~36 KB raw → ~49 KB base64.
+ */
+export function loadFrauncesNormal(): string {
+  return readFontBase64('@fontsource-variable/fraunces', 'fraunces-latin-wght-normal.woff2');
+}
+
+/**
+ * Fraunces Variable (weight axis 100-900, latin charset, italic style).
+ * Same package + license as the normal weight; ~45 KB raw → ~60 KB base64.
+ * Used for the headline's emphasized clause and the section heads.
+ */
+export function loadFrauncesItalic(): string {
+  return readFontBase64('@fontsource-variable/fraunces', 'fraunces-latin-wght-italic.woff2');
+}
+
+/**
+ * JetBrains Mono Variable (weight axis 100-800, latin charset, normal style).
+ * SIL OFL-1.1 — credited in NOTICE. ~40 KB raw → ~54 KB base64.
+ *
+ * Italic intentionally NOT loaded — the data rows (console + network + meta
+ * strip + timestamps) never use italics, so the second 43 KB italic woff2
+ * would add weight to every report for no design benefit.
+ */
+export function loadJetBrainsMonoNormal(): string {
+  return readFontBase64(
+    '@fontsource-variable/jetbrains-mono',
+    'jetbrains-mono-latin-wght-normal.woff2',
+  );
 }

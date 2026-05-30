@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { renderMetaHeader, resolveCiMetadata } from '../src/metadata';
+import { renderHero, resolveCiMetadata } from '../src/metadata';
 import type { ReportMeta } from '../src/types';
 
 const BASE: ReportMeta = { title: 'a test', status: 'failed' };
@@ -68,7 +68,7 @@ describe('resolveCiMetadata — CI provenance (Task 2.11)', () => {
   });
 });
 
-describe('renderMetaHeader (Task 2.11)', () => {
+describe('renderHero — editorial postmortem header (Phase 6)', () => {
   const FULL: ReportMeta = {
     spec: 'test/login.spec.ts',
     title: 'logs in',
@@ -82,28 +82,51 @@ describe('renderMetaHeader (Task 2.11)', () => {
     buildUrl: 'https://ci/run/1',
   };
 
-  it('renders every supplied field', () => {
-    const html = renderMetaHeader(FULL);
+  // Pin "Captured" so we don't have a flaky time-dependent assertion.
+  const CAPTURED = new Date(Date.UTC(2026, 4, 30, 18, 47, 0));
+
+  it('renders the hero section with eyebrow, headline, error block, and meta strip', () => {
+    const html = renderHero(FULL, 2418, CAPTURED);
+    // Structure
+    expect(html).toContain('<section class="hero">');
+    expect(html).toContain('class="eyebrow"');
+    expect(html).toContain('<h1 class="what">');
+    expect(html).toContain('<pre class="error-message">');
+    expect(html).toContain('class="meta-strip"');
+    // Content — title + status framing + error
     expect(html).toContain('logs in');
     expect(html).toContain('class="status failed"');
+    expect(html).toContain('<em>failed</em>');
+    expect(html).toContain('boom');
+    // Meta strip + eyebrow values
     expect(html).toContain('test/login.spec.ts');
     expect(html).toContain('chrome 124.0');
-    expect(html).toContain('1280 × 720');
+    expect(html).toContain('1280×720'); // hero uses × in eyebrow
     expect(html).toContain('<code>abc1234</code>');
     expect(html).toContain('href="https://ci/run/1"');
     expect(html).toContain('4.21 s'); // formatted duration
-    expect(html).toContain('boom');
+    // Event count formatted with locale thousands separator
+    expect(html).toContain('2,418');
+    // Captured timestamp pinned by the passed-in Date
+    expect(html).toContain('2026-05-30 18:47 UTC');
   });
 
-  it('omits rows for absent fields and the <dl> entirely when none are present', () => {
-    const html = renderMetaHeader({ title: 'bare', status: 'passed' });
+  it('omits the error block when no error is supplied and meta strip when no fields', () => {
+    const html = renderHero({ title: 'bare', status: 'passed' });
     expect(html).toContain('bare');
-    expect(html).not.toContain('<dl>');
-    expect(html).not.toContain('class="error"');
+    expect(html).not.toContain('class="error-message"');
+    // Meta strip always has "Captured" at minimum, so it is present even on a
+    // bare meta — but it has just the one item, no spec/commit/build/duration.
+    expect(html).toContain('class="meta-strip"');
+    expect(html).not.toContain('Spec');
+    expect(html).not.toContain('Commit');
+    // Status framing per the verb map
+    expect(html).toContain('class="status passed"');
+    expect(html).toContain('<em>passed</em>');
   });
 
   it('HTML-escapes title and error so markup cannot be injected', () => {
-    const html = renderMetaHeader({
+    const html = renderHero({
       title: '<img src=x onerror=alert(1)>',
       status: 'failed',
       error: '</header><script>evil()</script>',
@@ -114,17 +137,16 @@ describe('renderMetaHeader (Task 2.11)', () => {
   });
 
   it('formats sub-second and multi-minute durations', () => {
-    expect(renderMetaHeader({ ...FULL, durationMs: 850 })).toContain('850 ms');
-    expect(renderMetaHeader({ ...FULL, durationMs: 95_000 })).toContain('1m 35s');
+    expect(renderHero({ ...FULL, durationMs: 850 })).toContain('850 ms');
+    expect(renderHero({ ...FULL, durationMs: 95_000 })).toContain('1m 35s');
   });
 
   it('does not render a javascript: build URL as a clickable link', () => {
-    const html = renderMetaHeader({
+    const html = renderHero({
       title: 't',
       status: 'failed',
       buildUrl: 'javascript:alert(1)',
     });
-    // No anchor pointing at the javascript: scheme.
     expect(html).not.toMatch(/<a\s+href="javascript:/i);
     expect(html).not.toContain('<a href="javascript:alert(1)"');
     // The value still appears (escaped) as plain text so the report is honest.
@@ -132,17 +154,23 @@ describe('renderMetaHeader (Task 2.11)', () => {
   });
 
   it('renders an http(s) build URL as a clickable link', () => {
-    const html = renderMetaHeader({ title: 't', status: 'failed', buildUrl: 'https://ci/run/1' });
+    const html = renderHero({ title: 't', status: 'failed', buildUrl: 'https://ci/run/1' });
     expect(html).toContain('<a href="https://ci/run/1">https://ci/run/1</a>');
   });
 
   it('shows a non-http(s) build URL (e.g. data:) as text, not a link', () => {
-    const html = renderMetaHeader({
+    const html = renderHero({
       title: 't',
       status: 'failed',
       buildUrl: 'data:text/html,<b>x',
     });
     expect(html).not.toMatch(/<a\s+href="data:/i);
     expect(html).toContain('data:text/html,&lt;b&gt;x');
+  });
+
+  it('uses the right status verb in headline + eyebrow per status', () => {
+    expect(renderHero({ title: 't', status: 'passed' })).toContain('<em>passed</em>');
+    expect(renderHero({ title: 't', status: 'broken' })).toContain('<em>errored</em>');
+    expect(renderHero({ title: 't', status: 'skipped' })).toContain('<em>was skipped</em>');
   });
 });

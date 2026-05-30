@@ -52,7 +52,10 @@ describe('buildReport — self-contained HTML (Task 2.9)', () => {
     const html = buildReport(sampleEvents(), META);
     expect(html.startsWith('<!doctype html>')).toBe(true);
     expect(html).toContain('</html>');
-    expect(html).toContain('<section id="player"');
+    // Phase 6: the player mount target is now a <div id="player"> nested inside
+    // a <section class="replay">. The id is the meaningful contract — that's
+    // what the bootstrap script's getElementById looks for.
+    expect(html).toMatch(/<div\s+id="player"/);
   });
 
   it('builds a valid report from zero events without throwing', () => {
@@ -163,14 +166,17 @@ describe('buildReport — self-marketing footer (Phase 5 indirect virality)', ()
     expect(footerOpenIdx).toBeGreaterThan(mainCloseIdx);
   });
 
-  it('keeps the footer non-intrusive (inline muted style, no external assets)', () => {
+  it('keeps the footer non-intrusive (class-based muted style, no external assets)', () => {
     const html = buildReport(sampleEvents(), META);
-    // The footer line itself uses inline styles (offline, no external CSS).
     const footerMatch = html.match(/<footer[^>]*>[\s\S]*?<\/footer>/);
     expect(footerMatch).not.toBeNull();
     const footerHtml = footerMatch?.[0] ?? '';
-    // Muted color (Tailwind gray-500 family) — visible but never grabs focus.
-    expect(footerHtml).toContain('#6b7280');
+    // Phase 6: footer styling moved from inline `style="color:#6b7280…"` to a
+    // class-based rule (`.attrib { color: var(--muted) }`) inside SHELL_CSS.
+    // We assert the class is present + the muted CSS variable is declared in
+    // the document; the exact hex moved into the variable definition.
+    expect(footerHtml).toMatch(/class="attrib"/);
+    expect(html).toMatch(/--muted:\s*#8a92a0/);
     // No <script>, <link>, or remote asset reference inside the footer.
     expect(footerHtml).not.toMatch(/<script/);
     expect(footerHtml).not.toMatch(/<link/);

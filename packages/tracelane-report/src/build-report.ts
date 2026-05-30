@@ -57,6 +57,14 @@ export function buildReport(
   const actions = extractActionLog(sized);
   const markdown = buildMarkdown(resolvedMeta, consoleRows, networkRows, actions);
 
+  // First/last event timestamps drive the hero meta strip's "Events" item,
+  // the replay-header session-range label, and the failure marker on the
+  // custom timeline strip. `?? 0` fallback covers the crashed-before-
+  // recorder-snapshot path (sized empty) — optional chaining + nullish
+  // coalescing keep the type-safety without a non-null assertion.
+  const firstTs = sized[0]?.timestamp ?? 0;
+  const lastTs = sized[sized.length - 1]?.timestamp ?? 0;
+
   return renderReportHtml({
     meta: resolvedMeta,
     eventsGzB64: encodeEventsBlob(sized),
@@ -64,5 +72,8 @@ export function buildReport(
     network: networkRows,
     markdown,
     pruned,
+    eventCount: sized.length,
+    firstTs,
+    lastTs,
   });
 }
