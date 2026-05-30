@@ -38,5 +38,4 @@ behavior change. The package bumps land the corrected READMEs on npm.
 
 `.changeset/` and `CHANGELOG.md` historical entries referencing
 `docs/PHASE_5_LAUNCH_PLAN.md` or `prds/*` are intentionally left alone
-(frozen historical records; same rule that applied during the
-2026-05-30 audit cleanup at commit 8bc1352-era).
+(frozen historical records).
