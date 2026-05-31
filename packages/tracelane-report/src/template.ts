@@ -811,6 +811,11 @@ const BOOTSTRAP = `
         var textOk = !q || text.indexOf(q) !== -1;
         row.classList.toggle('hidden', !(levelOk && textOk));
       }
+      // Re-tick so the badge reflects (filter ∩ time-sync) visibility. Use
+      // the player's current time when available so we don't reset to t=0.
+      var nowMs = 0;
+      try { if (rrPlayer) nowMs = rrPlayer.getReplayer().getCurrentTime(); } catch (_) {}
+      tickPanels(nowMs);
     }
 
     if (input) input.addEventListener('input', applyFilter);
