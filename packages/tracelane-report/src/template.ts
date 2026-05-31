@@ -615,6 +615,9 @@ const BOOTSTRAP = `
         autoPlay: false,
       },
     });
+    // Expose for headless probes (visible to dev-tools; no runtime impact on
+    // end users — the report HTML is read-only static content).
+    try { window.__player = rrPlayer; } catch (_) {}
   } else {
     var msg = document.createElement('div');
     msg.className = 'empty';
