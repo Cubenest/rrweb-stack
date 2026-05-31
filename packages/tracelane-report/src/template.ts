@@ -594,6 +594,7 @@ const BOOTSTRAP = `
 
   // ---- rrweb-player mount ------------------------------------------------
   var playerEl = document.getElementById('player');
+  var rrPlayer = null;
   if (events.length >= 2 && typeof rrwebPlayer !== 'undefined') {
     // Size the player to fill its container, preserving the recording's
     // aspect ratio. rrweb-player's defaults (1024x576) overflow most layouts.
@@ -604,7 +605,7 @@ const BOOTSTRAP = `
     var maxIframeH = Math.max(window.innerHeight - 360, 280);
     var iframeH = Math.min(Math.round(containerW / recAspect), maxIframeH);
     var iframeW = Math.min(containerW, Math.round(iframeH * recAspect));
-    new rrwebPlayer({
+    rrPlayer = new rrwebPlayer({
       target: playerEl,
       props: {
         events: events,
@@ -693,6 +694,56 @@ const BOOTSTRAP = `
 
   renderConsole(document.getElementById('console-rows'), CONSOLE, FIRST_TS);
   renderNetwork(document.getElementById('network-rows'), NETWORK, FIRST_TS);
+
+  // ---- Time-sync: reveal rows as playback advances ----------------------
+  function tickPanels(currentMs) {
+    var t = Math.max(0, Math.floor(currentMs || 0));
+    var names = ['console', 'network'];
+    for (var n = 0; n < names.length; n++) {
+      var name = names[n];
+      var container = document.getElementById(name + '-rows');
+      var pending = document.getElementById(name + '-pending');
+      var badgeCurrent = document.querySelector(
+        '.tab[data-pane="pane-' + name + '"] .count'
+      );
+      if (!container) continue;
+      var rows = container.querySelectorAll('.row');
+      // Detect "was at bottom" BEFORE flipping classes so auto-scroll only
+      // triggers when the user hasn't scrolled up to inspect older entries.
+      var wasAtBottom =
+        container.scrollHeight - container.scrollTop - container.clientHeight <= 20;
+      var visibleCount = 0;
+      var hasAnyRows = rows.length > 0;
+      for (var i = 0; i < rows.length; i++) {
+        var rowTime = parseInt(rows[i].getAttribute('data-time') || '0', 10);
+        var isFuture = rowTime > t;
+        rows[i].classList.toggle('is-future', isFuture);
+        if (!isFuture && !rows[i].classList.contains('hidden')) visibleCount++;
+      }
+      if (badgeCurrent) badgeCurrent.textContent = String(visibleCount);
+      if (pending) {
+        // Pending placeholder shows when rows exist but none visible yet.
+        pending.classList.toggle('is-hidden', !hasAnyRows || visibleCount > 0);
+      }
+      if (wasAtBottom && visibleCount > 0) {
+        container.scrollTop = container.scrollHeight;
+      }
+    }
+  }
+
+  if (rrPlayer && typeof rrPlayer.addEventListener === 'function') {
+    rrPlayer.addEventListener('ui-update-current-time', function (e) {
+      // rrweb-player's CustomEvent shape: { payload: <ms> } in alpha.4. If
+      // the bundled version ever changes shape, fall back to reading the
+      // replayer directly.
+      var payload = e && e.payload;
+      if (typeof payload !== 'number') {
+        try { payload = rrPlayer.getReplayer().getCurrentTime(); } catch (_) { payload = 0; }
+      }
+      tickPanels(payload);
+    });
+  }
+  tickPanels(0);
 
   // ---- Tab switching -----------------------------------------------------
   var tabs = document.querySelectorAll('.tab');
