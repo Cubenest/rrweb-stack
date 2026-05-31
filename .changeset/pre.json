@@ -37,6 +37,8 @@
     "phase5-rrweb-network-plugin",
     "phase5-self-marketing-artifacts",
     "phase5-tracelane-cli-v0.1",
-    "rrweb-core-esm-fix"
+    "phase6-tracelane-report-revamp",
+    "rrweb-core-esm-fix",
+    "time-synced-panels"
   ]
 }
