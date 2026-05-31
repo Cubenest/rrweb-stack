@@ -398,6 +398,29 @@ main.investigation {
   text-align: center;
   font-size: 12px;
 }
+
+/* Time-sync: rows whose data-time is past the current playback time. */
+.panel-content .row.is-future { display: none; }
+.panel-content .row { cursor: pointer; }
+
+/* Pending placeholder shown when rows exist but the playhead hasn't reached
+   any of them yet. Sibling of .panel-content inside .panel-pane. */
+.panel-pending {
+  padding: 24px;
+  text-align: center;
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 12px;
+  letter-spacing: 0.02em;
+}
+.panel-pending.is-hidden { display: none; }
+
+/* Tab badge: <current> in default color, "/ <total>" in --muted. */
+.tab .count-total {
+  color: var(--muted);
+  margin-left: 4px;
+  font-weight: normal;
+}
 .row {
   padding: 8px 16px;
   border-bottom: 1px solid var(--border);
@@ -630,7 +653,9 @@ const BOOTSTRAP = `
     for (var i = 0; i < rows.length; i++) {
       var r = rows[i];
       var lvl = (r.level || 'log').toLowerCase();
-      var row = el('div', 'row ' + lvl);
+      var row = el('div', 'row is-future ' + lvl);
+      var relMs = firstTs ? Math.max(0, r.timestamp - firstTs) : 0;
+      row.setAttribute('data-time', String(relMs));
       row.appendChild(el('span', 'ts', fmtRelTs(r.timestamp, firstTs)));
       row.appendChild(el('span', 'lvl', lvl));
       row.appendChild(el('span', 'msg', r.message));
@@ -647,7 +672,9 @@ const BOOTSTRAP = `
     }
     for (var i = 0; i < rows.length; i++) {
       var r = rows[i];
-      var row = el('div', 'row row-net error');
+      var row = el('div', 'row row-net is-future error');
+      var relMs = firstTs ? Math.max(0, r.timestamp - firstTs) : 0;
+      row.setAttribute('data-time', String(relMs));
       row.appendChild(el('span', 'ts', fmtRelTs(r.timestamp, firstTs)));
       var stCls = 'lvl st-' + String(r.status).charAt(0);
       row.appendChild(el('span', stCls, String(r.status)));
@@ -845,10 +872,10 @@ ${banner}
   <aside class="panels" aria-label="Investigation panels">
     <div class="tabs" role="tablist">
       <button class="tab active" type="button" role="tab" data-pane="pane-console">
-        Console <span class="count">${consoleCount}</span>
+        Console <span class="count">0</span><span class="count-total">/ ${consoleCount}</span>
       </button>
       <button class="tab" type="button" role="tab" data-pane="pane-network">
-        Network <span class="count">${networkCount}</span>
+        Network <span class="count">0</span><span class="count-total">/ ${networkCount}</span>
       </button>
       <button class="tab" type="button" role="tab" data-pane="pane-actions">
         Actions
@@ -865,6 +892,7 @@ ${banner}
         <button class="filter-chip" type="button" data-level="warn">warn</button>
       </div>
       <div id="console-rows" class="panel-content"></div>
+      <div class="panel-pending" id="console-pending">Console output will appear during playback.</div>
     </div>
 
     <div class="panel-pane" id="pane-network" role="tabpanel">
@@ -872,6 +900,7 @@ ${banner}
         <input type="text" class="panel-filter" placeholder="Filter URLs…" aria-label="Filter network requests" />
       </div>
       <div id="network-rows" class="panel-content"></div>
+      <div class="panel-pending" id="network-pending">Network errors will appear during playback.</div>
     </div>
 
     <div class="panel-pane" id="pane-actions" role="tabpanel">
