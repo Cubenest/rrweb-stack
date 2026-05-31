@@ -125,7 +125,8 @@ const FULL_SNAPSHOT_NODE = {
                       childNodes: [
                         {
                           type: 3,
-                          textContent: 'Review and place your order. Your card will be charged once you confirm.',
+                          textContent:
+                            'Review and place your order. Your card will be charged once you confirm.',
                           id: 16,
                         },
                       ],
