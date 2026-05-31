@@ -745,6 +745,29 @@ const BOOTSTRAP = `
   }
   tickPanels(0);
 
+  // ---- Click-to-seek: clicking a row jumps the player to that moment -----
+  if (rrPlayer && typeof rrPlayer.goto === 'function') {
+    var seekContainers = ['console-rows', 'network-rows'];
+    for (var sc = 0; sc < seekContainers.length; sc++) {
+      (function (containerId) {
+        var ctr = document.getElementById(containerId);
+        if (!ctr) return;
+        ctr.addEventListener('click', function (ev) {
+          var target = ev.target;
+          // Walk up to the .row ancestor (clicks may land on inner spans).
+          while (target && target !== ctr && !target.classList.contains('row')) {
+            target = target.parentNode;
+          }
+          if (!target || target === ctr) return;
+          var t = parseInt(target.getAttribute('data-time') || '0', 10);
+          if (isFinite(t) && t >= 0) {
+            rrPlayer.goto(t, false);
+          }
+        });
+      })(seekContainers[sc]);
+    }
+  }
+
   // ---- Tab switching -----------------------------------------------------
   var tabs = document.querySelectorAll('.tab');
   var panes = document.querySelectorAll('.panel-pane');
