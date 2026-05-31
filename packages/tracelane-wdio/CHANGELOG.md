@@ -1,5 +1,12 @@
 # @tracelane/wdio
 
+## 0.1.0-alpha.14
+
+### Patch Changes
+
+- Updated dependencies [748ef2f]
+  - @tracelane/report@0.1.0-alpha.11
+
 ## 0.1.0-alpha.13
 
 ### Patch Changes
