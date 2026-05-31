@@ -617,7 +617,7 @@ const BOOTSTRAP = `
     });
     // Expose for headless probes (visible to dev-tools; no runtime impact on
     // end users — the report HTML is read-only static content).
-    try { window.__player = rrPlayer; } catch (_) {}
+    try { window.__tracelanePlayer = rrPlayer; } catch (_) {}
   } else {
     var msg = document.createElement('div');
     msg.className = 'empty';
@@ -699,6 +699,10 @@ const BOOTSTRAP = `
   renderNetwork(document.getElementById('network-rows'), NETWORK, FIRST_TS);
 
   // ---- Time-sync: reveal rows as playback advances ----------------------
+  // TODO(perf): re-queries DOM and re-parses data-time on every tick (~30 Hz).
+  // Fine at current demo scale (~10 rows). When Actions / Timeline panels ship
+  // and reports start carrying hundreds of entries, cache [rows, times] once
+  // after render and skip work when t === lastT.
   function tickPanels(currentMs) {
     var t = Math.max(0, Math.floor(currentMs || 0));
     var names = ['console', 'network'];
@@ -974,7 +978,7 @@ ${banner}
         <button class="filter-chip" type="button" data-level="warn">warn</button>
       </div>
       <div id="console-rows" class="panel-content"></div>
-      <div class="panel-pending" id="console-pending">Console output will appear during playback.</div>
+      <div class="panel-pending" id="console-pending" role="status" aria-live="polite">Console output will appear during playback.</div>
     </div>
 
     <div class="panel-pane" id="pane-network" role="tabpanel">
@@ -982,7 +986,7 @@ ${banner}
         <input type="text" class="panel-filter" placeholder="Filter URLs…" aria-label="Filter network requests" />
       </div>
       <div id="network-rows" class="panel-content"></div>
-      <div class="panel-pending" id="network-pending">Network errors will appear during playback.</div>
+      <div class="panel-pending" id="network-pending" role="status" aria-live="polite">Network errors will appear during playback.</div>
     </div>
 
     <div class="panel-pane" id="pane-actions" role="tabpanel">
