@@ -224,13 +224,19 @@ const FULL_SNAPSHOT_NODE = {
   id: 1,
 };
 
+// Timestamps below are compressed to ~12 seconds so the demo plays in real
+// time without the user having to wait or rely on the player's skip-inactive
+// toggle. Real WDIO smoke tests often complete in this window (10-20 s);
+// `durationMs` in the meta below is set to match so the meta strip stays
+// honest. The narrative is intact: page loads → user fills + reviews → cursor
+// moves to "Place order" → click → server returns 500 → error banner appears.
 const events = [
   {
     type: EventType.Meta,
     data: {
       href: 'https://shop.example.com/checkout',
       width: 1440,
-      height: 900,
+      height: 640,
     },
     timestamp: T0,
   },
@@ -249,7 +255,7 @@ const events = [
       plugin: 'rrweb/console@1',
       payload: { level: 'log', payload: ['"Cart loaded: 2 items, $84.12 total"'] },
     },
-    timestamp: T0 + 42_018,
+    timestamp: T0 + 1_500,
   },
   {
     type: EventType.Plugin,
@@ -260,7 +266,7 @@ const events = [
         payload: ['"Form validation passed: { email: \\"***\\", cardLast4: \\"4242\\" }"'],
       },
     },
-    timestamp: T0 + 118_211,
+    timestamp: T0 + 4_500,
   },
   {
     type: EventType.Plugin,
@@ -271,7 +277,7 @@ const events = [
         payload: ['"Stripe.js loaded twice on this page — duplicate script tag detected"'],
       },
     },
-    timestamp: T0 + 132_450,
+    timestamp: T0 + 9_000,
   },
   {
     type: EventType.Plugin,
@@ -284,7 +290,7 @@ const events = [
         ],
       },
     },
-    timestamp: T0 + 133_987,
+    timestamp: T0 + 11_400,
   },
   {
     type: EventType.Plugin,
@@ -297,7 +303,7 @@ const events = [
         ],
       },
     },
-    timestamp: T0 + 133_991,
+    timestamp: T0 + 11_450,
   },
   // Network plugin events — failing requests at the end of the run.
   {
@@ -310,64 +316,78 @@ const events = [
             name: 'https://shop.example.com/api/checkout/confirm',
             method: 'POST',
             status: 500,
-            timestamp: T0 + 133_900,
+            timestamp: T0 + 11_300,
             duration: 187,
           },
           {
             name: 'https://shop.example.com/api/cart/restore',
             method: 'POST',
             status: 500,
-            timestamp: T0 + 134_500,
+            timestamp: T0 + 11_900,
             duration: 412,
           },
         ],
       },
     },
-    timestamp: T0 + 134_500,
+    timestamp: T0 + 11_900,
   },
   // ---- User interaction → mutation flow ---------------------------------
   //
-  // The replay needs incremental events between the FullSnapshot and the
-  // failure for the player to actually animate. Story:
-  //   ~1:55  cursor moves toward the Place-order button (MouseMove)
-  //   ~1:58  cursor hovers over the button
-  //   ~2:13  user clicks (MouseInteraction Click on node id 32)
-  //   ~2:14  error banner appears as a child of the .card (Mutation add)
+  // Compressed timeline — all action happens between +6s and +12s so the
+  // replay completes in real-time playback:
+  //   +6.0s   cursor moves toward the Place-order button (MouseMove)
+  //   +8.0s   cursor arrives at button
+  //   +10.5s  user clicks (MouseInteraction Click on node id 32)
+  //   +11.x   console errors + network plugin events fire (already above)
+  //   +12.2s  error banner appears as a child of the .card (Mutation add)
   //
   // IncrementalSource: 0 = Mutation, 1 = MouseMove, 2 = MouseInteraction.
   // MouseInteractions: 2 = Click.
 
   // Cursor approaches the button. Positions array carries timeOffset relative
   // to the event's timestamp so the player can render smooth interpolation.
+  // Coordinates are absolute iframe-page coords (the page is 1440×900; button
+  // center is at (720, 369) per Playwright getBoundingClientRect — verified).
   {
     type: EventType.IncrementalSnapshot,
     data: {
       source: 1, // MouseMove
       positions: [
-        { x: 600, y: 280, id: 12, timeOffset: -800 },
-        { x: 560, y: 320, id: 12, timeOffset: -600 },
-        { x: 520, y: 360, id: 12, timeOffset: -400 },
-        { x: 490, y: 400, id: 32, timeOffset: -200 },
-        { x: 480, y: 430, id: 32, timeOffset: 0 },
+        { x: 1200, y: 140, id: 10, timeOffset: -2000 },
+        { x: 1020, y: 200, id: 10, timeOffset: -1600 },
+        { x: 880, y: 250, id: 11, timeOffset: -1200 },
+        { x: 800, y: 300, id: 12, timeOffset: -800 },
+        { x: 750, y: 340, id: 12, timeOffset: -400 },
+        { x: 720, y: 369, id: 32, timeOffset: 0 },
       ],
     },
-    timestamp: T0 + 115_000,
+    timestamp: T0 + 8_000,
   },
-  // User clicks "Place order".
+  // User clicks "Place order" — coords exactly on the button center.
   {
     type: EventType.IncrementalSnapshot,
     data: {
       source: 2, // MouseInteraction
       type: 2, // Click
       id: 32, // button node id
-      x: 480,
-      y: 430,
+      x: 720,
+      y: 369,
     },
-    timestamp: T0 + 133_500,
+    timestamp: T0 + 10_500,
   },
   // After the network request fails (the 500 console + network plugin events
-  // above), the page inserts the error banner. Mutation `adds` -> a new node
-  // appended to the .card (parentId 12), nextId null = append at end.
+  // above), the page inserts the error banner. CRITICAL: rrweb's mutation
+  // handler uses `buildNodeWithSN(node, { skipChild: true })` when applying
+  // mutation.adds — it processes the top-level node only and ignores any
+  // nested `childNodes`. The recorder emits ONE adds entry per node and the
+  // player reconstructs the tree from the flat list. So we flatten:
+  //   1. wrapper div  -> parent .card (id 12)
+  //   2. <strong>     -> parent .err (id 34)
+  //   3. text node    -> parent <strong> (id 35)
+  //   4. trailing text -> parent .err (id 34), appended after <strong>
+  //
+  // Verified by reading rrweb@2.0.0-alpha.20's appendNode in dist/rrweb.cjs
+  // (the version bundled inside rrweb-player 1.0.0-alpha.4).
   {
     type: EventType.IncrementalSnapshot,
     data: {
@@ -380,44 +400,67 @@ const events = [
           parentId: 12,
           nextId: null,
           node: {
-            type: 2, // Element
+            type: 2,
             tagName: 'div',
             attributes: { class: 'err', 'data-test': 'error' },
-            childNodes: [
-              {
-                type: 2,
-                tagName: 'strong',
-                attributes: {},
-                childNodes: [
-                  { type: 3, textContent: 'Order could not be confirmed.', id: 36 },
-                ],
-                id: 35,
-              },
-              {
-                type: 3,
-                textContent:
-                  ' The server returned an internal error (500). Please try again in a moment.',
-                id: 37,
-              },
-            ],
+            childNodes: [],
             id: 34,
+          },
+        },
+        {
+          parentId: 34,
+          nextId: null,
+          node: {
+            type: 2,
+            tagName: 'strong',
+            attributes: {},
+            childNodes: [],
+            id: 35,
+          },
+        },
+        {
+          parentId: 35,
+          nextId: null,
+          node: {
+            type: 3,
+            textContent: 'Order could not be confirmed.',
+            id: 36,
+          },
+        },
+        {
+          parentId: 34,
+          nextId: null,
+          node: {
+            type: 3,
+            textContent:
+              ' The server returned an internal error (500). Please try again in a moment.',
+            id: 37,
           },
         },
       ],
     },
-    timestamp: T0 + 134_500,
+    timestamp: T0 + 12_200,
   },
   // Trailing event so lastTs is exactly the failure moment (drives the
-  // timeline-strip's amber marker position).
+  // timeline-strip's amber marker position). Cursor stays at the button.
   {
     type: EventType.IncrementalSnapshot,
     data: {
       source: 1, // MouseMove — single stationary frame after the failure
-      positions: [{ x: 480, y: 430, id: 34, timeOffset: 0 }],
+      positions: [{ x: 720, y: 369, id: 32, timeOffset: 0 }],
     },
-    timestamp: T0 + 134_812,
+    timestamp: T0 + 12_500,
   },
 ];
+
+// CRITICAL: rrweb-player requires events in chronological order. The arrays
+// above are grouped by event TYPE for readability, but the timestamps
+// interleave (e.g. MouseMove at +2:11.5 comes before plugin events at +2:12,
+// +2:13, +2:14). Without this sort the player drops out-of-order incremental
+// events and the replay appears static. Verified 2026-05-30 — `pnpm node
+// scripts/generate-demo.mjs` produces events in canonical chronological
+// order ready for `buildReport`.
+events.sort((a, b) => a.timestamp - b.timestamp);
 
 const meta = {
   spec: 'tests/e2e/checkout.e2e.ts',
@@ -429,10 +472,10 @@ const meta = {
     '  Actual:   element exists in DOM but display: none\n\n' +
     '  at confirmOrder (checkout.e2e.ts:42:14)\n' +
     '  at Context.<anonymous> (checkout.e2e.ts:38:7)',
-  durationMs: 134_812,
+  durationMs: 12_500,
   browserName: 'chrome',
   browserVersion: '124.0',
-  viewport: { width: 1440, height: 900 },
+  viewport: { width: 1440, height: 640 },
   commitSha: '7f3a892',
   buildUrl: 'https://github.com/Cubenest/rrweb-stack/actions/runs/1284',
 };
