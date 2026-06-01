@@ -10,6 +10,7 @@
 // the peek-cli pattern.
 
 import { realpathSync } from 'node:fs';
+import { INDEX_HELP, runIndex } from './commands/index-cmd.js';
 import { INIT_HELP, runInit } from './commands/init.js';
 import { CLI_VERSION } from './version.js';
 
@@ -19,6 +20,7 @@ Usage: npx tracelane <command> [options]
 
 Commands:
   init                        Detect runner + wire @tracelane/wdio into the project
+  index <dir>                 Generate a triage index for a directory of reports
 
 Run \`npx tracelane <command> --help\` for command-specific options.
 
@@ -31,6 +33,8 @@ export async function run(argv: readonly string[]): Promise<number> {
   switch (command) {
     case 'init':
       return runInit(rest);
+    case 'index':
+      return runIndex(rest);
     case 'version':
     case '--version':
     case '-v':
@@ -56,8 +60,8 @@ export async function run(argv: readonly string[]): Promise<number> {
   }
 }
 
-/** Helper for tests that want the init help string. */
-export { INIT_HELP };
+/** Helper for tests that want the init or index help strings. */
+export { INIT_HELP, INDEX_HELP };
 
 async function main(): Promise<void> {
   const code = await run(process.argv.slice(2));

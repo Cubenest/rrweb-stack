@@ -1,7 +1,7 @@
 ---
-title: "Triage a CI run with 200+ failures using replay thumbnails"
-lede: "When a big nightly suite goes red across hundreds of specs, I want a visual index so I can spot the one real bug among the cascade of side-effects."
-description: "Generate a tracelane index page that renders a preview thumbnail of every failure's rrweb replay so you can triage by scanning, not clicking."
+title: "Triage a CI run with 200+ failures using a single index page"
+lede: "When a big nightly suite goes red across hundreds of specs, I want a single scannable index so I can spot the one real bug among the cascade of side-effects."
+description: "Generate one scannable index.html listing every failure's title, spec, error, duration, and browser. Click any card to open the full replay."
 type: short
 status: draft
 publishedAt: 2026-06-15
@@ -11,30 +11,30 @@ relatedRecipes: [debug-flaky-checkout-test-in-ci, add-tracelane-to-webdriverio-i
 
 ## What you'll end up with
 
-A single `tracelane-index.html` that lists every failing spec with a thumbnail of the final replay frame. You scan the grid, spot the three that look like a real bug instead of a downstream cascade, and ignore the rest.
+A single `index.html` next to your reports that lists every failing spec as a card — title, spec path, error excerpt, duration, browser, captured timestamp — with the failed ones up top. You scan the grid, spot the three that look like a real bug instead of a downstream cascade, click through to the full replay only for those.
 
-![Tracelane failure index with replay thumbnails](/recipes/assets/triage-ci-run-with-replay-thumbnails.png)
+![Tracelane failure index — metadata cards grid](/recipes/assets/triage-ci-run-with-replay-thumbnails.png)
 
 ## Prerequisites
 
 - A WebdriverIO suite already producing `tracelane-report-*.html` files
-- The `@tracelane/cli` installed in the project
+- The `@tracelane/cli` installed in the project (or invoked via `npx`)
 - Node >= 20
 
 ## Steps
 
-### 1. Install the CLI
+### 1. Install the CLI (or skip and use npx)
 
 ```bash
-npm i -D @tracelane/cli@0.1.0-alpha.7
+npm i -D @tracelane/cli
 ```
 
 ### 2. Build the index after your test run
 
-Add a post-test step that points the CLI at the directory of HTML reports.
+Point the CLI at the directory of HTML reports. By default it writes `<dir>/index.html`; use `--out` to write elsewhere.
 
 ```bash
-npx tracelane index ./tracelane-out --out ./tracelane-out/index.html
+npx tracelane index ./tracelane-reports
 ```
 
 ### 3. Upload the whole directory as one artifact
@@ -45,16 +45,18 @@ npx tracelane index ./tracelane-out --out ./tracelane-out/index.html
   uses: actions/upload-artifact@v4
   with:
     name: tracelane-bundle
-    path: tracelane-out/
+    path: tracelane-reports/
 ```
 
 ### 4. Open the index
 
-Download the artifact, open `index.html`, and triage. Each thumbnail is a click-through to its full replay.
+Download the artifact, open `index.html`, and triage. Failed tests are sorted to the top by default. Each card is a click-through to its full replay.
 
 ## Why this works
 
-The CLI walks the output directory, extracts the last meaningful rrweb frame from each report, and renders a static grid. The index is just HTML + inline SVG, so it ships inside the same artifact and works offline.
+The CLI walks the output directory, extracts the metadata each report already embeds (`title`, `spec`, `status`, `error`, `durationMs`, `browser`, captured timestamp), and renders a single self-contained grid. The index is just HTML + inline CSS, so it ships inside the same artifact and works offline.
+
+The grid is sorted with failed tests first, then by capture time descending. Override with `--sort spec` (alphabetical) or `--sort status` (group by outcome).
 
 ## Next steps
 
