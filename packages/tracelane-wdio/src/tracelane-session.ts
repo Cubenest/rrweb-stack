@@ -199,7 +199,13 @@ export class TraceLaneSession {
     }
 
     const meta = this.buildMeta(normalized);
-    const path = writeReport({ outDir: this.outDir, cid: this.cid, events, meta });
+    const path = writeReport({
+      outDir: this.outDir,
+      cid: this.cid,
+      events,
+      meta,
+      footer: this.options.report?.footer,
+    });
     this.current = undefined;
     return path;
   }

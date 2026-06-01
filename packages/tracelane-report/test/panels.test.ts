@@ -109,13 +109,18 @@ describe('extractNetwork (Task 2.10)', () => {
     expect(rows[0]).not.toHaveProperty('method');
   });
 
-  it('does not scrape the console when rich custom events exist', () => {
+  it('uses the authoritative CDP console-scrape over the v1.1 custom-event fallback (audit A-4)', () => {
+    // The v1.1 custom-event path is now strictly a fallback for recorders that
+    // emit neither the network plugin nor the CDP console-scrape. When a CDP
+    // '[tracelane.net]' line is present it carries the authoritative status and
+    // is surfaced; the custom-event fallback is skipped.
     const rows = extractNetwork([
       networkEvent({ method: 'GET', url: 'https://api/rich', status: 500 }, 10),
       consoleEvent('error', [`"${NETWORK_CONSOLE_PREFIX} GET 404 https://api/scraped"`], 20),
     ]);
     expect(rows).toHaveLength(1);
-    expect(rows[0]?.url).toBe('https://api/rich');
+    expect(rows[0]?.url).toBe('https://api/scraped');
+    expect(rows[0]?.status).toBe(404);
   });
 
   it('returns an empty array when there is no network signal', () => {
@@ -224,5 +229,139 @@ describe('extractNetwork — rrweb/network@1 plugin branch (Phase 5)', () => {
       { method: 'PUT', url: 'https://api/old', status: 500, timestamp: 42 },
       { method: 'POST', url: 'https://api/older', status: 403, timestamp: 84 },
     ]);
+  });
+});
+
+describe('extractNetwork — status-0 classification (audit A-1)', () => {
+  it('does NOT classify a cross-origin sub-resource (PerformanceObserver, no method, status 0) as failed', () => {
+    // Per the Resource Timing spec, successful cross-origin sub-resources
+    // (img/script/link/css/font — analytics, CDN, Google Fonts) report
+    // responseStatus: 0 even though they loaded with HTTP 200. They have an
+    // initiatorType of a resource type and no `method`. Must NOT be a failure.
+    const events = [
+      networkPluginEvent(
+        [
+          {
+            name: 'https://fonts.gstatic.com/font.woff2',
+            initiatorType: 'css',
+            status: 0,
+            timestamp: 1,
+          },
+          { name: 'https://cdn/analytics.js', initiatorType: 'script', status: 0, timestamp: 2 },
+          { name: 'https://cdn/logo.png', initiatorType: 'img', status: 0, timestamp: 3 },
+        ],
+        0,
+      ),
+    ];
+    expect(extractNetwork(events)).toEqual([]);
+  });
+
+  it('classifies a true fetch error (initiatorType fetch, method GET, status 0) as failed', () => {
+    const events = [
+      networkPluginEvent(
+        [
+          {
+            name: 'https://api/cors',
+            method: 'GET',
+            initiatorType: 'fetch',
+            status: 0,
+            timestamp: 50,
+          },
+        ],
+        49,
+      ),
+    ];
+    expect(extractNetwork(events)).toEqual([
+      { method: 'GET', url: 'https://api/cors', status: 0, timestamp: 50 },
+    ]);
+  });
+
+  it('classifies a true XHR error (initiatorType xmlhttprequest, status 0) as failed', () => {
+    const events = [
+      networkPluginEvent(
+        [
+          {
+            name: 'https://api/xhr',
+            method: 'POST',
+            initiatorType: 'xmlhttprequest',
+            status: 0,
+            timestamp: 60,
+          },
+        ],
+        59,
+      ),
+    ];
+    expect(extractNetwork(events)).toEqual([
+      { method: 'POST', url: 'https://api/xhr', status: 0, timestamp: 60 },
+    ]);
+  });
+
+  it('still surfaces a real 5xx sub-resource (status >= 400) even from PerformanceObserver', () => {
+    const events = [
+      networkPluginEvent(
+        [{ name: 'https://cdn/broken.js', initiatorType: 'script', status: 500, timestamp: 7 }],
+        0,
+      ),
+    ];
+    expect(extractNetwork(events)).toEqual([
+      { url: 'https://cdn/broken.js', status: 500, timestamp: 7 },
+    ]);
+  });
+});
+
+describe('extractNetwork — CDP authoritative merge (audit A-4)', () => {
+  it('prefers the CDP [tracelane.net] row over a status-poor plugin entry for the same URL', () => {
+    // The PerformanceObserver plugin entry for this URL reports status 0
+    // (cross-origin sub-resource). The CDP console-scrape carries the
+    // authoritative 404. The CDP row must win; no phantom status-0 failure.
+    const events = [
+      networkPluginEvent(
+        [
+          {
+            name: 'https://api/me',
+            initiatorType: 'fetch',
+            method: 'GET',
+            status: 0,
+            timestamp: 100,
+          },
+        ],
+        99,
+      ),
+      consoleEvent('error', [`"${NETWORK_CONSOLE_PREFIX} GET 404 https://api/me"`], 105),
+    ];
+    const rows = extractNetwork(events);
+    const me = rows.filter((r) => r.url === 'https://api/me');
+    expect(me).toHaveLength(1);
+    expect(me[0]?.status).toBe(404);
+  });
+
+  it('keeps a plugin-only failure that has no CDP counterpart', () => {
+    const events = [
+      networkPluginEvent(
+        [
+          {
+            name: 'https://api/explode',
+            initiatorType: 'fetch',
+            method: 'POST',
+            status: 500,
+            timestamp: 10,
+          },
+        ],
+        9,
+      ),
+      consoleEvent('error', [`"${NETWORK_CONSOLE_PREFIX} GET 404 https://api/me"`], 20),
+    ];
+    const rows = extractNetwork(events);
+    expect(rows.map((r) => r.url).sort()).toEqual(['https://api/explode', 'https://api/me']);
+  });
+});
+
+describe('extractConsole — [tracelane.net] filtering (audit A-4)', () => {
+  it('drops [tracelane.net] CDP network lines so a failure is not double-rendered', () => {
+    const rows = extractConsole([
+      consoleEvent('error', [`"${NETWORK_CONSOLE_PREFIX} GET 404 https://api/me"`], 5),
+      consoleEvent('log', ['"a normal log line"'], 6),
+    ]);
+    expect(rows).toEqual([{ level: 'log', message: 'a normal log line', timestamp: 6 }]);
   });
 });

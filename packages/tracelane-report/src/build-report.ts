@@ -30,6 +30,12 @@ export interface BuildReportOptions {
    * Pass `false` only when the caller has already applied the size guard.
    */
   enforceSizeBudget?: boolean;
+  /**
+   * Render the self-marketing footer in the report. Default true. Pass `false`
+   * to suppress it (surfaces the wdio `report: { footer: false }` opt-out —
+   * audit A-8).
+   */
+  footer?: boolean;
 }
 
 /**
@@ -44,7 +50,7 @@ export function buildReport(
   meta: ReportMeta,
   options: BuildReportOptions = {},
 ): string {
-  const { enforceSizeBudget = true } = options;
+  const { enforceSizeBudget = true, footer = true } = options;
 
   // Keep the report within budget; surface a banner if anything was dropped.
   const { events: sized, pruned } = enforceSizeBudget
@@ -75,5 +81,6 @@ export function buildReport(
     eventCount: sized.length,
     firstTs,
     lastTs,
+    footer,
   });
 }

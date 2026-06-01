@@ -163,7 +163,7 @@ Watch the [release notes](https://github.com/Cubenest/rrweb-stack/releases) on `
 
 Semantic Versioning. Currently `0.1.0-alpha.x` (pre-release; the API may shift before `1.0.0`). See [SUPPORTED.md](https://github.com/Cubenest/rrweb-stack/blob/main/SUPPORTED.md) for the compatibility matrix.
 
-**No telemetry.** `tracelane` collects and sends nothing; reports are written to your local `outDir` only. The generated HTML report includes a footer crediting the tool; you can suppress it with `report: { footer: false }` (v1.1+).
+**No telemetry.** `tracelane` collects and sends nothing; reports are written to your local `outDir` only. The generated HTML report includes a footer crediting the tool; you can suppress it with `report: { footer: false }`.
 
 ## License
 

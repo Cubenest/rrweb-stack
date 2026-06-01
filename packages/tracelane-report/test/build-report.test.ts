@@ -139,6 +139,56 @@ describe('buildReport — self-contained HTML (Task 2.9)', () => {
   });
 });
 
+describe('buildReport — accessibility (audit A-7)', () => {
+  it('wires aria-selected + aria-controls on tabs and aria-labelledby on panes', () => {
+    const html = buildReport(sampleEvents(), META);
+    // Console tab is the initially-active one → aria-selected="true".
+    expect(html).toMatch(
+      /<button class="tab active"[^>]*id="tab-console"[^>]*aria-selected="true"[^>]*aria-controls="pane-console"/,
+    );
+    // The other three tabs are aria-selected="false" and control their panes.
+    expect(html).toMatch(
+      /id="tab-network"[^>]*aria-selected="false"[^>]*aria-controls="pane-network"/,
+    );
+    expect(html).toMatch(
+      /id="tab-actions"[^>]*aria-selected="false"[^>]*aria-controls="pane-actions"/,
+    );
+    expect(html).toMatch(
+      /id="tab-timeline"[^>]*aria-selected="false"[^>]*aria-controls="pane-timeline"/,
+    );
+    // Each tabpanel is labelled by its tab.
+    expect(html).toContain('id="pane-console" role="tabpanel" aria-labelledby="tab-console"');
+    expect(html).toContain('id="pane-network" role="tabpanel" aria-labelledby="tab-network"');
+    expect(html).toContain('id="pane-actions" role="tabpanel" aria-labelledby="tab-actions"');
+    expect(html).toContain('id="pane-timeline" role="tabpanel" aria-labelledby="tab-timeline"');
+    // The tab-switch handler updates aria-selected, not just .active.
+    expect(html).toContain("setAttribute('aria-selected'");
+  });
+
+  it('makes time-synced rows keyboard-operable (role=button, tabindex, keydown seek)', () => {
+    const html = buildReport(sampleEvents(), META);
+    // Row markup (in the bootstrap) sets role=button + tabindex + an aria-label.
+    expect(html).toContain("setAttribute('role', 'button')");
+    expect(html).toContain("setAttribute('tabindex', '0')");
+    expect(html).toContain("'Seek to '");
+    // The delegated listener handles Enter / Space, not just click.
+    expect(html).toMatch(/addEventListener\('keydown'/);
+    expect(html).toContain("ev.key === 'Enter'");
+  });
+});
+
+describe('buildReport — placeholder tab pills (audit A-10)', () => {
+  it('adds a "soon" pill to the Actions and Timeline tabs only', () => {
+    const html = buildReport(sampleEvents(), META);
+    expect(html).toMatch(/id="tab-actions"[\s\S]*?<span class="soon-pill">soon<\/span>/);
+    expect(html).toMatch(/id="tab-timeline"[\s\S]*?<span class="soon-pill">soon<\/span>/);
+    // Exactly two pills — Console + Network must NOT get one.
+    expect((html.match(/class="soon-pill"/g) ?? []).length).toBe(2);
+    // The pill has a styling rule using the design tokens.
+    expect(html).toContain('.tab .soon-pill {');
+  });
+});
+
 describe('buildReport — self-marketing footer (Phase 5 indirect virality)', () => {
   it('renders a footer linking to the Cubenest/rrweb-stack repo with UTM tags', () => {
     const html = buildReport(sampleEvents(), META);
@@ -164,6 +214,20 @@ describe('buildReport — self-marketing footer (Phase 5 indirect virality)', ()
     expect(mainCloseIdx).toBeGreaterThan(-1);
     expect(footerOpenIdx).toBeGreaterThan(-1);
     expect(footerOpenIdx).toBeGreaterThan(mainCloseIdx);
+  });
+
+  it('emits the footer by default and when footer is explicitly true', () => {
+    expect(buildReport(sampleEvents(), META)).toContain('<footer');
+    expect(buildReport(sampleEvents(), META, { footer: true })).toContain('<footer');
+  });
+
+  it('omits the footer entirely when footer is false (audit A-8 opt-out)', () => {
+    const html = buildReport(sampleEvents(), META, { footer: false });
+    expect(html).not.toContain('<footer');
+    expect(html).not.toContain('class="attrib"');
+    // The document is still well-formed: </main> closes and </body> follows.
+    expect(html).toMatch(/<\/main>/);
+    expect(html).toMatch(/<\/body>\s*<\/html>/);
   });
 
   it('keeps the footer non-intrusive (class-based muted style, no external assets)', () => {
