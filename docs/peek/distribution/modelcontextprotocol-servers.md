@@ -46,7 +46,7 @@ before submitting.
   "name": "io.github.cubenest/peek-mcp",
   "title": "peek",
   "description": "Local-first MCP server that exposes recorded browser sessions (rrweb DOM + console + network) to AI coding agents. Companion Chrome MV3 extension captures sessions to a local SQLite database; no cloud, no telemetry.",
-  "version": "0.1.0-alpha.7",
+  "version": "0.1.0-alpha.10",
   "websiteUrl": "https://github.com/Cubenest/rrweb-stack/tree/main/packages/peek-mcp",
   "repository": {
     "url": "https://github.com/Cubenest/rrweb-stack",
@@ -58,7 +58,7 @@ before submitting.
       "registryType": "npm",
       "registryBaseUrl": "https://registry.npmjs.org",
       "identifier": "@peekdev/mcp",
-      "version": "0.1.0-alpha.7",
+      "version": "0.1.0-alpha.10",
       "transport": {
         "type": "stdio"
       },
