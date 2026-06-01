@@ -38,13 +38,8 @@ import { hasTracelaneEntry, mergeGitignore } from '../lib/gitignore.js';
 import { confirm } from '../lib/prompt.js';
 import { MANUAL_SNIPPET, applyWdioEdit } from '../lib/wdio-editor.js';
 
-/** Tracking-issue URLs for the not-yet-shipped Playwright/Cypress paths. */
-// NOTE for maintainer: these issue numbers don't have to exist on day one —
-// `tracelane init` is exiting 0 either way. File them before announcement so
-// the URL resolves to a real tracking issue instead of a 404. (#11 = Playwright,
-// #12 = Cypress per the wedge-amplifier spec.)
-const PLAYWRIGHT_ISSUE = 'https://github.com/Cubenest/rrweb-stack/issues/11';
-const CYPRESS_ISSUE = 'https://github.com/Cubenest/rrweb-stack/issues/12';
+/** Issues board for tracking the not-yet-shipped Playwright/Cypress paths. */
+const ISSUES_BOARD = 'https://github.com/Cubenest/rrweb-stack/issues';
 
 /** Spawn-sync signature, narrowed to what we need + injectable for tests. */
 export type SpawnRunner = (
@@ -139,14 +134,13 @@ function printComingSoon(
 ): number {
   const runnerLabel = detected.runner === 'playwright' ? 'Playwright' : 'Cypress';
   const target = detected.runner === 'playwright' ? 'Q3 2026' : 'Q4 2026';
-  const issue = detected.runner === 'playwright' ? PLAYWRIGHT_ISSUE : CYPRESS_ISSUE;
   write(
     stdout,
     [
       `tracelane init - detected ${runnerLabel} project (${basename(detected.configPath)}).`,
       '',
       `tracelane ${runnerLabel} support is in development; target ship ${target}.`,
-      `Track: ${issue}`,
+      `Track progress: ${ISSUES_BOARD}`,
       '',
       'To use tracelane today, add a WebdriverIO suite, or pass --runner wdio',
       'if your project already has a wdio.conf.*.',
