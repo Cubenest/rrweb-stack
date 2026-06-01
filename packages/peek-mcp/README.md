@@ -30,7 +30,7 @@ Read on if you're configuring the MCP server manually, building tooling against 
 ## What this is NOT
 
 - Not a remote MCP server. Peek is **local-only**: stdio transport over a child-process pipe. There is no HTTP listener, no SSE endpoint, no remote auth. The MCP transport spec's Streamable HTTP variant is out of scope by design.
-- Not a write-by-default tool. Read tools are unauthenticated; write tools (clicks, inputs, navigation, destructive actions) require explicit per-action authorization, recorded in `~/.peek/audit.log`.
+- Not a write-by-default tool. Read tools are unauthenticated. The write tools (`execute_action`, `request_authorization`) are defined on the MCP surface and gated by the permission model + destructive blocklist + audit-log writer — but the cross-process IPC that delivers them to the browser native host is **in development**. Calling `execute_action` against `peek-mcp@0.1.0-alpha.10` returns `bridge not wired in this MCP process`; peek is effectively read-only until that bridge lands.
 - Not a wrapper around Chrome DevTools Protocol. The server reads recorded events from SQLite; the extension owns capture. No live `chrome.debugger` access from the MCP server.
 
 ## Manual MCP-client config
@@ -42,16 +42,23 @@ If `peek init` doesn't recognize your client, paste this into your client's MCP 
   "mcpServers": {
     "peek": {
       "command": "npx",
-      "args": ["-y", "@peekdev/mcp"],
-      "env": {
-        "PEEK_HOME": "~/.peek"
-      }
+      "args": ["-y", "@peekdev/mcp"]
     }
   }
 }
 ```
 
-For Claude Code, this goes in `~/.claude/mcp_servers.json` (per-project) or via `claude mcp add`. For Cursor: `~/Library/Application Support/Cursor/User/mcp_servers.json` (macOS). For Continue: in your `~/.continue/config.json` under `experimental.modelContextProtocolServers`.
+`PEEK_HOME` defaults to `~/.peek`; set it via `env` only if you want a non-default capture directory.
+
+The per-user config paths `peek init` writes to (canonical, see `packages/peek-cli/src/lib/init-config.ts`):
+
+| Client | Path |
+|---|---|
+| Claude Code | `~/.claude.json` (or `claude mcp add`) |
+| Cursor | `~/.cursor/mcp.json` |
+| VS Code (MCP) | `~/.vscode/mcp.json` |
+| Windsurf | `~/.codeium/windsurf/mcp_config.json` |
+| Cline | `~/cline_mcp_settings.json` |
 
 ## What the AI agent can do
 
@@ -88,6 +95,8 @@ At **Level 3** every `execute_action` call prompts the user via the side-panel b
 
 Every `execute_action` and `request_authorization` call is appended to `~/.peek/audit.log` (JSONL, mode 0600 — `peek audit log --json` prints it), including denied ones.
 
+**Shipped today (alpha.10) vs queued for a follow-up alpha:** the five-level model, the destructive blocklist, and the audit-log writer all ship — they're enforced inside `peek-mcp` and observable via `~/.peek/audit.log`. The cross-process IPC that lets `execute_action` actually fire a click in the browser (`LocalSocketHostBridge`) is **not yet wired**; calling `execute_action` against alpha.10 returns the `bridge not wired in this MCP process` error. Track the bridge work via [issues on the rrweb-stack repo](https://github.com/Cubenest/rrweb-stack/issues).
+
 ## Database
 
 `~/.peek/sessions.db` — SQLite (better-sqlite3, WAL mode). Schema in `src/db/migrations/`. The CLI opens this DB read-mostly; the native host writes it during extension capture; the MCP server reads it for tool calls.
@@ -101,8 +110,8 @@ For consumers building tooling on top of peek:
 ```ts
 import { generatePlaywrightRepro } from '@peekdev/mcp/mcp/playwright-repro';
 import { loadSessionEvents } from '@peekdev/mcp/mcp/event-blobs';
-import { openDb } from '@peekdev/mcp/db';
-import { startNativeHost } from '@peekdev/mcp/native-host';
+import { openDb, peekHomeDir } from '@peekdev/mcp/db';
+import { buildManifest, installManifests } from '@peekdev/mcp/native-host';
 ```
 
 These are the subpath exports the `@peekdev/cli` package uses. API surface is small but stable.
