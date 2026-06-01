@@ -131,7 +131,10 @@ export function renderHero(meta: ReportMeta, eventCount?: number, capturedAt?: D
   // ---- Eyebrow row -------------------------------------------------------
   // Status pill (always shown), then spec / duration / browser separated by
   // thin dividers. Each piece is optional except the status.
+  const TRACELANE_MARK = `<svg class="tracelane-mark" xmlns="http://www.w3.org/2000/svg" viewBox="36 96 184 64" height="14" role="img" aria-label="tracelane" style="display:inline-block;vertical-align:middle;flex-shrink:0"><g fill="none" stroke="#C2563D" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"><rect x="40" y="100" width="176" height="56" rx="4"/><path d="M64 128L96 128"/><path d="M112 128L144 128"/><path d="M160 128L192 128"/></g><circle cx="208" cy="128" r="6" fill="#C2563D"/></svg>`;
+
   const eyebrowBits: string[] = [
+    TRACELANE_MARK,
     `<span class="dot" aria-hidden="true"></span><span class="status ${escapeHtml(meta.status)}">test ${escapeHtml(statusVerb(meta.status))}</span>`,
   ];
   if (meta.spec) eyebrowBits.push(`<span>${escapeHtml(meta.spec)}</span>`);

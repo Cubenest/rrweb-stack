@@ -174,3 +174,12 @@ describe('renderHero — editorial postmortem header (Phase 6)', () => {
     expect(renderHero({ title: 't', status: 'skipped' })).toContain('<em>was skipped</em>');
   });
 });
+
+describe('renderHero — tracelane brand mark', () => {
+  it('eyebrow contains the tracelane inline SVG mark', () => {
+    const html = renderHero({ title: 'login fails', status: 'failed' });
+    expect(html).toContain('class="tracelane-mark"');
+    expect(html).toContain('aria-label="tracelane"');
+    expect(html).toContain('#C2563D');
+  });
+});
