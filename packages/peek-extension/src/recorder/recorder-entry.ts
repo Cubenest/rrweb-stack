@@ -38,6 +38,22 @@
 import { getRecordConsolePlugin, getRecordNetworkPlugin, record } from '@cubenest/rrweb-core';
 import { PEEK_RRWEB_SOURCE } from './messages.js';
 
+// --- Recorder/relay handshake constants -------------------------------------
+// The ISOLATED relay and MAIN recorder both run at document_start in different
+// execution contexts; if the recorder emits before the relay's message listener
+// attaches, the initial Meta + FullSnapshot are lost and the session becomes
+// unreconstructable. We buffer events until the relay signals ready.
+const RELAY_PROBE_INTERVAL_MS = 50;
+// Hard upper bound: if the relay never responds, fail OPEN at this many ms so
+// recording continues (matches pre-handshake behavior). 5 s is enough for any
+// realistic content-script attach delay and small enough that the user doesn't
+// silently miss capture if the relay is genuinely broken.
+const RELAY_READY_TIMEOUT_MS = 5_000;
+// Cap on buffered events while waiting for ready. A typical FullSnapshot is
+// one event; incrementals queue at most ~5/100ms. Cap protects against a
+// pathological "relay never attaches" case from growing memory unboundedly.
+const RELAY_BUFFER_CAP = 5_000;
+
 // Re-injected on every navigation; keep it idempotent so a double-inject (a
 // racing executeScript into the same realm) never double-patches fetch/XHR or
 // starts two recorders. The guard must survive ACROSS separate injections (each
@@ -65,7 +81,35 @@ const GUARD = '__peekRecorderInstalled';
 
   // The ONLY escape hatch from this closure. A private function, never exposed
   // on `window` — the page cannot intercept buffered events through a global.
+  //
+  // ATTACH-RACE GUARD (Bug 2, pre-alpha.7 sessions like s_d37f7982): the
+  // ISOLATED relay's `addEventListener('message')` may not be registered at
+  // the moment rrweb's `record()` emits its initial Meta + FullSnapshot.
+  // Buffer all emits until the relay sends `kind: 'relay-ready'`; drain in
+  // order then. Fail-open after RELAY_READY_TIMEOUT_MS so a broken relay
+  // doesn't silence the session entirely (matches the pre-fix behavior).
+  let relayReady = false;
+  const earlyBuffer: unknown[] = [];
+
+  const flushBuffer = (): void => {
+    for (const payload of earlyBuffer) {
+      try {
+        window.postMessage({ source: PEEK_RRWEB_SOURCE, payload }, '*');
+      } catch {
+        // structured-clone failure — drop and continue, do not break the page.
+      }
+    }
+    earlyBuffer.length = 0;
+  };
+
   const postRrweb = (payload: unknown): void => {
+    if (!relayReady) {
+      if (earlyBuffer.length < RELAY_BUFFER_CAP) earlyBuffer.push(payload);
+      // At the cap we silently drop overflow; preserves bounded memory in the
+      // (rare) case of a never-attaching relay. The fail-open timer ensures
+      // we don't sit here forever — see below.
+      return;
+    }
     try {
       window.postMessage({ source: PEEK_RRWEB_SOURCE, payload }, '*');
     } catch {
@@ -73,6 +117,57 @@ const GUARD = '__peekRecorderInstalled';
       // rather than break the page.
     }
   };
+
+  // Listen for the relay's `relay-ready` signal. The relay broadcasts this on
+  // attach AND in response to any `recorder-probe` we send.
+  const onHandshake = (ev: MessageEvent): void => {
+    if (ev.source !== window) return;
+    const data: unknown = ev.data;
+    if (typeof data !== 'object' || data === null) return;
+    const tagged = data as { source?: unknown; kind?: unknown };
+    if (tagged.source !== PEEK_RRWEB_SOURCE) return;
+    if (tagged.kind !== 'relay-ready') return;
+    if (relayReady) return;
+    relayReady = true;
+    window.removeEventListener('message', onHandshake);
+    flushBuffer();
+  };
+  window.addEventListener('message', onHandshake);
+
+  // Probe the relay repeatedly until we see `relay-ready`. The relay attaches
+  // synchronously in its own main(); if it loaded first, the first probe is
+  // enough. If the recorder loaded first, we re-probe every 50 ms — when the
+  // relay's listener attaches, the next probe lands in its `onMessage` handler
+  // and triggers a `relay-ready` reply.
+  const probe = (): void => {
+    if (relayReady) return;
+    try {
+      window.postMessage({ source: PEEK_RRWEB_SOURCE, kind: 'recorder-probe' }, '*');
+    } catch {
+      // ignore — fail-open timer covers the worst case
+    }
+  };
+  probe();
+  const probeTimer = setInterval(() => {
+    if (relayReady) {
+      clearInterval(probeTimer);
+      return;
+    }
+    probe();
+  }, RELAY_PROBE_INTERVAL_MS);
+
+  // Hard ceiling: if the relay is broken / never responds, fail open so the
+  // recorder still emits going forward. Matches pre-handshake behavior — the
+  // initial events are still lost in that pathological case, which is no
+  // worse than what alpha.7+ does today, and the next `checkoutEveryNms`
+  // FullSnapshot (≤120 s later) restores a reconstruction anchor.
+  setTimeout(() => {
+    if (relayReady) return;
+    relayReady = true;
+    clearInterval(probeTimer);
+    window.removeEventListener('message', onHandshake);
+    flushBuffer();
+  }, RELAY_READY_TIMEOUT_MS);
 
   // --- rrweb DOM + console + network recording --------------------------
   // record() returns a stop fn; we deliberately keep no handle (the page could
