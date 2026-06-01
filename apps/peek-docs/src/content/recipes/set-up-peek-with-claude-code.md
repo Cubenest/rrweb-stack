@@ -3,7 +3,7 @@ title: "Set up peek with Claude Code in 2 minutes"
 lede: "When I want to try peek with my Claude Code install, I want one command that wires up the MCP server without me touching JSON files."
 description: "Install the peek CLI, run peek init, and Claude Code starts seeing your captured browser sessions. No manual JSON editing of ~/.claude.json."
 type: short
-status: draft
+status: published
 publishedAt: 2026-06-15
 integrations: [claude-code, install]
 relatedRecipes: [claude-code-on-staging, set-up-peek-with-cursor, set-up-peek-with-cline-windsurf-codex]

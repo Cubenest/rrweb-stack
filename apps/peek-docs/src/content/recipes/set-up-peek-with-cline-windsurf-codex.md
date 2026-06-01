@@ -3,7 +3,7 @@ title: "Set up peek with Cline, Windsurf, or Codex CLI"
 lede: "When I use Cline, Windsurf, or Codex CLI, I want peek's MCP server registered without hunting for each tool's config file."
 description: "Per-client MCP wiring for Cline, Windsurf, and Codex CLI — what peek init handles automatically and the manual JSON block when it can't."
 type: short
-status: draft
+status: published
 publishedAt: 2026-06-15
 integrations: [cline, windsurf, codex-cli, install]
 relatedRecipes: [set-up-peek-with-claude-code, set-up-peek-with-cursor, claude-code-on-staging]

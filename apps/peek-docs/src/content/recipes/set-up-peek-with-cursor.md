@@ -3,7 +3,7 @@ title: "Set up peek with Cursor"
 lede: "When I'm a Cursor user, I want peek wired into my MCP config so the agent can read my browser sessions."
 description: "Run peek init and let it write the peek MCP server into your Cursor mcp.json — or paste the canonical JSON block if you'd rather not run the wizard."
 type: short
-status: draft
+status: published
 publishedAt: 2026-06-15
 integrations: [cursor, install]
 relatedRecipes: [let-cursor-see-real-network-calls, set-up-peek-with-claude-code, set-up-peek-with-cline-windsurf-codex]
