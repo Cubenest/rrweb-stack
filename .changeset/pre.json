@@ -11,9 +11,11 @@
     "@tracelane/report": "0.1.0-alpha.0",
     "@tracelane/wdio": "0.1.0-alpha.0",
     "peek-docs": "0.0.0",
-    "tracelane-docs": "0.0.0"
+    "tracelane-docs": "0.0.0",
+    "@cubenest/docs-shared": "0.0.0"
   },
   "changesets": [
+    "fix-event-blob-reader-directory-layout",
     "phase4c-alpha7-cleanup",
     "phase4c-alpha8-p18-counts",
     "phase4c-loop2-alpha3",
@@ -40,6 +42,7 @@
     "phase6-tracelane-report-revamp",
     "rrweb-core-esm-fix",
     "time-synced-panels-polish",
-    "time-synced-panels"
+    "time-synced-panels",
+    "tracelane-index-command"
   ]
 }

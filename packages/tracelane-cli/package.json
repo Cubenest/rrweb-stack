@@ -1,6 +1,6 @@
 {
   "name": "@tracelane/cli",
-  "version": "0.1.0-alpha.7",
+  "version": "0.1.0-alpha.8",
   "description": "tracelane scaffolding CLI. `npx tracelane init` detects your test runner (WDIO / Playwright / Cypress) and wires @tracelane/wdio into wdio.conf.* in one command — the published path from `npm install` + manual conf edit to a single npx invocation.",
   "keywords": [
     "tracelane",
@@ -29,7 +29,11 @@
       "import": "./dist/index.js"
     }
   },
-  "files": ["dist", "NOTICE", "README.md"],
+  "files": [
+    "dist",
+    "NOTICE",
+    "README.md"
+  ],
   "scripts": {
     "build": "tsc -p tsconfig.json && node ./scripts/postbuild.mjs",
     "typecheck": "tsc -p tsconfig.json --noEmit",
