@@ -40,10 +40,11 @@ jobs:
       # Recipe verifier — the status-aware link check is a HARD gate: a
       # PUBLISHED recipe that links to a draft/archived recipe (relatedRecipes
       # or inline body link) 404s in prod, so it fails the build here. The
-      # hero-image check is a non-fatal warning by default; flip
-      # STRICT_RECIPE_ASSETS=1 once the screenshots land. `pnpm build` above
-      # has already produced @cubenest/docs-shared's dist/ that this imports.
-      - run: node packages/docs-shared/scripts/verify-recipes.mjs
+      # hero images for every published recipe have now landed, so the
+      # STRICT_RECIPE_ASSETS gate is on: a published recipe missing its
+      # `/recipes/assets/<slug>.png` hard-fails here. `pnpm build` above has
+      # already produced @cubenest/docs-shared's dist/ that this imports.
+      - run: STRICT_RECIPE_ASSETS=1 node packages/docs-shared/scripts/verify-recipes.mjs
 
   # @tracelane/wdio browser smoke (Task 2.17). Separate, non-blocking job so a
   # Chrome/chromedriver hiccup can't fail the required `ci` gate. The smoke spec
