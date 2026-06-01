@@ -15,6 +15,7 @@
     "@cubenest/docs-shared": "0.0.0"
   },
   "changesets": [
+    "fix-cli-description-npx-command",
     "fix-event-blob-reader-directory-layout",
     "launch-audit-metadata-and-docs",
     "launch-audit-tracelane-report",
