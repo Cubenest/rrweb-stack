@@ -18,7 +18,8 @@
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "verify-recipes": "pnpm run build && node scripts/verify-recipes.mjs",
-    "verify-recipes:live": "pnpm run build && node scripts/verify-recipes-live.mjs"
+    "verify-recipes:live": "pnpm run build && node scripts/verify-recipes-live.mjs",
+    "verify-recipes:wdio": "node scripts/verify-recipes-wdio.mjs"
   },
   "dependencies": {
     "zod": "^3.25.76"
