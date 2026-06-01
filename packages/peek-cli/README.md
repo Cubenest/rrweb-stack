@@ -56,13 +56,13 @@ After `peek init`, the `peek-mcp` server is available to your AI client as an MC
 - "find network requests with status >= 400 from the last 5 minutes of recording on `example.com`"
 - "generate a Playwright reproduction script from session `abc123`"
 
-The MCP server exposes ~20 tools — listing, querying, exporting, DOM reconstruction, console/network drill-down, and (with explicit per-action authorization) destructive actions like clicks/inputs/navigation. See [`@peekdev/mcp`](https://github.com/Cubenest/rrweb-stack/tree/main/packages/peek-mcp) for the tool reference.
+The MCP server exposes 10 tools — listing, session summaries, console/network drill-down, user-action history, DOM reconstruction and history, Playwright-repro generation, and (with explicit per-action authorization) actions like clicks/inputs/navigation. See [`@peekdev/mcp`](https://github.com/Cubenest/rrweb-stack/tree/main/packages/peek-mcp) for the tool reference.
 
 ## Privacy
 
 Peek is **local-first**. The CLI reads from `~/.peek/sessions.db` (SQLite); the extension records into it; the MCP server queries it. There is no network destination. There is no telemetry. There is no auto-update channel. The native host runs as your user, not as a daemon.
 
-The extension uses per-origin host permissions — recording is **off** for every site by default. You enable it explicitly from the side panel for each origin you care about. The five-level permission model (read-only → read-with-confirmation → constrained-write → broad-write → destructive) is enforced server-side, not just in the UI.
+The extension uses per-origin host permissions — recording is **off** for every site by default. You enable it explicitly from the side panel for each origin you care about. The five-level permission model (0 Off → 1 Read-only → 2 Suggest-only → 3 Act-with-confirm → 4 YOLO), plus a cross-level destructive-action blocklist that always prompts, is enforced server-side, not just in the UI.
 
 Full data-handling policy: [`docs/peek/PRIVACY_POLICY.md`](https://github.com/Cubenest/rrweb-stack/blob/main/docs/peek/PRIVACY_POLICY.md). Chrome Web Store permission justifications: [`docs/peek/PERMISSION_JUSTIFICATION.md`](https://github.com/Cubenest/rrweb-stack/blob/main/docs/peek/PERMISSION_JUSTIFICATION.md).
 
