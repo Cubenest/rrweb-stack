@@ -35,6 +35,18 @@ jobs:
         uses: changesets/action@06245a4e0a36c064a573d4150030f5ec548e4fcc  # v1.4.10
         with:
           publish: pnpm release
-          version: pnpm changeset version
+          # `pnpm run version` runs the root package.json `version` script:
+          # `changeset version` then `biome check --write .` + `pnpm install
+          # --lockfile-only`, so the bot's "Version Packages" commit is already
+          # biome-formatted and the lockfile stays consistent. Without the
+          # self-format step the bot rewrites package.json `files`/`keywords`
+          # into multi-line form that biome's formatter rejects, turning the
+          # required `ci` gate red after every release.
+          #
+          # Must be `pnpm run version`, NOT `pnpm version`: bare `pnpm version`
+          # hits pnpm's built-in version command (prints runtime versions) and
+          # skips the npm script entirely, reintroducing the drift. Likewise a
+          # bare `changeset version` skips the self-format step.
+          version: pnpm run version
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
