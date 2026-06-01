@@ -3,7 +3,7 @@ title: "Security-review a flow by letting your agent inspect the live DOM"
 lede: "When I'm reviewing a sign-up flow for tokens-in-URL or leaked secrets, I want my agent to look at the actual rendered DOM and network traffic — not the source."
 description: "Hand your AI agent a recorded peek session and have it surface tokens-in-URLs, leaked secrets, mixed content, and risky third-party calls in the flow."
 type: short
-status: draft
+status: published
 publishedAt: 2026-06-15
 integrations: [claude-code, security]
 relatedRecipes: [use-peek-with-per-action-approval, claude-code-on-staging, validate-multi-step-authenticated-checkout]
