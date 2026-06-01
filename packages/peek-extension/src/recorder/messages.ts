@@ -65,12 +65,37 @@ export interface PeekRrwebMessage {
 }
 
 /**
- * The union of validated peek messages. Today only one family rides this
- * channel; the union is preserved as a forward-compat shape so future
- * MAIN→ISOLATED message types (e.g. action-result acks) slot in without
- * changing every call site.
+ * A handshake message between the MAIN-world recorder and the ISOLATED relay.
+ * Both scripts run at document_start but in different execution contexts, so
+ * their attach order is not guaranteed: if the recorder's first emit (Meta +
+ * FullSnapshot) fires before the relay's `addEventListener('message')`
+ * registers, those events are lost forever and the session becomes
+ * unreconstructable by `get_dom_snapshot`. The handshake closes that race:
+ *
+ *   - On attach, the relay broadcasts `kind: 'relay-ready'`.
+ *   - The recorder probes with `kind: 'recorder-probe'` until it sees a
+ *     `relay-ready` back (covers the case where the relay attaches AFTER the
+ *     recorder loaded and the initial broadcast was missed).
+ *   - The relay responds to every probe with another `relay-ready`.
+ *   - The recorder buffers rrweb events until it sees `relay-ready`, then
+ *     drains the buffer in order.
+ *
+ * Carries no rrweb payload — recipients distinguish from rrweb events by the
+ * presence of the `kind` field (handshakes) vs. `payload` (rrweb events).
  */
-export type PeekMessage = PeekRrwebMessage;
+export interface PeekHandshakeMessage {
+  source: typeof PEEK_RRWEB_SOURCE;
+  kind: 'recorder-probe' | 'relay-ready';
+}
+
+/**
+ * The union of validated peek messages. Two families ride this channel:
+ *   - {@link PeekRrwebMessage}     — the rrweb event stream
+ *   - {@link PeekHandshakeMessage} — the recorder/relay attach handshake
+ *
+ * Both share the `source: 'peek'` tag; recipients narrow on the discriminator.
+ */
+export type PeekMessage = PeekRrwebMessage | PeekHandshakeMessage;
 
 /**
  * Is `data` an object with a `source` field equal to our tag? Cheap first
@@ -83,5 +108,12 @@ export function isPeekMessage(data: unknown): data is PeekMessage {
 
 /** Narrow a validated peek message to the rrweb family. */
 export function isRrwebMessage(msg: PeekMessage): msg is PeekRrwebMessage {
-  return msg.source === PEEK_RRWEB_SOURCE && 'payload' in msg && msg.payload != null;
+  return 'payload' in msg && (msg as PeekRrwebMessage).payload != null;
+}
+
+/** Narrow a validated peek message to the handshake family. */
+export function isHandshakeMessage(msg: PeekMessage): msg is PeekHandshakeMessage {
+  if (!('kind' in msg)) return false;
+  const kind = (msg as PeekHandshakeMessage).kind;
+  return kind === 'recorder-probe' || kind === 'relay-ready';
 }

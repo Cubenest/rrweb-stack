@@ -5,7 +5,13 @@ import {
   type ShadowReport,
   sendCmd,
 } from '../src/messaging/protocol';
-import { type PeekMessage, isPeekMessage, isRrwebMessage } from '../src/recorder/messages';
+import {
+  PEEK_RRWEB_SOURCE,
+  type PeekMessage,
+  isHandshakeMessage,
+  isPeekMessage,
+  isRrwebMessage,
+} from '../src/recorder/messages';
 import { EventBatcher } from '../src/relay/batch';
 import { extractConsoleEvent, isConsolePluginEvent } from '../src/relay/console-extract';
 import { collectShadowReports, getOpenOrClosedShadowRoot } from '../src/relay/shadow';
@@ -81,6 +87,20 @@ export default defineContentScript({
 
     const timer = setInterval(flush, FLUSH_INTERVAL_MS);
 
+    // The MAIN-world recorder and this content script both run at
+    // document_start in different execution contexts; the recorder may emit
+    // its initial Meta + FullSnapshot before this listener attaches, losing
+    // those events forever (the s_d37f7982 symptom). Respond to handshake
+    // probes so the recorder can buffer until we're ready, then drain.
+    const announceReady = (): void => {
+      try {
+        window.postMessage({ source: PEEK_RRWEB_SOURCE, kind: 'relay-ready' }, '*');
+      } catch {
+        // postMessage can't realistically fail on a same-window primitive
+        // payload, but defense-in-depth — don't break the page.
+      }
+    };
+
     // --- MAIN-world message intake ----------------------------------------
     const onMessage = (ev: MessageEvent): void => {
       // Only same-window posts (the recorder runs in this window's MAIN world).
@@ -90,6 +110,13 @@ export default defineContentScript({
       if (!isPeekMessage(data)) return; // not ours — ignore untrusted noise
 
       const msg = data as PeekMessage;
+
+      if (isHandshakeMessage(msg)) {
+        // Recorder loaded after us, missed the initial broadcast — answer the
+        // probe so it can drain its buffer.
+        if (msg.kind === 'recorder-probe') announceReady();
+        return;
+      }
 
       if (isRrwebMessage(msg)) {
         handleRrweb(msg.payload);
@@ -120,6 +147,10 @@ export default defineContentScript({
     };
 
     window.addEventListener('message', onMessage);
+    // Recorder loaded before us? Tell it we're listening now so it drains its
+    // buffer. Recorder loaded after us? Its first probe lands in onMessage and
+    // we respond there.
+    announceReady();
 
     // --- Closed shadow root sweep (Task 3.21) -----------------------------
     // rrweb (MAIN world) misses CLOSED shadow roots; chrome.dom is ISOLATED-
