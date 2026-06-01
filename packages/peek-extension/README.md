@@ -1,3 +1,5 @@
+<img src="https://raw.githubusercontent.com/Cubenest/rrweb-stack/main/assets/brand/sub-peek.svg" height="40" alt="peek">
+
 # @peekdev/extension
 
 > Your real browser, exposed to your AI coding agent over MCP — capture once, query forever, never leaves your machine.
