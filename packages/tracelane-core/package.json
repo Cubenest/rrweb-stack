@@ -1,6 +1,6 @@
 {
   "name": "@tracelane/core",
-  "version": "0.1.0-alpha.9",
+  "version": "0.1.0-alpha.10",
   "description": "Framework-agnostic rrweb recording engine for tracelane. Wraps a per-framework browser object behind a common BrowserExecutor interface.",
   "keywords": [
     "tracelane",
@@ -46,7 +46,11 @@
     "url": "https://github.com/Cubenest/rrweb-stack",
     "directory": "packages/tracelane-core"
   },
-  "bugs": { "url": "https://github.com/Cubenest/rrweb-stack/issues" },
+  "bugs": {
+    "url": "https://github.com/Cubenest/rrweb-stack/issues"
+  },
   "homepage": "https://github.com/Cubenest/rrweb-stack/tree/main/packages/tracelane-core#readme",
-  "engines": { "node": ">=20.18.0" }
+  "engines": {
+    "node": ">=20.18.0"
+  }
 }

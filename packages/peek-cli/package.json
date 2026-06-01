@@ -1,6 +1,6 @@
 {
   "name": "@peekdev/cli",
-  "version": "0.1.0-alpha.15",
+  "version": "0.1.0-alpha.16",
   "description": "peek command-line tool. A thin read-mostly client of the native host's ~/.peek/sessions.db: status, sessions list/show/export/delete, the `peek init` MCP-client wizard, and `peek audit log`.",
   "keywords": [
     "peek",
@@ -52,7 +52,11 @@
     "url": "https://github.com/Cubenest/rrweb-stack",
     "directory": "packages/peek-cli"
   },
-  "bugs": { "url": "https://github.com/Cubenest/rrweb-stack/issues" },
+  "bugs": {
+    "url": "https://github.com/Cubenest/rrweb-stack/issues"
+  },
   "homepage": "https://peek.cubenest.in",
-  "engines": { "node": ">=20.18.0" }
+  "engines": {
+    "node": ">=20.18.0"
+  }
 }
