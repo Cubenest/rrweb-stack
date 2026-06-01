@@ -296,7 +296,7 @@ describe('runInitProgrammatic — Playwright / Cypress no-op', () => {
     expect(rec.calls).toHaveLength(0);
     expect(s.out()).toMatch(/Playwright/);
     expect(s.out()).toMatch(/Q3 2026/);
-    expect(s.out()).toMatch(/issues\/11/);
+    expect(s.out()).toMatch(/github\.com\/Cubenest\/rrweb-stack\/issues/);
     // Nothing changed.
     expect(readFileSync(join(dir, 'playwright.config.ts'), 'utf8')).toBe(PLAYWRIGHT_CONF);
     expect(existsSync(join(dir, 'tracelane-reports'))).toBe(false);
@@ -317,7 +317,7 @@ describe('runInitProgrammatic — Playwright / Cypress no-op', () => {
     expect(rec.calls).toHaveLength(0);
     expect(s.out()).toMatch(/Cypress/);
     expect(s.out()).toMatch(/Q4 2026/);
-    expect(s.out()).toMatch(/issues\/12/);
+    expect(s.out()).toMatch(/github\.com\/Cubenest\/rrweb-stack\/issues/);
     expect(readFileSync(join(dir, 'cypress.config.ts'), 'utf8')).toBe(CYPRESS_CONF);
   });
 });

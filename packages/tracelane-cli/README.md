@@ -2,7 +2,7 @@
 
 # @tracelane/cli
 
-> The reporter for your WebdriverIO, Playwright, and Cypress tests. Self-contained HTML for every run — replay failures, audit successes, attach to any bug tracker. No SaaS, no dashboard, no signup.
+> The reporter for your WebdriverIO tests — Playwright and Cypress on the roadmap. Self-contained HTML for every run — replay failures, audit successes, attach to any bug tracker. No SaaS, no dashboard, no signup.
 
 One command to wire tracelane into your WebdriverIO project. Detects your runner + package manager, installs `@tracelane/wdio`, edits `wdio.conf.ts`, creates `tracelane-reports/`, ignores it in git. Idempotent and dry-runnable.
 
@@ -57,10 +57,10 @@ Options:
 
 ## Playwright and Cypress
 
-Detection works, but the v0.1 CLI exits 0 with a "coming Q3/Q4 2026" message for these. The integration packages (`@tracelane/playwright`, `@tracelane/cypress`) aren't published yet — when they are, a future bump to `@tracelane/cli` will add the wiring. Track:
+Detection works, but the v0.1 CLI exits 0 with a "coming Q3/Q4 2026" message for these. The integration packages (`@tracelane/playwright`, `@tracelane/cypress`) aren't published yet — when they are, a future bump to `@tracelane/cli` will add the wiring. Progress is [tracked on the issues board](https://github.com/Cubenest/rrweb-stack/issues):
 
-- Playwright: [issue #11](https://github.com/Cubenest/rrweb-stack/issues/11) — target Q3 2026
-- Cypress: [issue #12](https://github.com/Cubenest/rrweb-stack/issues/12) — target Q4 2026
+- Playwright — target Q3 2026
+- Cypress — target Q4 2026
 
 If you have a `wdio.conf.*` alongside a Playwright/Cypress conf, the WDIO path wins by default — pass `--runner playwright` or `--runner cypress` to override (it'll still print the coming-soon message).
 

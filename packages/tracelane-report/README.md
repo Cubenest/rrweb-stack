@@ -2,7 +2,7 @@
 
 # @tracelane/report
 
-> The reporter for your WebdriverIO, Playwright, and Cypress tests. Self-contained HTML for every run — replay failures, audit successes, attach to any bug tracker. No SaaS, no dashboard, no signup.
+> The reporter for your WebdriverIO tests — Playwright and Cypress on the roadmap. Self-contained HTML for every run — replay failures, audit successes, attach to any bug tracker. No SaaS, no dashboard, no signup.
 
 The self-contained, offline HTML report builder for [`tracelane`](https://github.com/Cubenest/rrweb-stack). Given a captured rrweb event stream plus test metadata, it produces a **single `.html` file** that:
 
