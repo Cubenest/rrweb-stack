@@ -255,10 +255,10 @@ function ingestSessionAppend(
       msg.url ?? null,
       msg.title ?? null,
       origin ?? null,
-      // events_blob_path stays a per-session pointer label; chunk rows carry the per-seq path.
-      // We record the session-level directory (relative to PEEK_HOME) on first insert via the
-      // `?` placeholder above; the INSERT-OR-IGNORE on conflict won't update it (intentional).
-      join('rrweb-events', msg.sessionId),
+      // events_blob_path is the per-session directory relative to <PEEK_HOME>/rrweb-events/
+      // (the reader's resolveBlobPath base). Just the sessionId — no `rrweb-events/` prefix,
+      // or the reader will double it. Chunk rows carry the per-seq filename inside the dir.
+      msg.sessionId,
     );
     const ins = insertChunk.run(
       msg.sessionId,
