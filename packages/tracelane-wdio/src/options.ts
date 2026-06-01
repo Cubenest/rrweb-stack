@@ -11,14 +11,28 @@ export interface CaptureOptions {
    * Capture network requests. Default `true`.
    *
    * When enabled (default), the in-page rrweb network plugin
-   * (`rrweb/network@1`) is registered alongside the recorder — captured
-   * via fetch/XHR wrappers + PerformanceObserver, framework-agnostic,
-   * no CDP required. The legacy CDP-based path (which routed failed
-   * responses through the console timeline) is preserved as a fallback
-   * but no longer the primary capture mechanism.
+   * (`rrweb/network@1`) is registered alongside the recorder —
+   * framework-agnostic, no CDP required, works on all browsers. The
+   * legacy CDP-based path is preserved as a fallback but no longer the
+   * primary capture mechanism.
    *
    * Privacy defaults (inherited from `@cubenest/rrweb-core`): headers and
    * bodies are NOT captured unless opted in via {@link networkOptions}.
+   * Because the fetch/XHR wrappers are gated behind `recordHeaders` /
+   * `recordBody` (both off by default), the DEFAULT capture surface is
+   * PerformanceObserver timing only. That has two consequences worth
+   * knowing:
+   *   - method and an accurate per-request status may be unavailable
+   *     (PerformanceObserver entries don't carry the request method, and
+   *     report `status` only on same-origin / Timing-Allow-Origin
+   *     responses);
+   *   - cross-origin sub-resources report `status: 0` per the Resource
+   *     Timing spec even though they loaded fine — these are NOT treated
+   *     as failures by the report.
+   * Enable the wrappers (and thus accurate per-request method + status,
+   * plus optional headers/bodies) via {@link networkOptions}. The CDP
+   * fallback, when present, separately supplies authoritative status and
+   * true no-response failures.
    */
   network?: boolean;
   /** Capture `console.*` via the rrweb console plugin. Default true. */
