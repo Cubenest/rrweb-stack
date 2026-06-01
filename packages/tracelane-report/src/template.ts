@@ -41,6 +41,11 @@ export interface ReportTemplateData {
   /** Latest event timestamp (wall-clock ms) or 0 if no events. Treated as the
    *  "failure" moment for the timeline marker when the test failed. */
   lastTs: number;
+  /**
+   * Render the self-marketing footer. Default true. Pass false to suppress it
+   * (`report: { footer: false }` opt-out — audit A-8).
+   */
+  footer?: boolean;
 }
 
 /**
@@ -340,6 +345,21 @@ main.investigation {
   font-weight: 600;
 }
 .tab.active .count { background: var(--teal-dim); color: var(--teal); }
+/* "soon" pill on the placeholder Actions / Timeline tabs (audit A-10) — warns
+   the visitor the pane is a coming-soon stub before they click it. */
+.tab .soon-pill {
+  margin-left: 6px;
+  padding: 1px 6px;
+  border-radius: 8px;
+  border: 1px solid var(--border-strong);
+  background: transparent;
+  color: var(--muted);
+  font-size: 9px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  vertical-align: middle;
+}
 
 .panel-toolbar {
   padding: 10px 16px;
@@ -660,6 +680,10 @@ const BOOTSTRAP = `
       var row = el('div', 'row is-future ' + lvl);
       var relMs = firstTs ? Math.max(0, r.timestamp - firstTs) : 0;
       row.setAttribute('data-time', String(relMs));
+      // a11y: rows are click-to-seek; expose them to keyboard + AT users.
+      row.setAttribute('tabindex', '0');
+      row.setAttribute('role', 'button');
+      row.setAttribute('aria-label', 'Seek to ' + fmtRelTs(r.timestamp, firstTs));
       row.appendChild(el('span', 'ts', fmtRelTs(r.timestamp, firstTs)));
       row.appendChild(el('span', 'lvl', lvl));
       row.appendChild(el('span', 'msg', r.message));
@@ -679,6 +703,10 @@ const BOOTSTRAP = `
       var row = el('div', 'row row-net is-future error');
       var relMs = firstTs ? Math.max(0, r.timestamp - firstTs) : 0;
       row.setAttribute('data-time', String(relMs));
+      // a11y: rows are click-to-seek; expose them to keyboard + AT users.
+      row.setAttribute('tabindex', '0');
+      row.setAttribute('role', 'button');
+      row.setAttribute('aria-label', 'Seek to ' + fmtRelTs(r.timestamp, firstTs));
       row.appendChild(el('span', 'ts', fmtRelTs(r.timestamp, firstTs)));
       var stCls = 'lvl st-' + String(r.status).charAt(0);
       row.appendChild(el('span', stCls, String(r.status)));
@@ -752,23 +780,34 @@ const BOOTSTRAP = `
   }
   tickPanels(0);
 
-  // ---- Click-to-seek: clicking a row jumps the player to that moment -----
+  // ---- Click/keyboard-to-seek: activating a row jumps the player ---------
+  // Rows are role="button" tabindex="0", so they're keyboard-focusable; Enter
+  // and Space activate them the same way a click does (a11y — audit A-7).
   if (rrPlayer && typeof rrPlayer.goto === 'function') {
     var seekContainers = ['console-rows', 'network-rows'];
+    var seekFromEvent = function (ctr, ev) {
+      var target = ev.target;
+      // Walk up to the .row ancestor (events may land on inner spans).
+      while (target && target !== ctr && !target.classList.contains('row')) {
+        target = target.parentNode;
+      }
+      if (!target || target === ctr) return;
+      var t = parseInt(target.getAttribute('data-time') || '0', 10);
+      if (isFinite(t) && t >= 0) {
+        rrPlayer.goto(t, false);
+      }
+    };
     for (var sc = 0; sc < seekContainers.length; sc++) {
       (function (containerId) {
         var ctr = document.getElementById(containerId);
         if (!ctr) return;
         ctr.addEventListener('click', function (ev) {
-          var target = ev.target;
-          // Walk up to the .row ancestor (clicks may land on inner spans).
-          while (target && target !== ctr && !target.classList.contains('row')) {
-            target = target.parentNode;
-          }
-          if (!target || target === ctr) return;
-          var t = parseInt(target.getAttribute('data-time') || '0', 10);
-          if (isFinite(t) && t >= 0) {
-            rrPlayer.goto(t, false);
+          seekFromEvent(ctr, ev);
+        });
+        ctr.addEventListener('keydown', function (ev) {
+          if (ev.key === 'Enter' || ev.key === ' ' || ev.key === 'Spacebar') {
+            ev.preventDefault();
+            seekFromEvent(ctr, ev);
           }
         });
       })(seekContainers[sc]);
@@ -782,7 +821,10 @@ const BOOTSTRAP = `
     (function (tab) {
       tab.addEventListener('click', function () {
         var targetId = tab.getAttribute('data-pane');
-        for (var i = 0; i < tabs.length; i++) tabs[i].classList.remove('active');
+        for (var i = 0; i < tabs.length; i++) {
+          tabs[i].classList.remove('active');
+          tabs[i].setAttribute('aria-selected', tabs[i] === tab ? 'true' : 'false');
+        }
         for (var j = 0; j < panes.length; j++) {
           panes[j].classList.toggle('active', panes[j].id === targetId);
         }
@@ -908,6 +950,7 @@ export function renderReportHtml(data: ReportTemplateData): string {
     eventCount,
     firstTs,
     lastTs,
+    footer = true,
   } = data;
 
   const title = `tracelane — ${meta.spec ?? '(no spec)'} :: ${meta.title} (${meta.status})`;
@@ -957,21 +1000,21 @@ ${banner}
   </section>
   <aside class="panels" aria-label="Investigation panels">
     <div class="tabs" role="tablist">
-      <button class="tab active" type="button" role="tab" data-pane="pane-console">
+      <button class="tab active" type="button" role="tab" id="tab-console" aria-selected="true" aria-controls="pane-console" data-pane="pane-console">
         Console <span class="count">0</span><span class="count-total">/ ${consoleCount}</span>
       </button>
-      <button class="tab" type="button" role="tab" data-pane="pane-network">
+      <button class="tab" type="button" role="tab" id="tab-network" aria-selected="false" aria-controls="pane-network" data-pane="pane-network">
         Network <span class="count">0</span><span class="count-total">/ ${networkCount}</span>
       </button>
-      <button class="tab" type="button" role="tab" data-pane="pane-actions">
-        Actions
+      <button class="tab" type="button" role="tab" id="tab-actions" aria-selected="false" aria-controls="pane-actions" data-pane="pane-actions">
+        Actions <span class="soon-pill">soon</span>
       </button>
-      <button class="tab" type="button" role="tab" data-pane="pane-timeline">
-        Timeline
+      <button class="tab" type="button" role="tab" id="tab-timeline" aria-selected="false" aria-controls="pane-timeline" data-pane="pane-timeline">
+        Timeline <span class="soon-pill">soon</span>
       </button>
     </div>
 
-    <div class="panel-pane active" id="pane-console" role="tabpanel">
+    <div class="panel-pane active" id="pane-console" role="tabpanel" aria-labelledby="tab-console">
       <div class="panel-toolbar">
         <input type="text" class="panel-filter" placeholder="Filter console…" aria-label="Filter console messages" />
         <button class="filter-chip" type="button" data-level="error">errors</button>
@@ -981,7 +1024,7 @@ ${banner}
       <div class="panel-pending" id="console-pending" role="status" aria-live="polite">Console output will appear during playback.</div>
     </div>
 
-    <div class="panel-pane" id="pane-network" role="tabpanel">
+    <div class="panel-pane" id="pane-network" role="tabpanel" aria-labelledby="tab-network">
       <div class="panel-toolbar">
         <input type="text" class="panel-filter" placeholder="Filter URLs…" aria-label="Filter network requests" />
       </div>
@@ -989,7 +1032,7 @@ ${banner}
       <div class="panel-pending" id="network-pending" role="status" aria-live="polite">Network errors will appear during playback.</div>
     </div>
 
-    <div class="panel-pane" id="pane-actions" role="tabpanel">
+    <div class="panel-pane" id="pane-actions" role="tabpanel" aria-labelledby="tab-actions">
       <div class="coming-soon">
         <strong>Actions panel — coming soon</strong>
         <span>User-input event extraction lands in a follow-up changeset.</span>
@@ -997,7 +1040,7 @@ ${banner}
       </div>
     </div>
 
-    <div class="panel-pane" id="pane-timeline" role="tabpanel">
+    <div class="panel-pane" id="pane-timeline" role="tabpanel" aria-labelledby="tab-timeline">
       <div class="coming-soon">
         <strong>Timeline panel — coming soon</strong>
         <span>Use the rrweb-player scrubber above to navigate the recording today.</span>
@@ -1016,7 +1059,7 @@ ${banner}
 <script>${loadPlayerUmd()}</script>
 <script>${dataScript}</script>
 <script>${BOOTSTRAP}</script>
-${FOOTER_HTML}
+${footer ? FOOTER_HTML : ''}
 </body>
 </html>`;
 }

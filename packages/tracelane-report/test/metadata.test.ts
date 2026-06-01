@@ -182,4 +182,22 @@ describe('renderHero — tracelane brand mark', () => {
     expect(html).toContain('aria-label="tracelane"');
     expect(html).toContain('#C2563D');
   });
+
+  it('does not render a separator slash between the mark and the status pill (audit A-11)', () => {
+    const html = renderHero({ title: 'login fails', status: 'failed' });
+    // Isolate the eyebrow div.
+    const m = html.match(/<div class="eyebrow">([\s\S]*?)<\/div>\s*<h1/);
+    expect(m).not.toBeNull();
+    const eyebrow = m?.[1] ?? '';
+    // The mark must appear before the status pill with NO `.sep` slash between
+    // them — the first visible slash is between status and the spec bit.
+    const markIdx = eyebrow.indexOf('class="tracelane-mark"');
+    const statusIdx = eyebrow.indexOf('class="status');
+    const firstSepIdx = eyebrow.indexOf('class="sep"');
+    expect(markIdx).toBeGreaterThan(-1);
+    expect(statusIdx).toBeGreaterThan(markIdx);
+    // First separator (if any) comes AFTER the status pill, not between mark
+    // and status.
+    if (firstSepIdx !== -1) expect(firstSepIdx).toBeGreaterThan(statusIdx);
+  });
 });

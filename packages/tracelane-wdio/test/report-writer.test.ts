@@ -103,4 +103,23 @@ describe('writeReport', () => {
     const bytes = statSync(path).size;
     expect(bytes).toBeLessThan(25 * 1024 * 1024);
   });
+
+  it('includes the footer by default and omits it when footer is false (audit A-8)', () => {
+    const withFooter = readFileSync(
+      writeReport({ outDir, events: sampleEvents, meta: { title: 't', status: 'failed' } }),
+      'utf8',
+    );
+    expect(withFooter).toContain('<footer');
+
+    const noFooter = readFileSync(
+      writeReport({
+        outDir,
+        events: sampleEvents,
+        meta: { title: 't', status: 'failed' },
+        footer: false,
+      }),
+      'utf8',
+    );
+    expect(noFooter).not.toContain('<footer');
+  });
 });
