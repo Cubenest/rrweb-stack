@@ -1,10 +1,10 @@
-<?xml version="1.0"?>
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" role="img" aria-label="tracelane">
-  <g fill="none" stroke="#C2563D" stroke-width="8" stroke-linecap="round" stroke-linejoin="round">
-    <rect x="40" y="100" width="176" height="56" rx="4"></rect>
-    <path d="M 64 128 L 96 128"></path>
-    <path d="M 112 128 L 144 128"></path>
-    <path d="M 160 128 L 192 128"></path>
-    <circle cx="208" cy="128" r="6" fill="#C2563D"></circle>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <rect width="64" height="64" rx="12" fill="#C2563D"/>
+  <g fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <rect x="10" y="25" width="44" height="14" rx="1"/>
+    <path d="M16 32L24 32"/>
+    <path d="M28 32L36 32"/>
+    <path d="M40 32L48 32"/>
   </g>
+  <circle cx="52" cy="32" r="1.5" fill="#fff"/>
 </svg>

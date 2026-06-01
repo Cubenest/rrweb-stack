@@ -1,8 +1,8 @@
-<?xml version="1.0"?>
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" role="img" aria-label="peek">
-  <g fill="none" stroke="#4A6B82" stroke-width="8" stroke-linecap="round" stroke-linejoin="round">
-    <path d="M 32 128 Q 128 56 224 128 Q 128 200 32 128 Z"></path>
-    <circle cx="128" cy="128" r="28"></circle>
-    <circle cx="128" cy="128" r="8" fill="#4A6B82"></circle>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <rect width="64" height="64" rx="12" fill="#4A6B82"/>
+  <g fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M10 33 Q32 16 54 33 Q32 49 10 33 Z"/>
+    <circle cx="32" cy="33" r="6"/>
   </g>
+  <circle cx="32" cy="33" r="2" fill="#fff"/>
 </svg>
