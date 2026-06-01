@@ -3,10 +3,10 @@
 // Run with: pnpm --filter @peekdev/extension generate:icons
 // Re-run whenever assets/brand/sub-peek.svg changes.
 
-import sharp from 'sharp';
 import { mkdir } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import sharp from 'sharp';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const outDir = join(__dirname, '..', 'public', 'icon');
