@@ -29,8 +29,9 @@ Vulnerability Reporting.
 
 ### Prerequisites
 
-- **Node.js 22** (see [`.nvmrc`](.nvmrc); `nvm use` will pick the right
-  major). The repo `engines.node` is `>=22.0.0`.
+- **Node.js 24** (see [`.nvmrc`](.nvmrc); `nvm use` will pick the right
+  major). The repo `engines.node` floor is `>=22.0.0`, but CI and npm OIDC
+  publishing run on Node 24 — develop on 24 to match.
 - **pnpm 9.14.4** (pinned via the root `packageManager` field). Use
   Corepack to install the exact version:
 
