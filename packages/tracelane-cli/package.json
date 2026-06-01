@@ -1,6 +1,6 @@
 {
   "name": "@tracelane/cli",
-  "version": "0.1.0-alpha.8",
+  "version": "0.1.0-alpha.9",
   "description": "tracelane scaffolding CLI. `npx tracelane init` detects your test runner (WDIO / Playwright / Cypress) and wires @tracelane/wdio into wdio.conf.* in one command — the published path from `npm install` + manual conf edit to a single npx invocation.",
   "keywords": [
     "tracelane",
@@ -48,7 +48,11 @@
     "url": "https://github.com/Cubenest/rrweb-stack",
     "directory": "packages/tracelane-cli"
   },
-  "bugs": { "url": "https://github.com/Cubenest/rrweb-stack/issues" },
+  "bugs": {
+    "url": "https://github.com/Cubenest/rrweb-stack/issues"
+  },
   "homepage": "https://tracelane.cubenest.in",
-  "engines": { "node": ">=20.18.0" }
+  "engines": {
+    "node": ">=20.18.0"
+  }
 }

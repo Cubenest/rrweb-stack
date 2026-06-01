@@ -1,6 +1,6 @@
 {
   "name": "@cubenest/rrweb-core",
-  "version": "0.1.0-alpha.4",
+  "version": "0.1.0-alpha.5",
   "description": "Shared rrweb-based capture substrate for tracelane and peek.",
   "keywords": [
     "rrweb",
@@ -50,7 +50,11 @@
     "url": "https://github.com/Cubenest/rrweb-stack",
     "directory": "packages/rrweb-core"
   },
-  "bugs": { "url": "https://github.com/Cubenest/rrweb-stack/issues" },
+  "bugs": {
+    "url": "https://github.com/Cubenest/rrweb-stack/issues"
+  },
   "homepage": "https://github.com/Cubenest/rrweb-stack/tree/main/packages/rrweb-core#readme",
-  "engines": { "node": ">=20.18.0" }
+  "engines": {
+    "node": ">=20.18.0"
+  }
 }

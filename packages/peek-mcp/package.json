@@ -1,6 +1,6 @@
 {
   "name": "@peekdev/mcp",
-  "version": "0.1.0-alpha.10",
+  "version": "0.1.0-alpha.11",
   "description": "peek native messaging host + stdio MCP server. Owns ~/.peek/sessions.db (better-sqlite3) and bridges the browser extension, CLI, and AI tools to a single local source of truth.",
   "keywords": [
     "peek",
@@ -79,7 +79,11 @@
     "url": "https://github.com/Cubenest/rrweb-stack",
     "directory": "packages/peek-mcp"
   },
-  "bugs": { "url": "https://github.com/Cubenest/rrweb-stack/issues" },
+  "bugs": {
+    "url": "https://github.com/Cubenest/rrweb-stack/issues"
+  },
   "homepage": "https://peek.cubenest.in",
-  "engines": { "node": ">=20.18.0" }
+  "engines": {
+    "node": ">=20.18.0"
+  }
 }
