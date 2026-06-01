@@ -20,8 +20,10 @@ When you enable peek on a site, the extension records:
 - **Console events** — `console.log`/`info`/`warn`/`error`/`debug` arguments,
   with the same masking applied.
 - **Network metadata** — request URL (path masked), method, status, timing,
-  initiator. Captured non-blocking via `chrome.webRequest` observers. Bodies
-  are **not** captured at this level.
+  initiator. Captured by a page-side rrweb network plugin
+  (`rrweb/network@1`) that emits requests through the rrweb event stream;
+  the events are masked in the ISOLATED-world relay before leaving the page.
+  Bodies are **not** captured at this level.
 - **Network bodies (opt-in "Deep capture" only)** — when you toggle Deep
   capture for a specific origin, the extension attaches `chrome.debugger`
   to that tab and records response bodies via the CDP `Network` domain.
@@ -41,7 +43,7 @@ peek **does not** record:
 1. **Browser extension** — masks events in the page (ISOLATED-world content
    script) before passing them to the service worker.
 2. **Service worker** — forwards events to the local native host via
-   `chrome.runtime.connectNative('com.peekdev.host')`. This is a stdio pipe;
+   `chrome.runtime.connectNative('com.cubenest.peek')`. This is a stdio pipe;
    no sockets, no localhost HTTP server, no DNS lookups.
 3. **`peek-mcp` native host** — persists events to a local SQLite database
    at `~/.peek/sessions.db` (POSIX) or `%APPDATA%\peek\sessions.db`
@@ -73,10 +75,12 @@ whose target matches "delete", "remove", "drop", "uninstall", "transfer",
 explicit confirmation. This mirrors Anthropic Claude for Chrome's "Claude
 still asks for high-risk actions" posture.
 
-**Deep capture** — separately gated. Requires (a) the optional `debugger`
-Chrome permission, requested at user-gesture time, and (b) per-origin opt-in
-via the "Deep capture" toggle. Disabling Deep capture for an origin detaches
-the debugger from **every** tab on that origin immediately (not lazily).
+**Deep capture** — separately gated. Requires per-origin opt-in via the
+"Deep capture" toggle; only then does the extension attach `chrome.debugger`
+to that origin's tabs. `debugger` is a static manifest permission (declared in
+the extension's `permissions`), but it is never exercised until you enable Deep
+capture for an origin. Disabling Deep capture for an origin detaches the
+debugger from **every** tab on that origin immediately (not lazily).
 
 ## User controls
 
@@ -97,8 +101,7 @@ the debugger from **every** tab on that origin immediately (not lazily).
 ## Open source
 
 peek is Apache 2.0. Repository: https://github.com/Cubenest/rrweb-stack
-(currently private; public flip is tracked in the project's distribution
-plan). The privacy posture above can be verified by reading the source —
+(public). The privacy posture above can be verified by reading the source —
 particularly:
 
 - `packages/peek-extension/entrypoints/background.ts` — service worker,

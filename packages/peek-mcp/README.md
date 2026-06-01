@@ -57,30 +57,36 @@ For Claude Code, this goes in `~/.claude/mcp_servers.json` (per-project) or via 
 
 | Tool | Action | Authorization |
 |---|---|---|
-| `list_sessions` | List recent recording sessions | none |
-| `get_session_metadata` | Get one session's metadata + counts | none |
-| `get_session_console_errors` | Filter console messages by level / time | none |
-| `get_session_network_errors` | Filter failed network requests (status >= 400) | none |
-| `get_session_events` | Return rrweb event slices for a time window | none |
+| `list_recent_sessions` | List recently recorded sessions, newest first (id, origin, ts, event count) | none |
+| `get_session_summary` | LLM-readable narrative summary of a session | none |
+| `get_session_console_errors` | List console errors recorded in a session | none |
+| `get_session_network_errors` | List failed/notable network requests in a session | none |
+| `get_user_action_before_error` | Last N user actions before a console error | none |
+| `generate_playwright_repro` | Generate a runnable Playwright test from a session | none |
 | `get_dom_snapshot` | Reconstruct the DOM at a given timestamp | none |
-| `search_session` | Free-text search across console + network for a session | none |
-| `generate_playwright_repro` | Emit a Playwright `.spec.ts` reproducing user actions | none |
-| `execute_action` | Click / input / navigate in the live tab | per-action user prompt |
-| `request_authorization` | Ask the user to permit a destructive action | per-action user prompt |
+| `query_dom_history` | Timeline of attribute/text changes for a selector | none |
+| `request_authorization` | Side-panel consent for write actions (Level 3) | per-action user prompt |
+| `execute_action` | Dispatch a UI action (gated by permission level + destructive blocklist) | permission level + destructive blocklist |
 
 The full tool list is exposed via the MCP `tools/list` request (spec 2025-11-25 + back-compat for 2025-03-26). Tool docs ship with the binary via `tools/list` response `description` fields.
 
 ## Permission model (the five levels)
 
-| Level | What it allows | Default |
-|---|---|---|
-| 1 — Read | Query the DB, reconstruct DOM, search events | enabled |
-| 2 — Read with confirm | (none currently mapped) | n/a |
-| 3 — Constrained write | Click whitelisted selectors | disabled |
-| 4 — Broad write | Click any selector, type text, navigate | disabled |
-| 5 — Destructive | Submit forms, navigate cross-origin, file uploads | disabled |
+Per-origin, 5 levels (0–4). Default is **Level 1 — Read-only**. Higher levels are opt-in per origin.
 
-Levels 3-5 require explicit per-action authorization via `request_authorization`. Every authorized action is appended to `~/.peek/audit.log` (JSONL — `peek audit log --json` prints it). There is a hardcoded destructive-action blocklist (`window.close`, `document.write`, etc.) that cannot be authorized.
+| Level | Name | What it allows | Default |
+|---|---|---|---|
+| 0 | Off | Recording suppressed, tool surface disabled for the origin | |
+| 1 | Read-only | Read recorded sessions; no action execution | enabled |
+| 2 | Suggest-only | Read + highlight DOM via overlay; no DOM mutation | |
+| 3 | Act-with-confirm | Read + execute actions, each prompting Allow once / Always for this site / Deny | |
+| 4 | YOLO this session | Read + execute non-destructive actions with no prompt (auto-expires on tab close or 60 min) | |
+
+At **Level 3** every `execute_action` call prompts the user via the side-panel banner (unless a one-shot `confirmToken` from a prior `request_authorization` is passed). At **Level 4 (YOLO)** non-destructive actions are auto-allowed with no prompt. Levels 0–2 deny `execute_action`.
+
+**Destructive-action blocklist (cross-level override)** — independent of the level, any action whose resolved target text/label matches a destructive term (`delete`, `remove`, `transfer`, `send`, `pay`, `withdraw`, etc. — full base list in `permissions/destructive.ts`, extensible via `~/.peek/policy.json`) **always** prompts for confirmation. This overrides all levels, including Level 4 YOLO — it is not a separate "Level 5".
+
+Every `execute_action` and `request_authorization` call is appended to `~/.peek/audit.log` (JSONL, mode 0600 — `peek audit log --json` prints it), including denied ones.
 
 ## Database
 

@@ -38,15 +38,15 @@ The QA walks a fresh-install path. If you've run peek locally before, wipe state
 ```sh
 # nuke peek's home + native-host manifests (macOS — adjust paths per OS)
 rm -rf ~/.peek
-rm -f ~/Library/Application\ Support/Google/Chrome/NativeMessagingHosts/com.peekdev.host.json
-rm -f ~/Library/Application\ Support/Microsoft\ Edge/NativeMessagingHosts/com.peekdev.host.json
+rm -f ~/Library/Application\ Support/Google/Chrome/NativeMessagingHosts/com.cubenest.peek.json
+rm -f ~/Library/Application\ Support/Microsoft\ Edge/NativeMessagingHosts/com.cubenest.peek.json
 
 # linux:
-# rm -f ~/.config/google-chrome/NativeMessagingHosts/com.peekdev.host.json
+# rm -f ~/.config/google-chrome/NativeMessagingHosts/com.cubenest.peek.json
 
 # confirm gone
 ls -la ~/.peek 2>&1 | head -3            # should say "No such file or directory"
-ls ~/Library/Application\ Support/Google/Chrome/NativeMessagingHosts/com.peekdev.host.json 2>&1 | head -1
+ls ~/Library/Application\ Support/Google/Chrome/NativeMessagingHosts/com.cubenest.peek.json 2>&1 | head -1
 ```
 
 Optional: in Claude Code's `~/.claude.json`, remove any existing `mcpServers.peek` entry so you can verify `peek init` writes it correctly. (Back up the file first.)
