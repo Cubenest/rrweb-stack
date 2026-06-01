@@ -17,12 +17,15 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "verify-recipes": "pnpm run build && node scripts/verify-recipes.mjs"
+    "verify-recipes": "pnpm run build && node scripts/verify-recipes.mjs",
+    "verify-recipes:live": "pnpm run build && node scripts/verify-recipes-live.mjs"
   },
   "dependencies": {
     "zod": "^3.25.76"
   },
   "devDependencies": {
-    "js-yaml": "^4.1.1"
+    "@modelcontextprotocol/sdk": "^1.29.0",
+    "js-yaml": "^4.1.1",
+    "playwright": "^1.60.0"
   }
 }
