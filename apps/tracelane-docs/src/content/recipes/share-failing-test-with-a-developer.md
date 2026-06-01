@@ -6,7 +6,7 @@ type: short
 status: published
 publishedAt: 2026-06-15
 integrations: [sharing]
-relatedRecipes: [debug-flaky-checkout-test-in-ci, add-tracelane-to-webdriverio-in-5-minutes, file-a-better-bug-report-with-replays]
+relatedRecipes: [debug-flaky-checkout-test-in-ci, add-tracelane-to-webdriverio-in-5-minutes, triage-ci-run-with-replay-thumbnails]
 ---
 
 ## What you'll end up with
@@ -51,5 +51,5 @@ The report is a single HTML file with the rrweb player, console snapshots, and n
 ## Next steps
 
 - [Debug a flaky checkout test in CI](/recipes/debug-flaky-checkout-test-in-ci)
-- [File a better bug report with replays](/recipes/file-a-better-bug-report-with-replays)
+- [Triage a CI run with replay thumbnails](/recipes/triage-ci-run-with-replay-thumbnails)
 - [Add tracelane to WebdriverIO in 5 minutes](/recipes/add-tracelane-to-webdriverio-in-5-minutes)

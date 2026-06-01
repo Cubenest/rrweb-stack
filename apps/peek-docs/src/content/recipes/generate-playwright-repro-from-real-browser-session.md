@@ -6,7 +6,7 @@ type: hero
 status: published
 publishedAt: 2026-06-15
 integrations: [claude-code, cursor, playwright]
-relatedRecipes: [claude-code-on-staging, reproduce-bug-from-teammate-peek-session, validate-multi-step-authenticated-checkout]
+relatedRecipes: [claude-code-on-staging, security-review-flow-with-ai-agent, use-peek-with-per-action-approval]
 ---
 
 ## What you'll end up with
@@ -59,5 +59,5 @@ peek's recorder timestamps every meaningful user action — clicks, key presses,
 ## Next steps
 
 - [Let Claude Code reproduce a bug on your authenticated staging dashboard](/recipes/claude-code-on-staging)
-- [Reproduce a bug from a teammate's recorded peek session](/recipes/reproduce-bug-from-teammate-peek-session)
-- [Validate a multi-step authenticated checkout with an AI agent watching](/recipes/validate-multi-step-authenticated-checkout)
+- [Security-review a flow by letting your agent inspect the live DOM](/recipes/security-review-flow-with-ai-agent)
+- [Understand peek's per-action approval model for sensitive flows](/recipes/use-peek-with-per-action-approval)

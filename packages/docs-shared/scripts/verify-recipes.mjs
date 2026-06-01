@@ -3,9 +3,27 @@
 // schema + a battery of integration checks. Run via:
 //
 //   pnpm --filter @cubenest/docs-shared verify-recipes
+//   node packages/docs-shared/scripts/verify-recipes.mjs
 //
 // Exit code 0 if every recipe passes its required checks (warnings OK).
 // Exit code 1 if any recipe has an error-severity issue.
+//
+// 404 GUARD (HARD error): production builds drop `status: draft` recipes
+// (router filter `data.status !== 'draft'` in apps/*/src/pages/recipes/
+// [...slug].astro). A PUBLISHED recipe that links to a draft/archived
+// recipe — via a `relatedRecipes` frontmatter entry OR an inline body
+// `](/recipes/<slug>)` link — therefore 404s in prod. Both are treated as
+// error-severity here so CI blocks the regression.
+//
+// HERO-IMAGE CHECK (env-gated severity): each recipe body references its
+// hero screenshot as `](/recipes/assets/<file>)`; the file must exist under
+// apps/<site>/public/recipes/assets/. The real screenshots are supplied by
+// the maintainer separately, so a MISSING image is a loud NON-FATAL warning
+// by DEFAULT (CI stays green). Set STRICT_RECIPE_ASSETS=1 in the env to
+// promote missing images to a HARD error (non-zero exit) — flip this on in
+// CI once the screenshots have landed.
+
+const STRICT_RECIPE_ASSETS = process.env.STRICT_RECIPE_ASSETS === '1';
 
 import { execSync } from 'node:child_process';
 import { existsSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
@@ -113,6 +131,71 @@ function checkInternalLinks(body, allSlugs) {
   return issues;
 }
 
+// Status-aware link guard ────────────────────────────────────────────────
+// Only meaningful for PUBLISHED source recipes: a published page that links
+// to a draft/archived target 404s in prod. Covers both the relatedRecipes
+// frontmatter and inline body /recipes/<slug> links.
+const NON_PUBLIC_STATUSES = new Set(['draft', 'archived']);
+
+function checkStatusAwareLinks(frontmatter, body, statusBySlug) {
+  const issues = [];
+  if (frontmatter.status !== 'published') return issues;
+
+  for (const slug of frontmatter.relatedRecipes ?? []) {
+    const targetStatus = statusBySlug.get(slug);
+    if (targetStatus && NON_PUBLIC_STATUSES.has(targetStatus)) {
+      issues.push({
+        severity: 'error',
+        detail: `published recipe links (relatedRecipes) to '${slug}' which is status: ${targetStatus} — excluded from prod, would 404`,
+      });
+    }
+  }
+
+  const seen = new Set();
+  for (const m of body.matchAll(INTERNAL_LINK_PATTERN)) {
+    const slug = m[1];
+    if (seen.has(slug)) continue;
+    seen.add(slug);
+    const targetStatus = statusBySlug.get(slug);
+    if (targetStatus && NON_PUBLIC_STATUSES.has(targetStatus)) {
+      issues.push({
+        severity: 'error',
+        detail: `published recipe body links to /recipes/${slug} which is status: ${targetStatus} — excluded from prod, would 404`,
+      });
+    }
+  }
+  return issues;
+}
+
+// Hero-image existence check ───────────────────────────────────────────────
+// Body images are referenced as ](/recipes/assets/<file>); the file must be
+// served from apps/<site>/public/recipes/assets/<file>. Missing images are a
+// loud warning by default (real screenshots pending) and a hard error when
+// STRICT_RECIPE_ASSETS=1.
+const BODY_IMAGE_PATTERN = /\]\((\/recipes\/assets\/[^)]+)\)/g;
+
+function checkBodyImages(frontmatter, body, site) {
+  if (frontmatter.status !== 'published') return [];
+  const issues = [];
+  const seen = new Set();
+  for (const m of body.matchAll(BODY_IMAGE_PATTERN)) {
+    const ref = m[1]; // e.g. /recipes/assets/foo.png
+    if (seen.has(ref)) continue;
+    seen.add(ref);
+    const filePath = join(site.dir, 'public', ref);
+    if (!existsSync(filePath)) {
+      issues.push({
+        severity: STRICT_RECIPE_ASSETS ? 'error' : 'warning',
+        missingHeroImage: true,
+        ref,
+        path: relative(REPO_ROOT, filePath),
+        detail: `hero image '${ref}' not found at ${relative(REPO_ROOT, filePath)}`,
+      });
+    }
+  }
+  return issues;
+}
+
 const JSON_BLOCK_PATTERN = /```json\n([\s\S]+?)\n```/g;
 
 function checkJsonBlocks(body) {
@@ -182,7 +265,7 @@ function checkMcpWiring(body, siteName) {
 }
 
 // per-recipe verification ───────────────────────────────────────────────
-function verifyRecipe(filepath, site, allSlugs) {
+function verifyRecipe(filepath, site, allSlugs, statusBySlug) {
   const slug = basename(filepath, '.md');
   let frontmatter;
   let body;
@@ -210,6 +293,12 @@ function verifyRecipe(filepath, site, allSlugs) {
 
   for (const i of checkInternalLinks(body, allSlugs))
     issues.push({ category: 'internalLink', ...i });
+
+  for (const i of checkStatusAwareLinks(frontmatter, body, statusBySlug))
+    issues.push({ category: 'draftLink', ...i });
+
+  for (const i of checkBodyImages(frontmatter, body, site))
+    issues.push({ category: 'heroImage', ...i });
 
   for (const i of checkJsonBlocks(body)) issues.push({ category: 'jsonSnippet', ...i });
 
@@ -310,6 +399,7 @@ function main() {
   let mdReport = `# Recipe verification report\n\n_Generated by \`pnpm --filter @cubenest/docs-shared verify-recipes\` on ${new Date().toISOString()}_\n\n`;
   const jsonReport = { generatedAt: new Date().toISOString(), sites: {} };
   let anyFailure = false;
+  const missingHeroImages = [];
 
   for (const site of SITES) {
     const recipesDir = join(site.dir, 'src', 'content', 'recipes');
@@ -322,9 +412,24 @@ function main() {
       .sort();
     const allSlugs = new Set(files.map((f) => f.replace(/\.md$/, '')));
 
+    // Build a slug -> status map up front so the status-aware link guard can
+    // resolve a link target's publication state regardless of file order.
+    const statusBySlug = new Map();
+    for (const f of files) {
+      const slug = f.replace(/\.md$/, '');
+      try {
+        const { frontmatter } = parseRecipe(join(recipesDir, f));
+        statusBySlug.set(slug, frontmatter.status);
+      } catch {
+        statusBySlug.set(slug, undefined);
+      }
+    }
+
     console.log(`\n=== Verifying ${site.name} (${files.length} recipes) ===`);
 
-    const results = files.map((f) => verifyRecipe(join(recipesDir, f), site, allSlugs));
+    const results = files.map((f) =>
+      verifyRecipe(join(recipesDir, f), site, allSlugs, statusBySlug),
+    );
 
     renderConsoleSummary(site, results);
 
@@ -332,6 +437,37 @@ function main() {
     mdReport += md;
     jsonReport.sites[site.name] = results;
     if (failed > 0) anyFailure = true;
+
+    for (const r of results) {
+      for (const i of r.issues) {
+        if (i.missingHeroImage) {
+          missingHeroImages.push({ site: site.name, slug: r.slug, path: i.path });
+        }
+      }
+    }
+  }
+
+  // Loud hero-image summary — warning by default, hard error under STRICT.
+  if (missingHeroImages.length > 0) {
+    const banner = STRICT_RECIPE_ASSETS ? '✗ STRICT' : '⚠';
+    console.log(
+      `\n${'─'.repeat(72)}\n${banner} MISSING HERO IMAGES: ${missingHeroImages.length} published recipe(s) reference a screenshot that is not yet present.`,
+    );
+    for (const m of missingHeroImages) {
+      console.log(`  ${banner} MISSING HERO IMAGE: ${m.site}/${m.slug} -> ${m.path}`);
+    }
+    if (STRICT_RECIPE_ASSETS) {
+      console.log(
+        '  STRICT_RECIPE_ASSETS=1 → missing hero images are HARD errors (build blocked).',
+      );
+      anyFailure = true;
+    } else {
+      console.log(
+        '  These are NON-FATAL (CI stays green). Drop the screenshots into the assets dirs,',
+      );
+      console.log('  then set STRICT_RECIPE_ASSETS=1 in CI to enforce their presence.');
+    }
+    console.log('─'.repeat(72));
   }
 
   const reportDir = join(REPO_ROOT, '_context', 'docs', 'research');
