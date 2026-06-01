@@ -3,7 +3,7 @@ title: "Add a replayable HTML report to your WebdriverIO suite in 5 minutes"
 lede: "When I already have a WebdriverIO suite, I want session replays on failures without rewriting any of my existing config."
 description: "Install the @tracelane/wdio service, add one line to wdio.conf.ts, and ship a single-file HTML replay report on every test failure."
 type: hero
-status: draft
+status: published
 publishedAt: 2026-06-15
 integrations: [webdriverio]
 relatedRecipes: [debug-flaky-checkout-test-in-ci, share-failing-test-with-a-developer, triage-ci-run-with-replay-thumbnails]

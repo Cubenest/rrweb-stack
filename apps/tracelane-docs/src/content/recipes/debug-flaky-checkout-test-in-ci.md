@@ -3,7 +3,7 @@ title: "Debug a flaky checkout test that only fails in CI"
 lede: "When my checkout E2E passes locally and fails in CI, I want to see exactly what the browser was doing at the moment of failure."
 description: "Use the tracelane HTML report to scrub through the rrweb replay, read console errors, and inspect the network panel of a real CI failure."
 type: hero
-status: draft
+status: published
 publishedAt: 2026-06-15
 integrations: [webdriverio, github-actions, ci]
 artifact: /demo/acme-shop-checkout-failure.html

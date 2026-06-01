@@ -3,7 +3,7 @@ title: "Catch a visual regression across a test run"
 lede: "When a layout-only regression slips past my assertion-based tests, I want to scrub the replay to the frame where the page broke and screenshot it into the ticket."
 description: "Use the tracelane report's scrubbable rrweb replay to walk back from the failure timestamp and pinpoint the layout shift no assertion caught."
 type: short
-status: draft
+status: published
 publishedAt: 2026-06-15
 integrations: [webdriverio, visual-regression]
 relatedRecipes: [add-tracelane-to-webdriverio-in-5-minutes, debug-flaky-checkout-test-in-ci, share-failing-test-with-a-developer]

@@ -3,7 +3,7 @@ title: "Triage a CI run with 200+ failures using a single index page"
 lede: "When a big nightly suite goes red across hundreds of specs, I want a single scannable index so I can spot the one real bug among the cascade of side-effects."
 description: "Generate one scannable index.html listing every failure's title, spec, error, duration, and browser. Click any card to open the full replay."
 type: short
-status: draft
+status: published
 publishedAt: 2026-06-15
 integrations: [ci, github-actions]
 relatedRecipes: [debug-flaky-checkout-test-in-ci, add-tracelane-to-webdriverio-in-5-minutes, share-failing-test-with-a-developer]

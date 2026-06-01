@@ -3,7 +3,7 @@ title: "Reproduce a headless-only test failure locally"
 lede: "When a test passes headed but fails headless, I want to see what the headless browser actually rendered without staring at a blank screen."
 description: "Run the failing spec under headless WebdriverIO with the tracelane service on, then scrub the HTML replay to see what headless Chrome actually rendered."
 type: short
-status: draft
+status: published
 publishedAt: 2026-06-15
 integrations: [webdriverio, headless]
 relatedRecipes: [debug-flaky-checkout-test-in-ci, add-tracelane-to-webdriverio-in-5-minutes, share-failing-test-with-a-developer]

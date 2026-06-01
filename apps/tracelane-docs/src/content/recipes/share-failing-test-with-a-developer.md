@@ -3,7 +3,7 @@ title: "Share a failing test with a developer who lacks your repo"
 lede: "When a developer doesn't have the test repo cloned, I want to send them one link that shows the failure end-to-end without asking them to set anything up."
 description: "Upload the self-contained tracelane HTML report to a gist or drop it in Slack so anyone can open it in a browser and scrub the replay."
 type: short
-status: draft
+status: published
 publishedAt: 2026-06-15
 integrations: [sharing]
 relatedRecipes: [debug-flaky-checkout-test-in-ci, add-tracelane-to-webdriverio-in-5-minutes, file-a-better-bug-report-with-replays]
