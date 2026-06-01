@@ -46,13 +46,24 @@ export async function requestActivation(
   }
   const { origin, origins } = derived;
 
-  // "Just this tab" → activeTab covers the current tab; no host grant needed.
+  // "Just this tab" — historically assumed `activeTab` covered the current tab
+  // without any prompt. That's only true when the gesture is an action-icon
+  // click; side-panel button clicks DON'T grant activeTab, so subsequent
+  // `chrome.scripting.executeScript` calls refuse with "Extension manifest
+  // must request permission to access this host." Request the origin pattern
+  // like "All tabs" does, but DON'T persist to `enabledOrigins` — the user
+  // keeps "tab-scoped in practice" semantics: the host perm stays at the
+  // Chrome level until they revoke it in chrome://extensions, but the SW
+  // won't auto-restore recording on new tabs of this origin because nothing
+  // went into storage.
   if (scope === 'tab') {
-    return { origin, scope, granted: true, persisted: false };
+    const grantedTab = await chrome.permissions.request({ origins });
+    return { origin, scope, granted: grantedTab, persisted: false };
   }
 
   // "All tabs on this domain" → request the broad-but-scoped origin pattern
-  // from the gesture, then persist on grant.
+  // from the gesture, then persist on grant so the SW's storage.onChanged
+  // listener auto-restores recording on future tabs (P-11 fix).
   const granted = await chrome.permissions.request({ origins });
   if (!granted) {
     return { origin, scope, granted: false, persisted: false };

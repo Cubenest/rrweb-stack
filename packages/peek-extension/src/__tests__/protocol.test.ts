@@ -49,4 +49,23 @@ describe('sendCmd', () => {
     vi.spyOn(chrome.runtime, 'sendMessage').mockRejectedValue(boom);
     await expect(sendCmd({ type: 'getNativeHostState' })).rejects.toBe(boom);
   });
+
+  it('round-trips activateRecorderForTab with the typed result shape', async () => {
+    // activeTab grant path: side panel sends this after `requestActivation('tab')`
+    // returns granted; SW responds with the inject result. The wire shape must
+    // be {ok, reason?} (ActivateRecorderResult), not InjectResult{ok, tabId, error?}.
+    vi.spyOn(chrome.runtime, 'sendMessage').mockResolvedValue({
+      ok: true,
+    } as unknown as undefined);
+    const okResult = await sendCmd({ type: 'activateRecorderForTab', tabId: 42 });
+    expect(okResult).toEqual({ ok: true });
+
+    vi.spyOn(chrome.runtime, 'sendMessage').mockResolvedValue({
+      ok: false,
+      reason: 'No window with id: 42.',
+    } as unknown as undefined);
+    const errResult = await sendCmd({ type: 'activateRecorderForTab', tabId: 42 });
+    expect(errResult.ok).toBe(false);
+    expect(errResult.reason).toContain('No window');
+  });
 });

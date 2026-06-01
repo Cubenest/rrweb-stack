@@ -52,10 +52,16 @@ describe('deriveActivationRequest', () => {
     });
   });
 
-  it('tab scope requests no host origins (relies on activeTab)', () => {
+  it('tab scope requests the same origin pattern as origin scope', () => {
+    // Pre-fix: this returned `origins: []` on the assumption that activeTab
+    // would cover the tab — but side-panel clicks do not grant activeTab, so
+    // `chrome.permissions.request({ origins: [] })` resolved to true without
+    // a prompt and the subsequent executeScript refused with "Extension
+    // manifest must request permission to access this host." Same pattern for
+    // both scopes; only the persistence side-effect differs at the call site.
     expect(deriveActivationRequest('https://example.com/page', 'tab')).toEqual({
       origin: 'https://example.com',
-      origins: [],
+      origins: ['https://example.com/*'],
     });
   });
 

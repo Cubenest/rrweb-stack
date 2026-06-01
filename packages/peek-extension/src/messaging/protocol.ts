@@ -53,10 +53,27 @@ export interface ShadowReport {
 export type Cmd =
   | { type: 'getNativeHostState' }
   | { type: 'getRecorderStats'; tabId: number }
+  // Side panel → SW. Fired after `requestActivation(url, 'tab')` returns granted
+  // for an activeTab-scope grant. The chrome.tabs.onUpdated / storage.onChanged
+  // listeners that normally trigger injection don't fire for activeTab grants
+  // on an already-loaded page, so the side panel asks the SW to inject directly.
+  | { type: 'activateRecorderForTab'; tabId: number }
   // ISOLATED relay → SW. `tabId` is filled by the SW from `sender.tab.id` (the
   // relay can't know its own tab id), so it's not on the wire shape.
   | { type: 'recorder.events'; events: unknown[]; console: RelayConsoleEvent[] }
   | { type: 'recorder.shadow'; reports: ShadowReport[] };
+
+/**
+ * Result the SW returns from {@link Cmd}'s `activateRecorderForTab`.
+ * `ok: true` means `chrome.scripting.executeScript` returned without error
+ * (the in-page idempotency guard handles double-inject safely); `ok: false`
+ * carries the reason so the side panel can degrade — but does not surface as a
+ * user error, since the activeTab grant itself already succeeded.
+ */
+export interface ActivateRecorderResult {
+  ok: boolean;
+  reason?: string;
+}
 
 /** A generic ack for fire-and-forget relay messages. */
 export interface RelayAck {
@@ -70,9 +87,11 @@ export type CmdResponse<C extends Cmd> = C extends { type: 'getNativeHostState' 
   ? { state: NativeHostState }
   : C extends { type: 'getRecorderStats' }
     ? RecorderStats
-    : C extends { type: 'recorder.events' | 'recorder.shadow' }
-      ? RelayAck
-      : never;
+    : C extends { type: 'activateRecorderForTab' }
+      ? ActivateRecorderResult
+      : C extends { type: 'recorder.events' | 'recorder.shadow' }
+        ? RelayAck
+        : never;
 
 /**
  * Error thrown by {@link sendCmd} when the SW can't be reached.

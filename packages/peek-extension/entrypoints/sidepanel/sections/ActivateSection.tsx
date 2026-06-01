@@ -48,8 +48,8 @@ export function ActivateSection(props: ActivateSectionProps): React.JSX.Element 
             Recording active for <strong>this tab</strong> ({origin}).
           </p>
           <p className="peek-muted">
-            One-time access (activeTab). To remember <strong>{origin}</strong> across tabs and
-            devices, choose &ldquo;All tabs on this domain&rdquo; next time. Recording controls
+            Granted for now without persisting. To remember <strong>{origin}</strong> across tabs
+            and devices, choose &ldquo;All tabs on this domain&rdquo; next time. Recording controls
             arrive in a later build.
           </p>
         </div>
@@ -78,8 +78,8 @@ export function ActivateSection(props: ActivateSectionProps): React.JSX.Element 
             </button>
           </div>
           <p className="peek-muted peek-hint">
-            &ldquo;Just this tab&rdquo; uses one-time access. &ldquo;All tabs on this domain&rdquo;
-            remembers your choice and syncs across your devices.
+            &ldquo;Just this tab&rdquo; records this site for now without persisting your choice.
+            &ldquo;All tabs on this domain&rdquo; remembers it and syncs across your devices.
           </p>
         </div>
       )}

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { originFromUrl } from '../../src/activation/origin';
 import { requestActivation } from '../../src/activation/request';
 import { isOriginEnabled } from '../../src/activation/storage';
+import { sendCmd } from '../../src/messaging/protocol';
 import { ActivateSection } from './sections/ActivateSection';
 import { AuditLogSection } from './sections/AuditLogSection';
 import { DeepCaptureSection } from './sections/DeepCaptureSection';
@@ -61,15 +62,25 @@ export function App(): React.JSX.Element {
         const result = await requestActivation(url, scope);
         if (scope === 'origin') setEnabled(result.granted);
         if (scope === 'tab') setTabEnabled(result.granted);
-        // NOTE (3d-2): on grant, kick off dynamic MAIN-world rrweb injection
-        // for `tabId` here. Deliberately not wired in this chunk.
+        // Origin grants trigger injection via the SW's storage.onChanged listener
+        // (P-11). activeTab grants persist nothing and fire no other listener, so
+        // the SW would never inject — ask it to inject for this tab explicitly.
+        // Fire-and-forget: a failed inject doesn't roll back the visible "Recording
+        // active for this tab" state — the grant itself succeeded.
+        if (scope === 'tab' && result.granted && tabId !== undefined) {
+          // SW handles injection; we don't need to await it before resolving
+          // the click handler. SW unavailable / inject error is logged on the
+          // SW side; caller-visible state (`tabEnabled`) already reflects the
+          // user's permission choice, so we silently degrade here.
+          void sendCmd({ type: 'activateRecorderForTab', tabId }).catch(() => {});
+        }
       } catch (err) {
         setError(err instanceof Error ? err.message : String(err));
       } finally {
         setBusy(false);
       }
     },
-    [url],
+    [url, tabId],
   );
 
   return (

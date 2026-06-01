@@ -449,6 +449,25 @@ export default defineBackground({
             sendResponse(response);
             return false;
           }
+          case 'activateRecorderForTab': {
+            // Side panel just got a per-tab (or per-origin) host grant for this
+            // tab. Neither tabs.onUpdated{loading} (no navigation) nor
+            // storage.onChanged (the 'tab' scope persists nothing) will fire,
+            // so the recorder would never get injected without this explicit
+            // path. The in-page guard (`window.__peekRecorderInstalled`) makes
+            // a double-inject safe.
+            void injectRecorder(message.tabId).then((result) => {
+              if (!result.ok) {
+                console.debug('[peek] activateRecorderForTab inject failed:', result.error);
+              }
+              const response: CmdResponse<{ type: 'activateRecorderForTab'; tabId: number }> = {
+                ok: result.ok,
+                ...(result.error ? { reason: result.error } : {}),
+              };
+              sendResponse(response);
+            });
+            return true; // async sendResponse
+          }
           case 'recorder.events': {
             handleRelayEvents(message, sender);
             sendResponse(ackOk());

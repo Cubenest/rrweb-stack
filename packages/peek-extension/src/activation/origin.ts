@@ -54,10 +54,17 @@ export function originMatchPattern(origin: string | undefined | null): string | 
 /**
  * Resolve a tab URL + chosen scope into the concrete permission request.
  *
- * For `scope === 'origin'` we return the match pattern to hand to
- * `chrome.permissions.request({ origins })`. For `scope === 'tab'` there is no
- * host grant to request (activeTab covers the current tab), so `origins` is
- * empty — the caller relies on the `activeTab` permission instead.
+ * Both scopes need the SAME `origins` pattern to hand to
+ * `chrome.permissions.request({ origins })`. Side-panel button clicks DO NOT
+ * grant `activeTab` (only action-icon clicks do), so "Just this tab" cannot
+ * rely on it — the host grant is requested either way. The semantic
+ * difference is purely on the caller side: `'origin'` persists the grant to
+ * `enabledOrigins` (auto-restores recording on future tabs of this origin),
+ * `'tab'` does not. Returning `origins: []` for the tab scope used to skip
+ * the prompt — `chrome.permissions.request({ origins: [] })` resolves to
+ * `true` without asking — and then `chrome.scripting.executeScript` would
+ * refuse with "Extension manifest must request permission to access this
+ * host." Same pattern for both scopes fixes that.
  *
  * @returns `{ origin, origins }` where `origins` is the array to pass to
  *   `chrome.permissions.request`, or `null` if the URL is not activatable.
@@ -66,11 +73,11 @@ export function deriveActivationRequest(
   url: string | undefined | null,
   scope: ActivationScope,
 ): { origin: string; origins: string[] } | null {
+  // `scope` is kept on the signature so the call site reads naturally and so a
+  // future re-divergence (different pattern shapes per scope) has a place to go.
+  void scope;
   const origin = originFromUrl(url);
   if (!origin) return null;
-  if (scope === 'tab') {
-    return { origin, origins: [] };
-  }
   const pattern = originMatchPattern(origin);
   // originMatchPattern can only be null when origin is null, already handled.
   return { origin, origins: pattern ? [pattern] : [] };
