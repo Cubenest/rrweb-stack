@@ -41,6 +41,13 @@ body {
   min-height: 100vh;
 }
 
+/* Content images (e.g. recipe hero screenshots) never exceed their column —
+   prevents page-level horizontal overflow from intrinsic-width images. */
+img {
+  max-width: 100%;
+  height: auto;
+}
+
 main {
   max-width: var(--max-width);
   margin: 0 auto;
