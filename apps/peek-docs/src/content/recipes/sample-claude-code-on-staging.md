@@ -5,7 +5,7 @@ description: "Give Claude Code a live, read-only view of your authenticated stag
 type: hero
 status: draft
 publishedAt: 2026-06-15
-integrations: [claude-code, chrome, mcp]
+integrations: [claude-code, chrome]
 ---
 
 ## What you'll end up with
@@ -20,43 +20,29 @@ A recorded session where you report a bug verbally, Claude Code calls peek's `ge
 
 ## Steps
 
-### 1. Install peek
+### 1. Install peek and wire it into Claude Code
 
 ```bash
 npm i -g @peekdev/cli
 peek init
 ```
 
-### 2. Configure Claude Code
+`peek init` writes the MCP server entry into `~/.claude.json` for you. No manual config edit needed.
 
-Add the peek MCP server to your `~/.claude/mcp_servers.json`:
+### 2. Capture your staging tab
 
-```json
-{
-  "peek": {
-    "command": "peekdev",
-    "args": ["mcp"]
-  }
-}
-```
+Open your staging app in Chrome with the peek extension active. Click the peek toolbar icon and choose **Capture this tab**.
 
-### 3. Open your staging app in Chrome with the peek extension active.
+### 3. Ask Claude Code
 
-Click the peek toolbar icon and choose "Capture this tab".
+In Claude Code, type:
 
-### 4. Ask Claude Code
+> The Place Order button on this page does nothing. Look at what's happening and fix it.
 
-In Claude Code, type: "The Place Order button on this page does nothing. Look at what's happening and fix it."
-
-Claude Code calls peek's MCP tools, reads the captured state, and proposes a fix.
+Claude Code calls peek's MCP tools (`get_dom`, `get_console`, `get_network`), reads the captured state, and proposes a fix.
 
 ## Why this works
 
-peek captures the page you're already on — including authenticated cookies, network calls, DOM state — and exposes it over MCP. The agent reads what you read; no separate login flow.
+peek captures the page you're already on — including authenticated cookies, network calls, and DOM state — and exposes it over MCP. The agent reads what you read; no separate login flow.
 
-## Trust & data handling
-
-- peek captures: DOM snapshots, console messages, network metadata of the active tab.
-- peek does NOT capture: login credentials, password fields (redacted by default), or any tab you haven't explicitly opted in.
-- Per-action authorization: peek requires a click-confirmation before performing any `execute_action` write.
-- Data stays on your machine. The only thing the AI client sees is what you send over MCP.
+> Trust and data handling for this recipe are summarised in the banner at the top of the page. The full policy is at [/trust-and-data](/trust-and-data) (coming soon).
