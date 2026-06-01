@@ -14,7 +14,10 @@ Generated artifacts (`.gif`, `.png`, `.webm`) **are committed**. The sources use
 | `peek-hero.tape` | `packages/peek-cli/README.md` (hero GIF) | see "Recording peek-hero.gif" below |
 | `peek-hero.gif` | same | same |
 | `record-peek-hero.sh` | (driver script) | invoked manually; see below |
-| `og-card.png` | GitHub repo social-preview image (Settings → Social preview) | 1200×630 PNG generated via visual-AI tool from the prompt in `_context/docs/research/` (or re-render with the prompt + a current tool) |
+| `og-card.png` | Canonical OG / share card — docs `og:image` (both sites) + universal 1200×630 share image | 1200×630 PNG generated via visual-AI tool from the prompt in `_context/docs/research/` (or re-render with the prompt + a current tool). **Finalized — do not overwrite.** |
+| `social/github-repo-card.png` | GitHub repo social-preview **upload** (the 1280×640 slot) | `node packages/docs-shared/scripts/_launch-render.mjs social` — re-canvases `og-card.png` to 1280×640 with matched edge-padding (canonical pixels, no redesign) |
+| `cws/promo-tile-440x280.png` | Chrome Web Store listing — peek (small promo tile) | `node packages/docs-shared/scripts/_launch-render.mjs a6` |
+| `cws/screenshots/0{1..5}-*.png` | Chrome Web Store listing — peek (5 screenshots, 1280×800) | `node packages/docs-shared/scripts/_launch-render-cws.mjs` — real side-panel captures + real MCP output |
 
 ## Recording `tracelane-hero.gif`
 
