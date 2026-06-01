@@ -80,22 +80,24 @@ export const config: Options.Testrunner = {
   mochaOpts: { ui: 'bdd', timeout: 60_000 },
   reporters: ['spec'],
 
-  // Network capture (P1 PRD §A.5 / §E.2) needs `browser.cdp(...)`, which in WDIO
-  // is provided by `@wdio/devtools-service`. That package has no stable v9
-  // release (it stabilized only at v10), so the smoke run leaves it unregistered:
-  // TraceLaneService detects the missing `cdp` command and degrades to rrweb +
-  // console capture (the report is still produced). When a CDP-capable session is
-  // present, add `['devtools', {}]` (v8) or the v10 service here to light up the
-  // network panel. `capture.network` stays true so the graceful-degrade path runs.
+  // Network capture (P1 PRD §A.5 / §E.2). The DEFAULT path is the CDP-independent
+  // in-page `rrweb/network@1` plugin, which populates the network panel on every
+  // browser without `@wdio/devtools-service`. CDP is only the optional fallback
+  // that adds authoritative status + true no-response failures (CORS/DNS/offline/
+  // abort); since `@wdio/devtools-service` has no stable v9 release (it stabilized
+  // at v10), this smoke run leaves it unregistered. TraceLaneService detects the
+  // missing `cdp` command, skips the CDP enrichment, and still records via the
+  // in-page plugin + console. To light up the CDP enrichment, add `['devtools',
+  // {}]` (v8) or the v10 service here.
   services: [
     [
       TraceLaneService,
       {
         mode: 'failed',
         outDir,
-        // network: true intentionally exercises the graceful-degrade path (no
-        // devtools-service registered) — CDP attach fails once, then capture
-        // continues as rrweb + console only.
+        // network: true — captured in-page by the rrweb/network@1 plugin (no
+        // CDP). With no devtools-service registered, the CDP enrichment is
+        // simply skipped (attach fails once); in-page capture continues.
         capture: { rrweb: true, network: true, console: true },
       },
     ],

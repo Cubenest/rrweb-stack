@@ -1,17 +1,23 @@
+import { EventType } from '@cubenest/rrweb-core';
+import type { eventWithTime } from '@cubenest/rrweb-core';
 import type { BrowserExecutor } from '@tracelane/core';
+import { extractNetwork } from '@tracelane/report';
 import { describe, expect, it, vi } from 'vitest';
 import { __internal, attachNetworkCapture } from '../src/network-capture';
 
-// CDP network capture (Task 2.16 / P1 PRD §E.2). Verify: Network.enable is sent,
-// a Network.responseReceived subscriber is registered, and only status >= 400
-// responses are routed into console.error (prefixed [tracelane.net]).
+// CDP network capture (Task 2.16 / P1 PRD §E.2 + audit A-6). Verify: Network.enable
+// is sent, the responseReceived + loadingFailed subscribers are registered, only
+// status >= 400 responses are routed into console.error (prefixed [tracelane.net]),
+// and a loadingFailed (no-response) failure surfaces a method-bearing status-0 line.
 
 function mockExecutor() {
-  let handler: ((params: unknown) => void) | undefined;
+  // Route handlers by CDP event name so all of requestWillBeSent /
+  // responseReceived / loadingFailed can be fired independently.
+  const handlers = new Map<string, (params: unknown) => void>();
   const execute = vi.fn(async () => undefined);
   const cdp = vi.fn(async () => undefined);
-  const on = vi.fn((_event: string, h: (params: unknown) => void) => {
-    handler = h;
+  const on = vi.fn((event: string, h: (params: unknown) => void) => {
+    handlers.set(event, h);
   });
   const executor: BrowserExecutor = {
     execute: execute as unknown as BrowserExecutor['execute'],
@@ -19,15 +25,26 @@ function mockExecutor() {
     cdp: cdp as unknown as BrowserExecutor['cdp'],
     on,
   };
-  return { executor, execute, cdp, on, fire: (p: unknown) => handler?.(p) };
+  return {
+    executor,
+    execute,
+    cdp,
+    on,
+    // `fire` defaults to responseReceived to preserve the existing call sites.
+    fire: (p: unknown, event = 'Network.responseReceived') => handlers.get(event)?.(p),
+  };
 }
 
 describe('attachNetworkCapture', () => {
-  it('enables the CDP Network domain and subscribes to responseReceived', async () => {
+  it('enables the CDP Network domain and subscribes to the failure events', async () => {
     const m = mockExecutor();
     await attachNetworkCapture(m.executor);
     expect(m.cdp).toHaveBeenCalledWith('Network', 'enable');
     expect(m.on).toHaveBeenCalledWith('Network.responseReceived', expect.any(Function));
+    // audit A-6: no-response failures (CORS/DNS/offline/abort) only surface
+    // through Network.loadingFailed, correlated via Network.requestWillBeSent.
+    expect(m.on).toHaveBeenCalledWith('Network.loadingFailed', expect.any(Function));
+    expect(m.on).toHaveBeenCalledWith('Network.requestWillBeSent', expect.any(Function));
   });
 
   it('routes a 500 response into console.error via execute', async () => {
@@ -94,6 +111,49 @@ describe('attachNetworkCapture', () => {
     expect(() => m.fire({ response: { url: 'u', status: 503 } })).not.toThrow();
     await new Promise((r) => setTimeout(r, 0));
   });
+
+  // audit A-6: a no-response failure (CORS/DNS/offline/abort) never fires
+  // responseReceived; it only fires loadingFailed (carrying just a requestId).
+  it('surfaces a Network.loadingFailed as a method-bearing status-0 line', async () => {
+    const m = mockExecutor();
+    await attachNetworkCapture(m.executor);
+    // Track the request so the failure can be correlated to its method + url.
+    m.fire(
+      { requestId: 'req-1', request: { url: 'https://api.test/blocked', method: 'POST' } },
+      'Network.requestWillBeSent',
+    );
+    m.fire({ requestId: 'req-1', errorText: 'net::ERR_FAILED' }, 'Network.loadingFailed');
+    // Status 0 (no response). The page-side logger zero-pads it to `000` so
+    // panels.ts's `(\d{3})` regex matches; the method is preserved so panels.ts
+    // classifies it as a true failure.
+    expect(m.execute).toHaveBeenCalledWith(
+      expect.any(Function),
+      'https://api.test/blocked',
+      0,
+      'POST',
+    );
+  });
+
+  it('loadingFailed without a tracked request still emits a status-0 line (method GET)', async () => {
+    const m = mockExecutor();
+    await attachNetworkCapture(m.executor);
+    // No requestWillBeSent first (e.g. CDP attached mid-flight).
+    m.fire({ requestId: 'orphan', errorText: 'net::ERR_ABORTED' }, 'Network.loadingFailed');
+    expect(m.execute).toHaveBeenCalledWith(expect.any(Function), '', 0, 'GET');
+  });
+
+  it('does not double-report a request that received a response then is evicted', async () => {
+    const m = mockExecutor();
+    await attachNetworkCapture(m.executor);
+    m.fire(
+      { requestId: 'req-2', request: { url: 'https://api.test/ok', method: 'GET' } },
+      'Network.requestWillBeSent',
+    );
+    // A 200 arrives — below threshold, nothing logged, and the inflight entry
+    // is evicted so a stray later loadingFailed for the same id has no method.
+    m.fire({ requestId: 'req-2', response: { url: 'https://api.test/ok', status: 200 } });
+    expect(m.execute).not.toHaveBeenCalled();
+  });
 });
 
 describe('network-capture internals', () => {
@@ -109,5 +169,56 @@ describe('network-capture internals', () => {
     __internal.logNetworkErrorInPage('https://api.test/x', 500, 'POST');
     expect(spy).toHaveBeenCalledWith('[tracelane.net] POST 500 https://api.test/x');
     spy.mockRestore();
+  });
+
+  it('zero-pads a status-0 (no-response) failure to 000 for the panel regex', () => {
+    const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    __internal.logNetworkErrorInPage('https://api.test/blocked', 0, 'POST');
+    // panels.ts's parseNetConsoleLine requires exactly 3 status digits.
+    expect(spy).toHaveBeenCalledWith('[tracelane.net] POST 000 https://api.test/blocked');
+    spy.mockRestore();
+  });
+});
+
+// End-to-end contract (audit A-6): the `[tracelane.net]` line the loadingFailed
+// branch emits MUST be classified as a FAILED network row by @tracelane/report's
+// extractNetwork. The console plugin captures the page-side console.error into an
+// EventType.Plugin (rrweb/console@1) event; build one with the exact line shape
+// and pipe it through the real extractNetwork to prove the cross-package contract.
+describe('loadingFailed → @tracelane/report extractNetwork contract', () => {
+  /** Capture what the page-side logger would emit for a no-response failure. */
+  function netLineFor(url: string, status: number, method: string): string {
+    let captured = '';
+    const spy = vi.spyOn(console, 'error').mockImplementation((m: string) => {
+      captured = m;
+    });
+    __internal.logNetworkErrorInPage(url, status, method);
+    spy.mockRestore();
+    return captured;
+  }
+
+  /** Wrap a console line in the rrweb console-plugin event shape extractNetwork reads. */
+  function consolePluginEvent(message: string, timestamp: number): eventWithTime {
+    return {
+      type: EventType.Plugin,
+      timestamp,
+      data: {
+        plugin: 'rrweb/console@1',
+        payload: { level: 'error', payload: [message], trace: [] },
+      },
+    } as unknown as eventWithTime;
+  }
+
+  it('classifies a status-0 loadingFailed line as a FAILED network row', () => {
+    const line = netLineFor('https://api.test/blocked', 0, 'POST');
+    expect(line).toBe('[tracelane.net] POST 000 https://api.test/blocked');
+
+    const rows = extractNetwork([consolePluginEvent(line, 1000)]);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({
+      method: 'POST',
+      url: 'https://api.test/blocked',
+      status: 0,
+    });
   });
 });

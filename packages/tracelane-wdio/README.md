@@ -44,7 +44,7 @@ Same result — `npx @tracelane/cli init` is just the orchestration that does th
 ## What this is NOT
 
 - Not Cypress Cloud, Replay.io, or Sentry Session Replay. There is no SaaS to host. There is no signup. There is no dashboard. There is no telemetry. The artifact is a single HTML file on your filesystem.
-- Not a reporter (in the `@wdio/reporter` sense). `tracelane` is a WDIO **Service** because only a Service can attach to the live browser, inject the rrweb recorder, drain the in-page buffer, and use CDP for network capture. A paired Allure **Reporter** shim is planned for v1.1.
+- Not a reporter (in the `@wdio/reporter` sense). `tracelane` is a WDIO **Service** because only a Service can attach to the live browser, inject the rrweb recorder + in-page network plugin, drain the in-page buffer, and (where available) use CDP to enrich network capture. A paired Allure **Reporter** shim is planned for v1.1.
 - Not just for failures. `mode: 'all'` writes a report for every test — useful as a CI artifact, evidence in a PR, or a "what changed between green and red" diff.
 
 ## Full example
@@ -65,7 +65,10 @@ export const config: Options.Testrunner = {
     },
   ],
   services: [
-    ['devtools', {}], // enables browser.cdp(...) for network capture — see "Network capture" below
+    // Optional: network is captured in-page by default (all browsers, no CDP).
+    // Add devtools only to enrich it with authoritative status + no-response
+    // failures on Chromium — see "Network capture" below.
+    ['devtools', {}],
     [
       TraceLaneService,
       {
@@ -84,7 +87,7 @@ export const config: Options.Testrunner = {
 ## How it works
 
 - On the first test, the Service injects an rrweb recorder bundle into the page and installs an in-page event buffer (`window.__tracelane__events`).
-- The Node side drains that buffer on a poll (default every 5 s) and on every `afterTest`, re-injecting on navigation.
+- The Node side drains that buffer on a poll (default every 5 s) and on every `afterTest`, re-injecting after each navigation.
 - In `failed` mode (default) a passing test discards its buffer; a failing test's buffer is handed to [`@tracelane/report`](https://github.com/Cubenest/rrweb-stack/tree/main/packages/tracelane-report), which builds the single offline HTML (≤ 25 MB).
 
 ## Options
@@ -94,8 +97,9 @@ export const config: Options.Testrunner = {
 | `mode` | `'failed' \| 'all'` | `'failed'` | `failed` writes a report only on failure; `all` on every test. `TRACELANE_MODE` env var overrides this. |
 | `outDir` | `string` | `'./tracelane-reports'` | Report output directory (created if missing). |
 | `capture.rrweb` | `boolean` | `true` | Record the rrweb session. |
-| `capture.network` | `boolean` | `true` | Route failed responses (`status >= 400`) into the console timeline via CDP. |
-| `capture.console` | `boolean` | `true` | Capture `console.*` via the rrweb console plugin. Setting this `false` also drops the `[tracelane.net]` network-error lines, since `capture.network` surfaces them through `console.error`. |
+| `capture.network` | `boolean` | `true` | Capture network requests via the in-page `rrweb/network@1` plugin — all browsers, no CDP. Privacy-first: only URL/method/status/timing by default (headers + bodies off; opt in via `capture.networkOptions`). CDP is an optional fallback that adds authoritative status + true no-response failures where it's available. |
+| `capture.networkOptions` | `NetworkRecordOptions` | plugin defaults | Forwarded to the in-page network plugin (`recordHeaders`, `recordBody`, `maskRequestFn`, `payloadHostDenyList`, …). Defaults are privacy-first (headers + bodies off). Ignored when `capture.network` is `false`. |
+| `capture.console` | `boolean` | `true` | Capture `console.*` via the rrweb console plugin. Setting this `false` also drops any `[tracelane.net]` network-error lines from the CDP fallback path, since those surface through `console.error`. |
 | `drainIntervalMs` | `number` | `5000` | Node-side drain poll interval. |
 | `cooldownMs` | `number` | `250` | Re-injection cooldown guard (suppresses double-init on hash/HMR navigation). |
 | `allure` | `boolean` | `false` | Reserved for the v1.1 Allure shim. No-op in v1. |
@@ -118,7 +122,7 @@ export const config: Options.Testrunner = {
   before: tracelane.before,
   beforeSuite: tracelane.beforeSuite,
   beforeTest: tracelane.beforeTest,
-  beforeCommand: tracelane.beforeCommand, // re-injection on navigation
+  afterCommand: tracelane.afterCommand, // re-injection after navigation
   afterTest: tracelane.afterTest,
   afterSuite: tracelane.afterSuite,
   after: tracelane.after,
@@ -128,12 +132,21 @@ export const config: Options.Testrunner = {
 
 ## Network capture
 
-Failed responses (`status >= 400`) are routed into the report's console timeline (prefixed `[tracelane.net]`). This needs `browser.cdp(...)`, which a separate WDIO service provides:
+By default network is captured **in-page** by the framework-agnostic `rrweb/network@1` plugin (shipped in `@cubenest/rrweb-core`). It works on **every browser** — Chrome, Edge, Firefox, Safari, and cloud Selenium — with **no CDP and no extra service**, because the plugin wraps `fetch`/`XHR` and reads `PerformanceObserver` entries from inside the page.
+
+Privacy-first by default: only **URL, method, status, and timing** are captured. Request/response **headers and bodies are OFF** unless you opt in via `capture.networkOptions` (`recordHeaders` / `recordBody`, plus masking hooks like `maskRequestFn` and `payloadHostDenyList`). A couple of accuracy caveats of the default timing surface:
+
+- For cross-origin **sub-resources** (images, scripts, fonts loaded from another origin), the Resource Timing spec reports `status: 0` and no method — these are not surfaced as failures.
+- Accurate per-request **status** for `fetch`/`XHR` requires those wrappers, which are part of the default capture; the plugin only omits header/body payloads unless opted in.
+
+### CDP fallback (optional enhancement)
+
+When a CDP-capable session is present, `tracelane` *additionally* uses `browser.cdp(...)` to capture **authoritative HTTP status** for failed responses (`status >= 400`) and **true no-response failures** (CORS/DNS/offline/abort) that the page wrappers can't always see. These are routed into the report's console timeline (prefixed `[tracelane.net]`) and the report merges them over the in-page rows for the same request (real status wins). To enable it:
 
 - **WDIO 8:** add `['devtools', {}]` via `@wdio/devtools-service@8`.
-- **WDIO 9:** `@wdio/devtools-service` has no stable v9 line (it stabilized at v10); use the v10 service or a CDP-capable session. **If `browser.cdp` is unavailable, `tracelane` degrades gracefully to rrweb + console capture** — the report is still produced, just without the network panel.
+- **WDIO 9:** `@wdio/devtools-service` has no stable v9 line (it stabilized at v10); use the v10 service or a CDP-capable session.
 
-Cloud Selenium vendors typically don't expose CDP; rrweb + console capture still work there.
+If CDP is unavailable (cloud Selenium, Firefox, Safari), nothing is lost beyond the CDP-only authoritative-status enhancement — the in-page plugin still populates the network panel and the report is still produced.
 
 ## Supported runners / browsers
 
@@ -143,12 +156,12 @@ Cloud Selenium vendors typically don't expose CDP; rrweb + console capture still
 | Jasmine | Supported (same `afterTest` result shape) |
 | Cucumber | Supported via `beforeScenario`/`afterScenario` |
 
-| Browser | rrweb + console | Network (CDP) |
-|---|---|---|
-| Chrome / Chromium ≥ 116 | **Yes** | Yes (with a CDP-capable session) |
-| Edge (Chromium) | Yes | Yes |
-| Firefox | Yes | No (CDP is Chromium-only) |
-| Safari | Yes | No |
+| Browser | rrweb + console | Network (in-page plugin) | Authoritative status / no-response failures (CDP) |
+|---|---|---|---|
+| Chrome / Chromium ≥ 116 | **Yes** | Yes | Yes (with a CDP-capable session) |
+| Edge (Chromium) | Yes | Yes | Yes |
+| Firefox | Yes | Yes (in-page plugin) | No (CDP is Chromium-only) |
+| Safari | Yes | Yes (in-page plugin) | No |
 
 ## Playwright + Cypress
 
