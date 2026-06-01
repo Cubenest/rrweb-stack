@@ -6,7 +6,7 @@ type: short
 status: published
 publishedAt: 2026-06-15
 integrations: [security, claude-code]
-relatedRecipes: [security-review-flow-with-ai-agent, claude-code-on-staging, reproduce-bug-from-teammate-peek-session]
+relatedRecipes: [security-review-flow-with-ai-agent, claude-code-on-staging, generate-playwright-repro-from-real-browser-session]
 ---
 
 ## What this recipe covers
@@ -81,4 +81,4 @@ Every write call from an MCP client passes through peek-mcp's per-origin permiss
 
 - [Security-review a flow by letting your agent inspect the live DOM](/recipes/security-review-flow-with-ai-agent)
 - [Let Claude Code reproduce a bug on your authenticated staging dashboard](/recipes/claude-code-on-staging)
-- [Reproduce a bug from a teammate's recorded peek session](/recipes/reproduce-bug-from-teammate-peek-session)
+- [Generate a Playwright repro from a real browser session](/recipes/generate-playwright-repro-from-real-browser-session)

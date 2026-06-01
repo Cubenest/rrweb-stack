@@ -7,6 +7,10 @@ interface Props {
 }
 
 const { title, description = 'peek — OSS browser companion + MCP server. Records your real authenticated browser session locally and exposes it to AI coding agents.' } = Astro.props;
+
+// Build absolute canonical / social URLs from the configured `site` origin.
+const canonicalURL = new URL(Astro.url.pathname, Astro.site).href;
+const ogImageURL = new URL('/og-card.png', Astro.site).href;
 ---
 
 <!doctype html>
@@ -17,9 +21,17 @@ const { title, description = 'peek — OSS browser companion + MCP server. Recor
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
     <meta name="generator" content={Astro.generator} />
+    <link rel="canonical" href={canonicalURL} />
     <meta property="og:title" content={title} />
     <meta property="og:description" content={description} />
     <meta property="og:type" content="website" />
+    <meta property="og:url" content={canonicalURL} />
+    <meta property="og:image" content={ogImageURL} />
+    <meta property="og:site_name" content="peek" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content={title} />
+    <meta name="twitter:description" content={description} />
+    <meta name="twitter:image" content={ogImageURL} />
     <title>{title}</title>
   </head>
   <body>

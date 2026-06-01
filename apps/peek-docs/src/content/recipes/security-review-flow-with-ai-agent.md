@@ -6,7 +6,7 @@ type: short
 status: published
 publishedAt: 2026-06-15
 integrations: [claude-code, security]
-relatedRecipes: [use-peek-with-per-action-approval, claude-code-on-staging, validate-multi-step-authenticated-checkout]
+relatedRecipes: [use-peek-with-per-action-approval, claude-code-on-staging, generate-playwright-repro-from-real-browser-session]
 ---
 
 ## What you'll end up with
@@ -43,10 +43,10 @@ peek captures the rendered DOM (after JS runs) and the full request/response env
 
 ## Notes on data handling
 
-The session you capture includes whatever was on the page — including, by design, tokens and secrets you want the review to surface. This data stays in your local SQLite store under `~/.peek/` and never leaves your machine. The TrustBanner at the top of this page is the short version; if you're sharing the session with a teammate, see [Reproduce a bug from a teammate's recorded peek session](/recipes/reproduce-bug-from-teammate-peek-session) for export hygiene.
+The session you capture includes whatever was on the page — including, by design, tokens and secrets you want the review to surface. This data stays in your local SQLite store under `~/.peek/` and never leaves your machine. The TrustBanner at the top of this page is the short version; if you want to understand exactly what peek gates, logs, and never auto-approves, see [Understand peek's per-action approval model for sensitive flows](/recipes/use-peek-with-per-action-approval).
 
 ## Next steps
 
 - [Use peek with per-action approval for sensitive flows](/recipes/use-peek-with-per-action-approval)
 - [Let Claude Code reproduce a bug on your authenticated staging dashboard](/recipes/claude-code-on-staging)
-- [Validate a multi-step authenticated checkout with an AI agent watching](/recipes/validate-multi-step-authenticated-checkout)
+- [Generate a Playwright repro from a real browser session](/recipes/generate-playwright-repro-from-real-browser-session)

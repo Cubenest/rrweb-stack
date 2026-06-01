@@ -37,6 +37,13 @@ jobs:
       # browser, so the main pipeline stays green without Chrome. The browser
       # E2E lives in the separate `e2e-wdio` job below.
       - run: pnpm test
+      # Recipe verifier — the status-aware link check is a HARD gate: a
+      # PUBLISHED recipe that links to a draft/archived recipe (relatedRecipes
+      # or inline body link) 404s in prod, so it fails the build here. The
+      # hero-image check is a non-fatal warning by default; flip
+      # STRICT_RECIPE_ASSETS=1 once the screenshots land. `pnpm build` above
+      # has already produced @cubenest/docs-shared's dist/ that this imports.
+      - run: node packages/docs-shared/scripts/verify-recipes.mjs
 
   # @tracelane/wdio browser smoke (Task 2.17). Separate, non-blocking job so a
   # Chrome/chromedriver hiccup can't fail the required `ci` gate. The smoke spec
