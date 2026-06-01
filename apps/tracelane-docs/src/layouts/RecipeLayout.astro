@@ -62,38 +62,38 @@ const publishedDate = publishedAt.toISOString().slice(0, 10);
 
 <style>
   .recipe { max-width: 760px; margin: 0 auto; padding: 2rem 1.5rem 4rem; }
-  .recipe .back { font-size: 0.85rem; color: var(--muted, #8a92a0); }
+  .recipe .back { display: inline-block; margin-bottom: 0.5rem; font-size: 0.85rem; color: var(--fg-muted); }
   .recipe h1 { margin: 1rem 0 0.75rem; font-size: 2rem; line-height: 1.15; }
   .recipe .lede {
     margin: 0 0 1.5rem;
     padding: 0.5rem 0 0.5rem 1rem;
-    border-left: 3px solid var(--accent, #5eead4);
-    color: var(--muted-strong, #b8bfca);
+    border-left: 3px solid var(--accent);
+    color: var(--fg);
     font-style: italic;
   }
   .recipe .meta { display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center; }
   .recipe .meta .chip {
     font-size: 0.7rem;
     padding: 0.125rem 0.5rem;
-    border: 1px solid var(--border, #2a2e36);
+    border: 1px solid var(--border);
     border-radius: 999px;
-    color: var(--muted, #8a92a0);
+    color: var(--fg-muted);
   }
-  .recipe .meta .date { font-size: 0.75rem; color: var(--muted, #8a92a0); margin-left: auto; }
-  .recipe hr { margin: 1.5rem 0; border: 0; border-top: 1px solid var(--border, #2a2e36); }
+  .recipe .meta .date { font-size: 0.75rem; color: var(--fg-muted); margin-left: auto; }
+  .recipe hr { margin: 1.5rem 0; border: 0; border-top: 1px solid var(--border); }
   .recipe .artifact {
     display: inline-block;
     margin: 1rem 0;
     padding: 0.75rem 1rem;
-    border: 1px dashed var(--accent, #5eead4);
+    border: 1px dashed var(--accent);
     border-radius: 6px;
-    color: var(--accent, #5eead4);
+    color: var(--accent);
   }
   .recipe .prose :global(h2) { margin-top: 2rem; }
   .recipe .prose :global(pre) {
     padding: 1rem;
     overflow-x: auto;
-    background: var(--surface, #171a20);
+    background: var(--code-bg);
     border-radius: 6px;
   }
   .recipe .related { margin-top: 3rem; }
@@ -102,12 +102,12 @@ const publishedDate = publishedAt.toISOString().slice(0, 10);
     display: flex;
     flex-direction: column;
     padding: 0.875rem 1rem;
-    border: 1px solid var(--border, #2a2e36);
+    border: 1px solid var(--border);
     border-radius: 6px;
     text-decoration: none;
     color: inherit;
   }
   .recipe .related-card strong { font-size: 0.95rem; margin-bottom: 0.25rem; }
-  .recipe .related-card span { font-size: 0.8rem; color: var(--muted, #8a92a0); }
-  .recipe .footer-cta { margin-top: 3rem; color: var(--muted, #8a92a0); font-size: 0.85rem; }
+  .recipe .related-card span { font-size: 0.8rem; color: var(--fg-muted); }
+  .recipe .footer-cta { margin-top: 3rem; color: var(--fg-muted); font-size: 0.85rem; }
 </style>

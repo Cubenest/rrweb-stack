@@ -25,22 +25,22 @@ const slug = recipe.id.replace(/\.md$/, '');
   .recipe-card {
     display: block;
     padding: 1.5rem;
-    border: 1px solid var(--border, #2a2e36);
+    border: 1px solid var(--border);
     border-radius: 8px;
     text-decoration: none;
     color: inherit;
     transition: border-color 0.15s ease;
   }
-  .recipe-card:hover { border-color: var(--accent, #5eead4); }
+  .recipe-card:hover { border-color: var(--accent); }
   .recipe-card h3 { margin: 0 0 0.5rem; font-size: 1.15rem; }
-  .recipe-card .lede { margin: 0 0 0.75rem; color: var(--muted, #8a92a0); font-size: 0.9rem; }
+  .recipe-card .lede { margin: 0 0 0.75rem; color: var(--fg-muted); font-size: 0.9rem; }
   .recipe-card .chips { display: flex; flex-wrap: wrap; gap: 0.25rem; }
   .recipe-card .chip {
     font-size: 0.7rem;
     padding: 0.125rem 0.5rem;
-    border: 1px solid var(--border, #2a2e36);
+    border: 1px solid var(--border);
     border-radius: 999px;
-    color: var(--muted, #8a92a0);
+    color: var(--fg-muted);
   }
   .recipe-card.short { padding: 0.875rem 1.25rem; }
   .recipe-card.short h3 { font-size: 1rem; }
