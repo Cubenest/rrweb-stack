@@ -56,6 +56,12 @@ importers:
         specifier: ^5.7.2
         version: 5.9.3
 
+  packages/docs-shared:
+    dependencies:
+      zod:
+        specifier: ^3.25.76
+        version: 3.25.76
+
   packages/peek-cli:
     dependencies:
       '@peekdev/mcp':
