@@ -1,0 +1,63 @@
+---
+import Layout from '../../layouts/Layout.astro';
+import RecipeCard from '../../components/RecipeCard.astro';
+import { getCollection } from 'astro:content';
+
+const all = await getCollection(
+  'recipes',
+  ({ data }) => data.status !== 'draft' || import.meta.env.DEV,
+);
+
+const heroes = all
+  .filter((r) => r.data.type === 'hero')
+  .sort((a, b) => b.data.publishedAt.getTime() - a.data.publishedAt.getTime());
+const shorts = all
+  .filter((r) => r.data.type === 'short')
+  .sort((a, b) => b.data.publishedAt.getTime() - a.data.publishedAt.getTime());
+---
+
+<Layout
+  title="Recipes — tracelane"
+  description="Short, task-shaped how-tos for using tracelane with WebdriverIO, Playwright, Cypress, and CI."
+>
+  <section class="recipes-index">
+    <h1>Recipes</h1>
+    <p class="intro">
+      Short, single-task how-tos for tracelane. Each recipe walks you through
+      one concrete workflow end-to-end.
+    </p>
+
+    {heroes.length > 0 && (
+      <>
+        <h2>Hero recipes</h2>
+        <div class="grid hero-grid">
+          {heroes.map((r) => <RecipeCard recipe={r} variant="hero" />)}
+        </div>
+      </>
+    )}
+
+    {shorts.length > 0 && (
+      <>
+        <h2>Short recipes</h2>
+        <div class="grid short-list">
+          {shorts.map((r) => <RecipeCard recipe={r} variant="short" />)}
+        </div>
+      </>
+    )}
+
+    {heroes.length === 0 && shorts.length === 0 && (
+      <p class="empty">No recipes published yet. Check back soon.</p>
+    )}
+  </section>
+</Layout>
+
+<style>
+  .recipes-index { max-width: 960px; margin: 0 auto; padding: 2rem 1.5rem 4rem; }
+  .recipes-index h1 { margin: 0 0 0.5rem; font-size: 2rem; }
+  .recipes-index .intro { margin: 0 0 2.5rem; color: var(--muted, #8a92a0); max-width: 60ch; }
+  .recipes-index h2 { margin: 2rem 0 1rem; font-size: 1.25rem; }
+  .recipes-index .grid { display: grid; gap: 1rem; }
+  .recipes-index .hero-grid { grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); }
+  .recipes-index .short-list { grid-template-columns: 1fr; }
+  .recipes-index .empty { color: var(--muted, #8a92a0); font-style: italic; }
+</style>

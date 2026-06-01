@@ -1,0 +1,113 @@
+---
+import Layout from './Layout.astro';
+import type { CollectionEntry } from 'astro:content';
+import { getCollection, render } from 'astro:content';
+
+interface Props {
+  recipe: CollectionEntry<'recipes'>;
+}
+
+const { recipe } = Astro.props;
+const { title, lede, description, publishedAt, integrations, artifact, relatedRecipes } =
+  recipe.data;
+
+const allRecipes = await getCollection(
+  'recipes',
+  ({ data }) => data.status !== 'draft' || import.meta.env.DEV,
+);
+const related = relatedRecipes
+  .map((slug) => allRecipes.find((r) => r.id.replace(/\.md$/, '') === slug))
+  .filter((r): r is CollectionEntry<'recipes'> => r !== undefined);
+
+const { Content } = await render(recipe);
+const publishedDate = publishedAt.toISOString().slice(0, 10);
+---
+
+<Layout title={title} description={description}>
+  <article class="recipe">
+    <a href="/recipes" class="back">&larr; Recipes</a>
+    <h1>{title}</h1>
+    <blockquote class="lede">{lede}</blockquote>
+    <div class="meta">
+      {integrations.map((tag) => <span class="chip">{tag}</span>)}
+      <span class="date">{publishedDate}</span>
+    </div>
+    <hr />
+    {artifact && (
+      <a class="artifact" href={artifact}>
+        Open the demo artifact &rarr;
+      </a>
+    )}
+    <div class="prose">
+      <Content />
+    </div>
+    {related.length > 0 && (
+      <section class="related">
+        <h2>Related recipes</h2>
+        <div class="grid">
+          {related.map((r) => (
+            <a href={`/recipes/${r.id.replace(/\.md$/, '')}`} class="related-card">
+              <strong>{r.data.title}</strong>
+              <span>{r.data.lede}</span>
+            </a>
+          ))}
+        </div>
+      </section>
+    )}
+    <p class="footer-cta">
+      Have a question? <a href="https://github.com/Cubenest/rrweb-stack/discussions">Open a GitHub Discussion</a>.
+    </p>
+  </article>
+</Layout>
+
+<style>
+  .recipe { max-width: 760px; margin: 0 auto; padding: 2rem 1.5rem 4rem; }
+  .recipe .back { font-size: 0.85rem; color: var(--muted, #8a92a0); }
+  .recipe h1 { margin: 1rem 0 0.75rem; font-size: 2rem; line-height: 1.15; }
+  .recipe .lede {
+    margin: 0 0 1.5rem;
+    padding: 0.5rem 0 0.5rem 1rem;
+    border-left: 3px solid var(--accent, #5eead4);
+    color: var(--muted-strong, #b8bfca);
+    font-style: italic;
+  }
+  .recipe .meta { display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center; }
+  .recipe .meta .chip {
+    font-size: 0.7rem;
+    padding: 0.125rem 0.5rem;
+    border: 1px solid var(--border, #2a2e36);
+    border-radius: 999px;
+    color: var(--muted, #8a92a0);
+  }
+  .recipe .meta .date { font-size: 0.75rem; color: var(--muted, #8a92a0); margin-left: auto; }
+  .recipe hr { margin: 1.5rem 0; border: 0; border-top: 1px solid var(--border, #2a2e36); }
+  .recipe .artifact {
+    display: inline-block;
+    margin: 1rem 0;
+    padding: 0.75rem 1rem;
+    border: 1px dashed var(--accent, #5eead4);
+    border-radius: 6px;
+    color: var(--accent, #5eead4);
+  }
+  .recipe .prose :global(h2) { margin-top: 2rem; }
+  .recipe .prose :global(pre) {
+    padding: 1rem;
+    overflow-x: auto;
+    background: var(--surface, #171a20);
+    border-radius: 6px;
+  }
+  .recipe .related { margin-top: 3rem; }
+  .recipe .related .grid { display: grid; gap: 0.75rem; grid-template-columns: 1fr; }
+  .recipe .related-card {
+    display: flex;
+    flex-direction: column;
+    padding: 0.875rem 1rem;
+    border: 1px solid var(--border, #2a2e36);
+    border-radius: 6px;
+    text-decoration: none;
+    color: inherit;
+  }
+  .recipe .related-card strong { font-size: 0.95rem; margin-bottom: 0.25rem; }
+  .recipe .related-card span { font-size: 0.8rem; color: var(--muted, #8a92a0); }
+  .recipe .footer-cta { margin-top: 3rem; color: var(--muted, #8a92a0); font-size: 0.85rem; }
+</style>
