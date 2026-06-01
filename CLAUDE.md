@@ -100,9 +100,10 @@ clone before the symlink is created):
 
 ## Project conventions
 
-- **Direct-to-main commits** authorized for the maintainer. Branch
-  protection is deferred until post-1.0 (see Phase 4 in the implementation
-  plan).
+- **Branch protection is live on `main`** (required checks `ci` + `dco`,
+  1 review, linear history, conversation resolution). `enforce_admins` is
+  `false`, so the maintainer retains an admin bypass for direct-to-main
+  commits during the pre-1.0 alpha — but never push on a red `ci`.
 - **DCO sign-off mandatory** on every commit (`git commit -s …`). Lefthook
   enforces this.
 - **Conventional commit prefixes** preferred but not enforced. Common
