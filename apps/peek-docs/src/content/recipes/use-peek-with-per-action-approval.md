@@ -1,68 +1,81 @@
 ---
-title: "Use peek with per-action approval for sensitive flows"
-lede: "When I want my agent to click things in a real browser session, I want every write to require my explicit OK — no autonomous side effects."
-description: "Configure peek's per-origin permission levels so execute_action requires interactive approval — even when the agent is otherwise running unattended."
+title: "Understand peek's per-action approval model for sensitive flows"
+lede: "When I'm thinking about letting an agent drive clicks in a real browser, I want to know exactly what peek's permission model is — what it gates, what it logs, and what it never auto-approves."
+description: "peek's five-level permission model, the destructive-action override, and the audit log — the safety guarantees behind every execute_action call."
 type: short
-status: draft
+status: published
 publishedAt: 2026-06-15
 integrations: [security, claude-code]
 relatedRecipes: [security-review-flow-with-ai-agent, claude-code-on-staging, reproduce-bug-from-teammate-peek-session]
 ---
 
-## What you'll end up with
+## What this recipe covers
 
-A peek configuration where read tools (`get_dom_snapshot`, `get_session_network_errors`, etc.) work without prompts, but `execute_action` — the write tool that drives real clicks and keystrokes — pops an authorization prompt for every call. Sensitive origins (banking, prod admin) can be locked to a stricter level than the default.
+peek's MCP server exposes one write tool — `execute_action` — and gates every call against a per-origin permission level. This recipe walks you through that model so you can pick the right level per origin, understand what's logged, and know which actions can never be silently approved. The model and the audit log ship today; the live agent → consent-banner → click round-trip is in active development (see the callout at the end).
 
-![peek prompting for authorization on a write action](/recipes/assets/use-peek-with-per-action-approval.png)
+![peek's permission settings panel](/recipes/assets/use-peek-with-per-action-approval.png)
 
 ## Prerequisites
 
 - Claude Code (or any MCP client) with peek wired in (`peek init` writes the entry to `~/.claude.json`)
-- Chrome with the peek extension loaded (`chrome://extensions` → **Load unpacked** → `packages/peek-extension/chrome-mv3/`; not yet on the Chrome Web Store)
-- Familiarity with the origins you want your agent to touch
+- Chrome with the peek extension loaded
+- Familiarity with the origins you might want your agent to touch
 
-## Steps
+## The five permission levels
 
-### 1. Understand the five permission levels
+peek scopes permission **per origin**. Set per-origin levels in the extension popup → Settings → Permissions.
 
-peek scopes permission per origin. The five levels are:
+- **0 — Off.** No read or write. Default for any origin you haven't explicitly authorized.
+- **1 — List only.** The agent can see that a session exists for the origin (via `list_recent_sessions`); cannot read session contents.
+- **2 — Read.** Adds `get_session_summary`, `get_dom_snapshot`, `get_session_console_errors`, `get_session_network_errors`, `query_dom_history`, `get_user_action_before_error`, `generate_playwright_repro`. No write tools.
+- **3 — Write with approval.** Adds `execute_action`. Every call requires an explicit `request_authorization` confirmation (per-call, not per-session).
+- **4 — Write without approval.** Same write tools, no prompt. Reserved for sandboxes you own outright.
 
-- **0 — Off.** No read or write. Default for unknown origins.
-- **1 — List only.** Agent can see a session exists; cannot read its contents.
-- **2 — Read.** Agent can call `get_dom_snapshot`, `get_session_*` etc. against the origin.
-- **3 — Write with approval.** Adds `execute_action`, but every call requires an explicit `request_authorization` prompt.
-- **4 — Write without approval.** Same write tools, no prompt. Reserved for sandboxes.
+## The destructive-action override
 
-A destructive-action blocklist (clicking on text matching "delete", "remove account", etc.) forces a level-3-style prompt even at level 4.
+Independent of permission level, peek's MCP server enforces a static deny-list of destructive verbs. Clicking on UI text matching any of these phrases triggers a level-3-style prompt **even at level 4**:
 
-### 2. Set the default to Level 3 — Write with approval
+```
+delete, remove, transfer, send, pay, purchase, buy, confirm,
+subscribe, logout, sign out, unsubscribe, cancel subscription,
+wire, withdraw
+```
 
-In the peek extension popup, open **Settings → Permissions**. Set the default for new origins to **3 — Write with approval**.
+The blocklist lives inside peek-mcp (`packages/peek-mcp/src/mcp/destructive-blocklist.ts`) and cannot be disabled from the agent side. It's not exhaustive — domain-specific destructive actions ("Submit Payment", "Approve Refund") won't match — so don't rely on it as your only defence.
 
-### 3. Lock sensitive origins higher
+## Recommended defaults
 
-For any origin you do not want the agent writing to (your bank, your prod admin panel), set permission explicitly to **0** or **1**. Set permission per-origin in the same panel — these win over the default.
+- **Default for new origins: Level 0 (Off).** Keep peek opt-in. Authorize an origin only when you want the agent there.
+- **Origins you debug from: Level 2 (Read) or Level 3 (Write with approval).** Read is enough for the `claude-code-on-staging` / `security-review-flow-with-ai-agent` workflows.
+- **Origins you never want agents touching:** explicitly Level 0 even if "default" is also 0 — the explicit setting documents intent.
+- **Never put production origins (bank, prod admin) above Level 1.** No exceptions.
 
-### 4. Walk a flow and approve actions
+## The audit log
 
-Ask Claude Code:
+Every authorization decision — allow, deny, timeout, destructive-blocklist trip — gets a row in `~/.peek/audit.log`. Each row contains: timestamp, tool name (`execute_action` / `request_authorization`), client name (e.g. `claude-code`), session ID, action (the verb + target selector), and the outcome.
 
-> Walk through the checkout flow on staging and click Place Order. Use peek's `execute_action` for the click.
+```bash
+tail -f ~/.peek/audit.log
+```
 
-Each `execute_action` call surfaces a prompt in the peek extension showing the target selector, the action verb, and the page URL. Approve only what you intend.
+Useful for: weekly review ("what did my agent click last week?"), incident response, or just feeling confident that nothing happened without your trace.
 
-## Notes on data handling
+## What's shipped today vs in development
 
-The TrustBanner above is the short form. Worth elaborating for this recipe:
+Shipped today (peek ≥ 0.1.0-alpha.14):
+- The five-level permission model ([Task 3.22](https://github.com/Cubenest/rrweb-stack/blob/main/_context/prds/IMPLEMENTATION_PLAN.md))
+- The destructive-action override
+- The `execute_action` / `request_authorization` MCP tools (callable; gated by `MissingHostBridge` until IPC lands)
+- The audit log writer
 
-- **Authorization is per call, not per session.** Approving one click does not approve the next one.
-- **Approvals are logged.** peek-mcp writes an audit row for every authorization decision (allow / deny / timeout). Audit log lives under `~/.peek/audit/`.
-- **The destructive-action override is not a substitute for sane defaults.** It catches the obvious "Delete account" clicks; it does not catch domain-specific destructive actions ("Submit Payment"). Stay at Level 3 for any origin where you are not certain.
-- **Level 4 is for sandboxes you own.** Setting an origin to Level 4 disables the prompt — only do this for throwaway test environments.
+In development:
+- The cross-process IPC bridge (`LocalSocketHostBridge`) that lets the MCP server in your AI client talk to the Chrome native-host process. Until this lands, `execute_action` returns `bridge not wired in this process` rather than firing the consent banner. The permission model and audit log are still real — they're just not exercised on a live click yet.
+
+Track the IPC layer at [github.com/Cubenest/rrweb-stack/issues](https://github.com/Cubenest/rrweb-stack/issues). When it lands, the recipe step "Ask the agent to perform a write action" becomes live.
 
 ## Why this works
 
-peek's MCP write tools (`execute_action`, `request_authorization`) check per-origin permission before forwarding to the extension. Level 3 forces an `request_authorization` call to surface a UI prompt; the action only runs after a user click. The blocklist override is a static deny-list inside peek-mcp; it cannot be disabled from the agent side.
+Every write call from an MCP client passes through peek-mcp's per-origin permission check before any browser-side action could fire. Read tools at Level 2 give the agent the context to be useful; Level 3's mandatory consent prompt keeps every click in your hands; the destructive-action override catches the obvious mistakes; the audit log catches the rest after the fact.
 
 ## Next steps
 
