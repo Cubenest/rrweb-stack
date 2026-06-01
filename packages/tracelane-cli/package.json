@@ -48,5 +48,7 @@
     "url": "https://github.com/Cubenest/rrweb-stack",
     "directory": "packages/tracelane-cli"
   },
-  "homepage": "https://tracelane.cubenest.in"
+  "bugs": { "url": "https://github.com/Cubenest/rrweb-stack/issues" },
+  "homepage": "https://tracelane.cubenest.in",
+  "engines": { "node": ">=20.18.0" }
 }

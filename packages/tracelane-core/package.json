@@ -46,5 +46,7 @@
     "url": "https://github.com/Cubenest/rrweb-stack",
     "directory": "packages/tracelane-core"
   },
-  "homepage": "https://github.com/Cubenest/rrweb-stack/tree/main/packages/tracelane-core#readme"
+  "bugs": { "url": "https://github.com/Cubenest/rrweb-stack/issues" },
+  "homepage": "https://github.com/Cubenest/rrweb-stack/tree/main/packages/tracelane-core#readme",
+  "engines": { "node": ">=20.18.0" }
 }
