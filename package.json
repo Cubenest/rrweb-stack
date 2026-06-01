@@ -10,6 +10,7 @@
     "type": "git",
     "url": "https://github.com/Cubenest/rrweb-stack"
   },
+  "bugs": { "url": "https://github.com/Cubenest/rrweb-stack/issues" },
   "publishConfig": {
     "access": "public"
   },

@@ -67,8 +67,7 @@ export function formatSession(
         ok: false,
         message:
           "export format 'html' is not yet implemented (a peek-specific self-contained " +
-          'rrweb replay viewer is tracked for a follow-up; @tracelane/report is intentionally ' +
-          'not reused — ADR-0001 product independence). Use --format markdown or json.',
+          'rrweb replay viewer is tracked for a follow-up). Use --format markdown or json.',
       };
   }
 }
