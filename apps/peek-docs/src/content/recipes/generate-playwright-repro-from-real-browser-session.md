@@ -3,7 +3,7 @@ title: "Generate a Playwright repro from a real browser session"
 lede: "When I just hit a bug by clicking around, I want an automated regression test before I forget how I did it."
 description: "Turn a recorded peek session into a runnable Playwright spec by asking your agent to call generate_playwright_repro. Lock in the repro before you forget."
 type: hero
-status: draft
+status: published
 publishedAt: 2026-06-15
 integrations: [claude-code, cursor, playwright]
 relatedRecipes: [claude-code-on-staging, reproduce-bug-from-teammate-peek-session, validate-multi-step-authenticated-checkout]

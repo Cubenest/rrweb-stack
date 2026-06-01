@@ -3,7 +3,7 @@ title: "Let Claude Code reproduce a bug on your authenticated staging dashboard"
 lede: "When my agent can't see my staging dashboard because it's behind SSO, I want it to look at the broken page I'm already on and fix it."
 description: "Give Claude Code a live, read-only view of your authenticated staging app over MCP. Your agent reads the DOM, console, and network — and proposes a fix."
 type: hero
-status: draft
+status: published
 publishedAt: 2026-06-15
 integrations: [claude-code, chrome]
 relatedRecipes: [set-up-peek-with-claude-code, generate-playwright-repro-from-real-browser-session, let-cursor-see-real-network-calls]

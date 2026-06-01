@@ -3,7 +3,7 @@ title: "Let Cursor see the real network calls your SPA is making"
 lede: "When my SPA's frontend is making twelve calls and one is failing, I want Cursor to read them and tell me which header is wrong."
 description: "Wire Cursor into peek's MCP server so it can read the actual network requests, headers, and responses your SPA fires — not your guess at what they look like."
 type: hero
-status: draft
+status: published
 publishedAt: 2026-06-15
 integrations: [cursor, chrome]
 relatedRecipes: [set-up-peek-with-cursor, claude-code-on-staging, security-review-flow-with-ai-agent]
