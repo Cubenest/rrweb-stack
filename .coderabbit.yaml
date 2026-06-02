@@ -1,0 +1,128 @@
+# yaml-language-server: $schema=https://coderabbit.ai/integrations/schema.v2.json
+#
+# CodeRabbit configuration for Cubenest/rrweb-stack.
+#
+# This repo is a PUBLIC Apache-2.0 monorepo, so it runs on CodeRabbit's free
+# "Pro for open source" plan (full reviews, linters/SAST, custom instructions —
+# no seat limit, no expiry). CodeRabbit is wired in as an ADVISORY reviewer
+# only: it comments on every PR to `main` but never gates the merge path. The
+# required status checks stay `ci` + `dco` (see branch protection); CodeRabbit
+# deliberately posts no commit status (`commit_status: false`) and uses no
+# request-changes gate, so it can't deadlock a merge if the service is
+# rate-limited or down.
+#
+# Posture mirrors CONTRIBUTING.md "Code review philosophy": CI is the pedant
+# (Biome + Lefthook own formatting/lint/types), so CodeRabbit is told to spend
+# its attention on design, correctness, security, and supply-chain instead.
+#
+# This file is repo-hygiene config (like renovate.json), so per CONTRIBUTING.md
+# it needs no changeset.
+
+language: "en-US"
+early_access: false
+
+# Keep reviews high-signal and non-redundant with the tooling that already runs
+# on every commit and in CI.
+tone_instructions: >-
+  Style, lint, and types are owned by Biome, Lefthook, and CI — skip nitpicks
+  they cover. Focus on correctness, security, supply-chain risk, and API/module
+  design. Keep feedback concise and actionable (solo-maintained pre-1.0 alpha).
+
+reviews:
+  profile: chill
+  # Advisory only: comment, never block. No GitHub "request changes" gate and
+  # no commit status check, so CodeRabbit never enters the required-check merge
+  # path (that stays `ci` + `dco`).
+  request_changes_workflow: false
+  commit_status: false
+  # PR hygiene.
+  high_level_summary: true
+  collapse_walkthrough: true
+  poem: false
+  related_issues: true
+  related_prs: true
+  auto_review:
+    enabled: true
+    # Re-review automatically when new commits land on an open PR.
+    auto_incremental_review: true
+    # Don't spend review budget on drafts; review once marked ready for review.
+    drafts: false
+    base_branches:
+      - main
+
+  # Exclude generated output, vendored bundles, lockfiles, binary assets, and
+  # frozen records from review. Most are already gitignored (so never in a PR)
+  # but are listed defensively. A leading `!` excludes the pattern.
+  path_filters:
+    - "!pnpm-lock.yaml"
+    - "!**/*.min.js"
+    - "!**/dist/**"
+    - "!**/.output/**"
+    - "!**/.astro/**"
+    - "!packages/peek-extension/chrome-mv3/**"
+    - "!_context/**"
+    - "!**/*.tsbuildinfo"
+    - "!**/CHANGELOG.md"
+    - "!**/*.png"
+    - "!**/*.jpg"
+    - "!**/*.jpeg"
+    - "!**/*.webp"
+    - "!**/*.zip"
+
+  # Encode the repo's hard rules so reviews enforce them. Sources: CLAUDE.md,
+  # CONTRIBUTING.md "Workflow security hard rules", renovate.json.
+  path_instructions:
+    - path: ".github/workflows/**"
+      instructions: >-
+        Enforce the workflow security hard rules. Every GitHub Action MUST be
+        pinned to a full 40-character commit SHA (never a floating tag like @v4
+        or @main). NO workflow may use the `pull_request_target` trigger (the
+        PostHog Shai-Hulud 2.0 vector). Every workflow/job MUST declare a
+        minimal `permissions:` block (default `contents: read`; escalate only
+        per-job where required). Flag any violation as a blocking concern.
+    - path: "packages/rrweb-core/**"
+      instructions: >-
+        This package is a vendored fork of PostHog's rrweb plus a
+        framework-agnostic network plugin — it is supply-chain sensitive. Flag
+        any newly introduced runtime dependency, network or telemetry call, or
+        change that bumps @posthog/rrweb* / rrweb pins outside the documented
+        cooldown policy (see renovate.json).
+    - path: "packages/peek-*/**"
+      instructions: >-
+        peek is local-only by design: no telemetry, no cloud, masked-by-default
+        capture into a local SQLite store. Flag anything that could weaken
+        DOM/input masking, log or persist PII, broaden the MCP permission model,
+        or send captured data off-device.
+    - path: ".changeset/**"
+      instructions: >-
+        Existing changeset entries are FROZEN historical records — never suggest
+        rewriting or editing prior `.changeset/*.md` files. New user-visible
+        changes to published packages should add a new changeset, not amend old
+        ones.
+
+  # Secret/SAST/workflow linters carry the security load; Biome covers JS/TS.
+  # markdownlint is off — this is a docs-heavy repo and md nits are noise that
+  # the "chill" posture is meant to avoid.
+  tools:
+    gitleaks:
+      enabled: true
+    semgrep:
+      enabled: true
+    actionlint:
+      enabled: true
+    biome:
+      enabled: true
+    markdownlint:
+      enabled: false
+
+# Teach CodeRabbit the project's own conventions so reviews are context-aware.
+knowledge_base:
+  code_guidelines:
+    enabled: true
+    filePatterns:
+      - "CLAUDE.md"
+      - "CONTRIBUTING.md"
+      - "docs/SECURITY-NOTES.md"
+
+chat:
+  auto_reply: true
