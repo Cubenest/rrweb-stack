@@ -217,8 +217,9 @@ posture:
 
 Every PR targeting `main` is reviewed automatically by
 [CodeRabbit](https://www.coderabbit.ai/). Because this repo is public, it runs
-on CodeRabbit's free open-source plan — the full review feature set at no cost,
-no seat limit.
+on CodeRabbit's free open-source plan — full code-review features (line-by-line
+reviews, linters/SAST, custom instructions) at no cost and no seat limit,
+subject to OSS rate limits.
 
 CodeRabbit is **advisory, not a gate.** It posts a summary plus inline comments
 but never blocks a merge: the only required checks remain `ci` and `dco`, and
