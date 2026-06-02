@@ -74,6 +74,11 @@ export interface ActionRequestMessage {
     remove: readonly string[];
   };
   tabId?: number;
+  /**
+   * Pre-issued one-shot token from a prior `request_authorization`; lets the SW
+   * skip the banner when it matches this request's (sessionId, action.type).
+   */
+  confirmToken?: string;
 }
 
 /** SW → host: optional timing signal when the banner is shown. */

@@ -28,7 +28,9 @@
 //   When the IPC layer lands (3d-4 or 3e) we add a concrete
 //   `LocalSocketHostBridge` here; nothing else changes.
 
+import * as net from 'node:net';
 import { RequestRegistry, type RequestRegistryDeps } from '../native-host/request-registry.js';
+import { hostSocketPath } from '../native-host/socket-path.js';
 import type { Action } from './action-schema.js';
 
 // 5 minutes — longer than any plausible Level-3 banner-decision window.
@@ -139,5 +141,170 @@ export class RegistryBackedHostBridge implements HostBridge {
     const entry = this.pending.shift();
     if (!entry) return false;
     return this.#registry.reject(entry.id, reason);
+  }
+}
+
+/** The minimal duplex surface the bridge needs — injectable for tests. */
+interface SocketLike {
+  write(data: string): void;
+  on(ev: string, h: (...a: unknown[]) => void): void;
+  end(): void;
+  /** Optional: decode inbound bytes as UTF-8 (real net.Socket has it). */
+  setEncoding?(encoding: string): void;
+  /**
+   * Optional: forcibly close the underlying socket (item G). Real net.Socket
+   * has it. `#reset` calls this so the orphaned socket doesn't stay open.
+   */
+  destroy?(): void;
+  /**
+   * Optional: detach the data/error/close listeners (item G) so a dropped
+   * socket doesn't leak its handlers. Real net.Socket (EventEmitter) has it.
+   */
+  removeAllListeners?(): void;
+}
+
+/**
+ * Cap for a single newline-delimited frame on the bridge's read side. A
+ * well-behaved native host never sends a frame near this; the cap is a
+ * local-DoS guard so a malformed / hostile peer can't make the bridge buffer
+ * unbounded. 1 MiB mirrors the native-messaging host→ext frame cap.
+ */
+const DEFAULT_MAX_LINE_BYTES = 1024 * 1024;
+
+export interface LocalSocketHostBridgeDeps {
+  /** Override the socket / named-pipe path (tests + alternate PEEK_HOME). */
+  socketPath?: string;
+  /** Injectable connection factory; defaults to `net.connect(path)`. */
+  connect?: (path: string) => SocketLike;
+  /** Injectable correlation registry (tests). */
+  registry?: RequestRegistry;
+  /** Max bytes for a single inbound line before the connection is dropped. */
+  maxLineBytes?: number;
+}
+
+/**
+ * The production bridge: a newline-delimited-JSON client over the local
+ * `~/.peek/host.sock` (Unix domain socket) / `\\.\pipe\peek-host` (Windows).
+ *
+ * Wire frame (both directions): one JSON object per line, `\n`-terminated.
+ *   client → host:  { kind: 'act.request',  id, payload: HostActionRequest }
+ *   host → client:  { kind: 'act.response', id, payload: HostActionResponse }
+ *
+ * Correlation reuses {@link RequestRegistry} (id ↔ pending promise) exactly like
+ * {@link RegistryBackedHostBridge}; only the transport differs. The connection
+ * is opened lazily on the first request and reused. A connect throw, a socket
+ * `error`, or a timeout all resolve to a structured `deny`/`error` response —
+ * fail-closed — so the MCP tool handler never sees a raw throw and the audit
+ * log still records the attempt.
+ */
+export class LocalSocketHostBridge implements HostBridge {
+  readonly #registry: RequestRegistry;
+  readonly #path: string;
+  readonly #connect: (path: string) => SocketLike;
+  readonly #maxLineBytes: number;
+  #sock: SocketLike | undefined;
+  #buf = '';
+
+  constructor(deps: LocalSocketHostBridgeDeps = {}) {
+    this.#registry = deps.registry ?? new RequestRegistry();
+    this.#path = deps.socketPath ?? hostSocketPath();
+    this.#connect = deps.connect ?? ((p) => net.connect(p) as unknown as SocketLike);
+    this.#maxLineBytes = deps.maxLineBytes ?? DEFAULT_MAX_LINE_BYTES;
+  }
+
+  /**
+   * Drop the cached socket + clear the read buffer (reconnect on next request).
+   *
+   * Item G: DESTROY the live socket + remove its listeners BEFORE nulling the
+   * reference — otherwise the orphaned socket stays open with its
+   * data/error/close listeners attached (a socket + listener leak on every
+   * reconnect, and a late event from the dead socket could still mutate state).
+   * Item H: fail every in-flight request with a structured error so a closed /
+   * errored transport rejects awaiting tool calls PROMPTLY rather than leaving
+   * them hanging until the 5-minute registry timeout.
+   */
+  #reset(reason?: string): void {
+    const sock = this.#sock;
+    this.#sock = undefined;
+    this.#buf = '';
+    if (sock) {
+      try {
+        sock.removeAllListeners?.();
+        sock.destroy?.();
+      } catch {
+        // A destroy/removeListeners throw must not mask the reset.
+      }
+    }
+    // Item H: reject all pending requests now (fail-closed) instead of waiting
+    // out the per-request timeout.
+    this.#registry.rejectAll(new Error(reason ?? 'peek: host socket connection closed'));
+  }
+
+  /** Open (once) + wire the framing reader. Throws if the connect throws. */
+  #ensure(): SocketLike {
+    if (this.#sock) return this.#sock;
+    const s = this.#connect(this.#path);
+    // Item F: decode inbound bytes as UTF-8 (matches the server side) so a
+    // multibyte char split across two reads can't corrupt a frame. Real
+    // net.Socket has setEncoding; injected fakes may not.
+    s.setEncoding?.('utf8');
+    s.on('data', (chunk: unknown) => {
+      this.#buf += String(chunk);
+      // Item F: local-DoS guard. If the buffer grows past the cap WITHOUT a
+      // frame delimiter, a hostile/malformed peer is trying to make us buffer
+      // unbounded — drop the connection + clear the buffer (in-flight requests
+      // time out via the registry → fail-closed).
+      if (this.#buf.length > this.#maxLineBytes && this.#buf.indexOf('\n') < 0) {
+        this.#reset('peek: host socket frame exceeded the line cap');
+        return;
+      }
+      let nl: number;
+      // biome-ignore lint/suspicious/noAssignInExpressions: idiomatic frame-drain loop
+      while ((nl = this.#buf.indexOf('\n')) >= 0) {
+        const line = this.#buf.slice(0, nl);
+        this.#buf = this.#buf.slice(nl + 1);
+        if (!line.trim()) continue;
+        if (line.length > this.#maxLineBytes) continue; // oversized frame — drop it
+        try {
+          const m = JSON.parse(line) as { kind?: string; id?: string; payload?: unknown };
+          if (m.kind === 'act.response' && typeof m.id === 'string') {
+            this.#registry.resolve(m.id, m.payload);
+          }
+        } catch {
+          // Drop a malformed frame; a single bad line must not wedge the bridge.
+        }
+      }
+    });
+    s.on('error', (err: unknown) => {
+      // Item H: drop the cached socket so the next request reconnects AND fail
+      // every in-flight request now (via #reset → registry.rejectAll), instead
+      // of letting them hang until the 5-minute per-request timeout.
+      this.#reset(
+        `peek: host socket error — ${err instanceof Error ? err.message : 'connection error'}`,
+      );
+    });
+    s.on('close', () => {
+      this.#reset('peek: host socket closed');
+    });
+    this.#sock = s;
+    return s;
+  }
+
+  async request(req: HostActionRequest): Promise<HostActionResponse> {
+    try {
+      const sock = this.#ensure();
+      const { id, response } = this.#registry.create<HostActionResponse>(
+        req.timeoutMs ?? DEFAULT_BRIDGE_TIMEOUT_MS,
+      );
+      sock.write(`${JSON.stringify({ kind: 'act.request', id, payload: req })}\n`);
+      return await response;
+    } catch (err) {
+      return {
+        verdict: 'deny',
+        result: 'error',
+        approver: 'user',
+        error: err instanceof Error ? err.message : String(err),
+      };
+    }
   }
 }

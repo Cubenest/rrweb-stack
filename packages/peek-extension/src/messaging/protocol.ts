@@ -13,6 +13,45 @@
  * server-side `network.append` payloads from there.
  */
 
+import type { Action } from '../permissions/action-protocol';
+
+/**
+ * SW → side panel: surface the Level-3 confirm banner for a pending action.
+ * Sent via `chrome.runtime.sendMessage` after the SW opens the panel. The panel
+ * renders {@link ConfirmBanner} and replies with a {@link ConfirmVerdictMessage}.
+ */
+export interface ShowConfirmMessage {
+  type: 'showConfirm';
+  /** Correlates the verdict back to the awaiting action request. */
+  requestId: string;
+  /** The action awaiting confirmation (drives the banner copy). */
+  action: Action;
+  /** Set when the destructive matcher fired — the banner shows a warning. */
+  destructiveTerm?: string;
+  /** The site the action targets (shown in the banner). */
+  origin: string;
+}
+
+/**
+ * Side panel → SW: the user's verdict for a pending confirm. `alwaysForSite`
+ * (Allow + remember) bumps the origin to Level 4 / records an allow-list entry
+ * (handled SW-side). A closed/timed-out panel never sends this — the SW
+ * fail-closes to deny after its own timeout.
+ */
+export interface ConfirmVerdictMessage {
+  type: 'confirmVerdict';
+  requestId: string;
+  verdict: 'allow' | 'deny';
+  alwaysForSite?: boolean;
+  /**
+   * Item F: set ONLY by {@link closedVerdict} — the synthetic deny the panel
+   * posts when it unmounts/closes with a pending confirm. An explicit Deny-
+   * button verdict leaves this unset. Lets the SW distinguish a panel close
+   * ('panel-closed') from an explicit user Deny ('user-deny') in the audit log.
+   */
+  closed?: boolean;
+}
+
 /** Live capture counters surfaced in the side panel (P2 PRD §D.3). */
 export interface RecorderStats {
   domMutations: number;
@@ -149,3 +188,96 @@ export const EMPTY_RECORDER_STATS: RecorderStats = {
   consoleLogs: 0,
   networkRequests: 0,
 };
+
+/**
+ * Item C: verify a `confirmVerdict` actually came from the extension's OWN side
+ * panel. The SW already gates on `sender.id === chrome.runtime.id`, but that
+ * admits ANY extension-origin context (options page, popup, devtools panel),
+ * so correlating a verdict only by `requestId` lets a non-banner context
+ * approve a pending action (and silently escalate via `alwaysForSite`). We
+ * additionally require `sender.url` to be the side-panel page.
+ *
+ * The match is on a URL path boundary: the sidepanel URL itself, or the
+ * sidepanel URL followed by `?`/`#` (query/hash). A bare `startsWith` would let
+ * `sidepanel.html.evil.html` through, so we check the next char is a delimiter.
+ *
+ * Pure (sender shape + the expected URL injected) so it unit-tests without a
+ * real browser. `expectedUrl` is `chrome.runtime.getURL('sidepanel.html')` at
+ * the call site.
+ */
+export function isFromSidePanel(
+  sender: { url?: string | undefined },
+  expectedUrl: string,
+): boolean {
+  const url = sender.url;
+  if (typeof url !== 'string' || url.length === 0) return false;
+  if (url === expectedUrl) return true;
+  if (!url.startsWith(expectedUrl)) return false;
+  const next = url.charAt(expectedUrl.length);
+  return next === '?' || next === '#';
+}
+
+/**
+ * Type guard: is this inbound runtime message a well-formed
+ * {@link ShowConfirmMessage}?
+ *
+ * Item E: validates the FULL wire shape — a non-empty string `requestId`, an
+ * `action` object with a string `type`, and a string `origin` — not just
+ * `type === 'showConfirm'`. A malformed payload that slipped through would
+ * otherwise crash the banner render, or make the panel's unmount cleanup post a
+ * `closedVerdict` with an invalid/empty requestId (which the SW can't correlate
+ * — or worse, could match a different in-flight request). `destructiveTerm` is
+ * optional and not required here.
+ */
+export function isShowConfirm(message: unknown): message is ShowConfirmMessage {
+  if (typeof message !== 'object' || message === null) return false;
+  const m = message as {
+    type?: unknown;
+    requestId?: unknown;
+    action?: unknown;
+    origin?: unknown;
+  };
+  if (m.type !== 'showConfirm') return false;
+  if (typeof m.requestId !== 'string' || m.requestId.length === 0) return false;
+  if (typeof m.origin !== 'string') return false;
+  // The action must be an object with a string discriminator `type`.
+  if (typeof m.action !== 'object' || m.action === null) return false;
+  if (typeof (m.action as { type?: unknown }).type !== 'string') return false;
+  return true;
+}
+
+/** Why a confirm resolved to deny — recorded in the audit log (item F). */
+export type DenyReason = 'timeout' | 'user-deny' | 'panel-closed';
+
+/**
+ * Classify a deny verdict for the audit log (item F).
+ *
+ *   - the SW's own timeout fired (no user response within the window) → 'timeout'
+ *   - the panel closed with a pending confirm ({@link closedVerdict}, `closed`
+ *     flag set) → 'panel-closed'
+ *   - otherwise an explicit Deny-button click → 'user-deny'
+ *
+ * Timeout takes precedence over the `closed` flag: once the SW timed out, that's
+ * the truth regardless of any late verdict the dying panel may have posted.
+ * Pure (verdict + elapsed + timeout in, reason out) so it unit-tests cleanly.
+ */
+export function denyReason(
+  verdict: ConfirmVerdictMessage,
+  elapsedMs: number,
+  timeoutMs: number,
+): DenyReason {
+  if (elapsedMs >= timeoutMs) return 'timeout';
+  if (verdict.closed === true) return 'panel-closed';
+  return 'user-deny';
+}
+
+/** Post a confirm verdict back to the SW. Best-effort; SW fail-closes on no reply. */
+export async function sendConfirmVerdict(verdict: ConfirmVerdictMessage): Promise<void> {
+  try {
+    await chrome.runtime.sendMessage(verdict);
+  } catch (err) {
+    // The SW may have died (MVP decision: SW-death during a pending confirm =
+    // timeout→deny). Swallow — the SW's own timeout handles it.
+    if (!isNoReceiverError(err)) throw err;
+  }
+}

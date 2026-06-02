@@ -1,10 +1,17 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { originFromUrl } from '../../src/activation/origin';
 import { requestActivation } from '../../src/activation/request';
 import { isOriginEnabled } from '../../src/activation/storage';
-import { sendCmd } from '../../src/messaging/protocol';
+import {
+  type ConfirmVerdictMessage,
+  type ShowConfirmMessage,
+  sendCmd,
+  sendConfirmVerdict,
+} from '../../src/messaging/protocol';
+import { ConfirmResolutionTracker, isShowConfirmFromBackground } from './confirm-flow';
 import { ActivateSection } from './sections/ActivateSection';
 import { AuditLogSection } from './sections/AuditLogSection';
+import { ConfirmBanner, closedVerdict } from './sections/ConfirmBanner';
 import { DeepCaptureSection } from './sections/DeepCaptureSection';
 import { EventCountSection } from './sections/EventCountSection';
 import { PermissionLevelSection } from './sections/PermissionLevelSection';
@@ -31,6 +38,56 @@ export function App(): React.JSX.Element {
   const [tabEnabled, setTabEnabled] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // The Level-3 confirm banner. The SW posts `showConfirm` and awaits a
+  // `confirmVerdict`. Only one prompt is shown at a time; a newer one replaces
+  // an older (the older request will time out → deny SW-side, fail-closed).
+  const [pendingConfirm, setPendingConfirm] = useState<ShowConfirmMessage | null>(null);
+  // Item D-b: track requestIds that already got a user verdict, so the
+  // [pendingConfirm] cleanup below does NOT send a second (deny) closedVerdict
+  // for them — a late synthetic deny must never override an allow the SW acted
+  // on. One tracker per mount (a ref, so it survives re-renders).
+  const resolution = useRef(new ConfirmResolutionTracker());
+
+  // Listen for SW → panel confirm prompts. On a verdict choice (or panel
+  // closure) we post the verdict back to the SW.
+  useEffect(() => {
+    const listener = (message: unknown, sender: chrome.runtime.MessageSender): undefined => {
+      // Item D-a: only the extension's OWN background SW may surface a confirm
+      // banner. Without this sender check, a page / content-script context the
+      // AI can influence could post a forged `showConfirm` and replace the
+      // action the user is about to approve.
+      if (isShowConfirmFromBackground(message, sender, chrome.runtime.id)) {
+        setPendingConfirm(message);
+      }
+      return undefined;
+    };
+    chrome.runtime.onMessage.addListener(listener);
+    return () => chrome.runtime.onMessage.removeListener(listener);
+  }, []);
+
+  // If the panel unmounts while a confirm is pending, fail-closed: deny it so
+  // the SW doesn't wait out its full timeout (defense in depth — the SW also
+  // times out independently). Item D-b: skip this for a request that already
+  // received a verdict (resolveConfirm marks it), so clearing pendingConfirm on
+  // an Allow doesn't fire a synthetic deny that races/overrides the allow.
+  useEffect(() => {
+    if (!pendingConfirm) return;
+    const requestId = pendingConfirm.requestId;
+    const tracker = resolution.current;
+    return () => {
+      if (tracker.shouldSendCloseVerdict(requestId)) {
+        void sendConfirmVerdict(closedVerdict(requestId));
+      }
+    };
+  }, [pendingConfirm]);
+
+  const resolveConfirm = useCallback((verdict: ConfirmVerdictMessage) => {
+    // Mark resolved BEFORE clearing pendingConfirm: setPendingConfirm(null)
+    // synchronously schedules the cleanup, which reads the tracker.
+    resolution.current.markResolved(verdict.requestId);
+    void sendConfirmVerdict(verdict);
+    setPendingConfirm(null);
+  }, []);
 
   // Reflect persisted consent whenever the active origin changes.
   useEffect(() => {
@@ -89,6 +146,10 @@ export function App(): React.JSX.Element {
         <h1 className="peek-title">peek</h1>
         <span className="peek-tagline">browser session capture for AI agents</span>
       </header>
+
+      {pendingConfirm ? (
+        <ConfirmBanner pending={pendingConfirm} onResolve={resolveConfirm} />
+      ) : null}
 
       <ActivateSection
         origin={origin}

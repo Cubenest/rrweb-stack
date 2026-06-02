@@ -11,7 +11,10 @@
 
 import type { Readable, Writable } from 'node:stream';
 import { openDb, peekHomeDir, schemaVersion } from '../db/open.js';
+import type { ActionConfirmShownMessage, ActionResultMessage } from './action-protocol.js';
+import { HostSocketServer } from './host-socket.js';
 import { type IncomingMessage, ingest } from './ingest.js';
+import { hostSocketPath } from './socket-path.js';
 import { readMessages, writeMessage } from './transport.js';
 
 export interface NativeHostHandle {
@@ -36,7 +39,21 @@ export interface NativeHostOptions {
   readonly input?: Readable;
   /** Override the output stream (default: process.stdout). */
   readonly output?: Writable;
+  /**
+   * Override the IPC socket / named-pipe path the {@link HostSocketServer}
+   * listens on (tests + alternate PEEK_HOME). Defaults to ~/.peek/host.sock.
+   */
+  readonly socketPath?: string;
+  /**
+   * When false, skip starting the {@link HostSocketServer}. Defaults to true.
+   * Tests that only exercise the ingest/handshake path set this false to avoid
+   * binding a real socket.
+   */
+  readonly startSocketServer?: boolean;
 }
+
+/** Message types the SW sends back on the action-request correlation channel. */
+const ACTION_REPLY_TYPES = new Set(['action.result', 'action.confirm.shown']);
 
 /** Message-type strings the ingest handler claims. */
 const INGEST_TYPES = new Set([
@@ -64,6 +81,51 @@ export function startNativeHost(options: NativeHostOptions = {}): NativeHostHand
   };
   if (options.input !== undefined) readOptions.input = options.input;
 
+  // IPC relay to the MCP-server process (Task 3.24). The MCP process's
+  // LocalSocketHostBridge connects here; the server relays `act.request` →
+  // native-port `action.request` (via `write`, the host → SW direction) and
+  // `action.result` (inbound, see handleMessage) → `act.response`.
+  let socketServer: HostSocketServer | undefined;
+  if (options.startSocketServer !== false) {
+    // Resolve the socket path: explicit option wins; else derive from the
+    // (possibly test-overridden) peek data dir via hostSocketPath(home). This
+    // is the SAME function the MCP-process bridge dials, so both sides agree —
+    // including under a custom $PEEK_HOME (item D). On Windows it's the fixed
+    // named pipe; a test `home` binds its own socket and never collides.
+    const socketPath = options.socketPath ?? hostSocketPath(home);
+    socketServer = new HostSocketServer({
+      // postToSw writes the action.request out the native port (host → SW).
+      postToSw: (message) => {
+        void write(message).catch((err) => {
+          console.error(
+            `native host: action.request post failed — ${err instanceof Error ? err.message : String(err)}`,
+          );
+        });
+      },
+      socketPath,
+      // Item I/J: bind failures (EADDRINUSE/EACCES) are emitted ASYNC via the
+      // server 'error' event, so a try/catch around listen() can't catch them.
+      // The server probes live-vs-stale + retries once on a stale socket; if it
+      // still can't bind it calls this. Degrade — the action write-path is down,
+      // but ingest/capture still flows — never crash the host.
+      onListenError: (err) => {
+        console.error(`native host: IPC socket failed to listen — ${err.message}`);
+        socketServer = undefined;
+      },
+    });
+    // listen() is async-internally (the bind-error/probe/retry path); it never
+    // throws synchronously, but keep the try/catch for a defensive construct-time
+    // failure.
+    try {
+      socketServer.listen();
+    } catch (err) {
+      console.error(
+        `native host: IPC socket listen threw — ${err instanceof Error ? err.message : String(err)}`,
+      );
+      socketServer = undefined;
+    }
+  }
+
   const done = readMessages((message) => {
     // A reply-write failure (e.g. the browser closed the port mid-reply) must
     // not become an unhandled rejection that tears down the host.
@@ -77,6 +139,7 @@ export function startNativeHost(options: NativeHostOptions = {}): NativeHostHand
   return {
     done,
     close() {
+      socketServer?.close();
       db.close();
     },
   };
@@ -93,6 +156,15 @@ export function startNativeHost(options: NativeHostOptions = {}): NativeHostHand
         schemaVersion: schemaVersion(db),
         ...(options.callerOrigin !== undefined ? { callerOrigin: options.callerOrigin } : {}),
       });
+      return;
+    }
+
+    // Action-request correlation replies from the SW (Task 3.24). Forward to
+    // the IPC relay, which writes the mapped `act.response` back to the
+    // originating MCP-process socket connection. These are NOT acked over the
+    // native port (the MCP process is the one awaiting, over the socket).
+    if (type !== undefined && ACTION_REPLY_TYPES.has(type)) {
+      socketServer?.onSwMessage(message as ActionResultMessage | ActionConfirmShownMessage);
       return;
     }
 

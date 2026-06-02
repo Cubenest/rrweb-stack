@@ -74,6 +74,39 @@ describe('buildAuditEntry', () => {
     expect(entry.error).toBe('User denied');
   });
 
+  it('serializes the full §H3 line shape for a confirmToken-backed destructive action', () => {
+    // A real execute_action that consumed a confirmToken + the user approved a
+    // destructive click. The token itself is NEVER persisted (not an AuditEntry
+    // field) — only the approver/approvalTs/destructiveTerm/redacted-args land.
+    const entry = buildAuditEntry({
+      tool: 'execute_action',
+      action: { type: 'click', selector: '#delete-account', button: 'left' },
+      approver: 'user',
+      client: 'cursor',
+      sessionId: 's_acct',
+      result: 'ok',
+      nowMs: 1716480000000,
+      approvalMs: 1716480001500,
+      destructiveTerm: 'delete',
+    });
+    const line = serializeAuditEntry(entry);
+    const parsed = JSON.parse(line.trimEnd());
+    expect(parsed).toMatchObject({
+      ts: '2024-05-23T16:00:00.000Z',
+      tool: 'execute_action',
+      approvalTs: '2024-05-23T16:00:01.500Z',
+      approver: 'user',
+      client: 'cursor',
+      sessionId: 's_acct',
+      result: 'ok',
+      destructiveTerm: 'delete',
+      args: { type: 'click', selector: '#delete-account', button: 'left' },
+    });
+    // The token must not leak into the audit log under any key.
+    expect(line).not.toContain('confirmToken');
+    expect(line).not.toContain('token');
+  });
+
   it('redacts NavigateAction query-string values', () => {
     const entry = buildAuditEntry({
       tool: 'execute_action',

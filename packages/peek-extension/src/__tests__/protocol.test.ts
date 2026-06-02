@@ -1,5 +1,13 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { ServiceWorkerUnavailableError, isNoReceiverError, sendCmd } from '../messaging/protocol';
+import {
+  type ConfirmVerdictMessage,
+  ServiceWorkerUnavailableError,
+  denyReason,
+  isFromSidePanel,
+  isNoReceiverError,
+  isShowConfirm,
+  sendCmd,
+} from '../messaging/protocol';
 
 // Carry-in [10]: sendCmd must turn the MV3 "SW asleep / no receiver" rejection
 // into a typed error callers can catch, not an opaque unhandled rejection.
@@ -67,5 +75,122 @@ describe('sendCmd', () => {
     const errResult = await sendCmd({ type: 'activateRecorderForTab', tabId: 42 });
     expect(errResult.ok).toBe(false);
     expect(errResult.reason).toContain('No window');
+  });
+});
+
+// Item C: a confirmVerdict must only be honored when it originates from the
+// extension's OWN side panel — not from any other extension-origin context
+// (an options page, a popup, a devtools panel, a content script the AI could
+// influence). Correlating only by requestId let any such context approve a
+// pending action (and silently escalate via alwaysForSite).
+describe('isFromSidePanel', () => {
+  const SIDEPANEL_URL = 'chrome-extension://abcd/sidepanel.html';
+
+  it('accepts a sender whose url is exactly the sidepanel page', () => {
+    expect(isFromSidePanel({ url: SIDEPANEL_URL }, SIDEPANEL_URL)).toBe(true);
+  });
+
+  it('accepts a sidepanel url carrying a query/hash suffix', () => {
+    expect(isFromSidePanel({ url: `${SIDEPANEL_URL}?x=1#frag` }, SIDEPANEL_URL)).toBe(true);
+  });
+
+  it('rejects a different extension page (options/popup/devtools)', () => {
+    expect(isFromSidePanel({ url: 'chrome-extension://abcd/options.html' }, SIDEPANEL_URL)).toBe(
+      false,
+    );
+    expect(isFromSidePanel({ url: 'chrome-extension://abcd/popup.html' }, SIDEPANEL_URL)).toBe(
+      false,
+    );
+  });
+
+  it('rejects a sender with no url (e.g. a content script / SW)', () => {
+    expect(isFromSidePanel({}, SIDEPANEL_URL)).toBe(false);
+    expect(isFromSidePanel({ url: undefined }, SIDEPANEL_URL)).toBe(false);
+  });
+
+  it('rejects a look-alike prefix that is not a path boundary', () => {
+    // A page named sidepanel.html.evil.html must not pass the prefix check.
+    expect(
+      isFromSidePanel({ url: 'chrome-extension://abcd/sidepanel.html.evil.html' }, SIDEPANEL_URL),
+    ).toBe(false);
+  });
+});
+
+// Item E: isShowConfirm must validate the FULL wire shape, not just
+// `type === 'showConfirm'`. A malformed payload (missing/empty requestId, no
+// action object) would otherwise crash the banner render or make the cleanup
+// post a closedVerdict with an invalid requestId.
+describe('isShowConfirm — full wire-shape validation', () => {
+  const VALID = {
+    type: 'showConfirm',
+    requestId: 'req-1',
+    action: { type: 'click', selector: '#x', button: 'left' },
+    origin: 'https://example.com',
+  };
+
+  it('accepts a well-formed showConfirm', () => {
+    expect(isShowConfirm(VALID)).toBe(true);
+  });
+
+  it('accepts a destructive variant carrying destructiveTerm', () => {
+    expect(isShowConfirm({ ...VALID, destructiveTerm: 'delete' })).toBe(true);
+  });
+
+  it('rejects a non-string / empty requestId', () => {
+    expect(isShowConfirm({ ...VALID, requestId: '' })).toBe(false);
+    expect(isShowConfirm({ ...VALID, requestId: 123 })).toBe(false);
+    const { requestId: _omit, ...noReq } = VALID;
+    expect(isShowConfirm(noReq)).toBe(false);
+  });
+
+  it('rejects a missing / non-object action', () => {
+    const { action: _omit, ...noAction } = VALID;
+    expect(isShowConfirm(noAction)).toBe(false);
+    expect(isShowConfirm({ ...VALID, action: null })).toBe(false);
+    expect(isShowConfirm({ ...VALID, action: 'click' })).toBe(false);
+    // An action object without a string `type` is not a valid Action.
+    expect(isShowConfirm({ ...VALID, action: {} })).toBe(false);
+  });
+
+  it('rejects a non-string origin', () => {
+    expect(isShowConfirm({ ...VALID, origin: 42 })).toBe(false);
+  });
+
+  it('rejects non-objects and the wrong message type', () => {
+    expect(isShowConfirm(null)).toBe(false);
+    expect(isShowConfirm('showConfirm')).toBe(false);
+    expect(isShowConfirm({ type: 'confirmVerdict', requestId: 'x' })).toBe(false);
+  });
+});
+
+// Item F: a deny verdict must report WHY — a no-response timeout, an explicit
+// user Deny click, or a panel close. Previously every non-timeout deny was
+// mislabeled 'panel-closed', so an explicit Deny was indistinguishable from a
+// closed panel in the audit log.
+describe('denyReason — classifies a deny verdict for the audit log', () => {
+  const TIMEOUT = 120_000;
+  const denyVerdict = (closed?: boolean): ConfirmVerdictMessage => ({
+    type: 'confirmVerdict',
+    requestId: 'r',
+    verdict: 'deny',
+    ...(closed ? { closed: true } : {}),
+  });
+
+  it('a no-response timeout (elapsed >= timeout) → timeout', () => {
+    expect(denyReason(denyVerdict(), TIMEOUT, TIMEOUT)).toBe('timeout');
+    expect(denyReason(denyVerdict(), TIMEOUT + 5, TIMEOUT)).toBe('timeout');
+  });
+
+  it('an explicit user Deny (not closed, within the window) → user-deny', () => {
+    expect(denyReason(denyVerdict(false), 800, TIMEOUT)).toBe('user-deny');
+  });
+
+  it('a panel close (closed flag set, within the window) → panel-closed', () => {
+    expect(denyReason(denyVerdict(true), 800, TIMEOUT)).toBe('panel-closed');
+  });
+
+  it('a timeout takes precedence even if the closed flag is set', () => {
+    // The SW's own timeout fired; that's the truth regardless of any flag.
+    expect(denyReason(denyVerdict(true), TIMEOUT, TIMEOUT)).toBe('timeout');
   });
 });

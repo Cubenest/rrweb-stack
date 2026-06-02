@@ -1,11 +1,16 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { EventEmitter } from 'node:events';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { PassThrough } from 'node:stream';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { RegistryBackedHostBridge } from '../src/mcp/host-bridge.js';
+import { LocalSocketHostBridge, RegistryBackedHostBridge } from '../src/mcp/host-bridge.js';
 import { PEEK_MCP_TOOLS, createPeekMcpServer } from '../src/mcp/server.js';
+import type { ActionResultMessage } from '../src/native-host/action-protocol.js';
+import { HostSocketServer } from '../src/native-host/host-socket.js';
+import { EMPTY_POLICY } from '../src/native-host/policy.js';
 import {
   clickEvent,
   documentWith,
@@ -609,6 +614,125 @@ describe('peek MCP server: execute_action (Task 3.24)', () => {
       expect(bridge.pending).toHaveLength(0);
     } finally {
       await close();
+    }
+  });
+});
+
+describe('peek MCP server: execute_action over the real LocalSocketHostBridge', () => {
+  /**
+   * Wire the REAL bridge → an in-memory duplex → the REAL HostSocketServer,
+   * whose "browser side" (postToSw) immediately answers with a canned
+   * action.result. This exercises the production IPC framing + relay end to end
+   * (the only fakes are the socket transport itself + the SW reply).
+   */
+  function wireRealIpc(cannedResult: Omit<ActionResultMessage, 'requestId'>): {
+    bridge: LocalSocketHostBridge;
+  } {
+    const toServer = new PassThrough();
+    const toClient = new PassThrough();
+
+    // The HostSocketServer's connection is fed bytes the bridge wrote (toServer)
+    // and writes responses to the bridge's read stream (toClient).
+    const serverConn = Object.assign(new EventEmitter(), {
+      write: (b: string) => {
+        toClient.write(b);
+      },
+    });
+    toServer.on('data', (chunk: Buffer) => serverConn.emit('data', chunk));
+
+    const server = new HostSocketServer({
+      loadPolicy: () => EMPTY_POLICY,
+      generateRequestId: () => 'rid-int-1',
+      postToSw: () => {
+        // The "browser" answers immediately with the canned result.
+        server.onSwMessage({ ...cannedResult, requestId: 'rid-int-1' });
+      },
+      createServer: (onConnection) => {
+        onConnection(serverConn as never);
+        return { listen: () => {}, close: () => {} };
+      },
+    });
+    server.listen();
+
+    const bridge = new LocalSocketHostBridge({
+      connect: () =>
+        ({
+          write: (b: string) => {
+            toServer.write(b);
+          },
+          on: (e: string, h: (...a: unknown[]) => void) => {
+            toClient.on(e, h);
+          },
+          end() {},
+        }) as never,
+    });
+    return { bridge };
+  }
+
+  it('resolves an ok result with the same shape as the RegistryBacked path', async () => {
+    const { dbPath, eventsDir } = seedStore(dir, [loginSession()]);
+    const auditLogPath = join(dir, 'audit.log');
+    const { bridge } = wireRealIpc({
+      type: 'action.result',
+      tool: 'execute_action',
+      verdict: 'allow',
+      result: 'ok',
+      approver: 'user',
+      approvalMs: 1716480002000,
+      details: { dispatched: true },
+    });
+    const peek = createPeekMcpServer({ dbPath, eventsDir, hostBridge: bridge, auditLogPath });
+    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+    const client = new Client({ name: 'cursor', version: '0.0.0' });
+    await Promise.all([peek.server.connect(serverTransport), client.connect(clientTransport)]);
+    try {
+      const res = await client.callTool({
+        name: 'execute_action',
+        arguments: {
+          sessionId: 's_login',
+          action: { type: 'click', selector: '#login' },
+          confirmToken: 'tok_int',
+        },
+      });
+      const body = parseJson(res as never) as Record<string, unknown>;
+      expect(body.verdict).toBe('allow');
+      expect(body.result).toBe('ok');
+      expect(body.approver).toBe('user');
+      expect(body.details).toEqual({ dispatched: true });
+      // The audit log recorded the call through the real bridge.
+      const entry = JSON.parse(readFileSync(auditLogPath, 'utf8').trim());
+      expect(entry.tool).toBe('execute_action');
+      expect(entry.result).toBe('ok');
+    } finally {
+      await client.close();
+      peek.close();
+    }
+  });
+
+  it('carries a request_authorization confirmToken back through the relay', async () => {
+    const { dbPath, eventsDir } = seedStore(dir, [loginSession()]);
+    const { bridge } = wireRealIpc({
+      type: 'action.result',
+      tool: 'request_authorization',
+      verdict: 'allow',
+      result: 'ok',
+      approver: 'user',
+      confirmToken: 'tok-from-sw',
+    });
+    const peek = createPeekMcpServer({ dbPath, eventsDir, hostBridge: bridge });
+    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+    const client = new Client({ name: 'cursor', version: '0.0.0' });
+    await Promise.all([peek.server.connect(serverTransport), client.connect(clientTransport)]);
+    try {
+      const res = await client.callTool({
+        name: 'request_authorization',
+        arguments: { sessionId: 's_login', action: { type: 'click', selector: '#login' } },
+      });
+      const body = parseJson(res as never) as Record<string, unknown>;
+      expect(body.confirmToken).toBe('tok-from-sw');
+    } finally {
+      await client.close();
+      peek.close();
     }
   });
 });
