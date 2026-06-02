@@ -33,6 +33,15 @@ const ogImageURL = new URL('/og-card.png', Astro.site).href;
     <meta name="twitter:description" content={description} />
     <meta name="twitter:image" content={ogImageURL} />
     <title>{title}</title>
+    <!-- Vercel Web Analytics — cookieless page metrics for the docs site only (the products ship no telemetry) -->
+    <script is:inline>
+      window.va =
+        window.va ||
+        function () {
+          (window.vaq = window.vaq || []).push(arguments);
+        };
+    </script>
+    <script is:inline defer src="/_vercel/insights/script.js"></script>
   </head>
   <body>
     <header class="site-header">
