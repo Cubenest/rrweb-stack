@@ -4,7 +4,11 @@ import * as net from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { HostSocketServer, cleanupStaleSocket } from '../src/native-host/host-socket.js';
+import {
+  HostSocketServer,
+  cleanupStaleSocket,
+  probeSocketAlive,
+} from '../src/native-host/host-socket.js';
 import { EMPTY_POLICY, type LoadedPolicy } from '../src/native-host/policy.js';
 
 /**
@@ -14,8 +18,16 @@ import { EMPTY_POLICY, type LoadedPolicy } from '../src/native-host/policy.js';
  */
 class FakeConnection extends EventEmitter {
   written: string[] = [];
+  destroyed = 0;
+  ended = 0;
   write(data: string): void {
     this.written.push(data);
+  }
+  destroy(): void {
+    this.destroyed += 1;
+  }
+  end(): void {
+    this.ended += 1;
   }
   /** Push an inbound chunk as if the client wrote it. */
   feed(line: string): void {
@@ -58,6 +70,7 @@ function makeServer(overrides?: {
   postToSw?: (msg: unknown) => void;
   loadPolicy?: () => LoadedPolicy;
   ids?: string[];
+  maxLineBytes?: number;
 }) {
   const posted: unknown[] = [];
   const net = new FakeNetServer();
@@ -67,6 +80,7 @@ function makeServer(overrides?: {
     postToSw: overrides?.postToSw ?? ((m) => posted.push(m)),
     loadPolicy: overrides?.loadPolicy ?? (() => EMPTY_POLICY),
     generateRequestId: () => idQueue[n++] ?? `rid-${n}`,
+    ...(overrides?.maxLineBytes !== undefined ? { maxLineBytes: overrides.maxLineBytes } : {}),
     createServer: (handler) => {
       net.onConnection(handler);
       return net as never;
@@ -267,6 +281,51 @@ describe('HostSocketServer', () => {
     ).not.toThrow();
   });
 
+  // Item J: cap a single inbound unframed line on the SERVER side (matching the
+  // bridge). A malformed/hostile peer that streams bytes without a newline must
+  // not make the server buffer unbounded — drop/close the connection.
+  it('drops the connection when one unframed inbound line exceeds the cap', () => {
+    const { net, posted } = makeServer({ maxLineBytes: 100 });
+    const conn = net.connect();
+    // 500 bytes, no newline → blows the 100-byte cap.
+    conn.feed('a'.repeat(500));
+    // Nothing was posted (no complete frame) and the connection was torn down.
+    expect(posted).toHaveLength(0);
+    expect(conn.destroyed + conn.ended).toBeGreaterThan(0);
+    // Subsequent bytes on the dropped connection are ignored (buffer cleared).
+    conn.feed(
+      `${JSON.stringify({
+        kind: 'act.request',
+        id: 'late',
+        payload: {
+          tool: 'execute_action',
+          sessionId: 's',
+          action: { type: 'click', selector: '#x', button: 'left' },
+          client: 'cursor',
+        },
+      })}\n`,
+    );
+    expect(posted).toHaveLength(0);
+  });
+
+  it('still relays a normal-sized framed request under the cap', () => {
+    const { net, posted } = makeServer({ maxLineBytes: 4096 });
+    const conn = net.connect();
+    conn.feed(
+      `${JSON.stringify({
+        kind: 'act.request',
+        id: 'wire-ok',
+        payload: {
+          tool: 'execute_action',
+          sessionId: 's',
+          action: { type: 'click', selector: '#x', button: 'left' },
+          client: 'cursor',
+        },
+      })}\n`,
+    );
+    expect(posted).toHaveLength(1);
+  });
+
   it('ignores action.confirm.shown as a non-terminal timing signal (no act.response)', () => {
     const { server, net } = makeServer();
     const conn = net.connect();
@@ -344,51 +403,129 @@ describe.skipIf(process.platform === 'win32')('stale-socket cleanup (item E)', (
     expect(() => cleanupStaleSocket(join(dir, 'nothing-here.sock'))).not.toThrow();
   });
 
-  it('HostSocketServer.listen() succeeds + accepts a connection when a stale socket exists', async () => {
-    const sockPath = join(dir, 'host.sock');
-    // Leave a real socket inode (a crashed prior host). We keep `prior` bound so
-    // the file is guaranteed present; cleanupStaleSocket unlinks it before bind.
+  it('probeSocketAlive resolves true for a LIVE server, false for a refused/absent path', async () => {
+    const sockPath = join(dir, 'live.sock');
     const prior = await bindStaleSocket(sockPath);
-    expect(existsSync(sockPath)).toBe(true);
-
-    let posted: unknown;
-    const server = new HostSocketServer({
-      postToSw: (m) => {
-        posted = m;
-      },
-      loadPolicy: () => EMPTY_POLICY,
-      generateRequestId: () => 'rid-stale',
-      socketPath: sockPath,
-    });
-    // Without stale-socket cleanup the bind emits EADDRINUSE and the server
-    // never accepts; with it, a client can connect + drive a request through.
-    server.listen();
     try {
-      const client = net.connect(sockPath);
-      await new Promise<void>((resolve, reject) => {
-        client.on('connect', resolve);
-        client.on('error', reject);
-      });
-      client.write(
-        `${JSON.stringify({
-          kind: 'act.request',
-          id: 'wire-stale',
-          payload: {
-            tool: 'execute_action',
-            sessionId: 's',
-            action: { type: 'click', selector: '#x', button: 'left' },
-            client: 'cursor',
-          },
-        })}\n`,
-      );
-      for (let i = 0; i < 50 && posted === undefined; i++) {
-        await new Promise((r) => setTimeout(r, 5));
-      }
-      client.end();
-      expect((posted as { requestId?: string } | undefined)?.requestId).toBe('rid-stale');
+      // A real listener answers the probe → owned by a live host.
+      await expect(probeSocketAlive(sockPath)).resolves.toBe(true);
     } finally {
-      server.close();
       prior.close();
     }
+    // Nothing listening at this path → not alive (stale / never existed).
+    await expect(probeSocketAlive(join(dir, 'absent.sock'))).resolves.toBe(false);
+  });
+});
+
+// Items I + J: a bind failure (EADDRINUSE/EACCES) is emitted ASYNC via the
+// server 'error' event, NOT thrown — so a plain try/catch around listen() can't
+// catch it. The server must surface bind failures via an onError callback and
+// follow the stale-vs-live probe policy:
+//   • stale socket (probe refused/dead) → unlink + retry listen once.
+//   • LIVE socket (probe answers — another host owns it) → do NOT unlink;
+//     report the error so startNativeHost degrades (socketServer = undefined).
+// We inject a fake server + probe so the policy is deterministic.
+describe('HostSocketServer.listen — async bind-failure handling (items I/J)', () => {
+  /** A fake server whose listen() can be told to emit EADDRINUSE once. */
+  class FakeBindServer {
+    listenCalls = 0;
+    closed = 0;
+    #onError: ((err: Error) => void) | undefined;
+    constructor(
+      readonly failPlan: Array<'EADDRINUSE' | 'ok'>,
+      readonly onListen?: () => void,
+    ) {}
+    on(ev: string, h: (err: Error) => void): void {
+      if (ev === 'error') this.#onError = h;
+    }
+    listen(): void {
+      const outcome = this.failPlan[this.listenCalls] ?? 'ok';
+      this.listenCalls += 1;
+      if (outcome === 'EADDRINUSE') {
+        const err = new Error('bind EADDRINUSE') as Error & { code?: string };
+        err.code = 'EADDRINUSE';
+        // Async, like the real server 'error' event.
+        queueMicrotask(() => this.#onError?.(err));
+      } else {
+        this.onListen?.();
+      }
+    }
+    close(): void {
+      this.closed += 1;
+    }
+  }
+
+  it('LIVE socket on EADDRINUSE → reports error, does NOT unlink, leaves the server down', async () => {
+    let unlinked = false;
+    let reported: Error | undefined;
+    const fake = new FakeBindServer(['EADDRINUSE']);
+    const server = new HostSocketServer({
+      postToSw: () => {},
+      loadPolicy: () => EMPTY_POLICY,
+      socketPath: '/tmp/peek-fake.sock',
+      createServer: () => fake as never,
+      // A live owner answers the probe.
+      probeSocketAlive: async () => true,
+      unlinkSocket: () => {
+        unlinked = true;
+      },
+      onListenError: (err) => {
+        reported = err;
+      },
+    });
+    server.listen();
+    await new Promise((r) => setTimeout(r, 10));
+    expect(reported).toBeInstanceOf(Error); // surfaced to the caller (degrade)
+    expect(unlinked).toBe(false); // never clobber a live host's socket
+    expect(fake.listenCalls).toBe(1); // no retry against a live owner
+  });
+
+  it('STALE socket on EADDRINUSE → unlinks + retries listen once, then succeeds', async () => {
+    let unlinked = false;
+    let reported: Error | undefined;
+    let listened = 0;
+    const fake = new FakeBindServer(['EADDRINUSE', 'ok'], () => {
+      listened += 1;
+    });
+    const server = new HostSocketServer({
+      postToSw: () => {},
+      loadPolicy: () => EMPTY_POLICY,
+      socketPath: '/tmp/peek-fake.sock',
+      createServer: () => fake as never,
+      // No live owner → the inode is stale.
+      probeSocketAlive: async () => false,
+      unlinkSocket: () => {
+        unlinked = true;
+      },
+      onListenError: (err) => {
+        reported = err;
+      },
+    });
+    server.listen();
+    await new Promise((r) => setTimeout(r, 10));
+    expect(unlinked).toBe(true); // stale inode removed
+    expect(fake.listenCalls).toBe(2); // retried once
+    expect(listened).toBe(1); // second listen succeeded
+    expect(reported).toBeUndefined(); // recovered — no error surfaced
+  });
+
+  it('a SECOND EADDRINUSE after unlink+retry → reports error (gives up, no infinite loop)', async () => {
+    let reported: Error | undefined;
+    const fake = new FakeBindServer(['EADDRINUSE', 'EADDRINUSE']);
+    const server = new HostSocketServer({
+      postToSw: () => {},
+      loadPolicy: () => EMPTY_POLICY,
+      socketPath: '/tmp/peek-fake.sock',
+      createServer: () => fake as never,
+      probeSocketAlive: async () => false,
+      unlinkSocket: () => {},
+      onListenError: (err) => {
+        reported = err;
+      },
+    });
+    server.listen();
+    await new Promise((r) => setTimeout(r, 10));
+    expect(fake.listenCalls).toBe(2); // retried exactly once
+    expect(reported).toBeInstanceOf(Error); // gave up cleanly
   });
 });

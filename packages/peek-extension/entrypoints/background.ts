@@ -28,7 +28,7 @@ import type {
   RelayAck,
   ShowConfirmMessage,
 } from '../src/messaging/protocol';
-import { isFromSidePanel } from '../src/messaging/protocol';
+import { denyReason, isFromSidePanel } from '../src/messaging/protocol';
 import {
   type ActionHandlerDeps,
   InMemoryConfirmTokenStore,
@@ -183,6 +183,17 @@ export default defineBackground({
             });
             return active;
           },
+          // Item A (TOCTOU): the dispatch-time re-validation must inspect the
+          // EXACT tab the gate resolved — not whatever is active now. Re-fetch
+          // by id (never an active-tab query), so a sibling tab can't satisfy
+          // the re-check while the captured tab navigated cross-origin.
+          async getTabById(tabId) {
+            try {
+              return await chrome.tabs.get(tabId);
+            } catch {
+              return undefined; // tab closed during the confirm wait
+            }
+          },
           yolo,
           tokens: confirmTokens,
           promptUserConfirmation,
@@ -239,12 +250,17 @@ export default defineBackground({
     const resolveTarget: ActionHandlerDeps['resolveTarget'] = async ({ tabId, action }) => {
       const selector = 'selector' in action ? action.selector : undefined;
       if (typeof selector !== 'string' || selector.length === 0) return {};
+      // Item B: thread `nth` so the destructive matcher inspects the SAME
+      // element the dispatcher will click (`querySelectorAll(selector)[nth]`).
+      // Only the click branch carries `nth`; for everything else it's undefined
+      // → first match, matching dispatchAction.
+      const nth = 'nth' in action && typeof action.nth === 'number' ? action.nth : undefined;
       try {
         const [frame] = await chrome.scripting.executeScript({
           target: { tabId },
           world: 'MAIN',
           func: resolveTargetInPage,
-          args: [selector],
+          args: [selector, nth],
         });
         return (frame?.result as Awaited<ReturnType<typeof resolveTargetInPage>>) ?? {};
       } catch (err) {
@@ -347,10 +363,13 @@ export default defineBackground({
         }
         return { verdict: 'allow', approvalMs, alwaysForSite: verdict.alwaysForSite ?? false };
       }
+      // Item F: classify the deny — a no-response timeout, an explicit user Deny
+      // click, or a panel close — so the audit log records the real cause
+      // instead of mislabeling every non-timeout deny as 'panel-closed'.
       return {
         verdict: 'deny',
         approvalMs,
-        reason: approvalMs - startedAtMs >= CONFIRM_TIMEOUT_MS ? 'timeout' : 'panel-closed',
+        reason: denyReason(verdict, approvalMs - startedAtMs, CONFIRM_TIMEOUT_MS),
       };
     };
 

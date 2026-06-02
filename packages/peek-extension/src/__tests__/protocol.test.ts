@@ -1,8 +1,11 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
+  type ConfirmVerdictMessage,
   ServiceWorkerUnavailableError,
+  denyReason,
   isFromSidePanel,
   isNoReceiverError,
+  isShowConfirm,
   sendCmd,
 } from '../messaging/protocol';
 
@@ -110,5 +113,84 @@ describe('isFromSidePanel', () => {
     expect(
       isFromSidePanel({ url: 'chrome-extension://abcd/sidepanel.html.evil.html' }, SIDEPANEL_URL),
     ).toBe(false);
+  });
+});
+
+// Item E: isShowConfirm must validate the FULL wire shape, not just
+// `type === 'showConfirm'`. A malformed payload (missing/empty requestId, no
+// action object) would otherwise crash the banner render or make the cleanup
+// post a closedVerdict with an invalid requestId.
+describe('isShowConfirm — full wire-shape validation', () => {
+  const VALID = {
+    type: 'showConfirm',
+    requestId: 'req-1',
+    action: { type: 'click', selector: '#x', button: 'left' },
+    origin: 'https://example.com',
+  };
+
+  it('accepts a well-formed showConfirm', () => {
+    expect(isShowConfirm(VALID)).toBe(true);
+  });
+
+  it('accepts a destructive variant carrying destructiveTerm', () => {
+    expect(isShowConfirm({ ...VALID, destructiveTerm: 'delete' })).toBe(true);
+  });
+
+  it('rejects a non-string / empty requestId', () => {
+    expect(isShowConfirm({ ...VALID, requestId: '' })).toBe(false);
+    expect(isShowConfirm({ ...VALID, requestId: 123 })).toBe(false);
+    const { requestId: _omit, ...noReq } = VALID;
+    expect(isShowConfirm(noReq)).toBe(false);
+  });
+
+  it('rejects a missing / non-object action', () => {
+    const { action: _omit, ...noAction } = VALID;
+    expect(isShowConfirm(noAction)).toBe(false);
+    expect(isShowConfirm({ ...VALID, action: null })).toBe(false);
+    expect(isShowConfirm({ ...VALID, action: 'click' })).toBe(false);
+    // An action object without a string `type` is not a valid Action.
+    expect(isShowConfirm({ ...VALID, action: {} })).toBe(false);
+  });
+
+  it('rejects a non-string origin', () => {
+    expect(isShowConfirm({ ...VALID, origin: 42 })).toBe(false);
+  });
+
+  it('rejects non-objects and the wrong message type', () => {
+    expect(isShowConfirm(null)).toBe(false);
+    expect(isShowConfirm('showConfirm')).toBe(false);
+    expect(isShowConfirm({ type: 'confirmVerdict', requestId: 'x' })).toBe(false);
+  });
+});
+
+// Item F: a deny verdict must report WHY — a no-response timeout, an explicit
+// user Deny click, or a panel close. Previously every non-timeout deny was
+// mislabeled 'panel-closed', so an explicit Deny was indistinguishable from a
+// closed panel in the audit log.
+describe('denyReason — classifies a deny verdict for the audit log', () => {
+  const TIMEOUT = 120_000;
+  const denyVerdict = (closed?: boolean): ConfirmVerdictMessage => ({
+    type: 'confirmVerdict',
+    requestId: 'r',
+    verdict: 'deny',
+    ...(closed ? { closed: true } : {}),
+  });
+
+  it('a no-response timeout (elapsed >= timeout) → timeout', () => {
+    expect(denyReason(denyVerdict(), TIMEOUT, TIMEOUT)).toBe('timeout');
+    expect(denyReason(denyVerdict(), TIMEOUT + 5, TIMEOUT)).toBe('timeout');
+  });
+
+  it('an explicit user Deny (not closed, within the window) → user-deny', () => {
+    expect(denyReason(denyVerdict(false), 800, TIMEOUT)).toBe('user-deny');
+  });
+
+  it('a panel close (closed flag set, within the window) → panel-closed', () => {
+    expect(denyReason(denyVerdict(true), 800, TIMEOUT)).toBe('panel-closed');
+  });
+
+  it('a timeout takes precedence even if the closed flag is set', () => {
+    // The SW's own timeout fired; that's the truth regardless of any flag.
+    expect(denyReason(denyVerdict(true), TIMEOUT, TIMEOUT)).toBe('timeout');
   });
 });

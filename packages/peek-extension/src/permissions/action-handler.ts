@@ -40,17 +40,35 @@ export interface TabRef {
 }
 
 /**
+ * A fast, stable, non-cryptographic string hash (FNV-1a, 32-bit, hex). Used to
+ * bind the typed text of a `type` action into its fingerprint WITHOUT putting
+ * the plaintext (which may be a password) into the token record or any log.
+ * Collision resistance is not a security property we depend on here — the token
+ * is one-shot, short-lived (2 min), and the user already saw + approved the
+ * action; the hash exists so a token approved for one text can't be reused for
+ * a DIFFERENT text. Self-contained (no node:crypto) so it works in the SW.
+ */
+function hashText(text: string): string {
+  let h = 0x811c9dc5; // FNV offset basis
+  for (let i = 0; i < text.length; i++) {
+    h ^= text.charCodeAt(i);
+    // FNV prime multiply via shifts; `>>> 0` keeps it an unsigned 32-bit int.
+    h = (h + ((h << 1) + (h << 4) + (h << 7) + (h << 8) + (h << 24))) >>> 0;
+  }
+  return h.toString(16).padStart(8, '0');
+}
+
+/**
  * A stable, security-bearing fingerprint of the EXACT action the user was shown
  * in the confirm banner. A confirm token is bound to this string; an
  * `execute_action` whose action produces a different fingerprint cannot spend
  * the token.
  *
  * The fingerprint covers everything that changes WHAT the action does to the
- * page — type + selector + nth (click), type + selector (type; the typed text
- * is intentionally excluded — it's a secret never shown in the banner, and the
- * banner identifies the action by selector), url (navigate), selector/x/y
- * (scroll). Client-chosen `sessionId` is deliberately NOT part of the
- * fingerprint: it is not a security boundary (the client picks it).
+ * page — type + selector + nth (click), type + selector + a HASH of the typed
+ * text (type; see below), url (navigate), selector/x/y (scroll). Client-chosen
+ * `sessionId` is deliberately NOT part of the fingerprint: it is not a security
+ * boundary (the client picks it).
  *
  * Note: this binds the AI's INTENT (the action it asked the user to approve).
  * The destructive-DOM-state check is enforced separately at consume time
@@ -68,8 +86,12 @@ export function actionFingerprint(action: Action): string {
       // right-click of the same selector.
       return `click|${action.selector}|nth=${action.nth ?? '*'}`;
     case 'type':
-      // Exclude `text` (secret) + `delay` (cosmetic) — bind to the target only.
-      return `type|${action.selector}`;
+      // Item B: bind a HASH of the typed text so a token approved for
+      // `type #amount "100"` can't be spent on `type #amount "999999"`. We hash
+      // (not plaintext) because the text may be a secret — it's never shown in
+      // the banner and must not land in the token record. `delay` stays
+      // excluded (cosmetic; doesn't change WHAT is typed).
+      return `type|${action.selector}|text=${hashText(action.text)}`;
     case 'navigate':
       return `navigate|${action.url}`;
     case 'scroll':
@@ -180,6 +202,14 @@ export interface DispatchTarget {
 export interface ActionHandlerDeps {
   /** Look up `Tab` for the request's `tabId`, or the active tab. */
   getTabFor(request: ActionRequestMessage): Promise<TabRef | undefined>;
+  /**
+   * Re-fetch a tab by its EXACT id (item A). The dispatch-time TOCTOU
+   * re-validation uses this — never `getTabFor` — so it inspects the SAME tab
+   * the gate resolved, not whatever happens to be active now (which could be a
+   * different tab that still passes the origin/level checks while the captured
+   * tab navigated cross-origin). Returns undefined if the tab is gone.
+   */
+  getTabById(tabId: number): Promise<TabRef | undefined>;
   /** Read the YOLO map (in-memory, MV3 SW-instance scoped). */
   yolo: YoloSessionStore;
   /** Token bookkeeping. */
@@ -195,7 +225,9 @@ export interface ActionHandlerDeps {
     destructive: { matched: boolean; term?: string };
   }): Promise<
     | { verdict: 'allow' | 'deny'; approvalMs: number; alwaysForSite?: boolean }
-    | { verdict: 'deny'; approvalMs: number; reason: 'timeout' | 'panel-closed' }
+    // Item F: a deny carries WHY — a no-response timeout, an explicit user Deny,
+    // or a panel close — so the audit log records the real cause.
+    | { verdict: 'deny'; approvalMs: number; reason: 'timeout' | 'user-deny' | 'panel-closed' }
   >;
   /**
    * Resolve the dispatch target (text / aria-label / nearby heading) in the
@@ -394,17 +426,25 @@ const MIN_ACT_LEVEL = 3;
 
 /**
  * Re-validate the gated context immediately before injecting (item A, TOCTOU).
- * Returns `{ ok: true }` only if, RIGHT NOW: the tab still resolves, its current
- * origin equals the origin that was gated/confirmed, that origin is still
- * enabled, and its current effective level is still ≥ {@link MIN_ACT_LEVEL}.
+ * Returns `{ ok: true }` only if, RIGHT NOW: the CAPTURED tab still resolves,
+ * its current origin equals the origin that was gated/confirmed, that origin is
+ * still enabled, and its current effective level is still ≥ {@link MIN_ACT_LEVEL}.
  * Any deviation → `{ ok: false, error }` and the caller must NOT dispatch.
+ *
+ * Item A — we re-fetch the EXACT tab id resolved at gate time (`capturedTabId`)
+ * via {@link ActionHandlerDeps.getTabById}, NOT `getTabFor` again. Calling
+ * `getTabFor` could re-resolve a DIFFERENT active tab than the one whose id is
+ * about to be passed to `dispatchInMainWorld`: an attacker navigates the
+ * captured tab cross-origin while a sibling tab stays on the original origin, so
+ * a re-resolution of the active tab would pass the guard yet the dispatch hits
+ * the navigated tab. Re-fetching the captured id closes that hole.
  */
 async function revalidateAtDispatch(
-  request: ActionRequestMessage,
+  capturedTabId: number,
   deps: ActionHandlerDeps,
   guarded: { origin: string; effectiveLevel: number },
 ): Promise<{ ok: true } | { ok: false; error: string }> {
-  const tab = await deps.getTabFor(request);
+  const tab = await deps.getTabById(capturedTabId);
   if (!tab || tab.id === undefined) {
     return { ok: false, error: 'dispatch aborted: target tab disappeared during confirm' };
   }
@@ -449,10 +489,13 @@ async function dispatchAndRespond(
 ): Promise<ActionResultMessage> {
   // ---- Item A: TOCTOU re-validation -------------------------------------
   // The tab/origin/level were captured BEFORE the (up-to-2-min) confirm wait.
-  // Re-fetch the tab NOW and assert nothing relevant changed, so a navigation
-  // to a different origin during the wait can't redirect the dispatch into a
-  // site the user never saw in the banner. Any failure → deny, do NOT dispatch.
-  const revalidation = await revalidateAtDispatch(request, deps, guarded);
+  // Re-fetch the CAPTURED tab (by its exact id — `tabId`) NOW and assert
+  // nothing relevant changed, so a navigation to a different origin during the
+  // wait can't redirect the dispatch into a site the user never saw in the
+  // banner. We pass the captured `tabId` (not the request) so the re-check
+  // inspects the same tab the dispatch will hit, never a re-resolved active
+  // tab. Any failure → deny, do NOT dispatch.
+  const revalidation = await revalidateAtDispatch(tabId, deps, guarded);
   if (!revalidation.ok) {
     return result(request, 'deny', 'error', {
       ...meta,

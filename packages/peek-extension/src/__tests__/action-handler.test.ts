@@ -35,7 +35,7 @@ function makeRequest(overrides: Partial<ActionRequestMessage> = {}): ActionReque
 interface Spies {
   promptResult:
     | { verdict: 'allow' | 'deny'; approvalMs: number; alwaysForSite?: boolean }
-    | { verdict: 'deny'; approvalMs: number; reason: 'timeout' | 'panel-closed' };
+    | { verdict: 'deny'; approvalMs: number; reason: 'timeout' | 'user-deny' | 'panel-closed' };
   target: DispatchTarget;
   dispatchOutcome: { ok: true; details?: unknown } | { ok: false; error: string };
 }
@@ -66,6 +66,11 @@ function makeDeps(
     async getTabFor() {
       return { id: 42, url: 'https://example.com/page', title: 'X', active: true };
     },
+    // Placeholder; replaced below so it tracks the FINAL (possibly-overridden)
+    // getTabFor. Tests that exercise a mid-confirm navigation override getTabById.
+    async getTabById() {
+      return undefined;
+    },
     yolo,
     tokens,
     async promptUserConfirmation() {
@@ -82,6 +87,13 @@ function makeDeps(
     },
     ...overrides,
   };
+  // Default getTabById: re-fetch by id returns the SAME tab getTabFor resolves
+  // (the no-navigation case). Applied AFTER overrides so a test that overrides
+  // only getTabFor still has a consistent re-validation tab; tests that need a
+  // mid-confirm navigation override getTabById explicitly.
+  if (overrides.getTabById === undefined) {
+    deps.getTabById = async () => deps.getTabFor(makeRequest());
+  }
   return {
     deps,
     tokens,
@@ -312,18 +324,21 @@ describe('handleActionRequest — TOCTOU re-validation at dispatch time', () => 
     // navigates to attacker.example. On Allow the dispatch must NOT fire into
     // the new origin.
     await enableOriginAtLevel('https://trusted.example', 3);
-    let call = 0;
     const ctx = makeDeps(
       {
-        getTabFor: async (): Promise<TabRef> => {
-          call += 1;
-          // First lookup (gate time): trusted.example. Subsequent lookups
-          // (dispatch-time re-validation): attacker.example (the nav happened
-          // during the up-to-2-min confirm wait).
-          return call === 1
-            ? { id: 42, url: 'https://trusted.example/page', active: true }
-            : { id: 42, url: 'https://attacker.example/evil', active: true };
-        },
+        // Gate time: the captured tab is on trusted.example.
+        getTabFor: async (): Promise<TabRef> => ({
+          id: 42,
+          url: 'https://trusted.example/page',
+          active: true,
+        }),
+        // Dispatch-time re-validation re-fetches the CAPTURED tab by id; by then
+        // it navigated to attacker.example during the up-to-2-min confirm wait.
+        getTabById: async (): Promise<TabRef> => ({
+          id: 42,
+          url: 'https://attacker.example/evil',
+          active: true,
+        }),
       },
       { promptResult: { verdict: 'allow', approvalMs: 5 } },
     );
@@ -346,19 +361,23 @@ describe('handleActionRequest — TOCTOU re-validation at dispatch time', () => 
     // branch; this one does.)
     await enableOriginAtLevel('https://trusted.example', 3);
     await enableOriginAtLevel('https://attacker.example', 3);
-    let call = 0;
     const ctx = makeDeps(
       {
-        getTabFor: async (): Promise<TabRef> => {
-          call += 1;
-          // Gate time: trusted.example. Dispatch-time re-validation:
-          // attacker.example — which is fully enabled at L3, so the only thing
-          // standing between the AI and a cross-origin dispatch is the
-          // origin-equality check.
-          return call === 1
-            ? { id: 42, url: 'https://trusted.example/page', active: true }
-            : { id: 42, url: 'https://attacker.example/evil', active: true };
-        },
+        // Gate time: trusted.example.
+        getTabFor: async (): Promise<TabRef> => ({
+          id: 42,
+          url: 'https://trusted.example/page',
+          active: true,
+        }),
+        // Dispatch-time re-validation (re-fetch the captured tab by id):
+        // attacker.example — which is fully enabled at L3, so the only thing
+        // standing between the AI and a cross-origin dispatch is the
+        // origin-equality check.
+        getTabById: async (): Promise<TabRef> => ({
+          id: 42,
+          url: 'https://attacker.example/evil',
+          active: true,
+        }),
       },
       { promptResult: { verdict: 'allow', approvalMs: 5 } },
     );
@@ -435,6 +454,42 @@ describe('handleActionRequest — TOCTOU re-validation at dispatch time', () => 
     expect(ctx.dispatchCalls).toBe(0);
   });
 
+  it('EXPLOIT GUARD (item A): re-validation re-fetches the CAPTURED tab id, not a freshly-resolved active tab', async () => {
+    // The active-tab-resolution exploit: the request has no tabId, so the gate
+    // resolves the active tab (tab A on trusted.example). During the confirm
+    // wait the user switches focus so the active tab is now tab B
+    // (also trusted.example, so origin-equality + level + enabled all PASS for
+    // B) — but tab A has navigated cross-origin to attacker.example. If the
+    // re-validation re-resolves the ACTIVE tab it sees B (passes) yet the
+    // dispatch hits A's id → cross-origin write. The fix re-fetches the CAPTURED
+    // tab id (A), sees attacker.example, and denies.
+    await enableOriginAtLevel('https://trusted.example', 3);
+    const getTabFor = async (): Promise<TabRef> => {
+      // Active-tab resolution: at gate time AND any later active-tab query this
+      // returns tab A (id 1) on trusted.example. (If the buggy code re-resolves
+      // the active tab here it would also see trusted.example and pass.)
+      return { id: 1, url: 'https://trusted.example/page', active: true };
+    };
+    const getTabById = async (tabId: number): Promise<TabRef | undefined> => {
+      // Re-fetching the CAPTURED tab id (1) reflects its CURRENT url: it
+      // navigated cross-origin to attacker.example during the confirm wait.
+      if (tabId === 1) return { id: 1, url: 'https://attacker.example/evil', active: false };
+      return undefined;
+    };
+    const ctx = makeDeps(
+      { getTabFor, getTabById },
+      { promptResult: { verdict: 'allow', approvalMs: 5 } },
+    );
+    const out = await handleActionRequest(
+      makeRequest({ action: { type: 'click', selector: '#go', button: 'left' } }),
+      ctx.deps,
+    );
+    expect(out.verdict).toBe('deny');
+    expect(out.result).not.toBe('ok');
+    expect(ctx.dispatchCalls).toBe(0); // never injected into the navigated tab
+    expect(String(out.error)).toMatch(/origin changed/i);
+  });
+
   it('allows when the origin is unchanged through the confirm wait', async () => {
     await enableOriginAtLevel('https://trusted.example', 3);
     const ctx = makeDeps(
@@ -454,6 +509,39 @@ describe('handleActionRequest — TOCTOU re-validation at dispatch time', () => 
     expect(out.verdict).toBe('allow');
     expect(out.result).toBe('ok');
     expect(ctx.dispatchCalls).toBe(1);
+  });
+});
+
+describe('handleActionRequest — resolveTarget receives the full action (item B, nth)', () => {
+  it('EXPLOIT GUARD: a destructive element at nth>0 is resolved + classified destructive → confirm', async () => {
+    // The destructive matcher + banner context must resolve the element the
+    // click ACTUALLY hits (nth=1), not the benign first match. At Level 4 a
+    // non-destructive action auto-allows; a destructive one must force confirm.
+    // We model the page: resolveTarget returns "Delete account" ONLY when the
+    // action's nth is 1 (the element the dispatcher will click); nth 0/undefined
+    // returns the benign first match.
+    await enableOriginAtLevel('https://example.com', 4);
+    let seenAction: Action | undefined;
+    const ctx = makeDeps(
+      {
+        async resolveTarget({ action }) {
+          seenAction = action;
+          const nth = 'nth' in action ? action.nth : undefined;
+          return nth === 1 ? { text: 'Delete account' } : { text: 'Save changes' };
+        },
+      },
+      { promptResult: { verdict: 'deny', approvalMs: 1 } },
+    );
+    const out = await handleActionRequest(
+      makeRequest({ action: { type: 'click', selector: '.row', nth: 1, button: 'left' } }),
+      ctx.deps,
+    );
+    // The handler forwarded the FULL action (incl. nth) to resolveTarget.
+    expect(seenAction).toMatchObject({ type: 'click', selector: '.row', nth: 1 });
+    // The nth=1 element is destructive → confirm forced even at Level 4.
+    expect(ctx.promptCalls).toBe(1);
+    expect(out.destructiveTerm).toBe('delete');
+    expect(ctx.dispatchCalls).toBe(0); // user denied at the forced banner
   });
 });
 
@@ -536,6 +624,22 @@ describe('InMemoryConfirmTokenStore', () => {
     expect(
       store.consume(tok.token, { type: 'type', selector: '#newsletter-ok', text: 'x', delay: 40 }),
     ).toBeNull();
+  });
+
+  it('EXPLOIT GUARD (item B): a type token for "100" is rejected for "999999" (text is bound)', () => {
+    // The user approved `type #amount "100"`; the AI tries to spend that token
+    // on `type #amount "999999"`. The fingerprint MUST bind the typed text
+    // (via a stable hash) so the larger amount is rejected.
+    const store = new InMemoryConfirmTokenStore();
+    const tok = store.issue({ type: 'type', selector: '#amount', text: '100', delay: 40 });
+    expect(
+      store.consume(tok.token, { type: 'type', selector: '#amount', text: '999999', delay: 40 }),
+    ).toBeNull();
+    // Same text → still consumable (issue a fresh token, the prior is gone).
+    const tok2 = store.issue({ type: 'type', selector: '#amount', text: '100', delay: 40 });
+    expect(
+      store.consume(tok2.token, { type: 'type', selector: '#amount', text: '100', delay: 99 }),
+    ).not.toBeNull(); // delay is cosmetic; only selector+text bind
   });
 
   it('rejects a token consumed against a different nth match', () => {

@@ -103,14 +103,24 @@ export function startNativeHost(options: NativeHostOptions = {}): NativeHostHand
         });
       },
       socketPath,
+      // Item I/J: bind failures (EADDRINUSE/EACCES) are emitted ASYNC via the
+      // server 'error' event, so a try/catch around listen() can't catch them.
+      // The server probes live-vs-stale + retries once on a stale socket; if it
+      // still can't bind it calls this. Degrade — the action write-path is down,
+      // but ingest/capture still flows — never crash the host.
+      onListenError: (err) => {
+        console.error(`native host: IPC socket failed to listen — ${err.message}`);
+        socketServer = undefined;
+      },
     });
+    // listen() is async-internally (the bind-error/probe/retry path); it never
+    // throws synchronously, but keep the try/catch for a defensive construct-time
+    // failure.
     try {
       socketServer.listen();
     } catch (err) {
-      // A failed bind (stale socket file, permission) must not stop ingest from
-      // working — the action write-path is degraded but capture still flows.
       console.error(
-        `native host: IPC socket failed to listen — ${err instanceof Error ? err.message : String(err)}`,
+        `native host: IPC socket listen threw — ${err instanceof Error ? err.message : String(err)}`,
       );
       socketServer = undefined;
     }

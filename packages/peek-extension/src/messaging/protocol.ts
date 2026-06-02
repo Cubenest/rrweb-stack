@@ -43,6 +43,13 @@ export interface ConfirmVerdictMessage {
   requestId: string;
   verdict: 'allow' | 'deny';
   alwaysForSite?: boolean;
+  /**
+   * Item F: set ONLY by {@link closedVerdict} — the synthetic deny the panel
+   * posts when it unmounts/closes with a pending confirm. An explicit Deny-
+   * button verdict leaves this unset. Lets the SW distinguish a panel close
+   * ('panel-closed') from an explicit user Deny ('user-deny') in the audit log.
+   */
+  closed?: boolean;
 }
 
 /** Live capture counters surfaced in the side panel (P2 PRD §D.3). */
@@ -210,13 +217,58 @@ export function isFromSidePanel(
   return next === '?' || next === '#';
 }
 
-/** Type guard: is this inbound runtime message a {@link ShowConfirmMessage}? */
+/**
+ * Type guard: is this inbound runtime message a well-formed
+ * {@link ShowConfirmMessage}?
+ *
+ * Item E: validates the FULL wire shape — a non-empty string `requestId`, an
+ * `action` object with a string `type`, and a string `origin` — not just
+ * `type === 'showConfirm'`. A malformed payload that slipped through would
+ * otherwise crash the banner render, or make the panel's unmount cleanup post a
+ * `closedVerdict` with an invalid/empty requestId (which the SW can't correlate
+ * — or worse, could match a different in-flight request). `destructiveTerm` is
+ * optional and not required here.
+ */
 export function isShowConfirm(message: unknown): message is ShowConfirmMessage {
-  return (
-    typeof message === 'object' &&
-    message !== null &&
-    (message as { type?: unknown }).type === 'showConfirm'
-  );
+  if (typeof message !== 'object' || message === null) return false;
+  const m = message as {
+    type?: unknown;
+    requestId?: unknown;
+    action?: unknown;
+    origin?: unknown;
+  };
+  if (m.type !== 'showConfirm') return false;
+  if (typeof m.requestId !== 'string' || m.requestId.length === 0) return false;
+  if (typeof m.origin !== 'string') return false;
+  // The action must be an object with a string discriminator `type`.
+  if (typeof m.action !== 'object' || m.action === null) return false;
+  if (typeof (m.action as { type?: unknown }).type !== 'string') return false;
+  return true;
+}
+
+/** Why a confirm resolved to deny — recorded in the audit log (item F). */
+export type DenyReason = 'timeout' | 'user-deny' | 'panel-closed';
+
+/**
+ * Classify a deny verdict for the audit log (item F).
+ *
+ *   - the SW's own timeout fired (no user response within the window) → 'timeout'
+ *   - the panel closed with a pending confirm ({@link closedVerdict}, `closed`
+ *     flag set) → 'panel-closed'
+ *   - otherwise an explicit Deny-button click → 'user-deny'
+ *
+ * Timeout takes precedence over the `closed` flag: once the SW timed out, that's
+ * the truth regardless of any late verdict the dying panel may have posted.
+ * Pure (verdict + elapsed + timeout in, reason out) so it unit-tests cleanly.
+ */
+export function denyReason(
+  verdict: ConfirmVerdictMessage,
+  elapsedMs: number,
+  timeoutMs: number,
+): DenyReason {
+  if (elapsedMs >= timeoutMs) return 'timeout';
+  if (verdict.closed === true) return 'panel-closed';
+  return 'user-deny';
 }
 
 /** Post a confirm verdict back to the SW. Best-effort; SW fail-closes on no reply. */

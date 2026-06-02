@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import {
+  ConfirmResolutionTracker,
+  isShowConfirmFromBackground,
+} from '../../entrypoints/sidepanel/confirm-flow';
+import {
   type ConfirmChoice,
   closedVerdict,
   describeAction,
@@ -43,12 +47,13 @@ describe('nextVerdict — pure reducer driving the confirm banner', () => {
 });
 
 describe('closedVerdict — unmount / panel-closed default', () => {
-  it('defaults to deny (fail-closed) on panel closure', () => {
+  it('defaults to deny (fail-closed) on panel closure, flagged closed (item F)', () => {
     expect(closedVerdict(REQ)).toEqual({
       type: 'confirmVerdict',
       requestId: REQ,
       verdict: 'deny',
       alwaysForSite: false,
+      closed: true,
     });
   });
 });
@@ -75,5 +80,64 @@ describe('describeAction — human banner copy', () => {
 
   it('describes a scroll', () => {
     expect(describeAction({ type: 'scroll', y: 500 })).toMatch(/scroll/i);
+  });
+});
+
+// Item D(a): the side panel's showConfirm listener must only accept a prompt
+// from the extension's OWN background SW — `sender.id === chrome.runtime.id`.
+// A page/content-script context (which can be influenced by an AI) must NOT be
+// able to inject a `showConfirm` and replace `pendingConfirm` with a forged
+// action the user then approves.
+describe('isShowConfirmFromBackground — sender + shape gate for showConfirm', () => {
+  const EXT_ID = 'abcd';
+  const SHOW = {
+    type: 'showConfirm',
+    requestId: 'req-1',
+    action: { type: 'click', selector: '#x', button: 'left' },
+    origin: 'https://example.com',
+  };
+
+  it('accepts a well-formed showConfirm from the extension itself', () => {
+    expect(isShowConfirmFromBackground(SHOW, { id: EXT_ID }, EXT_ID)).toBe(true);
+  });
+
+  it('rejects a showConfirm from a different sender id (a page / other extension)', () => {
+    expect(isShowConfirmFromBackground(SHOW, { id: 'evil-extension' }, EXT_ID)).toBe(false);
+    expect(isShowConfirmFromBackground(SHOW, { id: undefined }, EXT_ID)).toBe(false);
+    expect(isShowConfirmFromBackground(SHOW, {}, EXT_ID)).toBe(false);
+  });
+
+  it('rejects a non-showConfirm message even from the right sender', () => {
+    expect(isShowConfirmFromBackground({ type: 'somethingElse' }, { id: EXT_ID }, EXT_ID)).toBe(
+      false,
+    );
+  });
+});
+
+// Item D(b): RACE — resolveConfirm sets pendingConfirm to null, which triggers
+// the [pendingConfirm] effect CLEANUP, which sends closedVerdict(requestId) for
+// the SAME request AFTER the user's verdict. A synthetic deny must NOT follow /
+// override an allow. The tracker records resolved ids so the cleanup skips them.
+describe('ConfirmResolutionTracker — cleanup must not deny an already-resolved request', () => {
+  it('an allow is NOT followed by a synthetic close-deny for the same requestId', () => {
+    const tracker = new ConfirmResolutionTracker();
+    // User clicks Allow → we send the verdict + mark the id resolved.
+    tracker.markResolved('req-1');
+    // The effect cleanup fires for req-1 (pendingConfirm went null). It must
+    // recognize the id as already resolved and SKIP sending closedVerdict.
+    expect(tracker.shouldSendCloseVerdict('req-1')).toBe(false);
+  });
+
+  it('a genuine panel close (no prior verdict) DOES send the close-deny', () => {
+    const tracker = new ConfirmResolutionTracker();
+    // No markResolved — the user closed the panel without choosing.
+    expect(tracker.shouldSendCloseVerdict('req-2')).toBe(true);
+  });
+
+  it('is idempotent + per-request: resolving req-1 does not suppress req-2 close', () => {
+    const tracker = new ConfirmResolutionTracker();
+    tracker.markResolved('req-1');
+    expect(tracker.shouldSendCloseVerdict('req-1')).toBe(false);
+    expect(tracker.shouldSendCloseVerdict('req-2')).toBe(true);
   });
 });

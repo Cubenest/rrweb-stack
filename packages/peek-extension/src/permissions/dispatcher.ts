@@ -122,9 +122,16 @@ export interface ResolvedTarget {
  * empty object (no signals) for a missing/invalid/empty selector — NEVER throws
  * — so the SW gate runs even when resolution fails. Self-contained for
  * MAIN-world injection.
+ *
+ * Item B (nth): `nth` MUST be threaded through so the destructive matcher +
+ * banner inspect the SAME element the dispatcher will click —
+ * `querySelectorAll(selector)[nth]`. Without it a destructive element at
+ * `nth>0` hiding behind a benign first match would be classified
+ * non-destructive and skip the confirm. Defaults to the first match (nth 0 /
+ * undefined), matching {@link dispatchAction}'s click branch.
  */
-export function resolveTarget(selector: string): ResolvedTarget {
-  const el = resolveElement(selector);
+export function resolveTarget(selector: string, nth?: number): ResolvedTarget {
+  const el = resolveElement(selector, nth);
   if (!el) return {};
   const text = (el.textContent ?? '').trim();
   const ariaLabel = el.getAttribute('aria-label');

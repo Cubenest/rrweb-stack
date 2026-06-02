@@ -125,6 +125,73 @@ describe('LocalSocketHostBridge', () => {
     expect(r2.result).toBe('ok');
   });
 
+  // Item H: a socket 'error' / 'close' must fail ALL in-flight requests
+  // immediately with a structured error — NOT leave them hanging until the
+  // 5-minute registry timeout.
+  it('fails an in-flight request promptly on socket close (not after the 5-min timeout)', async () => {
+    const toServer = new PassThrough();
+    const toClient = new PassThrough();
+    const emitter = toClient; // listeners registered via on() land here
+    const bridge = new LocalSocketHostBridge({
+      connect: () =>
+        ({
+          write: (b: string) => {
+            toServer.write(b);
+          },
+          on: (e: string, h: (...a: unknown[]) => void) => {
+            emitter.on(e, h);
+          },
+          end() {},
+        }) as never,
+      // A LONG timeout so a pass can ONLY come from the close handler failing the
+      // request — not from the registry timing out.
+    });
+
+    const p = bridge.request({
+      tool: 'execute_action',
+      sessionId: 's',
+      action: { type: 'click', selector: '#x', button: 'left' } as never,
+      client: 'test',
+      timeoutMs: 5 * 60_000,
+    });
+    // Let the request hit the wire + wire up listeners, then close the socket.
+    await new Promise((r) => setTimeout(r, 5));
+    emitter.emit('close');
+
+    const res = await p; // resolves promptly via the close handler, not the timeout
+    expect(res.verdict).toBe('deny');
+    expect(res.result).toBe('error');
+    expect(String(res.error)).toMatch(/socket|close|connection/i);
+  });
+
+  it('fails an in-flight request promptly on socket error', async () => {
+    const toServer = new PassThrough();
+    const toClient = new PassThrough();
+    const bridge = new LocalSocketHostBridge({
+      connect: () =>
+        ({
+          write: (b: string) => {
+            toServer.write(b);
+          },
+          on: (e: string, h: (...a: unknown[]) => void) => {
+            toClient.on(e, h);
+          },
+          end() {},
+        }) as never,
+    });
+    const p = bridge.request({
+      tool: 'execute_action',
+      sessionId: 's',
+      action: { type: 'click', selector: '#x', button: 'left' } as never,
+      client: 'test',
+      timeoutMs: 5 * 60_000,
+    });
+    await new Promise((r) => setTimeout(r, 5));
+    toClient.emit('error', new Error('ECONNRESET'));
+    const res = await p;
+    expect(res.result).toBe('error');
+  });
+
   it('rejects→structured error when the socket is unavailable', async () => {
     const bridge = new LocalSocketHostBridge({
       connect: () => {
@@ -169,6 +236,60 @@ describe('LocalSocketHostBridge', () => {
     });
     await new Promise((r) => setTimeout(r, 5));
     expect(encoding).toBe('utf8');
+  });
+
+  // Item G: #reset must DESTROY the live socket + remove its listeners, not
+  // just null the cached reference. Otherwise the orphaned socket stays open
+  // with its data/error/close listeners attached — a socket + listener leak on
+  // every reconnect.
+  it('destroys the socket + removes listeners on reset (over-cap drop path)', async () => {
+    let destroyed = 0;
+    const removedAllListeners = { value: false };
+    const offCalls: string[] = [];
+    const toServer = new PassThrough();
+    const toClient = new PassThrough();
+    const bridge = new LocalSocketHostBridge({
+      connect: () =>
+        ({
+          write: (b: string) => {
+            toServer.write(b);
+          },
+          on: (e: string, h: (...a: unknown[]) => void) => {
+            toClient.on(e, h);
+          },
+          end() {},
+          destroy() {
+            destroyed += 1;
+          },
+          removeAllListeners() {
+            removedAllListeners.value = true;
+          },
+          off(e: string) {
+            offCalls.push(e);
+          },
+        }) as never,
+      maxLineBytes: 100,
+    });
+
+    let id: string | undefined;
+    const p = bridge.request({
+      tool: 'execute_action',
+      sessionId: 's',
+      action: { type: 'click', selector: '#x', button: 'left' } as never,
+      client: 'test',
+      timeoutMs: 80,
+    });
+    toServer.once('data', (buf: Buffer) => {
+      id = JSON.parse(String(buf).trim()).id;
+      // Over-cap unframed blob → triggers #reset.
+      toClient.write('z'.repeat(500));
+    });
+    const res = await p;
+    expect(res.result).toBe('error'); // fail-closed
+    expect(id).toBeTypeOf('string');
+    // The orphaned socket was destroyed + its listeners removed (no leak).
+    expect(destroyed).toBe(1);
+    expect(removedAllListeners.value || offCalls.length > 0).toBe(true);
   });
 
   it('drops the connection (clears the buffer) when a single line exceeds the cap', async () => {

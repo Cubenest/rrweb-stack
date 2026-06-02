@@ -151,6 +151,16 @@ interface SocketLike {
   end(): void;
   /** Optional: decode inbound bytes as UTF-8 (real net.Socket has it). */
   setEncoding?(encoding: string): void;
+  /**
+   * Optional: forcibly close the underlying socket (item G). Real net.Socket
+   * has it. `#reset` calls this so the orphaned socket doesn't stay open.
+   */
+  destroy?(): void;
+  /**
+   * Optional: detach the data/error/close listeners (item G) so a dropped
+   * socket doesn't leak its handlers. Real net.Socket (EventEmitter) has it.
+   */
+  removeAllListeners?(): void;
 }
 
 /**
@@ -202,10 +212,32 @@ export class LocalSocketHostBridge implements HostBridge {
     this.#maxLineBytes = deps.maxLineBytes ?? DEFAULT_MAX_LINE_BYTES;
   }
 
-  /** Drop the cached socket + clear the read buffer (reconnect on next request). */
-  #reset(): void {
+  /**
+   * Drop the cached socket + clear the read buffer (reconnect on next request).
+   *
+   * Item G: DESTROY the live socket + remove its listeners BEFORE nulling the
+   * reference — otherwise the orphaned socket stays open with its
+   * data/error/close listeners attached (a socket + listener leak on every
+   * reconnect, and a late event from the dead socket could still mutate state).
+   * Item H: fail every in-flight request with a structured error so a closed /
+   * errored transport rejects awaiting tool calls PROMPTLY rather than leaving
+   * them hanging until the 5-minute registry timeout.
+   */
+  #reset(reason?: string): void {
+    const sock = this.#sock;
     this.#sock = undefined;
     this.#buf = '';
+    if (sock) {
+      try {
+        sock.removeAllListeners?.();
+        sock.destroy?.();
+      } catch {
+        // A destroy/removeListeners throw must not mask the reset.
+      }
+    }
+    // Item H: reject all pending requests now (fail-closed) instead of waiting
+    // out the per-request timeout.
+    this.#registry.rejectAll(new Error(reason ?? 'peek: host socket connection closed'));
   }
 
   /** Open (once) + wire the framing reader. Throws if the connect throws. */
@@ -223,7 +255,7 @@ export class LocalSocketHostBridge implements HostBridge {
       // unbounded — drop the connection + clear the buffer (in-flight requests
       // time out via the registry → fail-closed).
       if (this.#buf.length > this.#maxLineBytes && this.#buf.indexOf('\n') < 0) {
-        this.#reset();
+        this.#reset('peek: host socket frame exceeded the line cap');
         return;
       }
       let nl: number;
@@ -243,13 +275,16 @@ export class LocalSocketHostBridge implements HostBridge {
         }
       }
     });
-    s.on('error', () => {
-      // Drop the cached socket so the next request reconnects. Any in-flight
-      // requests will time out via the RequestRegistry → structured error.
-      this.#reset();
+    s.on('error', (err: unknown) => {
+      // Item H: drop the cached socket so the next request reconnects AND fail
+      // every in-flight request now (via #reset → registry.rejectAll), instead
+      // of letting them hang until the 5-minute per-request timeout.
+      this.#reset(
+        `peek: host socket error — ${err instanceof Error ? err.message : 'connection error'}`,
+      );
     });
     s.on('close', () => {
-      this.#reset();
+      this.#reset('peek: host socket closed');
     });
     this.#sock = s;
     return s;

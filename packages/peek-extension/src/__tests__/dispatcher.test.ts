@@ -130,4 +130,25 @@ describe('resolveTarget', () => {
   it('returns an empty target for an empty selector', () => {
     expect(resolveTarget('')).toEqual({});
   });
+
+  it('item B (nth): resolves the SAME nth element the click will hit (not the first match)', () => {
+    // A destructive element hiding behind a non-destructive first match. The
+    // action is `click .nthrow [nth=1]`, which the dispatcher resolves to the
+    // SECOND element. The destructive matcher must classify THAT element — not
+    // the benign first match — or it would skip confirm on a destructive click.
+    document.body.innerHTML = `
+      <button class="nthrow">Save changes</button>
+      <button class="nthrow">Delete account</button>
+    `;
+    // nth=0 (or omitted) → the benign first match.
+    expect(resolveTarget('.nthrow')).toMatchObject({ text: 'Save changes' });
+    expect(resolveTarget('.nthrow', 0)).toMatchObject({ text: 'Save changes' });
+    // nth=1 → the destructive second match (the one the click hits).
+    expect(resolveTarget('.nthrow', 1)).toMatchObject({ text: 'Delete account' });
+  });
+
+  it('item B (nth): an out-of-range nth resolves to an empty target (never throws)', () => {
+    document.body.innerHTML = '<button class="only">One</button>';
+    expect(resolveTarget('.only', 5)).toEqual({});
+  });
 });

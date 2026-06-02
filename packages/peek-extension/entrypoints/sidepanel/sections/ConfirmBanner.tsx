@@ -34,9 +34,13 @@ export function nextVerdict(requestId: string, choice: ConfirmChoice): ConfirmVe
   return { type: 'confirmVerdict', requestId, verdict: 'deny', alwaysForSite: false };
 }
 
-/** The default verdict when the panel unmounts / closes without a choice. */
+/**
+ * The default verdict when the panel unmounts / closes without a choice. The
+ * `closed` flag (item F) lets the SW report this as 'panel-closed' in the audit
+ * log, distinct from an explicit Deny-button click ('user-deny').
+ */
 export function closedVerdict(requestId: string): ConfirmVerdictMessage {
-  return { type: 'confirmVerdict', requestId, verdict: 'deny', alwaysForSite: false };
+  return { type: 'confirmVerdict', requestId, verdict: 'deny', alwaysForSite: false, closed: true };
 }
 
 /**
