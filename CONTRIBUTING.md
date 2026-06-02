@@ -187,14 +187,14 @@ If your PR adds a workflow, run it against these rules first.
 2. Run local validation: `pnpm lint && pnpm typecheck && pnpm test && pnpm build`.
 3. Add a changeset if required (see above).
 4. CI must pass: lint, typecheck, test, build, DCO check.
-5. CodeRabbit posts an automated review (advisory — it does not gate
-   the merge). Address its findings, or resolve the threads with a
-   reason if you disagree; branch protection requires all
-   conversations resolved. See
+5. CodeRabbit posts an automated review and **approves automatically** once
+   all its inline comments are resolved and CI passes — satisfying the
+   1-review branch-protection gate. Address its findings or resolve threads
+   with a reason if you disagree. See
    [Automated review (CodeRabbit)](#automated-review-coderabbit).
-6. At least one maintainer review is required before merge for
-   external PRs. The maintainer may self-merge their own PRs under
-   the side-project posture.
+6. For external PRs, a maintainer review is required in addition to the
+   CodeRabbit approval. The maintainer may self-merge their own PRs once
+   CodeRabbit has approved.
 7. Maintainers squash-or-merge based on the PR's commit hygiene.
    Keep your branch rebased on `main` to avoid noisy merge commits.
 
@@ -221,11 +221,13 @@ on CodeRabbit's free open-source plan — full code-review features (line-by-lin
 reviews, linters/SAST, custom instructions) at no cost and no seat limit,
 subject to OSS rate limits.
 
-CodeRabbit is **advisory, not a gate.** It posts a summary plus inline comments
-but never blocks a merge: the only required checks remain `ci` and `dco`, and
-the maintainer stays the deciding reviewer. This keeps a third-party service out
-of the merge path (no deadlock if it's rate-limited or down). Its behaviour is
-configured in [`.coderabbit.yaml`](.coderabbit.yaml), tuned to this repo:
+CodeRabbit is **an approving reviewer.** It automatically approves once its
+inline comments are resolved and required checks pass, satisfying the 1-review
+branch-protection gate on `main`. The maintainer can then self-merge without a
+second human reviewer. It does not post a commit status check, so a CodeRabbit
+outage cannot deadlock a merge — the fallback is an admin override. Its
+behaviour is configured in [`.coderabbit.yaml`](.coderabbit.yaml), tuned to
+this repo:
 
 - **Chill profile**, aligned with the philosophy above — Biome, Lefthook, and
   CI own formatting/lint/types, so CodeRabbit spends its attention on
