@@ -212,6 +212,28 @@ importers:
         specifier: ^25.0.1
         version: 25.0.1
 
+  packages/tracelane-playwright:
+    dependencies:
+      '@tracelane/core':
+        specifier: workspace:*
+        version: link:../tracelane-core
+      '@tracelane/report':
+        specifier: workspace:*
+        version: link:../tracelane-report
+    devDependencies:
+      '@cubenest/rrweb-core':
+        specifier: workspace:*
+        version: link:../rrweb-core
+      '@playwright/test':
+        specifier: ^1.60.0
+        version: 1.60.0
+      esbuild:
+        specifier: ^0.28.0
+        version: 0.28.0
+      tsx:
+        specifier: ^4.19.0
+        version: 4.22.3
+
   packages/tracelane-report:
     dependencies:
       '@cubenest/rrweb-core':
