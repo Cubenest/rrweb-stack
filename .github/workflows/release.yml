@@ -32,6 +32,7 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm build
       - name: Create release PR or publish
+        id: changesets
         uses: changesets/action@06245a4e0a36c064a573d4150030f5ec548e4fcc  # v1.4.10
         with:
           publish: pnpm release
@@ -50,3 +51,55 @@ jobs:
           version: pnpm run version
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # Publish the peek MCP server to the official MCP Registry (the canonical,
+      # upstream source of truth) whenever @peekdev/mcp is released to npm.
+      # Runs LAST and only on an actual publish: the npm release is the critical
+      # path, so a registry hiccup that reds this step never undoes the npm
+      # publish (re-running the job is safe — changesets skips already-published
+      # versions). Ownership is proven by the `mcpName` field in the published
+      # package (packages/peek-mcp/package.json); auth is GitHub OIDC (id-token
+      # write is granted above), which can claim io.github.cubenest/* because
+      # this repo is in the Cubenest org. Downstream registries (PulseMCP,
+      # Smithery, mcp.so) do NOT auto-ingest from here — they are submitted
+      # separately (see docs/peek/distribution/README.md).
+      - name: Publish peek to the official MCP Registry
+        if: steps.changesets.outputs.published == 'true' && contains(steps.changesets.outputs.publishedPackages, '"@peekdev/mcp"')
+        env:
+          PUBLISHED_PACKAGES: ${{ steps.changesets.outputs.publishedPackages }}
+        run: |
+          set -euo pipefail
+          version="$(printf '%s' "$PUBLISHED_PACKAGES" | jq -r '.[] | select(.name=="@peekdev/mcp") | .version')"
+          if [ -z "$version" ] || [ "$version" = "null" ]; then
+            echo "::notice::@peekdev/mcp not in publishedPackages; skipping registry publish"
+            exit 0
+          fi
+          echo "Publishing peek-mcp $version to registry.modelcontextprotocol.io"
+          # Wait for npm to propagate the version + mcpName (the registry
+          # validates mcpName on the package at exactly this version).
+          for i in $(seq 1 10); do
+            got="$(npm view "@peekdev/mcp@$version" mcpName 2>/dev/null || true)"
+            [ "$got" = "io.github.cubenest/peek-mcp" ] && break
+            echo "waiting for npm propagation ($i/10)…"; sleep 6
+          done
+          if [ "$got" != "io.github.cubenest/peek-mcp" ]; then
+            echo "::error::npm did not expose mcpName for @peekdev/mcp@$version after 10 attempts (got: $got)"
+            exit 1
+          fi
+          cd packages/peek-mcp
+          # Sync server.json to the just-published npm version before publishing.
+          tmp="$(mktemp)"
+          jq --arg v "$version" '.version = $v | .packages[0].version = $v' server.json > "$tmp"
+          mv "$tmp" server.json
+          # Install the publisher CLI — pinned to v1.7.9; verified via SHA-256.
+          # To upgrade: update MCP_PUBLISHER_VERSION and the SHA below (from
+          # https://github.com/modelcontextprotocol/registry/releases).
+          MCP_PUBLISHER_VERSION="v1.7.9"
+          MCP_PUBLISHER_SHA256="ab128162b0616090b47cf245afe0a23f3ef08936fdce19074f5ba0a4469281ac"
+          TARBALL="mcp-publisher_linux_amd64.tar.gz"
+          curl -fsSL "https://github.com/modelcontextprotocol/registry/releases/download/${MCP_PUBLISHER_VERSION}/${TARBALL}" -o "${TARBALL}"
+          echo "${MCP_PUBLISHER_SHA256}  ${TARBALL}" | sha256sum -c -
+          tar xzf "${TARBALL}" mcp-publisher
+          rm "${TARBALL}"
+          ./mcp-publisher login github-oidc
+          ./mcp-publisher publish

@@ -1,6 +1,6 @@
-# modelcontextprotocol — peek entry (DRAFT)
+# modelcontextprotocol — peek entry
 
-**Status: DRAFT — DO NOT SUBMIT until Phase 5 launch.**
+**Status: Ready to submit — the public launch has shipped. Follow the steps below.**
 
 > Schema audit performed 2026-05-30. The submission target documented in the
 > earlier draft of this file (a PR to a "Community Servers" list inside the
@@ -25,48 +25,35 @@
 - **Auth:** GitHub OAuth (interactive) or GitHub OIDC (CI). The publisher
   must own the namespace. To publish under `io.github.cubenest/peek-mcp`,
   the maintainer authenticates as a member of the `Cubenest` GitHub org.
-- **Package-ownership verification:** the registry validates that the
-  publisher controls the npm package referenced in `server.json`. Since
-  `@peekdev/mcp` is published from the Cubenest org via OIDC (Phase 5 Gate
-  B), this is already in place.
+- **Package-ownership verification:** the registry downloads the published
+  `@peekdev/mcp` at the exact `server.json` version and requires its
+  `package.json` to carry `"mcpName": "io.github.cubenest/peek-mcp"` (confirmed
+  against `internal/validators/registries/npm.go`, 2026-06-02 — it does
+  `if npmResp.MCPName != serverName { reject }`). This is **NOT** satisfied by
+  OIDC provenance alone — the field must ship *in the package*. It has been added
+  to `packages/peek-mcp/package.json`; it goes live with the next release
+  (expected `0.1.0-alpha.13`). Until that version is on npm, `publish` fails with
+  *"NPM package … is missing required 'mcpName' field"*.
 - **Restricted registry base URLs:** only public npm
   (`https://registry.npmjs.org`) — peek meets that requirement.
 
-## Pre-filled server.json for peek
+## server.json for peek (canonical file committed)
 
-The fields below are draft. Run `mcp-publisher init` in
-`packages/peek-mcp/` at submission time — it autodetects `package.json`
-and pre-fills most of this. Reconcile against the live schema URL
-(`https://static.modelcontextprotocol.io/schemas/<latest>/server.schema.json`)
-before submitting.
+The validated `server.json` is committed at
+[`packages/peek-mcp/server.json`](../../../packages/peek-mcp/server.json) — edit it
+*there*, not here. It targets schema `2025-12-11`, name `io.github.cubenest/peek-mcp`,
+title `peek`, transport `stdio`, runtimeHint `npx`, package `@peekdev/mcp`.
 
-```json
-{
-  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
-  "name": "io.github.cubenest/peek-mcp",
-  "title": "peek",
-  "description": "Local-first MCP server that exposes recorded browser sessions (rrweb DOM + console + network) to AI coding agents. Companion Chrome MV3 extension captures sessions to a local SQLite database; no cloud, no telemetry.",
-  "version": "0.1.0-alpha.10",
-  "websiteUrl": "https://github.com/Cubenest/rrweb-stack/tree/main/packages/peek-mcp",
-  "repository": {
-    "url": "https://github.com/Cubenest/rrweb-stack",
-    "source": "github",
-    "subfolder": "packages/peek-mcp"
-  },
-  "packages": [
-    {
-      "registryType": "npm",
-      "registryBaseUrl": "https://registry.npmjs.org",
-      "identifier": "@peekdev/mcp",
-      "version": "0.1.0-alpha.10",
-      "transport": {
-        "type": "stdio"
-      },
-      "runtimeHint": "npx"
-    }
-  ]
-}
-```
+Two constraints that bit the earlier draft (verified against the live schema,
+2026-06-02):
+
+- **`description` is capped at 100 characters** (`maxLength: 100`). The earlier
+  ~230-char marketing description would have been rejected; the committed file uses
+  a terse 96-char line.
+- **`version` must equal a *published* `@peekdev/mcp` version that carries the
+  `mcpName` field** (see ownership note above). The committed file pins
+  `0.1.0-alpha.13` (the next release, which adds `mcpName`); reconcile if the bump
+  differs. `version` must be a concrete version — no ranges, no `latest`.
 
 ### Tool list (informational — not part of `server.json`)
 
@@ -85,28 +72,40 @@ For listings that surface tool counts, peek exposes 10 MCP tools:
 
 ## Submission checklist
 
-1. **Install the publisher:**
+1. **Publish the `mcpName` release FIRST.** `mcpName` is already in
+   `packages/peek-mcp/package.json` and a changeset is staged; cut the release so
+   `@peekdev/mcp@0.1.0-alpha.13` (or whatever the bump yields) lands on npm, then
+   verify the field made it into the published package:
+   ```sh
+   npm view @peekdev/mcp@0.1.0-alpha.13 mcpName   # → io.github.cubenest/peek-mcp
+   ```
+   Confirm `packages/peek-mcp/server.json`'s `version` equals that published version.
+2. **Install the publisher** (one of):
    ```sh
    brew install mcp-publisher
+   # or, for CI / no-brew:
+   curl -L "https://github.com/modelcontextprotocol/registry/releases/latest/download/mcp-publisher_$(uname -s | tr '[:upper:]' '[:lower:]')_$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/').tar.gz" | tar xz mcp-publisher
    ```
-2. **Authenticate (one-time, interactive):**
+3. **Authenticate** (must be a `Cubenest` org member to claim `io.github.cubenest/*`):
    ```sh
-   mcp-publisher login github
+   mcp-publisher login github          # interactive
+   # or in GitHub Actions (needs `permissions: id-token: write`):
+   ./mcp-publisher login github-oidc
    ```
-   This grants publish rights to `io.github.cubenest/*`.
-3. **Run from `packages/peek-mcp/`:**
+4. **Publish from `packages/peek-mcp/`** (server.json is already committed — no `init`):
    ```sh
    cd packages/peek-mcp
-   mcp-publisher init           # generates a starter server.json from package.json
-   # Hand-edit to match the example above (description, transport, websiteUrl).
-   mcp-publisher publish        # uploads to registry.modelcontextprotocol.io
+   mcp-publisher publish               # reads ./server.json
    ```
-4. **Verify the listing:**
+5. **Verify the listing:**
    ```sh
-   curl https://registry.modelcontextprotocol.io/v0/servers?name=io.github.cubenest/peek-mcp
+   curl "https://registry.modelcontextprotocol.io/v0/servers?name=io.github.cubenest/peek-mcp"
    ```
-   PulseMCP ingests from the official registry daily (see `pulsemcp.json`
-   notes), so a successful publish here also feeds downstream registries.
+6. **Then submit the downstream registries SEPARATELY.** They do **NOT** auto-ingest
+   from the official registry (verified 2026-06-02 — the earlier "feeds downstream
+   registries" note was wrong). PulseMCP auto-scrapes *npm* (not the official
+   registry) plus a manual form; Smithery and mcp.so each need their own submission.
+   See [`README.md`](./README.md).
 
 ## Optional: keep a one-line entry in `modelcontextprotocol/servers` Resources
 
