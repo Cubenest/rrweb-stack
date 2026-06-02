@@ -18,6 +18,7 @@
   "changesets": [
     "fix-cli-description-npx-command",
     "fix-event-blob-reader-directory-layout",
+    "fix-mcpname-casing",
     "hoist-shared-adapter-helpers",
     "launch-audit-metadata-and-docs",
     "launch-audit-tracelane-report",

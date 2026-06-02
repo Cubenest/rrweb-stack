@@ -1,5 +1,12 @@
 # @peekdev/cli
 
+## 0.1.0-alpha.19
+
+### Patch Changes
+
+- Updated dependencies [64e4f55]
+  - @peekdev/mcp@0.1.0-alpha.14
+
 ## 0.1.0-alpha.18
 
 ### Patch Changes

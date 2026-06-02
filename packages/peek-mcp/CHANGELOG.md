@@ -1,5 +1,11 @@
 # @peekdev/mcp
 
+## 0.1.0-alpha.14
+
+### Patch Changes
+
+- 64e4f55: Fix mcpName casing: use io.github.Cubenest/peek-mcp (uppercase C) to match the GitHub organisation namespace granted by the MCP Registry. The lowercase variant caused a 403 at registry publish time.
+
 ## 0.1.0-alpha.13
 
 ### Minor Changes
