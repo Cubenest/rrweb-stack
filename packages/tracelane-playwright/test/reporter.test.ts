@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import TraceLaneReporter from '../src/reporter.js';
 
 // The Reporter owns CONFIG + LIFECYCLE only — the per-test report build lives
@@ -43,6 +43,20 @@ describe('TraceLaneReporter', () => {
     // onEnd should not throw and should not log anything to stdout
     r.onEnd({ status: 'failed' } as never);
     // reporter produces no console output (console.log removed — see Fix 2)
+  });
+
+  it('warns loudly when captureNetwork:false is passed (cannot be honored by the reporter)', () => {
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    new TraceLaneReporter({ captureNetwork: false });
+    expect(warnSpy).toHaveBeenCalledOnce();
+    expect(warnSpy.mock.calls[0][0]).toContain('TRACELANE_CAPTURE_NETWORK=false');
+    warnSpy.mockRestore();
+    // captureNetwork:true (or unset) should NOT warn
+    const warnSpy2 = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    new TraceLaneReporter({ captureNetwork: true });
+    new TraceLaneReporter({});
+    expect(warnSpy2).not.toHaveBeenCalled();
+    warnSpy2.mockRestore();
   });
 
   it('onEnd re-resolves options without logging (TRACELANE_MODE env honored)', () => {

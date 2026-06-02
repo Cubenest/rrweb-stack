@@ -34,6 +34,18 @@ export class TraceLaneReporter implements Reporter {
   constructor(opts: TraceLaneOptions = {}) {
     // Resolve up front so an invalid config surfaces early (throws on bad input).
     resolveOptions(opts);
+    // Warn loudly if captureNetwork was explicitly set on the reporter — it
+    // cannot be honored here because the fixture runs in a separate Playwright
+    // worker process and calls resolveOptions({}) independently. The only way
+    // to disable CDP capture is via the TRACELANE_CAPTURE_NETWORK=false env var.
+    if (opts.captureNetwork === false) {
+      // eslint-disable-next-line no-console
+      console.warn(
+        '[tracelane] reporter: captureNetwork:false is ignored — the fixture ' +
+          'runs in a separate worker process and cannot see reporter options. ' +
+          'Set TRACELANE_CAPTURE_NETWORK=false instead.',
+      );
+    }
   }
 
   /** The fixture + Playwright own the run output; this reporter is silent. */
