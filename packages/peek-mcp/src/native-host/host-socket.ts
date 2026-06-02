@@ -22,7 +22,9 @@
 // timeout must not throw). The policy deltas are loaded per request (the file
 // is tiny) and forwarded so the SW's destructive matcher merges them.
 
+import { statSync, unlinkSync } from 'node:fs';
 import * as net from 'node:net';
+import { platform } from 'node:os';
 import type {
   ActionConfirmShownMessage,
   ActionRequestMessage,
@@ -30,6 +32,29 @@ import type {
 } from './action-protocol.js';
 import { type LoadedPolicy, loadPolicy } from './policy.js';
 import { hostSocketPath } from './socket-path.js';
+
+/**
+ * Item E: remove a stale Unix-domain-socket file left by a crashed/SIGKILLed
+ * host. Without this, the next `listen(path)` throws `EADDRINUSE` and the
+ * write-path is silently dead until a manual `rm`.
+ *
+ * Guarded: we only unlink when the path is actually a SOCKET inode — never a
+ * regular file (which could be a real file the user or another process owns).
+ * A missing path is a no-op. Windows named pipes aren't filesystem paths, so
+ * this is skipped there. Best-effort: any stat/unlink error is swallowed (the
+ * subsequent listen will surface a real bind failure on its own).
+ */
+export function cleanupStaleSocket(path: string): void {
+  if (platform() === 'win32') return; // named pipe — not a filesystem inode
+  try {
+    const st = statSync(path);
+    if (!st.isSocket()) return; // never clobber a regular file / dir
+    unlinkSync(path);
+  } catch {
+    // ENOENT (nothing there) or any other stat/unlink error — leave it for the
+    // bind to report. Don't throw; cleanup is best-effort.
+  }
+}
 
 /** Minimal duplex surface a connection must provide — injectable for tests. */
 export interface ConnectionLike {
@@ -105,7 +130,13 @@ export class HostSocketServer {
             onConnection(socket as unknown as ConnectionLike);
           });
           return {
-            listen: () => server.listen(this.#deps.socketPath),
+            listen: () => {
+              // Item E: clear a stale socket left by a crashed host before
+              // binding, else listen() emits EADDRINUSE and the write-path is
+              // silently dead. Guarded to only unlink an actual socket inode.
+              cleanupStaleSocket(this.#deps.socketPath);
+              server.listen(this.#deps.socketPath);
+            },
             close: () => server.close(),
           };
         }),

@@ -1,6 +1,10 @@
 import { EventEmitter } from 'node:events';
-import { describe, expect, it } from 'vitest';
-import { HostSocketServer } from '../src/native-host/host-socket.js';
+import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import * as net from 'node:net';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { HostSocketServer, cleanupStaleSocket } from '../src/native-host/host-socket.js';
 import { EMPTY_POLICY, type LoadedPolicy } from '../src/native-host/policy.js';
 
 /**
@@ -290,5 +294,101 @@ describe('HostSocketServer', () => {
       approver: 'user',
     });
     expect(conn.frames()).toHaveLength(1);
+  });
+});
+
+// Item E: a crashed/SIGKILLed host leaves the socket file behind; the next
+// launch must clean it up before listen() or it throws EADDRINUSE and the
+// write-path is silently dead until manual `rm`.
+describe.skipIf(process.platform === 'win32')('stale-socket cleanup (item E)', () => {
+  let dir: string;
+  beforeEach(() => {
+    dir = mkdtempSync(join(tmpdir(), 'peek-staletest-'));
+  });
+  afterEach(() => {
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  /** Bind a throwaway server to leave a real socket inode at `path`. */
+  function bindStaleSocket(path: string): Promise<net.Server> {
+    return new Promise((resolve, reject) => {
+      const prior = net.createServer();
+      prior.on('error', reject);
+      prior.listen(path, () => resolve(prior));
+    });
+  }
+
+  it('cleanupStaleSocket unlinks an existing socket file but NOT a regular file', async () => {
+    const sockPath = join(dir, 'host.sock');
+    // A live bound server guarantees a socket-type inode at the path (this is
+    // exactly the stale artifact a crashed host leaves: a socket file with no
+    // live owner from the NEW process's perspective).
+    const prior = await bindStaleSocket(sockPath);
+    try {
+      expect(existsSync(sockPath)).toBe(true);
+      cleanupStaleSocket(sockPath);
+      expect(existsSync(sockPath)).toBe(false);
+    } finally {
+      prior.close();
+    }
+
+    // A REGULAR file at the path must be preserved (guard against clobbering a
+    // real file the user / another process owns).
+    const regular = join(dir, 'not-a-socket.txt');
+    writeFileSync(regular, 'keep me');
+    cleanupStaleSocket(regular);
+    expect(existsSync(regular)).toBe(true);
+  });
+
+  it('cleanupStaleSocket is a no-op when nothing exists at the path', () => {
+    expect(() => cleanupStaleSocket(join(dir, 'nothing-here.sock'))).not.toThrow();
+  });
+
+  it('HostSocketServer.listen() succeeds + accepts a connection when a stale socket exists', async () => {
+    const sockPath = join(dir, 'host.sock');
+    // Leave a real socket inode (a crashed prior host). We keep `prior` bound so
+    // the file is guaranteed present; cleanupStaleSocket unlinks it before bind.
+    const prior = await bindStaleSocket(sockPath);
+    expect(existsSync(sockPath)).toBe(true);
+
+    let posted: unknown;
+    const server = new HostSocketServer({
+      postToSw: (m) => {
+        posted = m;
+      },
+      loadPolicy: () => EMPTY_POLICY,
+      generateRequestId: () => 'rid-stale',
+      socketPath: sockPath,
+    });
+    // Without stale-socket cleanup the bind emits EADDRINUSE and the server
+    // never accepts; with it, a client can connect + drive a request through.
+    server.listen();
+    try {
+      const client = net.connect(sockPath);
+      await new Promise<void>((resolve, reject) => {
+        client.on('connect', resolve);
+        client.on('error', reject);
+      });
+      client.write(
+        `${JSON.stringify({
+          kind: 'act.request',
+          id: 'wire-stale',
+          payload: {
+            tool: 'execute_action',
+            sessionId: 's',
+            action: { type: 'click', selector: '#x', button: 'left' },
+            client: 'cursor',
+          },
+        })}\n`,
+      );
+      for (let i = 0; i < 50 && posted === undefined; i++) {
+        await new Promise((r) => setTimeout(r, 5));
+      }
+      client.end();
+      expect((posted as { requestId?: string } | undefined)?.requestId).toBe('rid-stale');
+    } finally {
+      server.close();
+      prior.close();
+    }
   });
 });

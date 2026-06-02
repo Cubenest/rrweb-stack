@@ -4,9 +4,13 @@ import { LocalSocketHostBridge } from '../src/mcp/host-bridge.js';
 import { hostSocketPath } from '../src/native-host/socket-path.js';
 
 describe('hostSocketPath', () => {
-  it.skipIf(process.platform === 'win32')('derives a posix socket under ~/.peek', () => {
-    expect(hostSocketPath('/h')).toBe('/h/.peek/host.sock');
-  });
+  it.skipIf(process.platform === 'win32')(
+    'derives a posix socket directly inside the peek data dir',
+    () => {
+      // The arg is the peek data dir (PEEK_HOME / ~/.peek), not the user home.
+      expect(hostSocketPath('/h/.peek')).toBe('/h/.peek/host.sock');
+    },
+  );
 });
 
 /**

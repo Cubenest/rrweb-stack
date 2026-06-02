@@ -9,7 +9,6 @@
 // network.append / shadow.report). The act-tool action-protocol dispatch
 // (request/result correlation through the SW) lands alongside the IPC bridge.
 
-import { join } from 'node:path';
 import type { Readable, Writable } from 'node:stream';
 import { openDb, peekHomeDir, schemaVersion } from '../db/open.js';
 import type { ActionConfirmShownMessage, ActionResultMessage } from './action-protocol.js';
@@ -88,15 +87,12 @@ export function startNativeHost(options: NativeHostOptions = {}): NativeHostHand
   // `action.result` (inbound, see handleMessage) → `act.response`.
   let socketServer: HostSocketServer | undefined;
   if (options.startSocketServer !== false) {
-    // Resolve the socket path: explicit option wins; else place it directly
-    // inside the (possibly test-overridden) .peek data dir as `host.sock`. In
-    // production `home` is `~/.peek`, so this equals the bridge's default
-    // `hostSocketPath()` (`~/.peek/host.sock`). A test home binds its own
-    // socket and never collides with a real one. On Windows the named pipe is
-    // a fixed namespace path, not under the data dir.
-    const socketPath =
-      options.socketPath ??
-      (process.platform === 'win32' ? hostSocketPath() : join(home, 'host.sock'));
+    // Resolve the socket path: explicit option wins; else derive from the
+    // (possibly test-overridden) peek data dir via hostSocketPath(home). This
+    // is the SAME function the MCP-process bridge dials, so both sides agree —
+    // including under a custom $PEEK_HOME (item D). On Windows it's the fixed
+    // named pipe; a test `home` binds its own socket and never collides.
+    const socketPath = options.socketPath ?? hostSocketPath(home);
     socketServer = new HostSocketServer({
       // postToSw writes the action.request out the native port (host → SW).
       postToSw: (message) => {
