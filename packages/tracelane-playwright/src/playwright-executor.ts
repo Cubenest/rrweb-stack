@@ -34,7 +34,8 @@ export function createPlaywrightExecutor(page: Page, cdp?: CDPSession): BrowserE
         (packed) => {
           // Rebuild the serialized fn in-page and apply the unpacked args. The
           // body is `fn.toString()`, so `(body)` is a valid function expression.
-          // biome-ignore lint/security/noGlobalEval: in-page fn reconstruction is the documented adapter seam (PRD §A.4)
+          // `new Function` (not global eval) reconstructs it — this is the
+          // documented adapter seam (PRD §A.4).
           const f = new Function(`return (${packed.body}).apply(null, arguments[0]);`);
           return f(packed.args) as T;
         },
