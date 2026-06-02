@@ -4,8 +4,11 @@
 export type { BrowserExecutor } from './browser-executor.js';
 
 // CDP network capture (Task 2.16 / P1 PRD §E.2) — framework-agnostic, shared by
-// the WDIO and Playwright adapters via the BrowserExecutor surface.
-export { attachNetworkCapture } from './network-capture.js';
+// the WDIO and Playwright adapters via the BrowserExecutor surface. `__internal`
+// exposes the pure page-side logger + method resolver so @tracelane/report's
+// cross-package contract test can exercise core's real output (the test must
+// live in report — which depends on core — to keep the dep edge one-directional).
+export { __internal, attachNetworkCapture } from './network-capture.js';
 
 // In-page rrweb bundle loader — reads the adapter's built dist/rrweb-bundle.js
 // off disk (pass the adapter's import.meta.url). Shared across adapters.
