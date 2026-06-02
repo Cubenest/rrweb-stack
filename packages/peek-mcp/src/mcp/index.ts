@@ -4,14 +4,24 @@
 // --native-host and without a chrome-extension:// origin arg.
 
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
+import { LocalSocketHostBridge } from './host-bridge.js';
 import { type CreatePeekMcpServerOptions, createPeekMcpServer } from './server.js';
 
 /**
  * Start the peek MCP stdio server and resolve when the transport closes (the
  * client disconnected — stdin EOF). The DB handle is released on close.
+ *
+ * In MCP mode we wire the {@link LocalSocketHostBridge} so act-tool calls reach
+ * the co-running native host over ~/.peek/host.sock (replacing the
+ * MissingHostBridge default that returns "bridge not wired"). The bridge
+ * fail-closes when the socket is unavailable — every act-tool call still goes
+ * through the audit log. A caller-supplied `hostBridge` (tests) wins.
  */
 export async function runMcpServer(options: CreatePeekMcpServerOptions = {}): Promise<void> {
-  const peek = createPeekMcpServer(options);
+  const peek = createPeekMcpServer({
+    hostBridge: new LocalSocketHostBridge(),
+    ...options,
+  });
   const transport = new StdioServerTransport();
 
   // Resolve when the client disconnects (stdin EOF). McpServer.connect

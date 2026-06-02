@@ -30,7 +30,7 @@ Read on if you're configuring the MCP server manually, building tooling against 
 ## What this is NOT
 
 - Not a remote MCP server. Peek is **local-only**: stdio transport over a child-process pipe. There is no HTTP listener, no SSE endpoint, no remote auth. The MCP transport spec's Streamable HTTP variant is out of scope by design.
-- Not a write-by-default tool. Read tools are unauthenticated. The write tools (`execute_action`, `request_authorization`) are defined on the MCP surface and gated by the permission model + destructive blocklist + audit-log writer — but the cross-process IPC that delivers them to the browser native host is **in development**. Calling `execute_action` against `peek-mcp@0.1.0-alpha.10` returns `bridge not wired in this MCP process`; peek is effectively read-only until that bridge lands.
+- Not a write-by-default tool. Read tools are unauthenticated. The write tools (`execute_action`, `request_authorization`) are gated by the per-origin permission model (off by default) + the destructive blocklist + the audit-log writer. The cross-process IPC that delivers them to the browser native host (`LocalSocketHostBridge` ↔ `HostSocketServer` over `~/.peek/host.sock`) is now wired: at **Level 3** every action prompts the side-panel confirm banner before it runs. The real-browser MAIN-world dispatch + banner UX are covered by the Playwright E2E (`e2e/smoke.spec.ts`); the bridge, relay, dispatcher, and confirm logic are unit-tested.
 - Not a wrapper around Chrome DevTools Protocol. The server reads recorded events from SQLite; the extension owns capture. No live `chrome.debugger` access from the MCP server.
 
 ## Manual MCP-client config
@@ -95,7 +95,7 @@ At **Level 3** every `execute_action` call prompts the user via the side-panel b
 
 Every `execute_action` and `request_authorization` call is appended to `~/.peek/audit.log` (JSONL, mode 0600 — `peek audit log --json` prints it), including denied ones.
 
-**Shipped today (alpha.10) vs queued for a follow-up alpha:** the five-level model, the destructive blocklist, and the audit-log writer all ship — they're enforced inside `peek-mcp` and observable via `~/.peek/audit.log`. The cross-process IPC that lets `execute_action` actually fire a click in the browser (`LocalSocketHostBridge`) is **not yet wired**; calling `execute_action` against alpha.10 returns the `bridge not wired in this MCP process` error. Track the bridge work via [issues on the rrweb-stack repo](https://github.com/Cubenest/rrweb-stack/issues).
+**The write-path is wired end to end:** the five-level model, the destructive blocklist, and the audit-log writer are enforced inside `peek-mcp` (observable via `~/.peek/audit.log`), and the cross-process IPC that lets `execute_action` fire a click in the browser now lands — a `LocalSocketHostBridge` (MCP process) ↔ `HostSocketServer` (native host) over `~/.peek/host.sock`, a MAIN-world action dispatcher (click/type/navigate/scroll), and a side-panel confirm banner. Level 3 (act-with-confirm) is the supported level; Level 4 (YOLO auto) and the remaining actions are queued. The real-browser dispatch + banner are covered by the Playwright E2E (`e2e/smoke.spec.ts`).
 
 ## Database
 
