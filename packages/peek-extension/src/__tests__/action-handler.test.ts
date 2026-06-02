@@ -163,6 +163,57 @@ describe('handleActionRequest — Level 3 act-with-confirm', () => {
   });
 });
 
+describe('handleActionRequest — confirmToken consumption (Level 3)', () => {
+  it('execute_action with a matching confirmToken skips the banner + dispatches', async () => {
+    await enableOriginAtLevel('https://example.com', 3);
+    const ctx = makeDeps();
+    // Pre-issue a token bound to (sessionId, actionType) on the shared store.
+    const tok = ctx.tokens.issue('s_test', 'click');
+    const out = await handleActionRequest(makeRequest({ confirmToken: tok.token }), ctx.deps);
+    expect(out.verdict).toBe('allow');
+    expect(out.result).toBe('ok');
+    expect(out.approver).toBe('user');
+    expect(ctx.promptCalls).toBe(0); // banner skipped
+    expect(ctx.dispatchCalls).toBe(1);
+    // One-shot: the token is now consumed.
+    expect(ctx.tokens.consume(tok.token, 's_test', 'click')).toBeNull();
+  });
+
+  it('execute_action with a mismatched-actionType confirmToken falls through to the banner', async () => {
+    await enableOriginAtLevel('https://example.com', 3);
+    const ctx = makeDeps({}, { promptResult: { verdict: 'allow', approvalMs: 7 } });
+    // Token issued for a DIFFERENT action type — must not let us skip the banner.
+    const tok = ctx.tokens.issue('s_test', 'type');
+    const out = await handleActionRequest(makeRequest({ confirmToken: tok.token }), ctx.deps);
+    expect(out.verdict).toBe('allow');
+    expect(ctx.promptCalls).toBe(1); // banner DID run
+    expect(ctx.dispatchCalls).toBe(1);
+  });
+
+  it('execute_action with an unknown confirmToken falls through to the banner', async () => {
+    await enableOriginAtLevel('https://example.com', 3);
+    const ctx = makeDeps({}, { promptResult: { verdict: 'deny', approvalMs: 1 } });
+    const out = await handleActionRequest(makeRequest({ confirmToken: 'never-issued' }), ctx.deps);
+    expect(out.verdict).toBe('deny');
+    expect(ctx.promptCalls).toBe(1); // banner ran; user denied
+    expect(ctx.dispatchCalls).toBe(0);
+  });
+
+  it('request_authorization ignores confirmToken (always prompts to issue a fresh token)', async () => {
+    await enableOriginAtLevel('https://example.com', 3);
+    const ctx = makeDeps();
+    const tok = ctx.tokens.issue('s_test', 'click');
+    const out = await handleActionRequest(
+      makeRequest({ tool: 'request_authorization', confirmToken: tok.token }),
+      ctx.deps,
+    );
+    expect(out.verdict).toBe('allow');
+    expect(out.confirmToken).toBeTypeOf('string');
+    expect(ctx.promptCalls).toBe(1); // request_authorization always prompts
+    expect(ctx.dispatchCalls).toBe(0);
+  });
+});
+
 describe('handleActionRequest — Level 4 YOLO', () => {
   it('non-destructive action auto-allows (approver=level-4-auto, no prompt)', async () => {
     await enableOriginAtLevel('https://example.com', 4);

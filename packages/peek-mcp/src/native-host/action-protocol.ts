@@ -73,6 +73,13 @@ export interface ActionRequestMessage {
   };
   /** Optional pinning to a specific tab id (SW picks active when omitted). */
   tabId?: number;
+  /**
+   * Pre-issued one-shot token from a prior `request_authorization` call. When
+   * present and valid (matching this request's sessionId + action.type), the SW
+   * consumes it and skips the side-panel banner. NULL/undefined → no token; the
+   * banner runs.
+   */
+  confirmToken?: string;
 }
 
 /** SW → host: the banner is now visible to the user (timing signal). */

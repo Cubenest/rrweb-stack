@@ -275,13 +275,26 @@ export async function handleActionRequest(
   }
 
   // ---- 'confirm' verdict ----
-  // execute_action: if a confirmToken is present + matches, skip the banner.
-  if (request.tool === 'execute_action') {
-    // The handler signature doesn't carry confirmToken explicitly; the host
-    // sends it inside the action.request payload as a sibling field if the
-    // wire shape grows. For now: re-route through a banner unless a future
-    // patch passes the token alongside the request (see action-protocol.ts
-    // TODO). Doing it this way keeps the gate honest in the default path.
+  // execute_action: if a confirmToken is present + valid, consume it and skip
+  // the banner. The token is one-shot + bound to (sessionId, actionType), so a
+  // malicious AI cannot re-use a token across actions or sessions (the store's
+  // consume() deletes the token regardless of whether the match passes). A
+  // mismatched / expired / unknown token returns null → fall through to the
+  // banner. request_authorization always prompts (it exists to ISSUE tokens).
+  if (request.tool === 'execute_action' && request.confirmToken !== undefined) {
+    const consumed = deps.tokens.consume(
+      request.confirmToken,
+      request.sessionId,
+      request.action.type,
+    );
+    if (consumed !== null) {
+      return dispatchAndRespond(request, tab.id, deps, {
+        approver: 'user',
+        ...(destructive.matched && destructive.term !== undefined
+          ? { destructiveTerm: destructive.term }
+          : {}),
+      });
+    }
   }
 
   const userVerdict = await deps.promptUserConfirmation({
