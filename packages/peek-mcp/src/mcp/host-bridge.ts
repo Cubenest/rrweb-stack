@@ -28,7 +28,9 @@
 //   When the IPC layer lands (3d-4 or 3e) we add a concrete
 //   `LocalSocketHostBridge` here; nothing else changes.
 
+import * as net from 'node:net';
 import { RequestRegistry, type RequestRegistryDeps } from '../native-host/request-registry.js';
+import { hostSocketPath } from '../native-host/socket-path.js';
 import type { Action } from './action-schema.js';
 
 // 5 minutes — longer than any plausible Level-3 banner-decision window.
@@ -139,5 +141,102 @@ export class RegistryBackedHostBridge implements HostBridge {
     const entry = this.pending.shift();
     if (!entry) return false;
     return this.#registry.reject(entry.id, reason);
+  }
+}
+
+/** The minimal duplex surface the bridge needs — injectable for tests. */
+interface SocketLike {
+  write(data: string): void;
+  on(ev: string, h: (...a: unknown[]) => void): void;
+  end(): void;
+}
+
+export interface LocalSocketHostBridgeDeps {
+  /** Override the socket / named-pipe path (tests + alternate PEEK_HOME). */
+  socketPath?: string;
+  /** Injectable connection factory; defaults to `net.connect(path)`. */
+  connect?: (path: string) => SocketLike;
+  /** Injectable correlation registry (tests). */
+  registry?: RequestRegistry;
+}
+
+/**
+ * The production bridge: a newline-delimited-JSON client over the local
+ * `~/.peek/host.sock` (Unix domain socket) / `\\.\pipe\peek-host` (Windows).
+ *
+ * Wire frame (both directions): one JSON object per line, `\n`-terminated.
+ *   client → host:  { kind: 'act.request',  id, payload: HostActionRequest }
+ *   host → client:  { kind: 'act.response', id, payload: HostActionResponse }
+ *
+ * Correlation reuses {@link RequestRegistry} (id ↔ pending promise) exactly like
+ * {@link RegistryBackedHostBridge}; only the transport differs. The connection
+ * is opened lazily on the first request and reused. A connect throw, a socket
+ * `error`, or a timeout all resolve to a structured `deny`/`error` response —
+ * fail-closed — so the MCP tool handler never sees a raw throw and the audit
+ * log still records the attempt.
+ */
+export class LocalSocketHostBridge implements HostBridge {
+  readonly #registry: RequestRegistry;
+  readonly #path: string;
+  readonly #connect: (path: string) => SocketLike;
+  #sock: SocketLike | undefined;
+  #buf = '';
+
+  constructor(deps: LocalSocketHostBridgeDeps = {}) {
+    this.#registry = deps.registry ?? new RequestRegistry();
+    this.#path = deps.socketPath ?? hostSocketPath();
+    this.#connect = deps.connect ?? ((p) => net.connect(p) as unknown as SocketLike);
+  }
+
+  /** Open (once) + wire the framing reader. Throws if the connect throws. */
+  #ensure(): SocketLike {
+    if (this.#sock) return this.#sock;
+    const s = this.#connect(this.#path);
+    s.on('data', (chunk: unknown) => {
+      this.#buf += String(chunk);
+      let nl: number;
+      // biome-ignore lint/suspicious/noAssignInExpressions: idiomatic frame-drain loop
+      while ((nl = this.#buf.indexOf('\n')) >= 0) {
+        const line = this.#buf.slice(0, nl);
+        this.#buf = this.#buf.slice(nl + 1);
+        if (!line.trim()) continue;
+        try {
+          const m = JSON.parse(line) as { kind?: string; id?: string; payload?: unknown };
+          if (m.kind === 'act.response' && typeof m.id === 'string') {
+            this.#registry.resolve(m.id, m.payload);
+          }
+        } catch {
+          // Drop a malformed frame; a single bad line must not wedge the bridge.
+        }
+      }
+    });
+    s.on('error', () => {
+      // Drop the cached socket so the next request reconnects. Any in-flight
+      // requests will time out via the RequestRegistry → structured error.
+      this.#sock = undefined;
+    });
+    s.on('close', () => {
+      this.#sock = undefined;
+    });
+    this.#sock = s;
+    return s;
+  }
+
+  async request(req: HostActionRequest): Promise<HostActionResponse> {
+    try {
+      const sock = this.#ensure();
+      const { id, response } = this.#registry.create<HostActionResponse>(
+        req.timeoutMs ?? DEFAULT_BRIDGE_TIMEOUT_MS,
+      );
+      sock.write(`${JSON.stringify({ kind: 'act.request', id, payload: req })}\n`);
+      return await response;
+    } catch (err) {
+      return {
+        verdict: 'deny',
+        result: 'error',
+        approver: 'user',
+        error: err instanceof Error ? err.message : String(err),
+      };
+    }
   }
 }
