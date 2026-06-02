@@ -2,9 +2,16 @@ import { useCallback, useEffect, useState } from 'react';
 import { originFromUrl } from '../../src/activation/origin';
 import { requestActivation } from '../../src/activation/request';
 import { isOriginEnabled } from '../../src/activation/storage';
-import { sendCmd } from '../../src/messaging/protocol';
+import {
+  type ConfirmVerdictMessage,
+  type ShowConfirmMessage,
+  isShowConfirm,
+  sendCmd,
+  sendConfirmVerdict,
+} from '../../src/messaging/protocol';
 import { ActivateSection } from './sections/ActivateSection';
 import { AuditLogSection } from './sections/AuditLogSection';
+import { ConfirmBanner, closedVerdict } from './sections/ConfirmBanner';
 import { DeepCaptureSection } from './sections/DeepCaptureSection';
 import { EventCountSection } from './sections/EventCountSection';
 import { PermissionLevelSection } from './sections/PermissionLevelSection';
@@ -31,6 +38,37 @@ export function App(): React.JSX.Element {
   const [tabEnabled, setTabEnabled] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // The Level-3 confirm banner. The SW posts `showConfirm` and awaits a
+  // `confirmVerdict`. Only one prompt is shown at a time; a newer one replaces
+  // an older (the older request will time out → deny SW-side, fail-closed).
+  const [pendingConfirm, setPendingConfirm] = useState<ShowConfirmMessage | null>(null);
+
+  // Listen for SW → panel confirm prompts. On a verdict choice (or panel
+  // closure) we post the verdict back to the SW.
+  useEffect(() => {
+    const listener = (message: unknown): undefined => {
+      if (isShowConfirm(message)) setPendingConfirm(message);
+      return undefined;
+    };
+    chrome.runtime.onMessage.addListener(listener);
+    return () => chrome.runtime.onMessage.removeListener(listener);
+  }, []);
+
+  // If the panel unmounts while a confirm is pending, fail-closed: deny it so
+  // the SW doesn't wait out its full timeout (defense in depth — the SW also
+  // times out independently).
+  useEffect(() => {
+    if (!pendingConfirm) return;
+    const requestId = pendingConfirm.requestId;
+    return () => {
+      void sendConfirmVerdict(closedVerdict(requestId));
+    };
+  }, [pendingConfirm]);
+
+  const resolveConfirm = useCallback((verdict: ConfirmVerdictMessage) => {
+    setPendingConfirm(null);
+    void sendConfirmVerdict(verdict);
+  }, []);
 
   // Reflect persisted consent whenever the active origin changes.
   useEffect(() => {
@@ -89,6 +127,10 @@ export function App(): React.JSX.Element {
         <h1 className="peek-title">peek</h1>
         <span className="peek-tagline">browser session capture for AI agents</span>
       </header>
+
+      {pendingConfirm ? (
+        <ConfirmBanner pending={pendingConfirm} onResolve={resolveConfirm} />
+      ) : null}
 
       <ActivateSection
         origin={origin}
