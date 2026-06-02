@@ -29,7 +29,7 @@ import Layout from '../layouts/Layout.astro';
     <tbody>
       <tr>
         <td><strong>Runner support</strong></td>
-        <td>WebdriverIO today. Playwright in Q3 2026, Cypress in Q4 2026 (JSON-output adapter, no overlap with Test Replay).</td>
+        <td>WebdriverIO today; Playwright and a Cypress JSON-output adapter (no overlap with Test Replay) are on the roadmap &mdash; no committed dates, this is a side project.</td>
         <td>Cypress only.</td>
       </tr>
       <tr>
@@ -109,7 +109,7 @@ import Layout from '../layouts/Layout.astro';
   <h2>When Cypress Test Replay is the right choice</h2>
 
   <ul>
-    <li>You're already on Cypress + Cypress Cloud and the org-wide org-wide test analytics + flake detection are part of your workflow.</li>
+    <li>You're already on Cypress + Cypress Cloud and the org-wide test analytics + flake detection are part of your workflow.</li>
     <li>You want a hosted UI where engineering managers and QA can browse runs across teams without anyone passing files around.</li>
     <li>You need vendor SLAs and a support contract.</li>
     <li>Cypress's specific test object model (commands, assertions, time-travel against the command queue) is core to how your team debugs &mdash; Test Replay's UI knows about all of it; tracelane's rrweb-player view is runner-agnostic.</li>
@@ -120,9 +120,9 @@ import Layout from '../layouts/Layout.astro';
   <p>
     Yes. tracelane runs as a WDIO Service today; if you're a Cypress user
     paying for Cypress Cloud + Test Replay, you wait for the Cypress
-    JSON-output adapter (target Q4 2026) which deliberately stays out of the
-    replay-rendering business and only exports the structured failure data
-    Test Replay doesn't surface in machine-readable form.
+    JSON-output adapter (on the roadmap, no committed date) which deliberately
+    stays out of the replay-rendering business and only exports the structured
+    failure data Test Replay doesn't surface in machine-readable form.
   </p>
 
   <h2>Why this page exists</h2>
