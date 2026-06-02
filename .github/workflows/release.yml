@@ -59,7 +59,7 @@ jobs:
       # publish (re-running the job is safe — changesets skips already-published
       # versions). Ownership is proven by the `mcpName` field in the published
       # package (packages/peek-mcp/package.json); auth is GitHub OIDC (id-token
-      # write is granted above), which can claim io.github.cubenest/* because
+      # write is granted above), which can claim io.github.Cubenest/* because
       # this repo is in the Cubenest org. Downstream registries (PulseMCP,
       # Smithery, mcp.so) do NOT auto-ingest from here — they are submitted
       # separately (see docs/peek/distribution/README.md).
@@ -83,10 +83,10 @@ jobs:
           # validates mcpName on the package at exactly this version).
           for i in $(seq 1 10); do
             got="$(npm view "@peekdev/mcp@$version" mcpName 2>/dev/null || true)"
-            [ "$got" = "io.github.cubenest/peek-mcp" ] && break
+            [ "$got" = "io.github.Cubenest/peek-mcp" ] && break
             echo "waiting for npm propagation ($i/10)…"; sleep 6
           done
-          if [ "$got" != "io.github.cubenest/peek-mcp" ]; then
+          if [ "$got" != "io.github.Cubenest/peek-mcp" ]; then
             echo "::error::npm did not expose mcpName for @peekdev/mcp@$version after 10 attempts (got: $got)"
             exit 1
           fi
