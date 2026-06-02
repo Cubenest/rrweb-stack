@@ -76,24 +76,39 @@ export async function runStart(input: StartInput): Promise<StartedSession> {
   let cdp: CDPSession | undefined;
   if (options.captureNetwork && browserName === 'chromium') {
     cdp = await context.newCDPSession(page);
-    await attachNetworkCapture(createPlaywrightExecutor(page, cdp));
   }
 
-  const executor = createPlaywrightExecutor(page, cdp);
-  const recorder = createRecorder({
-    executor,
-    rrwebBundle,
-    mode: options.mode,
-    // MVP: in-page network plugin off; the CDP path above is the network
-    // channel. The recorder still captures rrweb + console on all browsers.
-  });
-  await recorder.start();
+  // Once the CDP session is open it is ours to close. If anything after this
+  // point throws (attachNetworkCapture / recorder.start()), runStart never
+  // returns — so runFinalize, the only other detach site, never runs and the
+  // session would leak for the worker's lifetime. Detach here before rethrowing.
+  try {
+    if (cdp) {
+      await attachNetworkCapture(createPlaywrightExecutor(page, cdp));
+    }
+    const executor = createPlaywrightExecutor(page, cdp);
+    const recorder = createRecorder({
+      executor,
+      rrwebBundle,
+      mode: options.mode,
+      // MVP: in-page network plugin off; the CDP path above is the network
+      // channel. The recorder still captures rrweb + console on all browsers.
+    });
+    await recorder.start();
 
-  const session: StartedSession = { recorder };
-  if (cdp) session.cdp = cdp;
-  if (browserName !== undefined) session.browserName = browserName;
-  if (browserVersion !== undefined) session.browserVersion = browserVersion;
-  return session;
+    const session: StartedSession = { recorder };
+    if (cdp) session.cdp = cdp;
+    if (browserName !== undefined) session.browserName = browserName;
+    if (browserVersion !== undefined) session.browserVersion = browserVersion;
+    return session;
+  } catch (err) {
+    if (cdp) {
+      await cdp.detach().catch(() => {
+        /* page/context may already be closed */
+      });
+    }
+    throw err;
+  }
 }
 
 /** Compose the report metadata from Playwright's testInfo + resolved browser info. */

@@ -33,11 +33,29 @@ interface FakePage {
   _lastCdp: () => FakeCdp | undefined;
 }
 
-function fakePage(events: unknown[], browserName = 'chromium'): FakePage {
+interface FakePageOptions {
+  browserName?: string;
+  /** Reject the CDP `Network.enable` send so attachNetworkCapture throws after CDP opened. */
+  cdpEnableThrows?: boolean;
+  /** Reject the bundle-injection evaluate so recorder.start() throws after CDP opened. */
+  startThrows?: boolean;
+}
+
+function fakePage(events: unknown[], opts: FakePageOptions = {}): FakePage {
+  const { browserName = 'chromium', cdpEnableThrows = false, startThrows = false } = opts;
   const addInitScript = vi.fn(async () => {});
   let lastCdp: FakeCdp | undefined;
   const newCDPSession = vi.fn(async () => {
-    lastCdp = { send: vi.fn(async () => ({})), on: vi.fn(), detach: vi.fn(async () => {}) };
+    lastCdp = {
+      send: vi.fn(async (method: string) => {
+        if (cdpEnableThrows && method === 'Network.enable') {
+          throw new Error('CDP Network.enable failed');
+        }
+        return {};
+      }),
+      on: vi.fn(),
+      detach: vi.fn(async () => {}),
+    };
     return lastCdp;
   });
   // A STABLE context object so call assertions survive multiple context() reads.
@@ -50,6 +68,16 @@ function fakePage(events: unknown[], browserName = 'chromium'): FakePage {
   const evaluate = vi.fn(async (_pageFn: unknown, arg: unknown) => {
     const body =
       typeof (arg as { body?: unknown })?.body === 'string' ? (arg as { body: string }).body : '';
+    // The recorder's start() first injects the bundle via execute(injectBundleScript,
+    // rrwebBundle): that fn body evals the bundle and contains neither marker. Make
+    // it throw to simulate recorder.start() failing AFTER the CDP session opened.
+    if (
+      startThrows &&
+      !body.includes('__tracelane__events') &&
+      !body.includes('__tracelane__inited')
+    ) {
+      throw new Error('recorder.start() failed (bundle injection)');
+    }
     // Drain: reads the in-page events buffer but is NOT the init routine.
     if (body.includes('__tracelane__events') && !body.includes('__tracelane__inited')) {
       if (drained) return [];
@@ -152,7 +180,7 @@ describe('runStart + runFinalize (fixture split)', () => {
 
 describe('CDP network capture (Chromium-only, opt-in)', () => {
   it('opens a CDP session + enables Network when captureNetwork && chromium', async () => {
-    const page = fakePage([{ type: 4, data: {}, timestamp: 1 }], 'chromium');
+    const page = fakePage([{ type: 4, data: {}, timestamp: 1 }], { browserName: 'chromium' });
     const options = {
       mode: 'failed' as const,
       outDir: mkdtempSync(join(tmpdir(), 'tl-pw-')),
@@ -169,7 +197,7 @@ describe('CDP network capture (Chromium-only, opt-in)', () => {
   });
 
   it('detaches the CDP session at finalize', async () => {
-    const page = fakePage([{ type: 4, data: {}, timestamp: 1 }], 'chromium');
+    const page = fakePage([{ type: 4, data: {}, timestamp: 1 }], { browserName: 'chromium' });
     const options = {
       mode: 'failed' as const,
       outDir: mkdtempSync(join(tmpdir(), 'tl-pw-')),
@@ -186,7 +214,7 @@ describe('CDP network capture (Chromium-only, opt-in)', () => {
   });
 
   it('does NOT open a CDP session on firefox', async () => {
-    const page = fakePage([{ type: 4, data: {}, timestamp: 1 }], 'firefox');
+    const page = fakePage([{ type: 4, data: {}, timestamp: 1 }], { browserName: 'firefox' });
     const options = {
       mode: 'failed' as const,
       outDir: mkdtempSync(join(tmpdir(), 'tl-pw-')),
@@ -197,7 +225,7 @@ describe('CDP network capture (Chromium-only, opt-in)', () => {
   });
 
   it('does NOT open a CDP session on webkit', async () => {
-    const page = fakePage([{ type: 4, data: {}, timestamp: 1 }], 'webkit');
+    const page = fakePage([{ type: 4, data: {}, timestamp: 1 }], { browserName: 'webkit' });
     const options = {
       mode: 'failed' as const,
       outDir: mkdtempSync(join(tmpdir(), 'tl-pw-')),
@@ -208,7 +236,7 @@ describe('CDP network capture (Chromium-only, opt-in)', () => {
   });
 
   it('does NOT open a CDP session when captureNetwork is false (even on chromium)', async () => {
-    const page = fakePage([{ type: 4, data: {}, timestamp: 1 }], 'chromium');
+    const page = fakePage([{ type: 4, data: {}, timestamp: 1 }], { browserName: 'chromium' });
     const options = {
       mode: 'failed' as const,
       outDir: mkdtempSync(join(tmpdir(), 'tl-pw-')),
@@ -216,5 +244,41 @@ describe('CDP network capture (Chromium-only, opt-in)', () => {
     };
     await runStart({ page: page as never, options, rrwebBundle: RRWEB_STUB });
     expect(page._ctx.newCDPSession).not.toHaveBeenCalled();
+  });
+
+  it('detaches the CDP session and rethrows when attachNetworkCapture fails after CDP opened', async () => {
+    const page = fakePage([{ type: 4, data: {}, timestamp: 1 }], {
+      browserName: 'chromium',
+      cdpEnableThrows: true,
+    });
+    const options = {
+      mode: 'failed' as const,
+      outDir: mkdtempSync(join(tmpdir(), 'tl-pw-')),
+      captureNetwork: true,
+    };
+    await expect(
+      runStart({ page: page as never, options, rrwebBundle: RRWEB_STUB }),
+    ).rejects.toThrow(/Network\.enable/);
+    // The CDP session was opened, so it MUST be detached before the rethrow —
+    // otherwise it leaks for the worker's lifetime (runFinalize never runs).
+    expect(page._ctx.newCDPSession).toHaveBeenCalledTimes(1);
+    expect(page._lastCdp()?.detach).toHaveBeenCalledTimes(1);
+  });
+
+  it('detaches the CDP session and rethrows when recorder.start() fails after CDP opened', async () => {
+    const page = fakePage([{ type: 4, data: {}, timestamp: 1 }], {
+      browserName: 'chromium',
+      startThrows: true,
+    });
+    const options = {
+      mode: 'failed' as const,
+      outDir: mkdtempSync(join(tmpdir(), 'tl-pw-')),
+      captureNetwork: true,
+    };
+    await expect(
+      runStart({ page: page as never, options, rrwebBundle: RRWEB_STUB }),
+    ).rejects.toThrow(/recorder\.start/);
+    expect(page._ctx.newCDPSession).toHaveBeenCalledTimes(1);
+    expect(page._lastCdp()?.detach).toHaveBeenCalledTimes(1);
   });
 });
