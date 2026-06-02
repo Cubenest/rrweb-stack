@@ -141,4 +141,94 @@ describe('LocalSocketHostBridge', () => {
     expect(res.result).toBe('error');
     expect(res.error).toContain('ECONNREFUSED');
   });
+
+  // Item F: match the server side's setEncoding('utf8') so a multibyte UTF-8
+  // char split across two socket reads can't corrupt a frame; cap the line
+  // buffer so a malformed peer can't make the bridge buffer unbounded.
+  it('calls setEncoding("utf8") on the socket when available', async () => {
+    const toServer = new PassThrough();
+    const toClient = new PassThrough();
+    let encoding: string | undefined;
+    const bridge = new LocalSocketHostBridge({
+      connect: () =>
+        ({
+          ...fakeDuplex(toServer, toClient),
+          setEncoding: (enc: string) => {
+            encoding = enc;
+          },
+        }) as never,
+    });
+    // Trigger #ensure() by issuing a request (server never replies; we only
+    // care that the socket was set up). Don't await — just let it wire up.
+    void bridge.request({
+      tool: 'execute_action',
+      sessionId: 's',
+      action: { type: 'click', selector: '#x', button: 'left' } as never,
+      client: 'test',
+      timeoutMs: 20,
+    });
+    await new Promise((r) => setTimeout(r, 5));
+    expect(encoding).toBe('utf8');
+  });
+
+  it('drops the connection (clears the buffer) when a single line exceeds the cap', async () => {
+    // A fresh duplex per connect() — mirrors production, where #reset() is
+    // followed by a brand-new net.connect to a fresh socket.
+    const conns: Array<{ toServer: PassThrough; toClient: PassThrough }> = [];
+    const bridge = new LocalSocketHostBridge({
+      connect: () => {
+        const toServer = new PassThrough();
+        const toClient = new PassThrough();
+        conns.push({ toServer, toClient });
+        return fakeDuplex(toServer, toClient) as never;
+      },
+      // Small enough that the 2000-byte unframed blob blows the cap, but larger
+      // than a real ~110-byte framed act.response so a legit reply still parses.
+      maxLineBytes: 300,
+    });
+
+    // First request: server replies with a HUGE unframed blob (no newline) that
+    // blows past the cap → the bridge must reset rather than buffer unbounded.
+    let firstId: string | undefined;
+    const p1 = bridge.request({
+      tool: 'execute_action',
+      sessionId: 's',
+      action: { type: 'click', selector: '#x', button: 'left' } as never,
+      client: 'test',
+      timeoutMs: 80,
+    });
+    // The first connection is now open; wire its server side.
+    expect(conns).toHaveLength(1);
+    conns[0]?.toServer.once('data', (buf: Buffer) => {
+      firstId = JSON.parse(String(buf).trim()).id;
+      conns[0]?.toClient.write('x'.repeat(2000)); // 2000 bytes, no newline → over the 300 cap
+    });
+    const r1 = await p1;
+    expect(r1.result).toBe('error'); // over-cap blob discarded → fail-closed
+    expect(firstId).toBeTypeOf('string');
+
+    // The bridge reset its cached socket; a subsequent request reconnects on a
+    // FRESH connection whose well-framed response parses correctly (proving the
+    // 500 stale bytes weren't left in the buffer).
+    const p2 = bridge.request({
+      tool: 'execute_action',
+      sessionId: 's',
+      action: { type: 'click', selector: '#y', button: 'left' } as never,
+      client: 'test',
+      timeoutMs: 200,
+    });
+    expect(conns).toHaveLength(2);
+    conns[1]?.toServer.once('data', (buf: Buffer) => {
+      const id = JSON.parse(String(buf).trim()).id;
+      conns[1]?.toClient.write(
+        `${JSON.stringify({
+          kind: 'act.response',
+          id,
+          payload: { verdict: 'allow', result: 'ok', approver: 'user' },
+        })}\n`,
+      );
+    });
+    const r2 = await p2;
+    expect(r2.result).toBe('ok');
+  });
 });

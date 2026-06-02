@@ -149,7 +149,17 @@ interface SocketLike {
   write(data: string): void;
   on(ev: string, h: (...a: unknown[]) => void): void;
   end(): void;
+  /** Optional: decode inbound bytes as UTF-8 (real net.Socket has it). */
+  setEncoding?(encoding: string): void;
 }
+
+/**
+ * Cap for a single newline-delimited frame on the bridge's read side. A
+ * well-behaved native host never sends a frame near this; the cap is a
+ * local-DoS guard so a malformed / hostile peer can't make the bridge buffer
+ * unbounded. 1 MiB mirrors the native-messaging host→ext frame cap.
+ */
+const DEFAULT_MAX_LINE_BYTES = 1024 * 1024;
 
 export interface LocalSocketHostBridgeDeps {
   /** Override the socket / named-pipe path (tests + alternate PEEK_HOME). */
@@ -158,6 +168,8 @@ export interface LocalSocketHostBridgeDeps {
   connect?: (path: string) => SocketLike;
   /** Injectable correlation registry (tests). */
   registry?: RequestRegistry;
+  /** Max bytes for a single inbound line before the connection is dropped. */
+  maxLineBytes?: number;
 }
 
 /**
@@ -179,6 +191,7 @@ export class LocalSocketHostBridge implements HostBridge {
   readonly #registry: RequestRegistry;
   readonly #path: string;
   readonly #connect: (path: string) => SocketLike;
+  readonly #maxLineBytes: number;
   #sock: SocketLike | undefined;
   #buf = '';
 
@@ -186,20 +199,40 @@ export class LocalSocketHostBridge implements HostBridge {
     this.#registry = deps.registry ?? new RequestRegistry();
     this.#path = deps.socketPath ?? hostSocketPath();
     this.#connect = deps.connect ?? ((p) => net.connect(p) as unknown as SocketLike);
+    this.#maxLineBytes = deps.maxLineBytes ?? DEFAULT_MAX_LINE_BYTES;
+  }
+
+  /** Drop the cached socket + clear the read buffer (reconnect on next request). */
+  #reset(): void {
+    this.#sock = undefined;
+    this.#buf = '';
   }
 
   /** Open (once) + wire the framing reader. Throws if the connect throws. */
   #ensure(): SocketLike {
     if (this.#sock) return this.#sock;
     const s = this.#connect(this.#path);
+    // Item F: decode inbound bytes as UTF-8 (matches the server side) so a
+    // multibyte char split across two reads can't corrupt a frame. Real
+    // net.Socket has setEncoding; injected fakes may not.
+    s.setEncoding?.('utf8');
     s.on('data', (chunk: unknown) => {
       this.#buf += String(chunk);
+      // Item F: local-DoS guard. If the buffer grows past the cap WITHOUT a
+      // frame delimiter, a hostile/malformed peer is trying to make us buffer
+      // unbounded — drop the connection + clear the buffer (in-flight requests
+      // time out via the registry → fail-closed).
+      if (this.#buf.length > this.#maxLineBytes && this.#buf.indexOf('\n') < 0) {
+        this.#reset();
+        return;
+      }
       let nl: number;
       // biome-ignore lint/suspicious/noAssignInExpressions: idiomatic frame-drain loop
       while ((nl = this.#buf.indexOf('\n')) >= 0) {
         const line = this.#buf.slice(0, nl);
         this.#buf = this.#buf.slice(nl + 1);
         if (!line.trim()) continue;
+        if (line.length > this.#maxLineBytes) continue; // oversized frame — drop it
         try {
           const m = JSON.parse(line) as { kind?: string; id?: string; payload?: unknown };
           if (m.kind === 'act.response' && typeof m.id === 'string') {
@@ -213,10 +246,10 @@ export class LocalSocketHostBridge implements HostBridge {
     s.on('error', () => {
       // Drop the cached socket so the next request reconnects. Any in-flight
       // requests will time out via the RequestRegistry → structured error.
-      this.#sock = undefined;
+      this.#reset();
     });
     s.on('close', () => {
-      this.#sock = undefined;
+      this.#reset();
     });
     this.#sock = s;
     return s;
