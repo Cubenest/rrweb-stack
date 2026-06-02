@@ -7,6 +7,10 @@ export type { BrowserExecutor } from './browser-executor.js';
 // the WDIO and Playwright adapters via the BrowserExecutor surface.
 export { attachNetworkCapture } from './network-capture.js';
 
+// In-page rrweb bundle loader — reads the adapter's built dist/rrweb-bundle.js
+// off disk (pass the adapter's import.meta.url). Shared across adapters.
+export { loadRrwebBundle } from './load-rrweb-bundle.js';
+
 // Recorder controller — in-page buffer install + Node-polled drain (ADR-0006).
 export { createRecorder, DEFAULT_COOLDOWN_MS, DEFAULT_DRAIN_INTERVAL_MS } from './recorder.js';
 export type { FinalizeResult, Recorder, RecorderOptions, TestOutcome } from './recorder.js';

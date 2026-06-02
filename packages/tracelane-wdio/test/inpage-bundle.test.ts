@@ -1,7 +1,13 @@
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
+import { loadRrwebBundle } from '@tracelane/core';
 import { describe, expect, it } from 'vitest';
-import { loadRrwebBundle } from '../src/inpage-bundle';
+
+// The loader itself now lives in @tracelane/core (shared across adapters); this
+// suite keeps the WDIO-specific contract: the package's OWN built
+// dist/rrweb-bundle.js, when eval'd in a page, defines window.rrweb with the
+// members page-script.ts reads. We pass this test's import.meta.url so the
+// loader resolves the wdio dist bundle (../dist/rrweb-bundle.js).
 
 // The in-page bundle is the contract @tracelane/core's recorder relies on: the
 // source string, when `window.eval`'d in the page, must define `window.rrweb`
@@ -17,13 +23,13 @@ const built = existsSync(bundlePath);
 
 describe.skipIf(!built)('in-page rrweb bundle', () => {
   it('loadRrwebBundle returns a non-trivial source string', () => {
-    const src = loadRrwebBundle();
+    const src = loadRrwebBundle(import.meta.url);
     expect(typeof src).toBe('string');
     expect(src.length).toBeGreaterThan(10_000);
   });
 
   it('defines window.rrweb.record + getRecordConsolePlugin when eval’d in a page', () => {
-    const src = loadRrwebBundle();
+    const src = loadRrwebBundle(import.meta.url);
     // jsdom provides a real `window`; eval the IIFE bundle against it.
     (window as unknown as { eval: (code: string) => void }).eval(src);
     const rrweb = (window as unknown as { rrweb?: Record<string, unknown> }).rrweb;
