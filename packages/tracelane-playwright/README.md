@@ -54,7 +54,7 @@ Run your suite. On a failing test you get a single `.html` file at `./tracelane-
 - **The fixture** owns the recording. It is the only place with a live `page` + `testInfo`, so it injects the rrweb bundle (via `context.addInitScript`, so fresh pages and post-navigation documents are covered), starts the recorder before your test body, and — after it — builds + writes the report. It reuses `@tracelane/core`'s recorder and `@tracelane/report`'s HTML builder.
 - **The reporter** owns config + the end-of-run summary. By design it never touches `page`.
 - **Failed-network capture** uses CDP on Chromium (4xx/5xx responses and no-response failures are surfaced into the report's network panel). On Firefox/WebKit it degrades silently to rrweb + console.
-- **Parallel-safe**: report filenames are namespaced by the Playwright **project name**, so multiple workers/projects never collide.
+- **Parallel-safe**: report filenames are namespaced by the Playwright **project name** and carry a millisecond timestamp. Different projects are isolated by name; parallel workers *within one project* share the project-name segment and rely on the timestamp (plus spec + title) to stay distinct.
 - **Coexists** with Playwright's own `trace` — keep `trace: 'on-first-retry'` if you like; tracelane writes a separate, self-contained artifact.
 
 ## Options

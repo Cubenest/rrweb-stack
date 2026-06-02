@@ -61,15 +61,36 @@ describe('auto-fixture registration', () => {
     expect(typeof pwExpect).toBe('function');
   });
 
-  it('registers a `tracelane` fixture as auto', () => {
-    // Playwright stores fixture descriptors on the test type; the tuple's second
-    // element carries { auto: true }.
-    const fixtures = (test as unknown as { _pool?: unknown })._pool;
-    // _pool is internal/may be undefined depending on version; the public proof
-    // is that tracelaneFixture exists and is wired (asserted below). This guard
-    // just ensures `test` is a real Playwright test object.
-    expect(test).toBeDefined();
-    void fixtures;
+  it('registers a `tracelane` fixture with { auto: true }', () => {
+    // COUPLES TO A PLAYWRIGHT INTERNAL: a `base.extend(...)` test stores its
+    // fixture registry on a symbol-keyed property `Symbol(testType)`. Each
+    // frame in `impl.fixtures` carries a `fixtures` map whose values are the
+    // raw `base.extend` tuples `[fn, options]`. We reach in to assert the
+    // `tracelane` frame's options are exactly { auto, scope, box } as declared
+    // in fixture.ts. If a future Playwright reshapes this, this single
+    // assertion fails loudly (the e2e smoke still proves auto-registration
+    // behaviorally regardless).
+    const testTypeSym = Reflect.ownKeys(test).find(
+      (k) => typeof k === 'symbol' && k.toString() === 'Symbol(testType)',
+    );
+    expect(testTypeSym).toBeDefined();
+    const impl = (
+      test as unknown as Record<
+        symbol,
+        { fixtures?: Array<{ fixtures?: Record<string, unknown> }> }
+      >
+    )[testTypeSym as symbol];
+    const entries = (impl.fixtures ?? []).flatMap((frame) => Object.entries(frame.fixtures ?? {}));
+    const tracelaneEntry = entries.find(([name]) => name === 'tracelane');
+    expect(tracelaneEntry).toBeDefined();
+    // The tuple's second element is the fixture options.
+    const tuple = tracelaneEntry?.[1] as [
+      unknown,
+      { auto?: boolean; scope?: string; box?: boolean },
+    ];
+    expect(tuple[1].auto).toBe(true);
+    expect(tuple[1].scope).toBe('test');
+    expect(tuple[1].box).toBe(true);
   });
 });
 
