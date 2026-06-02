@@ -28,6 +28,7 @@ import type {
   RelayAck,
   ShowConfirmMessage,
 } from '../src/messaging/protocol';
+import { isFromSidePanel } from '../src/messaging/protocol';
 import {
   type ActionHandlerDeps,
   InMemoryConfirmTokenStore,
@@ -591,9 +592,21 @@ export default defineBackground({
         }
         // Level-3 confirm verdict from the side panel (Phase 3e). Resolve the
         // awaiting promptUserConfirmation; the gate then dispatches or denies.
+        //
+        // Item C: a verdict must come from the extension's OWN side panel, not
+        // any other extension-origin context (options/popup/devtools), which
+        // could otherwise approve a pending action — and silently escalate via
+        // alwaysForSite. The sender.id check above isn't sufficient; require the
+        // sidepanel page URL too. A rejected verdict is dropped (the SW's
+        // confirm timeout still fail-closes the pending action).
         if (message?.type === 'confirmVerdict') {
-          resolvePendingConfirm(message);
-          sendResponse(ackOk());
+          if (isFromSidePanel(sender, chrome.runtime.getURL('sidepanel.html'))) {
+            resolvePendingConfirm(message);
+            sendResponse(ackOk());
+          } else {
+            console.warn('[peek] confirmVerdict from a non-sidepanel sender rejected:', sender.url);
+            sendResponse({ ok: false, reason: 'not-from-sidepanel' });
+          }
           return false;
         }
         switch (message?.type) {

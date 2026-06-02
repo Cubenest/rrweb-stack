@@ -182,6 +182,34 @@ export const EMPTY_RECORDER_STATS: RecorderStats = {
   networkRequests: 0,
 };
 
+/**
+ * Item C: verify a `confirmVerdict` actually came from the extension's OWN side
+ * panel. The SW already gates on `sender.id === chrome.runtime.id`, but that
+ * admits ANY extension-origin context (options page, popup, devtools panel),
+ * so correlating a verdict only by `requestId` lets a non-banner context
+ * approve a pending action (and silently escalate via `alwaysForSite`). We
+ * additionally require `sender.url` to be the side-panel page.
+ *
+ * The match is on a URL path boundary: the sidepanel URL itself, or the
+ * sidepanel URL followed by `?`/`#` (query/hash). A bare `startsWith` would let
+ * `sidepanel.html.evil.html` through, so we check the next char is a delimiter.
+ *
+ * Pure (sender shape + the expected URL injected) so it unit-tests without a
+ * real browser. `expectedUrl` is `chrome.runtime.getURL('sidepanel.html')` at
+ * the call site.
+ */
+export function isFromSidePanel(
+  sender: { url?: string | undefined },
+  expectedUrl: string,
+): boolean {
+  const url = sender.url;
+  if (typeof url !== 'string' || url.length === 0) return false;
+  if (url === expectedUrl) return true;
+  if (!url.startsWith(expectedUrl)) return false;
+  const next = url.charAt(expectedUrl.length);
+  return next === '?' || next === '#';
+}
+
 /** Type guard: is this inbound runtime message a {@link ShowConfirmMessage}? */
 export function isShowConfirm(message: unknown): message is ShowConfirmMessage {
   return (

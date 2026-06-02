@@ -1,5 +1,10 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { ServiceWorkerUnavailableError, isNoReceiverError, sendCmd } from '../messaging/protocol';
+import {
+  ServiceWorkerUnavailableError,
+  isFromSidePanel,
+  isNoReceiverError,
+  sendCmd,
+} from '../messaging/protocol';
 
 // Carry-in [10]: sendCmd must turn the MV3 "SW asleep / no receiver" rejection
 // into a typed error callers can catch, not an opaque unhandled rejection.
@@ -67,5 +72,43 @@ describe('sendCmd', () => {
     const errResult = await sendCmd({ type: 'activateRecorderForTab', tabId: 42 });
     expect(errResult.ok).toBe(false);
     expect(errResult.reason).toContain('No window');
+  });
+});
+
+// Item C: a confirmVerdict must only be honored when it originates from the
+// extension's OWN side panel — not from any other extension-origin context
+// (an options page, a popup, a devtools panel, a content script the AI could
+// influence). Correlating only by requestId let any such context approve a
+// pending action (and silently escalate via alwaysForSite).
+describe('isFromSidePanel', () => {
+  const SIDEPANEL_URL = 'chrome-extension://abcd/sidepanel.html';
+
+  it('accepts a sender whose url is exactly the sidepanel page', () => {
+    expect(isFromSidePanel({ url: SIDEPANEL_URL }, SIDEPANEL_URL)).toBe(true);
+  });
+
+  it('accepts a sidepanel url carrying a query/hash suffix', () => {
+    expect(isFromSidePanel({ url: `${SIDEPANEL_URL}?x=1#frag` }, SIDEPANEL_URL)).toBe(true);
+  });
+
+  it('rejects a different extension page (options/popup/devtools)', () => {
+    expect(isFromSidePanel({ url: 'chrome-extension://abcd/options.html' }, SIDEPANEL_URL)).toBe(
+      false,
+    );
+    expect(isFromSidePanel({ url: 'chrome-extension://abcd/popup.html' }, SIDEPANEL_URL)).toBe(
+      false,
+    );
+  });
+
+  it('rejects a sender with no url (e.g. a content script / SW)', () => {
+    expect(isFromSidePanel({}, SIDEPANEL_URL)).toBe(false);
+    expect(isFromSidePanel({ url: undefined }, SIDEPANEL_URL)).toBe(false);
+  });
+
+  it('rejects a look-alike prefix that is not a path boundary', () => {
+    // A page named sidepanel.html.evil.html must not pass the prefix check.
+    expect(
+      isFromSidePanel({ url: 'chrome-extension://abcd/sidepanel.html.evil.html' }, SIDEPANEL_URL),
+    ).toBe(false);
   });
 });
