@@ -1,5 +1,11 @@
 # @tracelane/core
 
+## 0.1.0-alpha.11
+
+### Minor Changes
+
+- 14aea8d: Hoist framework-agnostic adapter helpers (network-capture, report-writer, rrweb-bundle loader) into @tracelane/core and @tracelane/report so the WDIO and forthcoming Playwright adapters share one implementation. No behavior change for @tracelane/wdio.
+
 ## 0.1.0-alpha.10
 
 ### Patch Changes
