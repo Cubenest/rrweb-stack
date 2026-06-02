@@ -64,14 +64,18 @@ jobs:
       # Smithery, mcp.so) do NOT auto-ingest from here — they are submitted
       # separately (see docs/peek/distribution/README.md).
       - name: Publish peek to the official MCP Registry
-        if: steps.changesets.outputs.published == 'true' && contains(steps.changesets.outputs.publishedPackages, '"@peekdev/mcp"')
-        env:
-          PUBLISHED_PACKAGES: ${{ steps.changesets.outputs.publishedPackages }}
+        # Decoupled from publishedPackages: when changesets exits non-zero on a
+        # partial failure (e.g. new package first OIDC publish needs manual npm
+        # org registration), publishedPackages is never set by the action, so
+        # contains(...) would silently be false. Instead, derive the version
+        # from package.json directly; the npm mcpName check below is the real
+        # gate — if @peekdev/mcp wasn't published this run, it fails fast.
+        if: always() && (steps.changesets.outputs.published == 'true' || steps.changesets.conclusion == 'failure')
         run: |
           set -euo pipefail
-          version="$(printf '%s' "$PUBLISHED_PACKAGES" | jq -r '.[] | select(.name=="@peekdev/mcp") | .version')"
+          version="$(node -p "require('./packages/peek-mcp/package.json').version")"
           if [ -z "$version" ] || [ "$version" = "null" ]; then
-            echo "::notice::@peekdev/mcp not in publishedPackages; skipping registry publish"
+            echo "::notice::could not read @peekdev/mcp version from package.json; skipping"
             exit 0
           fi
           echo "Publishing peek-mcp $version to registry.modelcontextprotocol.io"
