@@ -60,6 +60,12 @@ export interface TabRef {
 export function actionFingerprint(action: Action): string {
   switch (action.type) {
     case 'click':
+      // `button` is intentionally omitted: the MAIN-world dispatcher always
+      // performs a plain left-click (`el.click()`) and ignores `action.button`,
+      // so it never changes WHAT the action does. IF `button` is ever wired to
+      // a real MouseEvent (e.g. a right-click context-menu action), it MUST be
+      // added here — otherwise a left-click token could be spent on a
+      // right-click of the same selector.
       return `click|${action.selector}|nth=${action.nth ?? '*'}`;
     case 'type':
       // Exclude `text` (secret) + `delay` (cosmetic) — bind to the target only.

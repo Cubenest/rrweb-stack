@@ -337,6 +337,75 @@ describe('handleActionRequest — TOCTOU re-validation at dispatch time', () => 
     expect(String(out.error)).toMatch(/origin|changed|navigat/i);
   });
 
+  it('EXPLOIT GUARD: origin-equality branch alone denies when the attacker origin is ALSO enabled at L3', async () => {
+    // Isolation test for the `currentOrigin !== guarded.origin` branch. The
+    // attacker origin is ALSO enabled at Level 3, so the isOriginEnabled guard
+    // and the level-floor guard BOTH pass on the dispatch-time re-check — only
+    // the origin-equality comparison can deny. (The sibling test above lets
+    // isOriginEnabled catch the attacker origin, so it never reaches this
+    // branch; this one does.)
+    await enableOriginAtLevel('https://trusted.example', 3);
+    await enableOriginAtLevel('https://attacker.example', 3);
+    let call = 0;
+    const ctx = makeDeps(
+      {
+        getTabFor: async (): Promise<TabRef> => {
+          call += 1;
+          // Gate time: trusted.example. Dispatch-time re-validation:
+          // attacker.example — which is fully enabled at L3, so the only thing
+          // standing between the AI and a cross-origin dispatch is the
+          // origin-equality check.
+          return call === 1
+            ? { id: 42, url: 'https://trusted.example/page', active: true }
+            : { id: 42, url: 'https://attacker.example/evil', active: true };
+        },
+      },
+      { promptResult: { verdict: 'allow', approvalMs: 5 } },
+    );
+    const out = await handleActionRequest(
+      makeRequest({ action: { type: 'click', selector: '#go', button: 'left' } }),
+      ctx.deps,
+    );
+    expect(out.verdict).toBe('deny');
+    expect(out.result).not.toBe('ok');
+    expect(ctx.dispatchCalls).toBe(0); // never injected into attacker.example
+    expect(String(out.error)).toMatch(/origin changed/i);
+  });
+
+  it('EXPLOIT GUARD: dispatch-time level-drop branch denies (origin unchanged + still enabled)', async () => {
+    // Isolation test for the `currentLevel < MIN_ACT_LEVEL` re-check. The origin
+    // is unchanged and stays enabled through the wait, so neither the
+    // origin-equality nor the isOriginEnabled guard fires — only the level-floor
+    // re-check can deny. The user downgrades trusted.example from L3 → L1 while
+    // the banner is up (then clicks Allow).
+    await enableOriginAtLevel('https://trusted.example', 3);
+    const ctx = makeDeps(
+      {
+        getTabFor: async (): Promise<TabRef> => ({
+          id: 42,
+          url: 'https://trusted.example/page',
+          active: true,
+        }),
+      },
+      { promptResult: { verdict: 'allow', approvalMs: 5 } },
+    );
+    const realPrompt = ctx.deps.promptUserConfirmation;
+    ctx.deps.promptUserConfirmation = async (input) => {
+      // Drop the level mid-confirm — origin stays enabled, just no longer
+      // act-authorized (L1 < MIN_ACT_LEVEL=3).
+      const { setPermissionLevel } = await import('../permissions/store');
+      await setPermissionLevel('https://trusted.example', 1);
+      return realPrompt(input);
+    };
+    const out = await handleActionRequest(
+      makeRequest({ action: { type: 'click', selector: '#go', button: 'left' } }),
+      ctx.deps,
+    );
+    expect(out.verdict).toBe('deny');
+    expect(ctx.dispatchCalls).toBe(0);
+    expect(String(out.error)).toMatch(/level dropped/i);
+  });
+
   it('EXPLOIT GUARD: origin disabled during the confirm wait → denied, no dispatch', async () => {
     await enableOriginAtLevel('https://trusted.example', 3);
     const ctx = makeDeps(
