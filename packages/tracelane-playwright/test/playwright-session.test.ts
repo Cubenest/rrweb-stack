@@ -13,27 +13,39 @@ import { runFinalize, runStart, runTracelaneSession } from '../src/playwright-se
 // addInitScript is recorded; the browser is chromium-shaped but with
 // captureNetwork off (CDP is exercised in Task 9).
 
+interface FakeCdp {
+  send: ReturnType<typeof vi.fn>;
+  on: ReturnType<typeof vi.fn>;
+  detach: ReturnType<typeof vi.fn>;
+}
+
+interface FakeContext {
+  addInitScript: ReturnType<typeof vi.fn>;
+  browser: () => { browserType: () => { name: () => string } };
+  newCDPSession: ReturnType<typeof vi.fn>;
+}
+
 interface FakePage {
   evaluate: ReturnType<typeof vi.fn>;
-  context: () => {
-    addInitScript: ReturnType<typeof vi.fn>;
-    browser: () => { browserType: () => { name: () => string } };
-    newCDPSession: ReturnType<typeof vi.fn>;
-  };
+  context: () => FakeContext;
+  // Test-only handles (not part of the Playwright Page surface).
+  _ctx: FakeContext;
+  _lastCdp: () => FakeCdp | undefined;
 }
 
 function fakePage(events: unknown[], browserName = 'chromium'): FakePage {
   const addInitScript = vi.fn(async () => {});
-  const newCDPSession = vi.fn(async () => ({
-    send: vi.fn(async () => ({})),
-    on: vi.fn(),
-    detach: vi.fn(async () => {}),
-  }));
-  const context = () => ({
+  let lastCdp: FakeCdp | undefined;
+  const newCDPSession = vi.fn(async () => {
+    lastCdp = { send: vi.fn(async () => ({})), on: vi.fn(), detach: vi.fn(async () => {}) };
+    return lastCdp;
+  });
+  // A STABLE context object so call assertions survive multiple context() reads.
+  const ctx: FakeContext = {
     addInitScript,
     browser: () => ({ browserType: () => ({ name: () => browserName }) }),
     newCDPSession,
-  });
+  };
   let drained = false;
   const evaluate = vi.fn(async (_pageFn: unknown, arg: unknown) => {
     const body =
@@ -49,7 +61,7 @@ function fakePage(events: unknown[], browserName = 'chromium'): FakePage {
     // Bundle injection (eval) and anything else: undefined.
     return undefined;
   });
-  return { evaluate, context };
+  return { evaluate, context: () => ctx, _ctx: ctx, _lastCdp: () => lastCdp };
 }
 
 const RRWEB_STUB =
@@ -135,5 +147,74 @@ describe('runStart + runFinalize (fixture split)', () => {
       rrwebBundle: RRWEB_STUB,
     });
     expect(readdirSync(outDir).filter((f) => f.endsWith('.html')).length).toBe(1);
+  });
+});
+
+describe('CDP network capture (Chromium-only, opt-in)', () => {
+  it('opens a CDP session + enables Network when captureNetwork && chromium', async () => {
+    const page = fakePage([{ type: 4, data: {}, timestamp: 1 }], 'chromium');
+    const options = {
+      mode: 'failed' as const,
+      outDir: mkdtempSync(join(tmpdir(), 'tl-pw-')),
+      captureNetwork: true,
+    };
+    await runStart({ page: page as never, options, rrwebBundle: RRWEB_STUB });
+    expect(page._ctx.newCDPSession).toHaveBeenCalledTimes(1);
+    // attachNetworkCapture sends Network.enable through the CDP-backed executor.
+    expect(page._lastCdp()?.send).toHaveBeenCalledWith('Network.enable', undefined);
+    expect(page._lastCdp()?.on).toHaveBeenCalledWith(
+      'Network.responseReceived',
+      expect.any(Function),
+    );
+  });
+
+  it('detaches the CDP session at finalize', async () => {
+    const page = fakePage([{ type: 4, data: {}, timestamp: 1 }], 'chromium');
+    const options = {
+      mode: 'failed' as const,
+      outDir: mkdtempSync(join(tmpdir(), 'tl-pw-')),
+      captureNetwork: true,
+    };
+    const session = await runStart({ page: page as never, options, rrwebBundle: RRWEB_STUB });
+    await runFinalize(session, {
+      page: page as never,
+      testInfo: passedTestInfo() as never,
+      options,
+      rrwebBundle: RRWEB_STUB,
+    });
+    expect(page._lastCdp()?.detach).toHaveBeenCalledTimes(1);
+  });
+
+  it('does NOT open a CDP session on firefox', async () => {
+    const page = fakePage([{ type: 4, data: {}, timestamp: 1 }], 'firefox');
+    const options = {
+      mode: 'failed' as const,
+      outDir: mkdtempSync(join(tmpdir(), 'tl-pw-')),
+      captureNetwork: true,
+    };
+    await runStart({ page: page as never, options, rrwebBundle: RRWEB_STUB });
+    expect(page._ctx.newCDPSession).not.toHaveBeenCalled();
+  });
+
+  it('does NOT open a CDP session on webkit', async () => {
+    const page = fakePage([{ type: 4, data: {}, timestamp: 1 }], 'webkit');
+    const options = {
+      mode: 'failed' as const,
+      outDir: mkdtempSync(join(tmpdir(), 'tl-pw-')),
+      captureNetwork: true,
+    };
+    await runStart({ page: page as never, options, rrwebBundle: RRWEB_STUB });
+    expect(page._ctx.newCDPSession).not.toHaveBeenCalled();
+  });
+
+  it('does NOT open a CDP session when captureNetwork is false (even on chromium)', async () => {
+    const page = fakePage([{ type: 4, data: {}, timestamp: 1 }], 'chromium');
+    const options = {
+      mode: 'failed' as const,
+      outDir: mkdtempSync(join(tmpdir(), 'tl-pw-')),
+      captureNetwork: false,
+    };
+    await runStart({ page: page as never, options, rrwebBundle: RRWEB_STUB });
+    expect(page._ctx.newCDPSession).not.toHaveBeenCalled();
   });
 });
