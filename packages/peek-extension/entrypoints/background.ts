@@ -20,13 +20,31 @@ import {
   diffRemovedOrigins,
   isDeepCaptureEnabled,
 } from '../src/deep-capture';
-import type { Cmd, CmdResponse, NativeHostState, RelayAck } from '../src/messaging/protocol';
-import { InMemoryConfirmTokenStore, handleActionRequest } from '../src/permissions/action-handler';
+import type {
+  Cmd,
+  CmdResponse,
+  ConfirmVerdictMessage,
+  NativeHostState,
+  RelayAck,
+  ShowConfirmMessage,
+} from '../src/messaging/protocol';
+import {
+  type ActionHandlerDeps,
+  InMemoryConfirmTokenStore,
+  handleActionRequest,
+} from '../src/permissions/action-handler';
 import type { ActionResultMessage } from '../src/permissions/action-protocol';
 import { isActionRequest } from '../src/permissions/action-protocol';
-import { getPermissionLevel } from '../src/permissions/store';
+import {
+  dispatchAction,
+  resolveTarget as resolveTargetInPage,
+} from '../src/permissions/dispatcher';
+import { getPermissionLevel, setPermissionLevel } from '../src/permissions/store';
 import { YoloSessionStore } from '../src/permissions/yolo';
 import { injectRecorder } from '../src/recorder/inject';
+
+/** Fail-closed timeout for a pending Level-3 confirm (locked MVP decision). */
+const CONFIRM_TIMEOUT_MS = 2 * 60_000;
 
 /**
  * Background service worker (ADR-0009).
@@ -74,6 +92,25 @@ export default defineBackground({
     // Permission state (3d-3). Both in-memory + scoped to this SW instance.
     const yolo = new YoloSessionStore();
     const confirmTokens = new InMemoryConfirmTokenStore();
+
+    // Pending Level-3 confirm prompts (Phase 3e). Keyed by requestId; the
+    // side panel posts a `confirmVerdict` that resolves the awaiting promise.
+    // In-memory + scoped to this SW instance: per the locked MVP decision, SW
+    // death during a pending confirm fail-closes (the awaiting MCP tool times
+    // out → deny, audit-logged). We do NOT persist to chrome.storage.session.
+    const pendingConfirms = new Map<
+      string,
+      { resolve: (v: ConfirmVerdictMessage) => void; timer: ReturnType<typeof setTimeout> }
+    >();
+
+    /** Resolve a pending confirm by requestId (idempotent). */
+    function resolvePendingConfirm(verdict: ConfirmVerdictMessage): void {
+      const entry = pendingConfirms.get(verdict.requestId);
+      if (!entry) return;
+      pendingConfirms.delete(verdict.requestId);
+      clearTimeout(entry.timer);
+      entry.resolve(verdict);
+    }
 
     // Deep capture (3d-4, Task 3.26). The manager is lazily constructed on
     // first attach because constructing it registers an event listener on
@@ -147,30 +184,9 @@ export default defineBackground({
           },
           yolo,
           tokens: confirmTokens,
-          // The MAIN-world banner UX + selector resolution + dispatch are
-          // E2E-deferred — the brief calls them out as "the actual
-          // chrome.scripting MAIN dispatch + the React banner UX are E2E
-          // (Phase 3e)". Wire safe defaults that fail-closed so a user who
-          // gets here at Level 3 sees a structured deny (no banner yet) and
-          // the audit log still records it.
-          async promptUserConfirmation() {
-            return {
-              verdict: 'deny',
-              approvalMs: Date.now(),
-              reason: 'panel-closed',
-            };
-          },
-          async resolveTarget() {
-            // No MAIN-world resolver wired yet; an empty target means the
-            // destructive matcher won't fire. Acceptable: a Level-3 action
-            // still confirms (every action prompts); a Level-4 action will
-            // skip the override (no destructive term resolved) — when the
-            // dispatcher lands it will populate target before the gate runs.
-            return {};
-          },
-          async dispatchInMainWorld() {
-            return { ok: false, error: 'MAIN-world dispatcher not wired (Phase 3e)' };
-          },
+          promptUserConfirmation,
+          resolveTarget,
+          dispatchInMainWorld,
         })
           .then((reply) => forwardActionResult(reply))
           .catch((err) => {
@@ -197,6 +213,145 @@ export default defineBackground({
         console.warn('[peek] action.result post failed:', err);
       }
     }
+
+    /**
+     * Emit a non-terminal `action.confirm.shown` timing signal to the host so
+     * the audit log can record WHEN the user was prompted. Best-effort.
+     */
+    function postConfirmShown(requestId: string): void {
+      const port = nativePort;
+      if (!port) return;
+      try {
+        port.postMessage({ type: 'action.confirm.shown', requestId, shownAtMs: Date.now() });
+      } catch (err) {
+        console.debug('[peek] action.confirm.shown post failed:', err);
+      }
+    }
+
+    /**
+     * Resolve the destructive-matcher signals for the action's selector by
+     * running the pure {@link resolveTargetInPage} in the tab's MAIN world.
+     * Actions without a selector (back/forward/reload/navigate) resolve to an
+     * empty target — the destructive matcher won't fire. Any scripting failure
+     * resolves to an empty target (the gate still runs; Level 3 still confirms).
+     */
+    const resolveTarget: ActionHandlerDeps['resolveTarget'] = async ({ tabId, action }) => {
+      const selector = 'selector' in action ? action.selector : undefined;
+      if (typeof selector !== 'string' || selector.length === 0) return {};
+      try {
+        const [frame] = await chrome.scripting.executeScript({
+          target: { tabId },
+          world: 'MAIN',
+          func: resolveTargetInPage,
+          args: [selector],
+        });
+        return (frame?.result as Awaited<ReturnType<typeof resolveTargetInPage>>) ?? {};
+      } catch (err) {
+        console.debug('[peek] resolveTarget MAIN-world script failed:', err);
+        return {};
+      }
+    };
+
+    /**
+     * Dispatch the allowed action in the tab's MAIN world via the pure
+     * {@link dispatchAction}. Returns the first frame's serializable result; a
+     * scripting error surfaces as `{ ok:false, error }` (the action-handler
+     * folds that into a result=error reply).
+     */
+    const dispatchInMainWorld: ActionHandlerDeps['dispatchInMainWorld'] = async ({
+      tabId,
+      action,
+    }) => {
+      try {
+        const [frame] = await chrome.scripting.executeScript({
+          target: { tabId },
+          world: 'MAIN',
+          func: dispatchAction,
+          // The dispatcher accepts a permissive { type, ...rest } shape and
+          // narrows defensively per branch; cast through unknown so the
+          // protocol Action union (no index signature) is accepted.
+          args: [action as unknown as Parameters<typeof dispatchAction>[0]],
+        });
+        const result = frame?.result as
+          | { ok: true; details?: unknown }
+          | { ok: false; error: string }
+          | undefined;
+        return result ?? { ok: false, error: 'no result from MAIN-world dispatch' };
+      } catch (err) {
+        return { ok: false, error: err instanceof Error ? err.message : String(err) };
+      }
+    };
+
+    /**
+     * Surface the Level-3 confirm banner in the side panel and await the user's
+     * verdict. Opens the panel for the action's window, posts `showConfirm`,
+     * signals the host (`action.confirm.shown`), and waits for a
+     * `confirmVerdict`. Fail-closed: a timeout (no user response, or the panel
+     * never opened) resolves to deny — per the locked MVP decision, SW death
+     * during a pending confirm is also a timeout→deny (the awaiting MCP tool
+     * times out).
+     */
+    const promptUserConfirmation: ActionHandlerDeps['promptUserConfirmation'] = async (input) => {
+      const requestId = input.request.requestId;
+      const startedAtMs = Date.now();
+
+      // Best-effort open the side panel in the action's window so the user
+      // sees the banner. A failure here is non-fatal — the panel may already
+      // be open; if it isn't and can't be opened, the timeout fail-closes.
+      try {
+        const tabId = input.request.tabId;
+        const tab =
+          tabId !== undefined ? await chrome.tabs.get(tabId).catch(() => undefined) : undefined;
+        const windowId = tab?.windowId;
+        if (windowId !== undefined) await chrome.sidePanel.open({ windowId });
+      } catch (err) {
+        console.debug('[peek] sidePanel.open failed (will rely on an open panel):', err);
+      }
+
+      const showConfirm: ShowConfirmMessage = {
+        type: 'showConfirm',
+        requestId,
+        action: input.request.action,
+        origin: input.origin,
+        ...(input.destructive.matched && input.destructive.term !== undefined
+          ? { destructiveTerm: input.destructive.term }
+          : {}),
+      };
+
+      const verdict = await new Promise<ConfirmVerdictMessage>((resolve) => {
+        const timer = setTimeout(() => {
+          pendingConfirms.delete(requestId);
+          resolve({ type: 'confirmVerdict', requestId, verdict: 'deny' });
+        }, CONFIRM_TIMEOUT_MS);
+        pendingConfirms.set(requestId, { resolve, timer });
+        // Post AFTER registering the pending entry so a fast verdict can't race
+        // ahead of the map insert. Signal the host for the audit timing too.
+        postConfirmShown(requestId);
+        chrome.runtime.sendMessage(showConfirm).catch((err) => {
+          // No panel listening yet is fine — the panel registers on mount and
+          // the SW.open above tries to surface it. If it truly never opens, the
+          // timeout fail-closes.
+          console.debug('[peek] showConfirm post (panel may be opening):', err);
+        });
+      });
+
+      const approvalMs = Date.now();
+      if (verdict.verdict === 'allow') {
+        // "Always for this site" persists the origin to Level 4 so future
+        // actions on this origin auto-allow (non-destructive). Best-effort.
+        if (verdict.alwaysForSite) {
+          void setPermissionLevel(input.origin, 4).catch((err) =>
+            console.warn('[peek] alwaysForSite persist failed:', err),
+          );
+        }
+        return { verdict: 'allow', approvalMs, alwaysForSite: verdict.alwaysForSite ?? false };
+      }
+      return {
+        verdict: 'deny',
+        approvalMs,
+        reason: approvalMs - startedAtMs >= CONFIRM_TIMEOUT_MS ? 'timeout' : 'panel-closed',
+      };
+    };
 
     // YOLO grants are anchored to tabs; expire when a tab closes (in addition
     // to the 60-min internal timer). The capture-side tabs.onRemoved below
@@ -429,9 +584,16 @@ export default defineBackground({
 
     // --- Message router ----------------------------------------------------
     chrome.runtime.onMessage.addListener(
-      (message: Cmd, sender, sendResponse: (response: unknown) => void) => {
+      (message: Cmd | ConfirmVerdictMessage, sender, sendResponse: (response: unknown) => void) => {
         // Reject messages from other extensions / web pages.
         if (sender.id !== chrome.runtime.id) {
+          return false;
+        }
+        // Level-3 confirm verdict from the side panel (Phase 3e). Resolve the
+        // awaiting promptUserConfirmation; the gate then dispatches or denies.
+        if (message?.type === 'confirmVerdict') {
+          resolvePendingConfirm(message);
+          sendResponse(ackOk());
           return false;
         }
         switch (message?.type) {
