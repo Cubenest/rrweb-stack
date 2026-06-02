@@ -1,8 +1,8 @@
 import { EventType } from '@cubenest/rrweb-core';
 import type { eventWithTime } from '@cubenest/rrweb-core';
-import type { BrowserExecutor } from '@tracelane/core';
 import { extractNetwork } from '@tracelane/report';
 import { describe, expect, it, vi } from 'vitest';
+import type { BrowserExecutor } from '../src/browser-executor.js';
 import { __internal, attachNetworkCapture } from '../src/network-capture';
 
 // CDP network capture (Task 2.16 / P1 PRD §E.2 + audit A-6). Verify: Network.enable

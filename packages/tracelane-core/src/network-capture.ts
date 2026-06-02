@@ -12,9 +12,10 @@
 //      request would be invisible (audit A-6). We surface it with an explicit
 //      status `000` (= a real 0 once parsed) so it reads as a true failure.
 //
-// The rrweb console plugin (installed by @tracelane/core's recorder) then
-// captures the console line, so failures show up in the report's network panel
-// "for free" — no dedicated network transport in v1.
+// The rrweb console plugin (installed by the recorder) then captures the
+// console line, so failures show up in the report's network panel "for free" —
+// no dedicated network transport in v1. Framework-agnostic: it talks only to a
+// BrowserExecutor, so the WDIO and Playwright adapters share this one path.
 //
 // The console line is prefixed `[tracelane.net]` so @tracelane/report's network
 // panel can scrape it back out (NETWORK_CONSOLE_PREFIX in panels.ts). The line
@@ -23,7 +24,7 @@
 // see `isTrueErrorPath`), so a methodless `loadingFailed` line would be
 // silently dropped from the panel.
 
-import type { BrowserExecutor } from '@tracelane/core';
+import type { BrowserExecutor } from './browser-executor.js';
 
 /** The fields of a CDP `Network.responseReceived` event we read (P1 PRD §E.1). */
 interface ResponseReceivedEvent {

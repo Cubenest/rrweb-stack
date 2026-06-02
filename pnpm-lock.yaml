@@ -205,6 +205,9 @@ importers:
         specifier: workspace:*
         version: link:../rrweb-core
     devDependencies:
+      '@tracelane/report':
+        specifier: workspace:*
+        version: link:../tracelane-report
       jsdom:
         specifier: ^25.0.1
         version: 25.0.1

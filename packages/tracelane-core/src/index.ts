@@ -3,6 +3,10 @@
 // BrowserExecutor — the framework-agnostic driver surface adapters implement.
 export type { BrowserExecutor } from './browser-executor.js';
 
+// CDP network capture (Task 2.16 / P1 PRD §E.2) — framework-agnostic, shared by
+// the WDIO and Playwright adapters via the BrowserExecutor surface.
+export { attachNetworkCapture } from './network-capture.js';
+
 // Recorder controller — in-page buffer install + Node-polled drain (ADR-0006).
 export { createRecorder, DEFAULT_COOLDOWN_MS, DEFAULT_DRAIN_INTERVAL_MS } from './recorder.js';
 export type { FinalizeResult, Recorder, RecorderOptions, TestOutcome } from './recorder.js';

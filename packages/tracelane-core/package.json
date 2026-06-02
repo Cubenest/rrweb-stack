@@ -35,6 +35,7 @@
     "@cubenest/rrweb-core": "workspace:*"
   },
   "devDependencies": {
+    "@tracelane/report": "workspace:*",
     "jsdom": "^25.0.1"
   },
   "publishConfig": {
