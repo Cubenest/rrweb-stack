@@ -1,6 +1,6 @@
-# modelcontextprotocol — peek entry (DRAFT)
+# modelcontextprotocol — peek entry
 
-**Status: DRAFT — DO NOT SUBMIT until Phase 5 launch.**
+**Status: Ready to submit — the public launch has shipped. Follow the steps below.**
 
 > Schema audit performed 2026-05-30. The submission target documented in the
 > earlier draft of this file (a PR to a "Community Servers" list inside the
