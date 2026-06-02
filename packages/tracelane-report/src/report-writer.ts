@@ -1,20 +1,23 @@
 // Write a self-contained HTML report to disk (ADR-0005 / ADR-0006).
 //
-// Given the captured event stream + metadata, call @tracelane/report's
-// buildReport to produce the offline HTML string, then write it under `outDir`.
-// Files are namespaced by `cid` (the WDIO worker capability id) so parallel
-// workers (`maxInstances > 1`) never collide (ADR-0006 action item #6).
+// Given the captured event stream + metadata, call buildReport to produce the
+// offline HTML string, then write it under `outDir`. Files are namespaced by
+// `cid` (the adapter's worker/project id — e.g. the WDIO capability id or the
+// Playwright project name) so parallel workers never collide (ADR-0006 action
+// item #6). Lives in @tracelane/report so every adapter (WDIO, Playwright)
+// shares one write path.
 
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { eventWithTime } from '@cubenest/rrweb-core';
-import { type ReportMeta, buildReport } from '@tracelane/report';
+import { buildReport } from './build-report.js';
+import type { ReportMeta } from './types.js';
 
 /** Inputs for {@link writeReport}. */
 export interface WriteReportInput {
   /** Output directory (created if missing). */
   outDir: string;
-  /** Worker capability id (e.g. `0-0`); namespaces the filename for parallel safety. */
+  /** Worker/project id (e.g. WDIO `0-0` or a Playwright project name); namespaces the filename for parallel safety. */
   cid?: string | undefined;
   /** Captured rrweb event stream. */
   events: eventWithTime[];

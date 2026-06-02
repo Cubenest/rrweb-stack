@@ -13,11 +13,10 @@ import {
   attachNetworkCapture,
   createRecorder,
 } from '@tracelane/core';
-import type { ReportMeta } from '@tracelane/report';
+import { type ReportMeta, writeReport } from '@tracelane/report';
 import { type Framework, normalizeResult } from './framework-result.js';
 import { loadRrwebBundle } from './inpage-bundle.js';
 import { DEFAULT_OUT_DIR, type TraceLaneOptions } from './options.js';
-import { writeReport } from './report-writer.js';
 import { type WdioBrowser, createWdioExecutor } from './wdio-executor.js';
 
 /** The current-test bookkeeping kept between `beforeTest` and `afterTest`. */

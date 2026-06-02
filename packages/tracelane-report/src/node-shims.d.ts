@@ -27,6 +27,17 @@ declare module 'node:fs' {
   /** Read a file synchronously without an encoding — returns a Buffer-like
    *  object that supports `.toString('base64')`. Used for woff2 fonts. */
   export function readFileSync(path: string | URL): BinaryBuffer;
+  /** Synchronously test whether `path` exists (report-writer.ts). */
+  export function existsSync(path: string): boolean;
+  /** Create a directory (and parents when `recursive`) — report-writer.ts. */
+  export function mkdirSync(path: string, options?: { recursive?: boolean }): string | undefined;
+  /** Write `data` to `path`, replacing the file if it exists — report-writer.ts. */
+  export function writeFileSync(path: string, data: string): void;
+}
+
+declare module 'node:path' {
+  /** Join path segments with the platform separator and normalize. */
+  export function join(...segments: string[]): string;
 }
 
 declare module 'node:module' {
