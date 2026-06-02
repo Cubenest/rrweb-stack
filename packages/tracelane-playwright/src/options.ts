@@ -25,6 +25,12 @@ export interface TraceLaneOptions {
   /**
    * Capture failed network requests via CDP (Chromium-only). Default `true`.
    * Routed into the report's network panel through the rrweb console plugin.
+   *
+   * **Cross-process note**: reporter constructor options are not propagated to
+   * the fixture (they run in separate Playwright worker processes). Setting
+   * `captureNetwork: false` on the reporter has no effect on the fixture's CDP
+   * capture. To disable CDP capture in the fixture, set the env var:
+   * `TRACELANE_CAPTURE_NETWORK=false` before running Playwright.
    */
   captureNetwork?: boolean;
 }
@@ -47,9 +53,14 @@ function defaultEnv(): EnvLike {
 
 /**
  * Resolve user options into a fully-resolved shape, applying defaults and the
- * `TRACELANE_MODE` / `TRACELANE_OUT_DIR` env overrides (env wins over config,
- * matching @tracelane/core's resolveMode). An invalid `TRACELANE_MODE` is
- * ignored. `env` is injectable for testing.
+ * `TRACELANE_MODE` / `TRACELANE_OUT_DIR` / `TRACELANE_CAPTURE_NETWORK` env
+ * overrides (env wins over config, matching @tracelane/core's resolveMode). An
+ * invalid `TRACELANE_MODE` is ignored. `env` is injectable for testing.
+ *
+ * `TRACELANE_CAPTURE_NETWORK=false` (case-insensitive) disables CDP network
+ * capture in the fixture. This is the cross-process mechanism for the
+ * `captureNetwork` option — reporter constructor options are not propagated to
+ * the fixture because they run in different Playwright worker processes.
  */
 export function resolveOptions(
   opts: TraceLaneOptions = {},
@@ -57,6 +68,10 @@ export function resolveOptions(
 ): ResolvedOptions {
   const mode: Mode = isMode(env.TRACELANE_MODE) ? env.TRACELANE_MODE : (opts.mode ?? 'failed');
   const outDir = env.TRACELANE_OUT_DIR ?? opts.outDir ?? DEFAULT_OUT_DIR;
-  const captureNetwork = opts.captureNetwork ?? true;
+  const envCaptureNetwork = env.TRACELANE_CAPTURE_NETWORK;
+  const captureNetwork =
+    envCaptureNetwork !== undefined
+      ? envCaptureNetwork.toLowerCase() !== 'false'
+      : (opts.captureNetwork ?? true);
   return { mode, outDir, captureNetwork };
 }

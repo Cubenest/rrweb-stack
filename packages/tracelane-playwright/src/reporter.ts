@@ -3,9 +3,15 @@
 //
 // IMPORTANT: the Reporter does NOT build reports — the per-test HTML build lives
 // in the auto-fixture, which is the only place with a live `page` + `testInfo`.
-// By design the Reporter never touches `page`. Its job is config + a one-line
-// end-of-run summary so the user sees where reports landed and in which mode.
-// onTestEnd tallies pass/fail for the summary.
+// By design the Reporter never touches `page`. Its job is config validation
+// (resolveOptions in the constructor so invalid config surfaces early) and
+// tallying pass/fail for future use.
+//
+// NOTE on captureNetwork: reporter constructor options do NOT propagate to the
+// fixture — they run in separate Playwright worker processes. Setting
+// `captureNetwork: false` here is silently ignored by the fixture's CDP attach.
+// Control the fixture via TRACELANE_CAPTURE_NETWORK=false env var instead (see
+// options.ts resolveOptions for the env contract).
 
 import type {
   FullConfig,
@@ -15,33 +21,27 @@ import type {
   TestCase,
   TestResult,
 } from '@playwright/test/reporter';
-import { type ResolvedOptions, type TraceLaneOptions, resolveOptions } from './options.js';
+import { type TraceLaneOptions, resolveOptions } from './options.js';
 
 /**
  * tracelane's Playwright reporter. Pair it with the fixture
  * (`import { test } from '@tracelane/playwright/fixture'`) — the fixture records
- * + writes reports; this reporter validates config and prints the summary.
+ * + writes reports; this reporter validates config at startup.
  */
 export class TraceLaneReporter implements Reporter {
-  private readonly opts: TraceLaneOptions;
-  private resolved: ResolvedOptions;
-  private total = 0;
   private failed = 0;
 
   constructor(opts: TraceLaneOptions = {}) {
-    this.opts = opts;
-    // Resolve once up front (constructor time) so an invalid config surfaces
-    // early; re-resolved in onEnd to honor env set during the run.
-    this.resolved = resolveOptions(opts);
+    // Resolve up front so an invalid config surfaces early (throws on bad input).
+    resolveOptions(opts);
   }
 
-  /** The fixture + Playwright own the run output; we only print a final line. */
+  /** The fixture + Playwright own the run output; this reporter is silent. */
   printsToStdio(): boolean {
     return false;
   }
 
-  onBegin(_config: FullConfig, suite: Suite): void {
-    this.total = suite.allTests().length;
+  onBegin(_config: FullConfig, _suite: Suite): void {
     this.failed = 0;
   }
 
@@ -57,14 +57,9 @@ export class TraceLaneReporter implements Reporter {
   }
 
   onEnd(_result: FullResult): void {
-    // Re-resolve so a TRACELANE_MODE / TRACELANE_OUT_DIR set during the run is
-    // reflected in the summary.
-    this.resolved = resolveOptions(this.opts);
-    const { mode, outDir } = this.resolved;
-    const reported = mode === 'all' ? this.total : this.failed;
-    console.log(
-      `[tracelane/playwright] mode=${mode} — wrote ${reported} report(s) for ${this.failed} failed / ${this.total} test(s) → ${outDir}`,
-    );
+    // No-op: output removed (printsToStdio() is false; console.log here would
+    // confuse Playwright which may add its own terminal reporter). The fixture
+    // already wrote report files.
   }
 }
 
