@@ -81,7 +81,7 @@ import Layout from '../layouts/Layout.astro';
       </tr>
       <tr>
         <td><strong>Write-back</strong></td>
-        <td>The MCP server can <code>execute_action</code> (click / input / navigate) on the live tab, gated by per-action authorization recorded in an audit log. Off by default; not a sharing feature.</td>
+        <td>The MCP surface defines <code>execute_action</code> (click / input / navigate) gated by per-action authorization + an audit log. The permission model and audit log ship today; the cross-process bridge that delivers actions to the live browser is in development (read-only until it lands). Off by default; not a sharing feature.</td>
         <td>Read-only by design &mdash; Jam is a capture-and-share product, not a remote-control tool.</td>
       </tr>
       <tr>

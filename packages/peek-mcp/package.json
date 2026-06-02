@@ -1,6 +1,7 @@
 {
   "name": "@peekdev/mcp",
   "version": "0.1.0-alpha.12",
+  "mcpName": "io.github.cubenest/peek-mcp",
   "description": "peek native messaging host + stdio MCP server. Owns ~/.peek/sessions.db (better-sqlite3) and bridges the browser extension, CLI, and AI tools to a single local source of truth.",
   "keywords": [
     "peek",

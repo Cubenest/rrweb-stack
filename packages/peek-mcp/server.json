@@ -1,0 +1,25 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.cubenest/peek-mcp",
+  "title": "peek",
+  "description": "Exposes recorded browser sessions (rrweb DOM, console, network) to AI coding agents, fully local",
+  "version": "0.1.0-alpha.13",
+  "websiteUrl": "https://peek.cubenest.in",
+  "repository": {
+    "url": "https://github.com/Cubenest/rrweb-stack",
+    "source": "github",
+    "subfolder": "packages/peek-mcp"
+  },
+  "packages": [
+    {
+      "registryType": "npm",
+      "registryBaseUrl": "https://registry.npmjs.org",
+      "identifier": "@peekdev/mcp",
+      "version": "0.1.0-alpha.13",
+      "transport": {
+        "type": "stdio"
+      },
+      "runtimeHint": "npx"
+    }
+  ]
+}
