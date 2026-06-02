@@ -7,6 +7,11 @@ export type { BuildReportOptions } from './build-report.js';
 // Report metadata contract (consumed by adapters like @tracelane/wdio).
 export type { ReportMeta, ReportStatus, Viewport } from './types.js';
 
+// Disk writer: build the HTML and write it under outDir with a parallel-safe,
+// adapter-namespaced filename. Shared by the WDIO and Playwright adapters.
+export { reportFileName, slugify, specSlug, writeReport } from './report-writer.js';
+export type { WriteReportInput } from './report-writer.js';
+
 // Events blob round-trip (Task 2.9) — useful for re-reading a report's events.
 export { decodeEventsBlob, encodeEventsBlob } from './embed.js';
 

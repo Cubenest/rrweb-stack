@@ -1,0 +1,74 @@
+{
+  "name": "@tracelane/playwright",
+  "version": "0.1.0-alpha.0",
+  "description": "Playwright reporter + auto-fixture that writes a self-contained replayable HTML report on test failure (rrweb + console + failed-network). No SaaS.",
+  "keywords": [
+    "tracelane",
+    "playwright",
+    "playwright-reporter",
+    "testing",
+    "e2e",
+    "reporter",
+    "rrweb",
+    "session-replay",
+    "html-report"
+  ],
+  "license": "Apache-2.0",
+  "funding": {
+    "type": "github",
+    "url": "https://github.com/sponsors/harry-harish"
+  },
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./reporter": {
+      "types": "./dist/reporter.d.ts",
+      "import": "./dist/reporter.js"
+    },
+    "./fixture": {
+      "types": "./dist/fixture.d.ts",
+      "import": "./dist/fixture.js"
+    }
+  },
+  "files": ["dist", "NOTICE", "README.md"],
+  "scripts": {
+    "build": "tsc -p tsconfig.json && node scripts/build-rrweb-bundle.mjs",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run --passWithNoTests",
+    "test:e2e": "node scripts/build-rrweb-bundle.mjs && node ./e2e/run.mjs"
+  },
+  "dependencies": {
+    "@tracelane/core": "workspace:*",
+    "@tracelane/report": "workspace:*"
+  },
+  "peerDependencies": {
+    "@playwright/test": ">=1.40.0"
+  },
+  "devDependencies": {
+    "@cubenest/rrweb-core": "workspace:*",
+    "@playwright/test": "^1.60.0",
+    "esbuild": "^0.28.0",
+    "tsx": "^4.19.0"
+  },
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Cubenest/rrweb-stack",
+    "directory": "packages/tracelane-playwright"
+  },
+  "bugs": {
+    "url": "https://github.com/Cubenest/rrweb-stack/issues"
+  },
+  "homepage": "https://tracelane.cubenest.in",
+  "engines": {
+    "node": ">=20.18.0"
+  }
+}

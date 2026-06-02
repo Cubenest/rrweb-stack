@@ -10,14 +10,13 @@ import {
   type ConsolePluginOptions,
   type Mode,
   type Recorder,
+  attachNetworkCapture,
   createRecorder,
+  loadRrwebBundle,
 } from '@tracelane/core';
-import type { ReportMeta } from '@tracelane/report';
+import { type ReportMeta, writeReport } from '@tracelane/report';
 import { type Framework, normalizeResult } from './framework-result.js';
-import { loadRrwebBundle } from './inpage-bundle.js';
-import { attachNetworkCapture } from './network-capture.js';
 import { DEFAULT_OUT_DIR, type TraceLaneOptions } from './options.js';
-import { writeReport } from './report-writer.js';
 import { type WdioBrowser, createWdioExecutor } from './wdio-executor.js';
 
 /** The current-test bookkeeping kept between `beforeTest` and `afterTest`. */
@@ -101,7 +100,7 @@ export class TraceLaneSession {
   private createRecorderForCurrentTest(browser: SessionBrowser): Recorder {
     const recorderOptions: Parameters<typeof createRecorder>[0] = {
       executor: createWdioExecutor(browser),
-      rrwebBundle: loadRrwebBundle(),
+      rrwebBundle: loadRrwebBundle(import.meta.url),
     };
     if (this.options.drainIntervalMs !== undefined) {
       recorderOptions.drainIntervalMs = this.options.drainIntervalMs;

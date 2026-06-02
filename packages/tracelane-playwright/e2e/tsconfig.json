@@ -1,0 +1,14 @@
+{
+  // Editor-only config for the opt-in E2E (it is NOT part of `pnpm typecheck`,
+  // which scopes to `src/**/*`). Playwright loads these TS files via its own
+  // transpiler, which does not type-check — so this just powers IDE
+  // intellisense. The spec imports from ../dist, which exists after the package
+  // build that `test:e2e` runs first.
+  "extends": "../../../tsconfig.base.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "noUnusedLocals": false,
+    "noUnusedParameters": false
+  },
+  "include": ["./**/*.ts"]
+}

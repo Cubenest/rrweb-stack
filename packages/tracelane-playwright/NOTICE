@@ -1,0 +1,19 @@
+rrweb-stack
+Copyright 2026 Cubenest
+
+This product includes software developed by:
+- PostHog (https://posthog.com) — vendored rrweb fork, bundled (via esbuild) into
+  the in-page recorder injected by this Reporter / fixture:
+    @posthog/rrweb 0.0.34 (MIT License)
+    @posthog/rrweb-types 0.0.24 (MIT License)
+  Forked from upstream rrweb-io/rrweb 2.0.0-alpha.17. Re-exported through
+  @cubenest/rrweb-core.
+- rrweb contributors (https://github.com/rrweb-io/rrweb) — console-record plugin:
+    @rrweb/rrweb-plugin-console-record 2.0.0-alpha.20 (MIT License) — bundled into
+    the in-page recorder.
+
+The rrweb player + report assets are inlined by @tracelane/report; see that
+package's NOTICE.
+
+This product is licensed under the Apache License, Version 2.0.
+See the LICENSE file for details.

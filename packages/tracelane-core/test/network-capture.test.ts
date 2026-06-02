@@ -1,9 +1,13 @@
-import { EventType } from '@cubenest/rrweb-core';
-import type { eventWithTime } from '@cubenest/rrweb-core';
-import type { BrowserExecutor } from '@tracelane/core';
-import { extractNetwork } from '@tracelane/report';
 import { describe, expect, it, vi } from 'vitest';
+import type { BrowserExecutor } from '../src/browser-executor.js';
 import { __internal, attachNetworkCapture } from '../src/network-capture';
+
+// NOTE: the cross-package contract test (the `[tracelane.net]` line →
+// @tracelane/report extractNetwork classification) lives in
+// `packages/tracelane-report/test/network-capture-contract.test.ts`, NOT here.
+// Keeping it out of core preserves the one-directional dependency edge
+// (report → core); importing @tracelane/report from core would create a build
+// cycle Turbo can't topo-order.
 
 // CDP network capture (Task 2.16 / P1 PRD §E.2 + audit A-6). Verify: Network.enable
 // is sent, the responseReceived + loadingFailed subscribers are registered, only
@@ -177,48 +181,5 @@ describe('network-capture internals', () => {
     // panels.ts's parseNetConsoleLine requires exactly 3 status digits.
     expect(spy).toHaveBeenCalledWith('[tracelane.net] POST 000 https://api.test/blocked');
     spy.mockRestore();
-  });
-});
-
-// End-to-end contract (audit A-6): the `[tracelane.net]` line the loadingFailed
-// branch emits MUST be classified as a FAILED network row by @tracelane/report's
-// extractNetwork. The console plugin captures the page-side console.error into an
-// EventType.Plugin (rrweb/console@1) event; build one with the exact line shape
-// and pipe it through the real extractNetwork to prove the cross-package contract.
-describe('loadingFailed → @tracelane/report extractNetwork contract', () => {
-  /** Capture what the page-side logger would emit for a no-response failure. */
-  function netLineFor(url: string, status: number, method: string): string {
-    let captured = '';
-    const spy = vi.spyOn(console, 'error').mockImplementation((m: string) => {
-      captured = m;
-    });
-    __internal.logNetworkErrorInPage(url, status, method);
-    spy.mockRestore();
-    return captured;
-  }
-
-  /** Wrap a console line in the rrweb console-plugin event shape extractNetwork reads. */
-  function consolePluginEvent(message: string, timestamp: number): eventWithTime {
-    return {
-      type: EventType.Plugin,
-      timestamp,
-      data: {
-        plugin: 'rrweb/console@1',
-        payload: { level: 'error', payload: [message], trace: [] },
-      },
-    } as unknown as eventWithTime;
-  }
-
-  it('classifies a status-0 loadingFailed line as a FAILED network row', () => {
-    const line = netLineFor('https://api.test/blocked', 0, 'POST');
-    expect(line).toBe('[tracelane.net] POST 000 https://api.test/blocked');
-
-    const rows = extractNetwork([consolePluginEvent(line, 1000)]);
-    expect(rows).toHaveLength(1);
-    expect(rows[0]).toMatchObject({
-      method: 'POST',
-      url: 'https://api.test/blocked',
-      status: 0,
-    });
   });
 });
