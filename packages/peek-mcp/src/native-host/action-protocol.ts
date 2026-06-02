@@ -55,6 +55,12 @@ export interface ActionResultMessage {
   details?: unknown;
   /** Error message when `result === 'error'` or 'denied'. */
   error?: string;
+  /**
+   * A one-shot confirm token issued on a `request_authorization` reply. The
+   * relay carries it back to the MCP process so the AI can pass it to a later
+   * `execute_action` (mirrors the extension-side ActionResultMessage).
+   */
+  confirmToken?: string;
 }
 
 /** host → SW: please execute / authorize this action. */
