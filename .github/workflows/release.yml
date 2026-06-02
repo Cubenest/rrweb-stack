@@ -64,7 +64,10 @@ jobs:
       # Smithery, mcp.so) do NOT auto-ingest from here — they are submitted
       # separately (see docs/peek/distribution/README.md).
       - name: Publish peek to the official MCP Registry
-        if: steps.changesets.outputs.published == 'true' && contains(steps.changesets.outputs.publishedPackages, '"@peekdev/mcp"')
+        # Run even when changesets step partially failed (e.g. a new package's
+        # first OIDC publish fails while others succeed). The version check below
+        # is the real gate — if @peekdev/mcp wasn't published, it exits cleanly.
+        if: always() && (steps.changesets.outputs.published == 'true' || steps.changesets.conclusion == 'failure') && contains(steps.changesets.outputs.publishedPackages, '"@peekdev/mcp"')
         env:
           PUBLISHED_PACKAGES: ${{ steps.changesets.outputs.publishedPackages }}
         run: |
