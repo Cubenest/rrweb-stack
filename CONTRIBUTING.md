@@ -187,10 +187,15 @@ If your PR adds a workflow, run it against these rules first.
 2. Run local validation: `pnpm lint && pnpm typecheck && pnpm test && pnpm build`.
 3. Add a changeset if required (see above).
 4. CI must pass: lint, typecheck, test, build, DCO check.
-5. At least one maintainer review is required before merge for
+5. CodeRabbit posts an automated review (advisory — it does not gate
+   the merge). Address its findings, or resolve the threads with a
+   reason if you disagree; branch protection requires all
+   conversations resolved. See
+   [Automated review (CodeRabbit)](#automated-review-coderabbit).
+6. At least one maintainer review is required before merge for
    external PRs. The maintainer may self-merge their own PRs under
    the side-project posture.
-6. Maintainers squash-or-merge based on the PR's commit hygiene.
+7. Maintainers squash-or-merge based on the PR's commit hygiene.
    Keep your branch rebased on `main` to avoid noisy merge commits.
 
 ## Code review philosophy
@@ -207,6 +212,39 @@ posture:
   not just what?
 - **Empathy is mandatory.** Be kind. The contributor on the other
   side is donating time. Disagree with proposals, not with people.
+
+## Automated review (CodeRabbit)
+
+Every PR targeting `main` is reviewed automatically by
+[CodeRabbit](https://www.coderabbit.ai/). Because this repo is public, it runs
+on CodeRabbit's free open-source plan — the full review feature set at no cost,
+no seat limit.
+
+CodeRabbit is **advisory, not a gate.** It posts a summary plus inline comments
+but never blocks a merge: the only required checks remain `ci` and `dco`, and
+the maintainer stays the deciding reviewer. This keeps a third-party service out
+of the merge path (no deadlock if it's rate-limited or down). Its behaviour is
+configured in [`.coderabbit.yaml`](.coderabbit.yaml), tuned to this repo:
+
+- **Chill profile**, aligned with the philosophy above — Biome, Lefthook, and
+  CI own formatting/lint/types, so CodeRabbit spends its attention on
+  correctness, security, supply-chain risk, and API/module design.
+- It enforces the [workflow security hard rules](#workflow-security-hard-rules)
+  (SHA-pinned actions, no `pull_request_target`, scoped `permissions:`), treats
+  the vendored `rrweb-core` fork as supply-chain sensitive, and guards peek's
+  local-only, masked-by-default posture.
+
+The flow for every change — maintainer and external contributor alike:
+
+1. Branch (`feat/…`, `fix/…`, `chore/…`, `docs/…`) off `main`.
+2. Open a PR against `main`.
+3. CodeRabbit reviews automatically and re-reviews on each new push.
+4. Address its findings, or resolve the thread with a reason if you disagree.
+5. Merge once `ci` + `dco` are green and all conversations are resolved.
+
+You can steer it from PR comments: `@coderabbitai review` re-triggers a review,
+`@coderabbitai resolve` dismisses its threads, and you can ask it questions
+inline. Full command list: <https://docs.coderabbit.ai/guides/commands>.
 
 ## Suggesting a new integration target
 
