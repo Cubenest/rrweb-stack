@@ -4,12 +4,12 @@
 #
 # This repo is a PUBLIC Apache-2.0 monorepo, so it runs on CodeRabbit's free
 # "Pro for open source" plan (full reviews, linters/SAST, custom instructions —
-# no seat limit, no expiry). CodeRabbit is wired in as an ADVISORY reviewer
-# only: it comments on every PR to `main` but never gates the merge path. The
-# required status checks stay `ci` + `dco` (see branch protection); CodeRabbit
-# deliberately posts no commit status (`commit_status: false`) and uses no
-# request-changes gate, so it can't deadlock a merge if the service is
-# rate-limited or down.
+# no seat limit, no expiry). CodeRabbit is wired in as an APPROVING reviewer:
+# it automatically approves once its inline comments are resolved and required
+# checks pass — satisfying the 1-review branch-protection gate so the maintainer
+# can self-merge. The required status checks remain `ci` + `dco`; CodeRabbit
+# does not post a commit status (`commit_status: false`) so it never enters the
+# required-check merge path directly.
 #
 # Posture mirrors CONTRIBUTING.md "Code review philosophy": CI is the pedant
 # (Biome + Lefthook own formatting/lint/types), so CodeRabbit is told to spend
@@ -30,10 +30,10 @@ tone_instructions: >-
 
 reviews:
   profile: chill
-  # Advisory only: comment, never block. No GitHub "request changes" gate and
-  # no commit status check, so CodeRabbit never enters the required-check merge
-  # path (that stays `ci` + `dco`).
-  request_changes_workflow: false
+  # Approval-gate mode: CodeRabbit automatically approves once its inline
+  # comments are resolved and required checks pass — satisfying the 1-review
+  # branch-protection gate so the maintainer can self-merge.
+  request_changes_workflow: true
   commit_status: false
   # PR hygiene.
   high_level_summary: true
