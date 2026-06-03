@@ -6,7 +6,7 @@ interface Props {
   description?: string;
 }
 
-const { title, description = 'peek — OSS browser companion + MCP server. Records your real authenticated browser session locally and exposes it to AI coding agents.' } = Astro.props;
+const { title, description = 'peek — open-source, local-first. Turns a recorded browser session into a Playwright repro your AI coding agent can re-run to verify its own fix. Redacted by default, no cloud.' } = Astro.props;
 
 // Build absolute canonical / social URLs from the configured `site` origin.
 const canonicalURL = new URL(Astro.url.pathname, Astro.site).href;

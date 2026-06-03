@@ -2,28 +2,34 @@
 import Layout from '../layouts/Layout.astro';
 ---
 
-<Layout title="peek — local-first browser companion for AI coding agents">
+<Layout title="peek — turn a browser bug into a Playwright repro your AI agent can re-run">
   <h1>peek</h1>
-  <p class="tagline">See what your AI agent sees &mdash; without sending it to anyone&apos;s cloud.</p>
+  <p class="tagline">Turn a browser bug into a Playwright repro your AI agent can re-run &mdash; and verify its own fix actually worked.</p>
 
   <div class="badges">
     <span class="badge">Apache 2.0</span>
     <span class="badge">alpha</span>
     <span class="badge">local-first</span>
+    <span class="badge">redacted by default</span>
     <span class="badge">MCP</span>
   </div>
 
   <p>
-    <strong>peek</strong> is an open-source browser companion: a Chrome extension
-    plus a stdio <a href="https://modelcontextprotocol.io" rel="noopener">MCP</a>
-    server plus a small CLI. It records your real, authenticated browser session
-    to a local SQLite database and exposes that session as MCP tools to AI coding
-    agents like <strong>Claude Code</strong>, <strong>Cursor</strong>,
+    <strong>peek</strong> records your real, authenticated browser session
+    locally, then turns it into a runnable <strong>Playwright repro</strong> your
+    AI coding agent can replay. Instead of guessing from a description of what
+    broke, the agent re-runs the actual failure and checks whether its fix worked.
+    It also queries the session&apos;s console, network, and DOM over
+    <a href="https://modelcontextprotocol.io" rel="noopener">MCP</a> &mdash; so
+    it&apos;s a Chrome extension + a stdio MCP server + a small CLI, for clients
+    like <strong>Claude Code</strong>, <strong>Cursor</strong>,
     <strong>Cline</strong>, and <strong>Windsurf</strong>.
   </p>
 
   <p>
-    Everything stays on your machine. No telemetry, no remote endpoints, no
+    Everything stays on your machine, <strong>redacted by default</strong>: auth
+    and cookie headers are deny-listed, and form values + PII are masked in the
+    page before anything leaves the tab. No telemetry, no remote endpoints, no
     third-party SDKs &mdash; the browser talks to the local host over Chrome
     native messaging (stdio), and the database lives at <code>~/.peek/sessions.db</code>.
   </p>
@@ -35,6 +41,10 @@ import Layout from '../layouts/Layout.astro';
 
   <h2>What it does</h2>
   <div class="feature-grid">
+    <div class="feature">
+      <h3>Replayable Playwright repro</h3>
+      <p><code>generate_playwright_repro</code> turns a recorded session &mdash; the actual clicks, console, and network &mdash; into a runnable Playwright test. The agent re-runs it to verify a fix actually worked, instead of guessing from a description of the bug.</p>
+    </div>
     <div class="feature">
       <h3>Per-site, opt-in capture</h3>
       <p>No <code>&lt;all_urls&gt;</code> permission. You enable peek per origin in the side panel; it records nothing until you do.</p>
@@ -48,8 +58,8 @@ import Layout from '../layouts/Layout.astro';
       <p>Sessions, console events, network metadata, and audit logs live in <code>~/.peek/sessions.db</code>. Delete or export with the <code>peek</code> CLI.</p>
     </div>
     <div class="feature">
-      <h3>Opt-in Deep capture</h3>
-      <p>Toggle Deep capture per origin to record response bodies via <code>chrome.debugger</code>. Bodies are masked and capped at 256&nbsp;KB.</p>
+      <h3>Redacted by default</h3>
+      <p>Auth and cookie headers are deny-listed; form values and PII (cards, SSNs, JWTs, emails) are masked in the page before anything leaves the tab. Response bodies aren&apos;t captured unless you opt a single origin into Deep capture (off by default) &mdash; and even then they&apos;re masked and capped at 256&nbsp;KB. Apache-2.0, so you can audit the masking yourself.</p>
     </div>
     <div class="feature">
       <h3>MCP read tools for agents</h3>
