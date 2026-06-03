@@ -1,5 +1,12 @@
 # @tracelane/report
 
+## 0.1.0-alpha.14
+
+### Patch Changes
+
+- Updated dependencies [e250248]
+  - @tracelane/core@0.1.0-alpha.12
+
 ## 0.1.0-alpha.13
 
 ### Minor Changes
