@@ -11,9 +11,10 @@
 // before spawning the Playwright CLI, and assert against that same dir.
 
 import { spawnSync } from 'node:child_process';
-import { existsSync, mkdirSync, readdirSync, rmSync, statSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { decodeEventsBlob } from '@tracelane/report';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const configPath = join(here, 'playwright.config.ts');
@@ -61,22 +62,57 @@ if (!existsSync(outDir)) {
 }
 
 const reports = readdirSync(outDir).filter((f) => f.endsWith('.html'));
-if (reports.length !== 1) {
-  console.error(
-    `\n[tracelane smoke] expected exactly 1 .html report in ${outDir}, found ${reports.length}: ${reports.join(', ')}`,
-  );
+if (reports.length < 1) {
+  console.error(`\n[tracelane smoke] expected at least 1 .html report in ${outDir}, found 0`);
   process.exit(1);
 }
 
-const bytes = statSync(join(outDir, reports[0])).size;
-if (bytes >= MAX_BYTES) {
+let sawNetwork = false;
+let sawConsole = false;
+let sawSnapshot = false;
+let sawNav = false;
+let sawPageB = false;
+for (const file of reports) {
+  const full = join(outDir, file);
+  const bytes = statSync(full).size;
+  if (bytes >= MAX_BYTES) {
+    console.error(
+      `\n[tracelane smoke] report ${file} is ${bytes} bytes, exceeding the 25 MB budget.`,
+    );
+    process.exit(1);
+  }
+  const html = readFileSync(full, 'utf8');
+  const m = html.match(/const EVENTS_GZ_B64 = "([^"]*)";/);
+  if (!m) {
+    console.error(`\n[tracelane smoke] no EVENTS_GZ_B64 blob in ${file}`);
+    process.exit(1);
+  }
+  const events = decodeEventsBlob(m[1]);
+  const blob = JSON.stringify(events);
+  if (events.some((e) => e && e.type === 4)) sawSnapshot = true;
+  if (blob.includes('tracelane.net')) sawNetwork = true;
+  if (blob.includes('tracelane-smoke: button clicked')) sawConsole = true;
+  if (blob.includes('tracelane.nav')) sawNav = true;
+  if (blob.includes('tracelane-smoke-B: button clicked on page B')) sawPageB = true;
+}
+
+const problems = [];
+if (!sawSnapshot) problems.push('no rrweb FullSnapshot (type 4) in any report');
+if (!sawConsole) problems.push("console line 'tracelane-smoke: button clicked' missing");
+if (!sawNetwork) problems.push("network failure marker '[tracelane.net]' missing");
+if (!sawNav)
+  problems.push("navigation boundary 'tracelane.nav' missing (post-nav capture broken?)");
+if (!sawPageB)
+  problems.push(
+    'post-navigation console line from page B missing (CRITICAL: event loss after navigation)',
+  );
+if (problems.length) {
   console.error(
-    `\n[tracelane smoke] report ${reports[0]} is ${bytes} bytes, exceeding the 25 MB budget.`,
+    `\n[tracelane smoke] report content assertions FAILED:\n  - ${problems.join('\n  - ')}`,
   );
   process.exit(1);
 }
-
 console.log(
-  `\n[tracelane smoke] PASSED: 1 report written (${reports[0]}, ${bytes} bytes < 25 MB).`,
+  `\n[tracelane smoke] PASSED: ${reports.length} report(s); panels contain rrweb + console + network + nav + page-B events.`,
 );
 process.exit(0);

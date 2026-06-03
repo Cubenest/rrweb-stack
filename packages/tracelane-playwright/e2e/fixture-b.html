@@ -1,0 +1,12 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8" /><title>tracelane smoke page B</title></head>
+<body>
+  <h1 id="title-b">tracelane smoke B</h1>
+  <button id="go-b">Trigger B</button>
+  <script>
+    document.getElementById('go-b').addEventListener('click', async () => {
+      console.log('tracelane-smoke-B: button clicked on page B');
+      try { await fetch('/tracelane-smoke-b/missing-on-b'); } catch {}
+    });
+  </script>
+</body></html>
