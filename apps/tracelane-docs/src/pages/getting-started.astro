@@ -4,9 +4,17 @@ import Layout from '../layouts/Layout.astro';
 
 <Layout title="Getting started &middot; tracelane">
   <h1>Getting started</h1>
-  <p class="tagline">From <code>pnpm add</code> to a replayable failure in ~2 minutes.</p>
+  <p class="tagline">From install to a replayable failure in ~2 minutes.</p>
 
-  <h2>1. Install</h2>
+  <p>
+    Pick your runner: <a href="#webdriverio">WebdriverIO</a> &middot; <a href="#playwright">Playwright</a>.
+  </p>
+
+  <hr />
+
+  <h2 id="webdriverio">WebdriverIO</h2>
+
+  <h3>1. Install</h3>
   <p>In an existing WebdriverIO project:</p>
   <pre><code>pnpm add -D @tracelane/wdio @tracelane/core @tracelane/report</code></pre>
   <p>
@@ -18,7 +26,7 @@ import Layout from '../layouts/Layout.astro';
     (<code>^9.0.0</code>) &mdash; you already have them in a WDIO project.
   </p>
 
-  <h2>2. Register the service</h2>
+  <h3>2. Register the service</h3>
   <p>Add <code>TracelaneService</code> to the <code>services</code> array in <code>wdio.conf.ts</code>:</p>
   <pre><code>{`// wdio.conf.ts
 import type { Options } from '@wdio/types';
@@ -51,7 +59,7 @@ export const config: Options.Testrunner = {
 };
 `}</code></pre>
 
-  <h2>3. Run your tests</h2>
+  <h3>3. Run your tests</h3>
   <p>Run your suite normally:</p>
   <pre><code>pnpm wdio run wdio.conf.ts</code></pre>
   <div class="callout">
@@ -61,7 +69,7 @@ export const config: Options.Testrunner = {
     logs, and see failed responses &mdash; entirely offline. One file, no server.
   </div>
 
-  <h2>4. Options</h2>
+  <h3>4. Options</h3>
   <p>
     Full options reference, the <code>traceLaneHooks</code> alternative (for setups that
     can&apos;t register a Service), and the Mocha / Jasmine / Cucumber notes are in the
@@ -74,22 +82,14 @@ export const config: Options.Testrunner = {
     <li><a href="https://www.npmjs.com/package/@tracelane/report" rel="noopener">@tracelane/report on npm</a></li>
   </ul>
 
-  <h2>Browser &amp; runner support</h2>
+  <h3>Browser &amp; framework support</h3>
   <ul>
     <li><strong>Mocha</strong>, <strong>Jasmine</strong>, <strong>Cucumber</strong> (via <code>beforeScenario</code>/<code>afterScenario</code>) &mdash; supported.</li>
     <li><strong>Chrome / Chromium &ge; 116</strong>, <strong>Edge</strong> &mdash; rrweb + console + network (with a CDP-capable session).</li>
     <li><strong>Firefox</strong>, <strong>Safari</strong> &mdash; rrweb + console. CDP is Chromium-only; tracelane degrades gracefully and still writes a report.</li>
   </ul>
 
-  <h2>What about Playwright and Cypress?</h2>
-  <p>
-    The core (<code>@tracelane/core</code>) is framework-agnostic by design &mdash; it
-    wraps the per-framework browser handle behind a <code>BrowserExecutor</code>
-    interface. The Playwright fixture and Cypress plugin are on the near-term
-    roadmap; track progress on the <a href="https://github.com/Cubenest/rrweb-stack" rel="noopener">repo</a>.
-  </p>
-
-  <h2>Verified install path</h2>
+  <h3>Verified install path</h3>
   <p>
     The maintainer&apos;s end-to-end walk of this getting-started flow lives in the
     repo at
@@ -98,6 +98,55 @@ export const config: Options.Testrunner = {
     (<a href="https://github.com/Cubenest/rrweb-stack/tree/main/docs/qa/fixtures/tracelane-demo" rel="noopener">docs/qa/fixtures/tracelane-demo</a>)
     you can use to reproduce the same passing/failing scenarios.
   </p>
+
+  <hr />
+
+  <h2 id="playwright">Playwright</h2>
+
+  <h3>1. Install</h3>
+  <p>In an existing Playwright project (<code>@playwright/test &ge; 1.40</code>):</p>
+  <pre><code>npm i -D @tracelane/playwright@0.1.0-alpha.2</code></pre>
+
+  <h3>2. Register the reporter</h3>
+  <p>Add the tracelane reporter to the <code>reporter</code> array in <code>playwright.config.ts</code>:</p>
+  <pre><code>{`import { defineConfig } from '@playwright/test';
+
+export default defineConfig({
+  reporter: [
+    ['list'],
+    ['@tracelane/playwright', { mode: 'failed', outDir: './tracelane-reports' }],
+  ],
+});
+`}</code></pre>
+
+  <h3>3. Use the fixture</h3>
+  <p>Swap the import in your spec files:</p>
+  <pre><code>import {`{ test, expect }`} from '@tracelane/playwright/fixture';</code></pre>
+  <p>
+    The fixture is <code>auto</code> &mdash; every test in files that import this
+    <code>test</code> is recorded. No per-test wiring required.
+  </p>
+
+  <h3>4. Run and open the report</h3>
+  <pre><code>npx playwright test</code></pre>
+  <div class="callout">
+    <strong>On failure:</strong> a self-contained HTML report is written to
+    <code>./tracelane-reports/&lt;spec&gt;--&lt;title&gt;--&lt;project&gt;-&lt;ts&gt;.html</code>.
+    Open it in any browser, fully offline &mdash; rrweb replay, console panel, and
+    failed-network panel, no server required.
+    <br /><br />
+    <strong>Notes:</strong> failed-network capture uses CDP and is Chromium-only
+    (degrades gracefully to rrweb + console on Firefox / WebKit); recording
+    continues across <code>page.goto</code> navigations; tracelane coexists with
+    Playwright&apos;s own <code>trace</code> option.
+  </div>
+
+  <h3>Further reading</h3>
+  <ul>
+    <li><a href="https://www.npmjs.com/package/@tracelane/playwright" rel="noopener">@tracelane/playwright on npm</a></li>
+    <li><a href="https://github.com/Cubenest/rrweb-stack/tree/main/packages/tracelane-playwright#readme" rel="noopener">@tracelane/playwright README on GitHub</a></li>
+    <li><a href="/vs-playwright-trace-viewer">tracelane vs Playwright Trace Viewer</a></li>
+  </ul>
 
   <p style="color: var(--fg-muted); font-size: 0.9rem; margin-top: 2rem;">
     Questions or issues? Open one on

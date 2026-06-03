@@ -1,9 +1,9 @@
 ---
 title: "Attach an rrweb replay to every Playwright failure on a PR"
-lede: "When a PR fails CI, my developer should not have to ask me what happened — the replay should be linked directly from the PR comment."
-description: "Wire the tracelane Playwright reporter into GitHub Actions so every failed test posts a comment with a link to its self-contained rrweb replay."
+lede: "When a PR fails CI, my developer should not have to ask me what happened — the replay should be linked directly from the PR run."
+description: "Wire @tracelane/playwright into GitHub Actions so every failed test ships a single-file rrweb replay as a downloadable artifact reviewers can open offline."
 type: hero
-status: draft
+status: published
 publishedAt: 2026-06-15
 integrations: [playwright, github-actions, ci]
 relatedRecipes: [debug-flaky-checkout-test-in-ci, triage-ci-run-with-replay-thumbnails, share-failing-test-with-a-developer]
@@ -11,25 +11,22 @@ relatedRecipes: [debug-flaky-checkout-test-in-ci, triage-ci-run-with-replay-thum
 
 ## What you'll end up with
 
-A bot comment on every PR with a failed Playwright run, listing each failing spec and a direct link to its single-file HTML replay. Reviewers click the link, open the report, and scrub to the failure without ever cloning the branch.
+Every failed Playwright run uploads its `tracelane-reports/*.html` as a workflow artifact. A reviewer downloads it, opens the single file in any browser — fully offline — and scrubs the rrweb replay (with the console + failed-network panels) to the exact failure, without cloning the branch.
 
-![PR comment linking to a tracelane replay](/recipes/assets/attach-rrweb-replay-to-every-playwright-pr.png)
+![Tracelane replay attached to a failed Playwright PR run](/recipes/assets/attach-rrweb-replay-to-every-playwright-pr.png)
 
 ## Prerequisites
 
-- An existing Playwright project (v1.40+)
+- An existing Playwright project (`@playwright/test` >= 1.40)
 - A GitHub Actions workflow running that suite
-- A workflow with `pull-requests: write` permission
 - Node >= 20
-
-> **Status: aspirational.** This recipe depends on `@tracelane/playwright-reporter` and the `Cubenest/upload-report` GitHub Action, which are currently in development. The recipe will land as `published` once both ship. Track progress at [github.com/Cubenest/rrweb-stack/issues](https://github.com/Cubenest/rrweb-stack/issues).
 
 ## Steps
 
-### 1. Install the Playwright reporter
+### 1. Install
 
 ```bash
-npm i -D @tracelane/playwright-reporter
+npm i -D @tracelane/playwright@0.1.0-alpha.2
 ```
 
 ### 2. Register the reporter in `playwright.config.ts`
@@ -40,29 +37,40 @@ import { defineConfig } from '@playwright/test';
 export default defineConfig({
   reporter: [
     ['list'],
-    ['@tracelane/playwright-reporter', { outputDir: 'tracelane-out' }],
+    ['@tracelane/playwright', { mode: 'failed', outDir: './tracelane-reports' }],
   ],
 });
 ```
 
-### 3. Upload + comment from GitHub Actions
+### 3. Use tracelane's `test`/`expect` in your specs
 
-```yaml
-- name: Upload tracelane reports
-  if: failure()
-  uses: Cubenest/upload-report@v1
-  with:
-    path: tracelane-out/*.html
-    comment-on-pr: true
+```ts
+import { test, expect } from '@tracelane/playwright/fixture';
 ```
 
-### 4. Push and watch the PR
+The fixture is `auto` — every test in files that import this `test` is recorded; no per-test wiring.
 
-On the next failed run, the action uploads every `tracelane-report-*.html` as a workflow artifact and posts a single PR comment linking to each replay. Reviewers open the link and see the exact frames leading up to the failure.
+### 4. Upload the reports from GitHub Actions
+
+```yaml
+      - name: Run Playwright tests
+        run: npx playwright test
+      - name: Upload tracelane replays
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: tracelane-reports
+          path: tracelane-reports/
+          if-no-files-found: ignore
+```
+
+### 5. Push and watch the PR
+
+On the next failed run, open the run's **Artifacts** → download `tracelane-reports` → open the `.html`. The replay opens offline; scrub to the failure, including across page navigations (recording continues through `page.goto`).
 
 ## Why this works
 
-The Playwright reporter hooks `onTestEnd`, asks the browser context for the rrweb event stream the recorder has been collecting, and writes a single self-contained HTML per failure. The Action then uses GitHub's artifacts API to host the file and the PR comments API to drop a link — no replay server, no cloud bucket.
+The fixture records the run with rrweb (DOM + console + failed-network via CDP on Chromium) and, on failure, writes one self-contained HTML file per test into `outDir`. `actions/upload-artifact` ships those files as-is — no replay server, no cloud bucket, no `npx playwright show-trace`.
 
 ## Next steps
 

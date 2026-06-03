@@ -1,0 +1,131 @@
+---
+import Layout from '../layouts/Layout.astro';
+---
+
+<Layout title="tracelane vs Playwright Trace Viewer">
+  <h1>tracelane vs Playwright Trace Viewer</h1>
+  <p class="tagline">
+    Both replay a failed run. The deltas are artifact <strong>format +
+    shareability</strong>, not what&rsquo;s captured.
+  </p>
+
+  <p>
+    This page exists because someone comparing tools should be able to find an
+    honest side-by-side that Playwright&rsquo;s own docs won&rsquo;t write. No FUD &mdash;
+    Playwright Trace Viewer is a genuinely good product for its target user. The
+    sections below say when each one fits.
+  </p>
+
+  <h2>At a glance</h2>
+
+  <table>
+    <thead>
+      <tr>
+        <th></th>
+        <th>tracelane</th>
+        <th>Playwright Trace Viewer</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><strong>How you open it</strong></td>
+        <td>Double-click one <code>.html</code> &mdash; fully offline, no server, no toolchain.</td>
+        <td><code>npx playwright show-trace trace.zip</code> (spins up a local server), or the hosted <a href="https://trace.playwright.dev" rel="noopener">trace.playwright.dev</a> (loads over http(s) &mdash; not a <code>file://</code> double-click).</td>
+      </tr>
+      <tr>
+        <td><strong>Artifact format</strong></td>
+        <td>A single <code>.html</code> file &mdash; screenshots and video inlined as base64, rrweb events as gzipped base64. One file is the complete artifact.</td>
+        <td>A <code>trace.zip</code> bundle that contains DOM snapshots, screenshots, and metadata &mdash; requires the Trace Viewer to open.</td>
+      </tr>
+      <tr>
+        <td><strong>Replay model</strong></td>
+        <td>rrweb continuous DOM session replay across navigations. The recording is one unbroken timeline; multi-page flows scrub end to end.</td>
+        <td>Discrete per-action DOM snapshots &mdash; step through what Playwright did, one action at a time.</td>
+      </tr>
+      <tr>
+        <td><strong>Cost / signup</strong></td>
+        <td>Free. Apache 2.0. No signup.</td>
+        <td>Free. Apache 2.0. No signup.</td>
+      </tr>
+      <tr>
+        <td><strong>Editor integration</strong></td>
+        <td>None yet.</td>
+        <td>Trace Viewer wins &mdash; source-file links, locator highlighting, and step-level integration in the Playwright VS Code extension.</td>
+      </tr>
+      <tr>
+        <td><strong>Sharing</strong></td>
+        <td>Send the file. Email attachment, Slack DM, Jira upload, S3 bucket, USB stick. The recipient opens it offline, no toolchain.</td>
+        <td>Share the <code>trace.zip</code> (recipient needs <code>npx playwright show-trace</code> or access to trace.playwright.dev).</td>
+      </tr>
+      <tr>
+        <td><strong>Console capture</strong></td>
+        <td>rrweb console plugin &mdash; <code>log</code> / <code>info</code> / <code>warn</code> / <code>error</code> + stack traces, time-synced to the replay scrubber.</td>
+        <td>Yes &mdash; console output per step in the Trace Viewer UI.</td>
+      </tr>
+      <tr>
+        <td><strong>Network capture</strong></td>
+        <td>Failed responses (<code>status &ge; 400</code>) via CDP on Chromium. Degrades gracefully to rrweb + console on Firefox / WebKit.</td>
+        <td>Full request/response log per step, all browsers.</td>
+      </tr>
+      <tr>
+        <td><strong>Maturity</strong></td>
+        <td>Pre-1.0 (alpha as of June 2026). Active development.</td>
+        <td>Mature, first-party, ships with every <code>@playwright/test</code> install.</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <h2>When Playwright Trace Viewer is the better choice</h2>
+
+  <p>
+    For most Playwright users, Trace Viewer is the better default for
+    in-editor debugging:
+  </p>
+
+  <ul>
+    <li><strong>First-party, zero-install.</strong> It ships with <code>@playwright/test</code> &mdash; nothing extra to add or maintain.</li>
+    <li><strong>Step-level DOM snapshots.</strong> You can jump to any Playwright action and see the exact DOM state at that moment. The VS Code extension shows source-file links, locator inspection, and the full action log alongside the snapshot.</li>
+    <li><strong>Source + locator integration.</strong> Click a step; see the line of code that triggered it. This is the better workflow for debugging <em>your own machine</em> in an IDE.</li>
+    <li><strong>Full network log.</strong> All browsers, all requests &mdash; not just failures.</li>
+  </ul>
+
+  <h2>When tracelane is the right choice</h2>
+
+  <ul>
+    <li>
+      You need a <em>shareable, fully-offline artifact</em> &mdash; the specific combination
+      of fully-inlined media + continuous rrweb replay in a double-clickable offline
+      file. Hand it to a developer, designer, PM, or AI agent: they open it in any
+      browser, no toolchain, no <code>npx</code>, no server.
+    </li>
+    <li>You want the replay attached directly to a Jira ticket, PR artifact, or email &mdash; anywhere a file can go.</li>
+    <li>You want a continuous timeline across navigations rather than a step-by-step log &mdash; useful when what matters is the overall session flow (scroll, click, wait) rather than which Playwright action fired.</li>
+    <li>Your CI is air-gapped or your compliance setup makes uploading test data to an external server a non-starter.</li>
+    <li>You want AI coding agents to read the failure directly &mdash; the rrweb events are in the HTML file as structured data, no extra API or auth.</li>
+  </ul>
+
+  <h2>Can you use both?</h2>
+
+  <p>
+    Yes &mdash; they coexist in the same <code>playwright.config.ts</code>.
+    Playwright&rsquo;s own <code>trace</code> option and <code>@tracelane/playwright</code>
+    are independent reporters/fixtures; enabling both means you get the
+    step-level Trace Viewer for local debugging <em>and</em> a sharable
+    tracelane HTML for CI artifacts and handoffs. Neither interferes with the other.
+  </p>
+
+  <h2>Why this page exists</h2>
+
+  <p>
+    Someone searching &ldquo;playwright trace viewer alternative&rdquo; or &ldquo;offline
+    playwright replay&rdquo; should find an honest answer, not marketing copy. The
+    comparison above reflects the current state of both tools as of June 2026 &mdash;
+    if something is wrong, open a PR.
+  </p>
+
+  <p style="color: var(--fg-muted); font-size: 0.9rem; margin-top: 2rem;">
+    Found something inaccurate above? Open a PR on
+    <a href="https://github.com/Cubenest/rrweb-stack/blob/main/apps/tracelane-docs/src/pages/vs-playwright-trace-viewer.astro" rel="noopener">this page</a>
+    &mdash; the goal is accuracy, not advocacy.
+  </p>
+</Layout>
