@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import TraceLaneReporter from '../src/reporter.js';
 
 // The Reporter owns CONFIG + LIFECYCLE only — the per-test report build lives
@@ -14,10 +14,12 @@ function fakeSuite(total: number) {
 describe('TraceLaneReporter', () => {
   const prevMode = process.env.TRACELANE_MODE;
   const prevOut = process.env.TRACELANE_OUT_DIR;
+  const prevCap = process.env.TRACELANE_CAPTURE_NETWORK;
 
   beforeEach(() => {
     Reflect.deleteProperty(process.env, 'TRACELANE_MODE');
     Reflect.deleteProperty(process.env, 'TRACELANE_OUT_DIR');
+    Reflect.deleteProperty(process.env, 'TRACELANE_CAPTURE_NETWORK');
   });
 
   afterEach(() => {
@@ -25,6 +27,8 @@ describe('TraceLaneReporter', () => {
     else process.env.TRACELANE_MODE = prevMode;
     if (prevOut === undefined) Reflect.deleteProperty(process.env, 'TRACELANE_OUT_DIR');
     else process.env.TRACELANE_OUT_DIR = prevOut;
+    if (prevCap === undefined) Reflect.deleteProperty(process.env, 'TRACELANE_CAPTURE_NETWORK');
+    else process.env.TRACELANE_CAPTURE_NETWORK = prevCap;
   });
 
   it('does not print to stdio (the fixture/Playwright owns the run output)', () => {
@@ -45,18 +49,23 @@ describe('TraceLaneReporter', () => {
     // reporter produces no console output (console.log removed — see Fix 2)
   });
 
-  it('warns loudly when captureNetwork:false is passed (cannot be honored by the reporter)', () => {
-    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
-    new TraceLaneReporter({ captureNetwork: false });
-    expect(warnSpy).toHaveBeenCalledOnce();
-    expect(warnSpy.mock.calls[0][0]).toContain('TRACELANE_CAPTURE_NETWORK=false');
-    warnSpy.mockRestore();
-    // captureNetwork:true (or unset) should NOT warn
-    const warnSpy2 = vi.spyOn(console, 'warn').mockImplementation(() => {});
-    new TraceLaneReporter({ captureNetwork: true });
-    new TraceLaneReporter({});
-    expect(warnSpy2).not.toHaveBeenCalled();
-    warnSpy2.mockRestore();
+  it('bridges reporter options into TRACELANE_* env for the fixture', () => {
+    new TraceLaneReporter({ mode: 'all', outDir: './my-reports', captureNetwork: false });
+    expect(process.env.TRACELANE_MODE).toBe('all');
+    expect(process.env.TRACELANE_OUT_DIR).toBe('./my-reports');
+    expect(process.env.TRACELANE_CAPTURE_NETWORK).toBe('false');
+  });
+
+  it('does NOT override an already-set env var (explicit env wins)', () => {
+    process.env.TRACELANE_MODE = 'failed';
+    new TraceLaneReporter({ mode: 'all' });
+    expect(process.env.TRACELANE_MODE).toBe('failed');
+  });
+
+  it('sets no env var for an omitted option', () => {
+    new TraceLaneReporter({ mode: 'all' });
+    expect(process.env.TRACELANE_OUT_DIR).toBeUndefined();
+    expect(process.env.TRACELANE_CAPTURE_NETWORK).toBeUndefined();
   });
 
   it('onEnd re-resolves options without logging (TRACELANE_MODE env honored)', () => {
