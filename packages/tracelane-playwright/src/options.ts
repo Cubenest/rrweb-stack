@@ -26,10 +26,10 @@ export interface TraceLaneOptions {
    * Capture failed network requests via CDP (Chromium-only). Default `true`.
    * Routed into the report's network panel through the rrweb console plugin.
    *
-   * **Cross-process note**: reporter constructor options are not propagated to
-   * the fixture (they run in separate Playwright worker processes). Setting
-   * `captureNetwork: false` on the reporter has no effect on the fixture's CDP
-   * capture. To disable CDP capture in the fixture, set the env var:
+   * The reporter bridges this option to `TRACELANE_CAPTURE_NETWORK` at startup
+   * (only when that env var is not already set), so the fixture honors it. An
+   * explicit `TRACELANE_CAPTURE_NETWORK` env var always wins over this option.
+   * To force-disable CDP capture regardless of reporter config, set:
    * `TRACELANE_CAPTURE_NETWORK=false` before running Playwright.
    */
   captureNetwork?: boolean;
@@ -58,9 +58,9 @@ function defaultEnv(): EnvLike {
  * invalid `TRACELANE_MODE` is ignored. `env` is injectable for testing.
  *
  * `TRACELANE_CAPTURE_NETWORK=false` (case-insensitive) disables CDP network
- * capture in the fixture. This is the cross-process mechanism for the
- * `captureNetwork` option — reporter constructor options are not propagated to
- * the fixture because they run in different Playwright worker processes.
+ * capture in the fixture. The reporter bridges the `captureNetwork` option to
+ * this env var at startup (when not already set), so the fixture receives it.
+ * An explicit env var always wins over the reporter option.
  */
 export function resolveOptions(
   opts: TraceLaneOptions = {},

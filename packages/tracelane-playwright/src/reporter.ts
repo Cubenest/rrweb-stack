@@ -3,15 +3,17 @@
 //
 // IMPORTANT: the Reporter does NOT build reports — the per-test HTML build lives
 // in the auto-fixture, which is the only place with a live `page` + `testInfo`.
-// By design the Reporter never touches `page`. Its job is config validation
-// (resolveOptions in the constructor so invalid config surfaces early) and
-// tallying pass/fail for future use.
+// By design the Reporter never touches `page`. Its two jobs are:
+//   1. Config validation: resolveOptions in the constructor so invalid config
+//      surfaces early (before any test runs).
+//   2. Options→env bridge: reporter constructor options are bridged to the
+//      fixture via TRACELANE_* env vars (set only when unset, so explicit env
+//      still wins). The fixture runs in separate Playwright worker processes and
+//      reads env vars to pick up the reporter's config. Verified: env set here
+//      (config load, main process) is inherited by workers spawned after.
 //
-// NOTE on captureNetwork: reporter constructor options do NOT propagate to the
-// fixture — they run in separate Playwright worker processes. Setting
-// `captureNetwork: false` here is silently ignored by the fixture's CDP attach.
-// Control the fixture via TRACELANE_CAPTURE_NETWORK=false env var instead (see
-// options.ts resolveOptions for the env contract).
+// The reporter does NOT tally pass/fail counts and does NOT print any
+// end-of-run summary. All per-test reporting is handled by the fixture.
 
 import type {
   FullConfig,
@@ -26,25 +28,37 @@ import { type TraceLaneOptions, resolveOptions } from './options.js';
 /**
  * tracelane's Playwright reporter. Pair it with the fixture
  * (`import { test } from '@tracelane/playwright/fixture'`) — the fixture records
- * + writes reports; this reporter validates config at startup.
+ * + writes reports; this reporter validates config at startup and bridges options
+ * to the fixture via TRACELANE_* env vars.
  */
 export class TraceLaneReporter implements Reporter {
-  private failed = 0;
-
   constructor(opts: TraceLaneOptions = {}) {
-    // Resolve up front so an invalid config surfaces early (throws on bad input).
+    // Validate up front so an invalid config surfaces early.
     resolveOptions(opts);
-    // Warn loudly if captureNetwork was explicitly set on the reporter — it
-    // cannot be honored here because the fixture runs in a separate Playwright
-    // worker process and calls resolveOptions({}) independently. The only way
-    // to disable CDP capture is via the TRACELANE_CAPTURE_NETWORK=false env var.
-    if (opts.captureNetwork === false) {
-      // eslint-disable-next-line no-console
-      console.warn(
-        '[tracelane] reporter: captureNetwork:false is ignored — the fixture ' +
-          'runs in a separate worker process and cannot see reporter options. ' +
-          'Set TRACELANE_CAPTURE_NETWORK=false instead.',
-      );
+    // Bridge reporter options to the fixture, which runs in a SEPARATE worker
+    // process and reads only TRACELANE_* env + defaults. We set env only when
+    // unset, so an explicit env var / CLI value still wins. Verified: env set
+    // here (config load, main process) is inherited by workers spawned after.
+    //
+    // Access process.env defensively (no hard @types/node dep — mirrors
+    // options.ts defaultEnv() pattern). The typed interface lets biome use dot
+    // notation (useLiteralKeys rule) while keeping TypeScript strict.
+    type BridgeEnv = {
+      TRACELANE_MODE?: string;
+      TRACELANE_OUT_DIR?: string;
+      TRACELANE_CAPTURE_NETWORK?: string;
+    };
+    const env = (globalThis as { process?: { env?: BridgeEnv } }).process?.env;
+    if (env !== undefined) {
+      if (opts.mode !== undefined && env.TRACELANE_MODE === undefined) {
+        env.TRACELANE_MODE = opts.mode;
+      }
+      if (opts.outDir !== undefined && env.TRACELANE_OUT_DIR === undefined) {
+        env.TRACELANE_OUT_DIR = opts.outDir;
+      }
+      if (opts.captureNetwork !== undefined && env.TRACELANE_CAPTURE_NETWORK === undefined) {
+        env.TRACELANE_CAPTURE_NETWORK = String(opts.captureNetwork);
+      }
     }
   }
 
@@ -54,18 +68,16 @@ export class TraceLaneReporter implements Reporter {
   }
 
   onBegin(_config: FullConfig, _suite: Suite): void {
-    this.failed = 0;
+    // No-op: validation and env bridging are done in the constructor.
   }
 
   onTestBegin(_test: TestCase, _result: TestResult): void {
     // No-op: the fixture starts the recorder per test.
   }
 
-  onTestEnd(test: TestCase, _result: TestResult): void {
-    // TestCase.ok() is Playwright's "ended as expected" check (so test.fail()
-    // expected-failures count as ok). A not-ok test is what the fixture builds a
-    // report for in 'failed' mode.
-    if (!test.ok()) this.failed++;
+  onTestEnd(_test: TestCase, _result: TestResult): void {
+    // No-op: the fixture owns per-test report building; this reporter does not
+    // tally pass/fail counts.
   }
 
   onEnd(_result: FullResult): void {

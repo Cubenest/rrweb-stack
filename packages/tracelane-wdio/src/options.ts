@@ -65,7 +65,7 @@ export interface TraceLaneOptions {
   capture?: CaptureOptions;
   /** Reserved for the post-MVP visual-diff add-on (P1 PRD §H). No-op in v1. */
   visualDiff?: boolean;
-  /** Node-side drain poll interval in ms (ADR-0006). Default 5000. */
+  /** Node-side drain poll interval in ms (ADR-0006). Default 500 (from @tracelane/core when unset). */
   drainIntervalMs?: number;
   /** Re-injection cooldown guard in ms (ADR-0006). Default 250. */
   cooldownMs?: number;

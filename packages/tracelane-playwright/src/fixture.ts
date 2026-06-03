@@ -7,7 +7,7 @@
 // The fixture straddles `use()`: it starts capture BEFORE the test body runs,
 // yields with `use()`, then finalizes + writes the report AFTER. This is the
 // only place with a live `page` + `testInfo`, which is why the report build
-// lives here (the Reporter, Task 11, owns only config + summary).
+// lives here (the Reporter owns only config: validation + the options→env bridge).
 
 import { test as base, expect } from '@playwright/test';
 import type { Page, TestInfo } from '@playwright/test';

@@ -87,7 +87,7 @@ export const config: Options.Testrunner = {
 ## How it works
 
 - On the first test, the Service injects an rrweb recorder bundle into the page and installs an in-page event buffer (`window.__tracelane__events`).
-- The Node side drains that buffer on a poll (default every 5 s) and on every `afterTest`, re-injecting after each navigation.
+- The Node side drains that buffer on a poll (default every 500 ms) and on every `afterTest`, re-injecting after each navigation.
 - In `failed` mode (default) a passing test discards its buffer; a failing test's buffer is handed to [`@tracelane/report`](https://github.com/Cubenest/rrweb-stack/tree/main/packages/tracelane-report), which builds the single offline HTML (≤ 25 MB).
 
 ## Options
@@ -100,7 +100,7 @@ export const config: Options.Testrunner = {
 | `capture.network` | `boolean` | `true` | Capture network requests via the in-page `rrweb/network@1` plugin — all browsers, no CDP. Privacy-first: only URL/method/status/timing by default (headers + bodies off; opt in via `capture.networkOptions`). CDP is an optional fallback that adds authoritative status + true no-response failures where it's available. |
 | `capture.networkOptions` | `NetworkRecordOptions` | plugin defaults | Forwarded to the in-page network plugin (`recordHeaders`, `recordBody`, `maskRequestFn`, `payloadHostDenyList`, …). Defaults are privacy-first (headers + bodies off). Ignored when `capture.network` is `false`. |
 | `capture.console` | `boolean` | `true` | Capture `console.*` via the rrweb console plugin. Setting this `false` also drops any `[tracelane.net]` network-error lines from the CDP fallback path, since those surface through `console.error`. |
-| `drainIntervalMs` | `number` | `5000` | Node-side drain poll interval. |
+| `drainIntervalMs` | `number` | `500` | Node-side drain poll interval. |
 | `cooldownMs` | `number` | `250` | Re-injection cooldown guard (suppresses double-init on hash/HMR navigation). |
 | `allure` | `boolean` | `false` | Reserved for the v1.1 Allure shim. No-op in v1. |
 | `visualDiff` | `boolean` | `false` | Reserved for the post-MVP visual-diff add-on. No-op in v1. |

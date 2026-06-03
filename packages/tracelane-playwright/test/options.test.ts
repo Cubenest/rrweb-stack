@@ -5,9 +5,9 @@ import { DEFAULT_OUT_DIR, resolveOptions } from '../src/options.js';
 // session consumes, applying defaults (failed mode, ./tracelane-reports,
 // network capture on) and honoring the TRACELANE_MODE / TRACELANE_OUT_DIR /
 // TRACELANE_CAPTURE_NETWORK env overrides (same env contract as @tracelane/wdio
-// + @tracelane/core). TRACELANE_CAPTURE_NETWORK is the cross-process mechanism
-// for captureNetwork — reporter constructor options are NOT propagated to the
-// fixture because they run in separate Playwright worker processes.
+// + @tracelane/core). The reporter bridges captureNetwork (and mode/outDir) to
+// these env vars at startup so the fixture receives them; an explicit env var
+// always wins over the reporter option.
 
 describe('resolveOptions', () => {
   it('applies defaults for an empty options object (no env)', () => {
@@ -45,7 +45,7 @@ describe('resolveOptions', () => {
   });
 
   it('TRACELANE_CAPTURE_NETWORK=false disables CDP capture (case-insensitive)', () => {
-    // The env var is the cross-process mechanism: reporter opts never reach the fixture.
+    // The reporter bridges captureNetwork to this env var; an explicit env var wins.
     expect(resolveOptions({}, { TRACELANE_CAPTURE_NETWORK: 'false' }).captureNetwork).toBe(false);
     expect(resolveOptions({}, { TRACELANE_CAPTURE_NETWORK: 'False' }).captureNetwork).toBe(false);
     expect(resolveOptions({}, { TRACELANE_CAPTURE_NETWORK: 'FALSE' }).captureNetwork).toBe(false);
