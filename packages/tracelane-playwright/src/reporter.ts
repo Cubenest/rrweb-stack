@@ -3,16 +3,17 @@
 //
 // IMPORTANT: the Reporter does NOT build reports — the per-test HTML build lives
 // in the auto-fixture, which is the only place with a live `page` + `testInfo`.
-// By design the Reporter never touches `page`. Its job is config validation
-// (resolveOptions in the constructor so invalid config surfaces early), bridging
-// options to the fixture via TRACELANE_* env vars, and tallying pass/fail for
-// future use.
+// By design the Reporter never touches `page`. Its two jobs are:
+//   1. Config validation: resolveOptions in the constructor so invalid config
+//      surfaces early (before any test runs).
+//   2. Options→env bridge: reporter constructor options are bridged to the
+//      fixture via TRACELANE_* env vars (set only when unset, so explicit env
+//      still wins). The fixture runs in separate Playwright worker processes and
+//      reads env vars to pick up the reporter's config. Verified: env set here
+//      (config load, main process) is inherited by workers spawned after.
 //
-// OPTIONS BRIDGE: reporter constructor options are bridged to the fixture via
-// TRACELANE_* env vars (set only when unset, so explicit env still wins). The
-// fixture runs in separate Playwright worker processes and reads env vars to
-// pick up the reporter's config. Verified: env set here (config load, main
-// process) is inherited by workers spawned after.
+// The reporter does NOT tally pass/fail counts and does NOT print any
+// end-of-run summary. All per-test reporting is handled by the fixture.
 
 import type {
   FullConfig,
@@ -27,11 +28,10 @@ import { type TraceLaneOptions, resolveOptions } from './options.js';
 /**
  * tracelane's Playwright reporter. Pair it with the fixture
  * (`import { test } from '@tracelane/playwright/fixture'`) — the fixture records
- * + writes reports; this reporter validates config at startup.
+ * + writes reports; this reporter validates config at startup and bridges options
+ * to the fixture via TRACELANE_* env vars.
  */
 export class TraceLaneReporter implements Reporter {
-  private failed = 0;
-
   constructor(opts: TraceLaneOptions = {}) {
     // Validate up front so an invalid config surfaces early.
     resolveOptions(opts);
@@ -68,18 +68,16 @@ export class TraceLaneReporter implements Reporter {
   }
 
   onBegin(_config: FullConfig, _suite: Suite): void {
-    this.failed = 0;
+    // No-op: validation and env bridging are done in the constructor.
   }
 
   onTestBegin(_test: TestCase, _result: TestResult): void {
     // No-op: the fixture starts the recorder per test.
   }
 
-  onTestEnd(test: TestCase, _result: TestResult): void {
-    // TestCase.ok() is Playwright's "ended as expected" check (so test.fail()
-    // expected-failures count as ok). A not-ok test is what the fixture builds a
-    // report for in 'failed' mode.
-    if (!test.ok()) this.failed++;
+  onTestEnd(_test: TestCase, _result: TestResult): void {
+    // No-op: the fixture owns per-test report building; this reporter does not
+    // tally pass/fail counts.
   }
 
   onEnd(_result: FullResult): void {
