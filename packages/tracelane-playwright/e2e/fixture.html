@@ -38,11 +38,11 @@
         try {
           // Fail on purpose so the CDP network-capture path has something to log.
           // Must be an ABSOLUTE URL that reaches the network stack: a relative
-          // fetch under a file:// origin is rejected by the Fetch API ("scheme
-          // 'file' is not supported") BEFORE it becomes a request, so no
-          // Network.loadingFailed fires and no [tracelane.net] line is produced.
-          // An unreachable loopback URL fails at the network layer (ERR_UNSAFE_PORT),
-          // which DOES surface as Network.loadingFailed -> [tracelane.net].
+          // fetch under a file:// origin is rejected by the Fetch API BEFORE it
+          // becomes a request (no Network.loadingFailed fires, so no
+          // [tracelane.net] line is produced). An unreachable loopback URL fails
+          // at the network layer (ERR_UNSAFE_PORT), which DOES surface as
+          // Network.loadingFailed -> [tracelane.net].
           await fetch('http://127.0.0.1:1/tracelane-smoke/definitely-missing-endpoint');
         } catch {
           /* network error is expected in the smoke fixture */

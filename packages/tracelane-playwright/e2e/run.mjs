@@ -2,9 +2,12 @@
 //
 // The smoke spec FAILS ON PURPOSE — a failed test is the only thing that makes
 // the auto-fixture (in `failed` mode) write a report. So Playwright exiting
-// non-zero (one test failed) is the EXPECTED, healthy outcome. We therefore
-// don't gate on Playwright's exit code; we gate on the report assertion below:
-// exactly one .html under e2e-out, each < 25 MB.
+// non-zero (one or more tests failed) is the EXPECTED, healthy outcome. We
+// therefore don't gate on Playwright's exit code; we gate on the report
+// assertions below: at least one .html under e2e-out (smoke + multipage each
+// fail on purpose, so there are two), each < 25 MB, and the decoded event blob
+// of the set must contain all five markers (FullSnapshot, console line,
+// [tracelane.net], tracelane.nav boundary, and the post-navigation page-B line).
 //
 // The fixture resolves its outDir from TRACELANE_OUT_DIR (it doesn't see the
 // reporter's config `outDir`), so we set TRACELANE_OUT_DIR to the e2e-out dir
