@@ -271,6 +271,7 @@ describe('CDP network capture (Chromium-only, opt-in)', () => {
   });
 
   it('degrades to rrweb-only (no throw) when attachNetworkCapture fails, detaching CDP', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
     const page = fakePage([{ type: 4, data: {}, timestamp: 1 }], {
       browserName: 'chromium',
       cdpEnableThrows: true,
@@ -285,6 +286,8 @@ describe('CDP network capture (Chromium-only, opt-in)', () => {
     expect(page._lastCdp()?.detach).toHaveBeenCalledTimes(1); // failed attach → detach
     expect(session.disabled).toBeFalsy(); // rrweb still recording
     expect(session.cdp).toBeUndefined(); // no live CDP on the session
+    expect(warn).toHaveBeenCalled();
+    warn.mockRestore();
   });
 
   it('disables capture (no throw, no report) when recorder.start() fails (e.g. CSP)', async () => {

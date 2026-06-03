@@ -84,6 +84,9 @@ export async function runStart(input: StartInput): Promise<StartedSession> {
       cdp = await context.newCDPSession(page);
     } catch {
       cdp = undefined; // no CDP; rrweb+console still work
+      console.warn(
+        '[tracelane] could not open a CDP session; network capture unavailable, degrading to rrweb+console only.',
+      );
     }
   }
 
@@ -98,7 +101,6 @@ export async function runStart(input: StartInput): Promise<StartedSession> {
     } catch {
       await cdp.detach().catch(() => {});
       cdp = undefined;
-      // eslint-disable-next-line no-console
       console.warn(
         '[tracelane] network capture unavailable (CDP); degrading to rrweb+console only.',
       );
@@ -117,12 +119,12 @@ export async function runStart(input: StartInput): Promise<StartedSession> {
   // user's test. Degrade to a disabled session that writes no report.
   try {
     await recorder.start();
-  } catch {
+  } catch (err) {
     if (cdp) await cdp.detach().catch(() => {});
-    // eslint-disable-next-line no-console
     console.warn(
-      '[tracelane] capture unavailable on this page (its Content-Security-Policy may block ' +
+      '[tracelane] capture unavailable on this page (likely a Content-Security-Policy blocking ' +
         "script evaluation; rrweb needs 'unsafe-eval'). The test runs normally; no replay was recorded.",
+      err,
     );
     return { recorder, disabled: true };
   }
