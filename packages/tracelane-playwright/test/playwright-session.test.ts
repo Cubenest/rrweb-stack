@@ -270,7 +270,7 @@ describe('CDP network capture (Chromium-only, opt-in)', () => {
     expect(page._ctx.newCDPSession).not.toHaveBeenCalled();
   });
 
-  it('detaches the CDP session and rethrows when attachNetworkCapture fails after CDP opened', async () => {
+  it('degrades to rrweb-only (no throw) when attachNetworkCapture fails, detaching CDP', async () => {
     const page = fakePage([{ type: 4, data: {}, timestamp: 1 }], {
       browserName: 'chromium',
       cdpEnableThrows: true,
@@ -280,30 +280,34 @@ describe('CDP network capture (Chromium-only, opt-in)', () => {
       outDir: mkdtempSync(join(tmpdir(), 'tl-pw-')),
       captureNetwork: true,
     };
-    await expect(
-      runStart({ page: page as never, options, rrwebBundle: RRWEB_STUB }),
-    ).rejects.toThrow(/Network\.enable/);
-    // The CDP session was opened, so it MUST be detached before the rethrow —
-    // otherwise it leaks for the worker's lifetime (runFinalize never runs).
+    const session = await runStart({ page: page as never, options, rrwebBundle: RRWEB_STUB });
     expect(page._ctx.newCDPSession).toHaveBeenCalledTimes(1);
-    expect(page._lastCdp()?.detach).toHaveBeenCalledTimes(1);
+    expect(page._lastCdp()?.detach).toHaveBeenCalledTimes(1); // failed attach → detach
+    expect(session.disabled).toBeFalsy(); // rrweb still recording
+    expect(session.cdp).toBeUndefined(); // no live CDP on the session
   });
 
-  it('detaches the CDP session and rethrows when recorder.start() fails after CDP opened', async () => {
+  it('disables capture (no throw, no report) when recorder.start() fails (e.g. CSP)', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
     const page = fakePage([{ type: 4, data: {}, timestamp: 1 }], {
       browserName: 'chromium',
       startThrows: true,
     });
-    const options = {
-      mode: 'failed' as const,
-      outDir: mkdtempSync(join(tmpdir(), 'tl-pw-')),
-      captureNetwork: true,
-    };
-    await expect(
-      runStart({ page: page as never, options, rrwebBundle: RRWEB_STUB }),
-    ).rejects.toThrow(/recorder\.start/);
-    expect(page._ctx.newCDPSession).toHaveBeenCalledTimes(1);
+    const outDir = mkdtempSync(join(tmpdir(), 'tl-pw-'));
+    const options = { mode: 'failed' as const, outDir, captureNetwork: true };
+    const session = await runStart({ page: page as never, options, rrwebBundle: RRWEB_STUB });
+    expect(session.disabled).toBe(true);
     expect(page._lastCdp()?.detach).toHaveBeenCalledTimes(1);
+    expect(warn).toHaveBeenCalled();
+    // A disabled session writes nothing on finalize.
+    await runFinalize(session, {
+      page: page as never,
+      testInfo: failedTestInfo() as never,
+      options,
+      rrwebBundle: RRWEB_STUB,
+    });
+    expect(readdirSync(outDir).filter((f) => f.endsWith('.html')).length).toBe(0);
+    warn.mockRestore();
   });
 });
 

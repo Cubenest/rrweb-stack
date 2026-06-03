@@ -75,55 +75,73 @@ export async function runStart(input: StartInput): Promise<StartedSession> {
     browserVersion = undefined;
   }
 
-  // CDP network capture is Chromium-only (P1 PRD §E.2). When opted in and the
-  // browser is Chromium, open a CDP session and attach the shared capture path;
-  // on Firefox/WebKit (no CDP) we silently degrade to rrweb + console.
+  // CDP network capture is Chromium-only (P1 PRD §E.2). Open CDP only when opted
+  // in and on Chromium; on Firefox/WebKit (no CDP) we silently degrade to rrweb +
+  // console. A failure opening CDP here also degrades to rrweb+console only.
   let cdp: CDPSession | undefined;
   if (options.captureNetwork && browserName === 'chromium') {
-    cdp = await context.newCDPSession(page);
+    try {
+      cdp = await context.newCDPSession(page);
+    } catch {
+      cdp = undefined; // no CDP; rrweb+console still work
+    }
   }
 
-  // Once the CDP session is open it is ours to close. If anything after this
-  // point throws (attachNetworkCapture / recorder.start()), runStart never
-  // returns — so runFinalize, the only other detach site, never runs and the
-  // session would leak for the worker's lifetime. Detach here before rethrowing.
+  // ONE executor for both network capture and the recorder (recorder uses only
+  // execute(); cdp/on are used solely by attachNetworkCapture).
+  const executor = createPlaywrightExecutor(page, cdp);
+
+  // Network capture is best-effort: if it fails, detach CDP and continue.
+  if (cdp) {
+    try {
+      await attachNetworkCapture(executor);
+    } catch {
+      await cdp.detach().catch(() => {});
+      cdp = undefined;
+      // eslint-disable-next-line no-console
+      console.warn(
+        '[tracelane] network capture unavailable (CDP); degrading to rrweb+console only.',
+      );
+    }
+  }
+
+  const recorder = createRecorder({
+    executor,
+    rrwebBundle,
+    mode: options.mode,
+    // MVP: in-page network plugin off; the CDP path above is the network
+    // channel. The recorder still captures rrweb + console on all browsers.
+  });
+
+  // Capture start is best-effort: a CSP / injection failure must NOT fail the
+  // user's test. Degrade to a disabled session that writes no report.
   try {
-    if (cdp) {
-      await attachNetworkCapture(createPlaywrightExecutor(page, cdp));
-    }
-    const executor = createPlaywrightExecutor(page, cdp);
-    const recorder = createRecorder({
-      executor,
-      rrwebBundle,
-      mode: options.mode,
-      // MVP: in-page network plugin off; the CDP path above is the network
-      // channel. The recorder still captures rrweb + console on all browsers.
-    });
     await recorder.start();
-
-    const onNav = (frame: Frame): void => {
-      if (frame !== page.mainFrame()) return; // main frame only; ignore sub-frames
-      // Fire-and-forget: navigation may tear the page down; the recorder's
-      // cooldown + monotonic session id dedupe hash/HMR re-renders.
-      void recorder.reinject(frame.url()).catch(() => {
-        /* best-effort; page may be gone */
-      });
-    };
-    page.on('framenavigated', onNav);
-
-    const session: StartedSession = { recorder, page, onNav };
-    if (cdp) session.cdp = cdp;
-    if (browserName !== undefined) session.browserName = browserName;
-    if (browserVersion !== undefined) session.browserVersion = browserVersion;
-    return session;
-  } catch (err) {
-    if (cdp) {
-      await cdp.detach().catch(() => {
-        /* page/context may already be closed */
-      });
-    }
-    throw err;
+  } catch {
+    if (cdp) await cdp.detach().catch(() => {});
+    // eslint-disable-next-line no-console
+    console.warn(
+      '[tracelane] capture unavailable on this page (its Content-Security-Policy may block ' +
+        "script evaluation; rrweb needs 'unsafe-eval'). The test runs normally; no replay was recorded.",
+    );
+    return { recorder, disabled: true };
   }
+
+  const onNav = (frame: Frame): void => {
+    if (frame !== page.mainFrame()) return; // main frame only; ignore sub-frames
+    // Fire-and-forget: navigation may tear the page down; the recorder's
+    // cooldown + monotonic session id dedupe hash/HMR re-renders.
+    void recorder.reinject(frame.url()).catch(() => {
+      /* best-effort; page may be gone */
+    });
+  };
+  page.on('framenavigated', onNav);
+
+  const session: StartedSession = { recorder, page, onNav };
+  if (cdp) session.cdp = cdp;
+  if (browserName !== undefined) session.browserName = browserName;
+  if (browserVersion !== undefined) session.browserVersion = browserVersion;
+  return session;
 }
 
 /** Compose the report metadata from Playwright's testInfo + resolved browser info. */
@@ -146,6 +164,7 @@ function buildMeta(testInfo: TestInfo, session: StartedSession): ReportMeta {
 
 /** Finalize the recorder (apply mode policy), and write a report when one is due. */
 export async function runFinalize(session: StartedSession, input: FinalizeInput): Promise<void> {
+  if (session.disabled) return; // capture never started; nothing to finalize/clean up
   const { testInfo, options } = input;
   try {
     const { shouldBuildReport, events } = await session.recorder.finalize({
