@@ -28,9 +28,14 @@ interface FakeContext {
 interface FakePage {
   evaluate: ReturnType<typeof vi.fn>;
   context: () => FakeContext;
+  on: ReturnType<typeof vi.fn>;
+  off: ReturnType<typeof vi.fn>;
+  mainFrame: () => { url: () => string };
   // Test-only handles (not part of the Playwright Page surface).
   _ctx: FakeContext;
   _lastCdp: () => FakeCdp | undefined;
+  _fireNav: (frame: unknown) => void;
+  _mainFrame: { url: () => string };
 }
 
 interface FakePageOptions {
@@ -89,7 +94,26 @@ function fakePage(events: unknown[], opts: FakePageOptions = {}): FakePage {
     // Bundle injection (eval) and anything else: undefined.
     return undefined;
   });
-  return { evaluate, context: () => ctx, _ctx: ctx, _lastCdp: () => lastCdp };
+  // --- navigation plumbing (Task 1) ---
+  const mainFrame = { url: () => 'https://example.test/page-b' };
+  const navHandlers: Array<(frame: unknown) => void> = [];
+  const on = vi.fn((event: string, h: (frame: unknown) => void) => {
+    if (event === 'framenavigated') navHandlers.push(h);
+  });
+  const off = vi.fn();
+  return {
+    evaluate,
+    context: () => ctx,
+    on,
+    off,
+    mainFrame: () => mainFrame,
+    _ctx: ctx,
+    _lastCdp: () => lastCdp,
+    _fireNav: (frame: unknown) => {
+      for (const h of navHandlers) h(frame);
+    },
+    _mainFrame: mainFrame,
+  };
 }
 
 const RRWEB_STUB =
@@ -280,5 +304,36 @@ describe('CDP network capture (Chromium-only, opt-in)', () => {
     ).rejects.toThrow(/recorder\.start/);
     expect(page._ctx.newCDPSession).toHaveBeenCalledTimes(1);
     expect(page._lastCdp()?.detach).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('navigation reinject (Task 1)', () => {
+  it('reinjects on main-frame navigation and ignores sub-frames', async () => {
+    const page = fakePage([{ type: 4, data: {}, timestamp: 1 }], { browserName: 'chromium' });
+    const options = {
+      mode: 'failed' as const,
+      outDir: mkdtempSync(join(tmpdir(), 'tl-pw-')),
+      captureNetwork: false,
+    };
+    const session = await runStart({ page: page as never, options, rrwebBundle: RRWEB_STUB });
+    expect(page.on).toHaveBeenCalledWith('framenavigated', expect.any(Function));
+
+    const before = page.evaluate.mock.calls.length;
+    page._fireNav(page._mainFrame); // main frame
+    await new Promise((r) => setTimeout(r, 0));
+    expect(page.evaluate.mock.calls.length).toBeGreaterThan(before);
+
+    const afterMain = page.evaluate.mock.calls.length;
+    page._fireNav({ url: () => 'https://sub.frame/x' }); // not the main frame
+    await new Promise((r) => setTimeout(r, 0));
+    expect(page.evaluate.mock.calls.length).toBe(afterMain);
+
+    await runFinalize(session, {
+      page: page as never,
+      testInfo: failedTestInfo() as never,
+      options,
+      rrwebBundle: RRWEB_STUB,
+    });
+    expect(page.off).toHaveBeenCalledWith('framenavigated', expect.any(Function));
   });
 });

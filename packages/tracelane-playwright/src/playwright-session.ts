@@ -11,8 +11,7 @@
 // in the CURRENT document). The recorder then drains events Node-side on its
 // poll loop and at finalize (ADR-0006).
 
-import type { CDPSession, Page } from '@playwright/test';
-import type { TestInfo } from '@playwright/test';
+import type { CDPSession, Frame, Page, TestInfo } from '@playwright/test';
 import { type Recorder, attachNetworkCapture, createRecorder } from '@tracelane/core';
 import { type ReportMeta, writeReport } from '@tracelane/report';
 import type { ResolvedOptions } from './options.js';
@@ -35,6 +34,12 @@ export interface StartedSession {
   browserName?: string;
   /** Browser version for the report header, when resolvable. */
   browserVersion?: string;
+  /** The page we attached the navigation listener to (for removal at finalize). */
+  page?: Page;
+  /** The framenavigated handler, removed in runFinalize to avoid cross-test leaks. */
+  onNav?: (frame: Frame) => void;
+  /** Set when capture could not start (e.g. CSP); runFinalize writes nothing. */
+  disabled?: boolean;
 }
 
 /** The Playwright browser-type name, when resolvable from the page's context. */
@@ -96,7 +101,17 @@ export async function runStart(input: StartInput): Promise<StartedSession> {
     });
     await recorder.start();
 
-    const session: StartedSession = { recorder };
+    const onNav = (frame: Frame): void => {
+      if (frame !== page.mainFrame()) return; // main frame only; ignore sub-frames
+      // Fire-and-forget: navigation may tear the page down; the recorder's
+      // cooldown + monotonic session id dedupe hash/HMR re-renders.
+      void recorder.reinject(frame.url()).catch(() => {
+        /* best-effort; page may be gone */
+      });
+    };
+    page.on('framenavigated', onNav);
+
+    const session: StartedSession = { recorder, page, onNav };
     if (cdp) session.cdp = cdp;
     if (browserName !== undefined) session.browserName = browserName;
     if (browserVersion !== undefined) session.browserVersion = browserVersion;
@@ -146,6 +161,10 @@ export async function runFinalize(session: StartedSession, input: FinalizeInput)
       meta: buildMeta(testInfo, session),
     });
   } finally {
+    // Remove the navigation listener so it doesn't leak across tests.
+    if (session.page && session.onNav) {
+      session.page.off('framenavigated', session.onNav);
+    }
     // Always detach the CDP session so it doesn't leak past the test.
     if (session.cdp) {
       await session.cdp.detach().catch(() => {
