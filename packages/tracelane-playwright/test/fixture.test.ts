@@ -36,7 +36,12 @@ function fakePage(events: unknown[], browserName = 'firefox') {
     if (body.includes('__tracelane__inited')) return 1;
     return undefined;
   });
-  return { evaluate, context: () => ctx, _ctx: ctx };
+  // Navigation stubs so runStart's framenavigated hook can attach/detach. These
+  // tests don't exercise navigation; mainFrame() just returns a stable object.
+  const mainFrame = { url: () => 'https://example.test/' };
+  const on = vi.fn();
+  const off = vi.fn();
+  return { evaluate, context: () => ctx, on, off, mainFrame: () => mainFrame, _ctx: ctx };
 }
 
 function failedTestInfo() {
