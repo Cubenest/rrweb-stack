@@ -127,16 +127,16 @@ describe('recorder: inject + drain (ADR-0006)', () => {
     expect(recorder.getBuffer()).toHaveLength(2);
   });
 
-  it('defaults drainIntervalMs to 5000', async () => {
+  it('defaults drainIntervalMs to 500 (shorter so pre-nav events drain before teardown)', async () => {
     const { executor, pageEmit } = createFakeExecutor();
     const recorder = createRecorder({ executor, rrwebBundle: FAKE_BUNDLE });
     await recorder.start();
 
     pageEmit(fullSnapshot(1));
-    // Nothing yet at 4999ms.
-    await vi.advanceTimersByTimeAsync(4999);
+    // Nothing yet at 499ms.
+    await vi.advanceTimersByTimeAsync(499);
     expect(recorder.getBuffer()).toHaveLength(0);
-    // Drained at 5000ms.
+    // Drained at 500ms.
     await vi.advanceTimersByTimeAsync(1);
     expect(recorder.getBuffer()).toHaveLength(1);
   });

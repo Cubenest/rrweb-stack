@@ -12,8 +12,14 @@ import {
 
 /** Default re-injection cooldown in ms (ADR-0006). */
 export const DEFAULT_COOLDOWN_MS = 250;
-/** Default Node-side poll interval in ms (ADR-0006). */
-export const DEFAULT_DRAIN_INTERVAL_MS = 5000;
+/**
+ * Default Node-side poll interval in ms (ADR-0006). Kept short so events
+ * buffered on a document right before a hard navigation are drained before the
+ * navigation tears the page (and the in-page buffer) down. The `pagehide` flush
+ * in the init script is the belt-and-suspenders rescue for whatever the poll
+ * misses in the final window.
+ */
+export const DEFAULT_DRAIN_INTERVAL_MS = 500;
 
 export interface RecorderOptions {
   /** The framework-agnostic driver (ADR-0004). */
@@ -66,9 +72,10 @@ export interface Recorder {
   start(): Promise<void>;
   /**
    * Re-inject after a navigation (ADR-0006). The in-page cooldown guard
-   * suppresses double-init on hash-only / HMR navigations; when a real re-init
-   * takes effect (the monotonic session id advances) a `tracelane.nav` boundary
-   * event is appended. Returns `true` if a re-init actually happened.
+   * suppresses double-init on hash-only / HMR navigations (init returns the `0`
+   * sentinel); when a real re-init takes effect (init returns a session id
+   * `>= 1`) a `tracelane.nav` boundary event is appended. Returns `true` if a
+   * re-init actually happened.
    */
   reinject(url: string): Promise<boolean>;
   /** Read+clear the page buffer, merge into the Node buffer, return the batch. */
@@ -108,11 +115,16 @@ export function createRecorder(options: RecorderOptions): Recorder {
   const buffer: eventWithTime[] = [];
   let pollTimer: ReturnType<typeof setInterval> | undefined;
   let started = false;
-  // Last session id we've observed from the page; advances only when an init
-  // actually takes effect (i.e. wasn't suppressed by the cooldown guard).
-  let lastSessionId = 0;
 
-  /** Run the init script in-page and return the active session id. */
+  /**
+   * Run the init script in-page. Returns the active session id: `0` means the
+   * in-page cooldown suppressed this init (a same-document hash/HMR re-render,
+   * no fresh recording started); `>= 1` means a recording actually (re)started.
+   * The in-page init is the authority — Node never tracks session ids itself,
+   * because the in-page id resets to 1 on every fresh document (a hard nav) and
+   * a Node-side monotonic counter would mis-classify post-first-nav loads as
+   * cooldown-suppressed.
+   */
   async function runInit(): Promise<number> {
     return executor.execute(
       tracelaneInitScript as (...args: unknown[]) => number,
@@ -124,20 +136,16 @@ export function createRecorder(options: RecorderOptions): Recorder {
 
   async function inject(): Promise<void> {
     await executor.execute(injectBundleScript as (...args: unknown[]) => void, rrwebBundle);
-    lastSessionId = await runInit();
+    await runInit();
   }
 
   async function reinject(url: string): Promise<boolean> {
     // Re-eval the bundle (the page may have been torn down by navigation), then
-    // re-run init. The cooldown guard inside the init script decides whether a
-    // fresh recorder actually starts.
+    // re-run init. The init script's return value is the authority on whether a
+    // fresh recording started.
     await executor.execute(injectBundleScript as (...args: unknown[]) => void, rrwebBundle);
-    const sessionId = await runInit();
-    if (sessionId <= lastSessionId) {
-      // Suppressed by cooldown — no navigation boundary to record.
-      return false;
-    }
-    lastSessionId = sessionId;
+    const sid = await runInit();
+    if (sid === 0) return false; // cooldown-suppressed (same-doc hash/HMR); no nav boundary
     await executor.execute(tracelaneNavScript as (...args: unknown[]) => void, url, Date.now());
     return true;
   }
