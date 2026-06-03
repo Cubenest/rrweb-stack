@@ -17,7 +17,9 @@ test('captures a failing interaction and writes a report', async ({ page }) => {
   await page.goto(fixtureUrl);
   await page.click('#go');
   // Give the click handler's console + fetch a beat to flow into the recorder.
-  await page.waitForTimeout(50);
+  // The CDP->in-page console.error->buffer chain for the 404 is async, so a
+  // short settle can miss the network line before finalize; 500ms is reliable.
+  await page.waitForTimeout(500);
   // Deliberate failure: the title is "tracelane smoke", not "nope".
   await expect(page.locator('#title')).toHaveText('nope');
 });

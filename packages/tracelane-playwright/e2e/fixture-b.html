@@ -6,7 +6,9 @@
   <script>
     document.getElementById('go-b').addEventListener('click', async () => {
       console.log('tracelane-smoke-B: button clicked on page B');
-      try { await fetch('/tracelane-smoke-b/missing-on-b'); } catch {}
+      // Absolute unreachable URL (not a file://-relative path) so the fetch
+      // reaches the network stack and fires Network.loadingFailed -> [tracelane.net].
+      try { await fetch('http://127.0.0.1:1/tracelane-smoke-b/missing-on-b'); } catch {}
     });
   </script>
 </body></html>
