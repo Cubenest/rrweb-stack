@@ -17,6 +17,8 @@ interface FakeCdp {
   send: ReturnType<typeof vi.fn>;
   on: ReturnType<typeof vi.fn>;
   detach: ReturnType<typeof vi.fn>;
+  /** Test-only helper: invoke the stored handler for `event` with `params`. */
+  _fire: (event: string, params: unknown) => void;
 }
 
 interface FakeContext {
@@ -51,6 +53,7 @@ function fakePage(events: unknown[], opts: FakePageOptions = {}): FakePage {
   const addInitScript = vi.fn(async () => {});
   let lastCdp: FakeCdp | undefined;
   const newCDPSession = vi.fn(async () => {
+    const cdpHandlers: Record<string, (params: unknown) => void> = {};
     lastCdp = {
       send: vi.fn(async (method: string) => {
         if (cdpEnableThrows && method === 'Network.enable') {
@@ -58,8 +61,11 @@ function fakePage(events: unknown[], opts: FakePageOptions = {}): FakePage {
         }
         return {};
       }),
-      on: vi.fn(),
+      on: vi.fn((event: string, h: (params: unknown) => void) => {
+        cdpHandlers[event] = h;
+      }),
       detach: vi.fn(async () => {}),
+      _fire: (event: string, params: unknown) => cdpHandlers[event]?.(params),
     };
     return lastCdp;
   });
@@ -290,6 +296,25 @@ describe('CDP network capture (Chromium-only, opt-in)', () => {
     warn.mockRestore();
   });
 
+  it('fires a 4xx CDP response into an in-page console.error via execute', async () => {
+    const page = fakePage([{ type: 4, data: {}, timestamp: 1 }], { browserName: 'chromium' });
+    const options = {
+      mode: 'failed' as const,
+      outDir: mkdtempSync(join(tmpdir(), 'tl-pw-')),
+      captureNetwork: true,
+    };
+    await runStart({ page: page as never, options, rrwebBundle: RRWEB_STUB });
+    const cdp = page._lastCdp();
+    const before = page.evaluate.mock.calls.length;
+    cdp?._fire('Network.responseReceived', {
+      requestId: '1',
+      response: { url: 'https://x/y', status: 404, requestHeaders: { ':method': 'GET' } },
+    });
+    await new Promise((r) => setTimeout(r, 0)); // fire-and-forget emit
+    // attachNetworkCapture.emit → executor.execute(logNetworkErrorInPage,...) → page.evaluate.
+    expect(page.evaluate.mock.calls.length).toBeGreaterThan(before);
+  });
+
   it('disables capture (no throw, no report) when recorder.start() fails (e.g. CSP)', async () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
     const page = fakePage([{ type: 4, data: {}, timestamp: 1 }], {
@@ -311,6 +336,37 @@ describe('CDP network capture (Chromium-only, opt-in)', () => {
     });
     expect(readdirSync(outDir).filter((f) => f.endsWith('.html')).length).toBe(0);
     warn.mockRestore();
+  });
+});
+
+describe('timedOut / interrupted / parallel-filename coverage', () => {
+  it('builds a report for timedOut and interrupted statuses', async () => {
+    for (const status of ['timedOut', 'interrupted'] as const) {
+      const outDir = mkdtempSync(join(tmpdir(), 'tl-pw-'));
+      const page = fakePage([{ type: 4, data: {}, timestamp: 1 }]);
+      const ti = { ...failedTestInfo(), status, expectedStatus: 'passed' };
+      await runTracelaneSession({
+        page: page as never,
+        testInfo: ti as never,
+        options: { mode: 'failed', outDir, captureNetwork: false },
+        rrwebBundle: RRWEB_STUB,
+      });
+      expect(readdirSync(outDir).filter((f) => f.endsWith('.html')).length).toBe(1);
+    }
+  });
+
+  it('writes distinct filenames for two failures in the same outDir (parallel-safe)', async () => {
+    const outDir = mkdtempSync(join(tmpdir(), 'tl-pw-'));
+    for (let i = 0; i < 2; i++) {
+      const page = fakePage([{ type: 4, data: {}, timestamp: 1 }]);
+      await runTracelaneSession({
+        page: page as never,
+        testInfo: failedTestInfo() as never,
+        options: { mode: 'failed', outDir, captureNetwork: false },
+        rrwebBundle: RRWEB_STUB,
+      });
+    }
+    expect(readdirSync(outDir).filter((f) => f.endsWith('.html')).length).toBe(2);
   });
 });
 
