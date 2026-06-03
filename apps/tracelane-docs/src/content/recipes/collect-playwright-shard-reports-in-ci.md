@@ -73,7 +73,7 @@ Download `tracelane-reports`, open any `.html` — each is a complete, offline r
 
 ## Why this works
 
-tracelane's artifact is per-failure, not a single aggregate report, and filenames carry the Playwright project name + a millisecond timestamp — so parallel workers and shards never collide and **no merge step is required**. `download-artifact`'s `merge-multiple` just flattens the per-shard folders into one.
+tracelane's artifact is per-failure, not a single aggregate report, and filenames carry the Playwright project name + a millisecond timestamp — so shards and parallel workers stay distinct and **no merge step is required**. `download-artifact`'s `merge-multiple` just flattens the per-shard folders into one.
 
 ## Next steps
 
