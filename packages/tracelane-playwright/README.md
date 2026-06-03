@@ -51,7 +51,7 @@ Run your suite. On a failing test you get a single `.html` file at `./tracelane-
 
 ## How it works
 
-- **The fixture** owns the recording. It is the only place with a live `page` + `testInfo`, so it injects the rrweb bundle (via `context.addInitScript`, so fresh pages and post-navigation documents are covered), starts the recorder before your test body, and — after it — builds + writes the report. It reuses `@tracelane/core`'s recorder and `@tracelane/report`'s HTML builder.
+- **The fixture** owns the recording. It is the only place with a live `page` + `testInfo`, so it injects the rrweb bundle via `context.addInitScript` AND hooks `page.on('framenavigated')` to call `recorder.reinject` on every main-frame navigation — so recording continues across navigations (each navigation emits a `tracelane.nav` boundary marker in the replay). It starts the recorder before your test body, and — after it — builds + writes the report. It reuses `@tracelane/core`'s recorder and `@tracelane/report`'s HTML builder.
 - **The reporter** owns config + the end-of-run summary. By design it never touches `page`.
 - **Failed-network capture** uses CDP on Chromium (4xx/5xx responses and no-response failures are surfaced into the report's network panel). On Firefox/WebKit it degrades silently to rrweb + console.
 - **Parallel-safe**: report filenames are namespaced by the Playwright **project name** and carry a millisecond timestamp. Different projects are isolated by name; parallel workers *within one project* share the project-name segment and rely on the timestamp (plus spec + title) to stay distinct.
@@ -63,14 +63,20 @@ Run your suite. On a failing test you get a single `.html` file at `./tracelane-
 | --- | --- | --- |
 | `mode` | `'failed'` | `'failed'` writes a report only on failure; `'all'` writes one for every test. Overridable with `TRACELANE_MODE`. |
 | `outDir` | `'./tracelane-reports'` | Where reports are written. Overridable with `TRACELANE_OUT_DIR`. |
-| `captureNetwork` | `true` | CDP failed-network capture (Chromium-only). |
+| `captureNetwork` | `true` | CDP failed-network capture (Chromium-only). Overridable with `TRACELANE_CAPTURE_NETWORK`. |
 
-> The reporter and the fixture both resolve options independently; the env vars (`TRACELANE_MODE`, `TRACELANE_OUT_DIR`) are the reliable way to keep them in lockstep across the two when you need a non-default `outDir`.
+> Reporter options (`mode`, `outDir`, `captureNetwork`) are honored by the fixture — the reporter bridges them to `TRACELANE_MODE` / `TRACELANE_OUT_DIR` / `TRACELANE_CAPTURE_NETWORK` at startup (only when those env vars are not already set). An explicit env var always wins over the reporter option.
 
 ## What this is NOT
 
 - Not a SaaS. There is no upload, no signup, no dashboard, no telemetry. The artifact is a single HTML file on your filesystem.
 - Not a replacement for Playwright's trace viewer — it's a complementary, self-contained replay you can hand to anyone with a browser, no `npx playwright show-trace` required.
+
+## Limitations
+
+**Content-Security-Policy**: rrweb capture requires in-page script evaluation. If a page's CSP blocks `'unsafe-eval'`, capture degrades gracefully — the test still runs and completes normally, a warning is logged, but no replay is recorded for that page.
+
+**Cross-origin navigations**: buffered rrweb events are rescued across same-origin hard navigations via a `pagehide` → `sessionStorage` flush. Cross-origin hard navigations are a known edge case — `sessionStorage` is per-origin, so events buffered immediately before a cross-origin navigation may be lost.
 
 ## License
 
