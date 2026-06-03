@@ -6,7 +6,7 @@ interface Props {
   description?: string;
 }
 
-const { title, description = 'tracelane — OSS test recorder for WebdriverIO (Playwright + Cypress on the roadmap). Captures rrweb + console + network and ships a self-contained HTML report on failed tests.' } = Astro.props;
+const { title, description = 'tracelane — OSS test recorder for WebdriverIO and Playwright (Cypress on the roadmap). Captures rrweb + console + network and ships a self-contained HTML report on failed tests.' } = Astro.props;
 
 // Build absolute canonical / social URLs from the configured `site` origin.
 const canonicalURL = new URL(Astro.url.pathname, Astro.site).href;
