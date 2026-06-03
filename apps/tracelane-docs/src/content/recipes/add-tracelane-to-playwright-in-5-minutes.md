@@ -11,7 +11,7 @@ relatedRecipes: [attach-rrweb-replay-to-every-playwright-pr, debug-flaky-checkou
 
 ## What you'll end up with
 
-A `tracelane-reports/<spec>--<title>--<project>-<ts>.html` written automatically whenever a Playwright test fails. The file is self-contained — open it in any browser to scrub the rrweb replay, inspect the console, and see failed (4xx/5xx) network requests. Recording continues across `page.goto` navigations, so multi-page flows replay end to end.
+An HTML file (e.g. `tracelane-reports/<spec>--<title>--<id>-<ts>.html` — the exact name is illustrative) written automatically whenever a Playwright test fails. The file is self-contained — open it in any browser to scrub the rrweb replay, inspect the console, and see failed (4xx/5xx) network requests. Recording continues across `page.goto` navigations, so multi-page flows replay end to end.
 
 ![Tracelane HTML report from a Playwright suite](/recipes/assets/add-tracelane-to-playwright-in-5-minutes.png)
 
