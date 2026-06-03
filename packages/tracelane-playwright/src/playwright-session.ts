@@ -167,6 +167,12 @@ function buildMeta(testInfo: TestInfo, session: StartedSession): ReportMeta {
 /** Finalize the recorder (apply mode policy), and write a report when one is due. */
 export async function runFinalize(session: StartedSession, input: FinalizeInput): Promise<void> {
   if (session.disabled) return; // capture never started; nothing to finalize/clean up
+  // Unsubscribe the navigation listener BEFORE the first await: finalize() returns
+  // the live event buffer, so a late main-frame navigation during teardown could
+  // reinject and leak a stray tracelane.nav event into the report being written.
+  if (session.page && session.onNav) {
+    session.page.off('framenavigated', session.onNav);
+  }
   const { testInfo, options } = input;
   try {
     const { shouldBuildReport, events } = await session.recorder.finalize({
@@ -182,10 +188,6 @@ export async function runFinalize(session: StartedSession, input: FinalizeInput)
       meta: buildMeta(testInfo, session),
     });
   } finally {
-    // Remove the navigation listener so it doesn't leak across tests.
-    if (session.page && session.onNav) {
-      session.page.off('framenavigated', session.onNav);
-    }
     // Always detach the CDP session so it doesn't leak past the test.
     if (session.cdp) {
       await session.cdp.detach().catch(() => {

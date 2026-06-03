@@ -87,7 +87,7 @@ export const config: Options.Testrunner = {
 ## How it works
 
 - On the first test, the Service injects an rrweb recorder bundle into the page and installs an in-page event buffer (`window.__tracelane__events`).
-- The Node side drains that buffer on a poll (default every 5 s) and on every `afterTest`, re-injecting after each navigation.
+- The Node side drains that buffer on a poll (default every 500 ms) and on every `afterTest`, re-injecting after each navigation.
 - In `failed` mode (default) a passing test discards its buffer; a failing test's buffer is handed to [`@tracelane/report`](https://github.com/Cubenest/rrweb-stack/tree/main/packages/tracelane-report), which builds the single offline HTML (≤ 25 MB).
 
 ## Options

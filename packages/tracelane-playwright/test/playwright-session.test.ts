@@ -106,7 +106,11 @@ function fakePage(events: unknown[], opts: FakePageOptions = {}): FakePage {
   const on = vi.fn((event: string, h: (frame: unknown) => void) => {
     if (event === 'framenavigated') navHandlers.push(h);
   });
-  const off = vi.fn();
+  const off = vi.fn((event: string, h: (frame: unknown) => void) => {
+    if (event !== 'framenavigated') return;
+    const i = navHandlers.indexOf(h);
+    if (i >= 0) navHandlers.splice(i, 1);
+  });
   return {
     evaluate,
     context: () => ctx,
@@ -398,5 +402,13 @@ describe('navigation reinject (Task 1)', () => {
       rrwebBundle: RRWEB_STUB,
     });
     expect(page.off).toHaveBeenCalledWith('framenavigated', expect.any(Function));
+
+    // After finalize the listener is removed (before finalize's await), so a late
+    // main-frame navigation during/after teardown must NOT reinject — otherwise it
+    // could leak a stray tracelane.nav event into the report being written.
+    const afterFinalize = page.evaluate.mock.calls.length;
+    page._fireNav(page._mainFrame);
+    await new Promise((r) => setTimeout(r, 0));
+    expect(page.evaluate.mock.calls.length).toBe(afterFinalize);
   });
 });
