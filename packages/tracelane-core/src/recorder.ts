@@ -30,7 +30,7 @@ export interface RecorderOptions {
    * is bundle-source-agnostic and never imports rrweb for in-page injection.
    */
   rrwebBundle: string;
-  /** Node-side drain poll interval (default 5000). */
+  /** Node-side drain poll interval (default 500). */
   drainIntervalMs?: number;
   /** Re-injection cooldown guard (default 250). */
   cooldownMs?: number;

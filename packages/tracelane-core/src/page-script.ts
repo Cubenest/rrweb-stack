@@ -38,14 +38,15 @@ export const DEFAULT_CONSOLE_PLUGIN_OPTIONS: ConsolePluginOptions = {
 export type NetworkPluginOptions = Record<string, unknown>;
 
 /**
- * The in-page init routine (PRD §D.3 + ADR-0006). Idempotent across calls via a
- * monotonic `__tracelane__sessionId` stamp and a cooldown guard so hash-only /
- * HMR navigations don't double-init the recorder (the cooldown / re-injection
- * semantics are exercised in Task 2.4).
+ * The in-page init routine (PRD §D.3 + ADR-0006). A cooldown guard suppresses
+ * double-init on hash-only / HMR navigations within the SAME document. Note the
+ * `__tracelane__sessionId` stamp is page-local: it resets to 1 in every fresh
+ * document (a hard navigation), so it is NOT a cross-document monotonic counter.
  *
  * Assumes `window.rrweb` is already defined (the recorder injects the rrweb
- * bundle string first). Returns the active session id so the Node side can
- * confirm whether a (re-)init actually took effect.
+ * bundle string first). Returns a sentinel the Node side uses to decide whether
+ * a fresh recording actually started: `0` when this call was cooldown-suppressed
+ * (no new recording), or the active (≥1) session id when recording (re-)started.
  *
  * `networkOptions === undefined` keeps the network plugin OFF (the legacy
  * CDP-based path still applies). `networkOptions === {}` opts in with the
