@@ -64,13 +64,19 @@ jobs:
       # Smithery, mcp.so) do NOT auto-ingest from here — they are submitted
       # separately (see docs/peek/distribution/README.md).
       - name: Publish peek to the official MCP Registry
-        # Decoupled from publishedPackages: when changesets exits non-zero on a
-        # partial failure (e.g. new package first OIDC publish needs manual npm
-        # org registration), publishedPackages is never set by the action, so
-        # contains(...) would silently be false. Instead, derive the version
-        # from package.json directly; the npm mcpName check below is the real
-        # gate — if @peekdev/mcp wasn't published this run, it fails fast.
-        if: always() && (steps.changesets.outputs.published == 'true' || steps.changesets.conclusion == 'failure')
+        # Run ONLY when @peekdev/mcp was actually published in THIS run. The
+        # previous guard — always() && (published || changesets failed) — ran on
+        # EVERY release, including unrelated ones (e.g. a tracelane-only release),
+        # then validated packages/peek-mcp/package.json's version against npm.
+        # That reddens unrelated releases whenever peek-mcp's source version has
+        # drifted from npm (e.g. an immutable older alpha whose mcpName predates
+        # the casing fix). Gating on the published set fixes that: non-peek
+        # releases skip this step entirely, and when @peekdev/mcp IS published its
+        # package.json version necessarily matches the just-published, correctly
+        # -cased npm version, so the mcpName check below passes. First-publish
+        # OIDC edge cases (new package needing manual npm trusted-publisher
+        # registration) are handled manually, the same as for any other package.
+        if: contains(steps.changesets.outputs.publishedPackages, '@peekdev/mcp')
         run: |
           set -euo pipefail
           version="$(node -p "require('./packages/peek-mcp/package.json').version")"
