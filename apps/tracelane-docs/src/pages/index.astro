@@ -2,7 +2,7 @@
 import Layout from '../layouts/Layout.astro';
 ---
 
-<Layout title="tracelane — failed-test recorder for WebdriverIO and Playwright (Cypress on the roadmap)">
+<Layout title="tracelane — failed-test recorder for WebdriverIO and Playwright">
   <h1>tracelane</h1>
   <p class="tagline">Failed tests, fully replayable.</p>
 
@@ -21,9 +21,9 @@ import Layout from '../layouts/Layout.astro';
   </p>
 
   <p>
-    Drop-in for <strong>WebdriverIO</strong> and <strong>Playwright</strong> today; the
-    <strong>Cypress</strong> integration is next on the roadmap. All share the same
-    framework-agnostic core.
+    Drop-in for <strong>WebdriverIO</strong> and <strong>Playwright</strong> (both shipped,
+    alpha). A <strong>Cypress</strong> adapter is on the roadmap &mdash; no committed date,
+    this is a side project. All share the same framework-agnostic core.
   </p>
 
   <div class="btn-row">
@@ -58,6 +58,12 @@ import Layout from '../layouts/Layout.astro';
     <li><code>@tracelane/playwright</code> &mdash; the Playwright reporter + fixture. <a href="https://www.npmjs.com/package/@tracelane/playwright" rel="noopener">npm</a></li>
     <li><code>@tracelane/core</code> &mdash; framework-agnostic recording engine. <a href="https://www.npmjs.com/package/@tracelane/core" rel="noopener">npm</a></li>
     <li><code>@tracelane/report</code> &mdash; offline HTML report builder. <a href="https://www.npmjs.com/package/@tracelane/report" rel="noopener">npm</a></li>
+  </ul>
+
+  <h2>How it compares</h2>
+  <ul>
+    <li><a href="/vs-playwright-trace-viewer">tracelane vs Playwright Trace Viewer</a> &mdash; artifact format + shareability, the honest delta.</li>
+    <li><a href="/vs-cypress-test-replay">tracelane vs Cypress Test Replay</a> &mdash; OSS vs cloud, runner support, cost.</li>
   </ul>
 
   <p style="color: var(--fg-muted); font-size: 0.9rem; margin-top: 2rem;">
