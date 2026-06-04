@@ -21,7 +21,8 @@ import Layout from '../layouts/Layout.astro';
     drops a <code>tracelane.nav</code> boundary in the timeline). Along the way: three
     <strong>404</strong>s on <code>/api/recommendations/&lt;sku&gt;</code>, the console
     output, and a <strong>500</strong> from <code>/api/checkout</code> that fails the
-    test. Double-click it &mdash; it opens fully offline, no server, no unzip.
+    test. Double-click the file &mdash; it opens in any browser fully offline, no server,
+    no unzip.
   </p>
   <div class="btn-row">
     <a class="cta" href="/demo/playwright-checkout-failure.html" target="_blank" rel="noopener">
@@ -43,7 +44,7 @@ import Layout from '../layouts/Layout.astro';
     </a>
   </div>
 
-  <h2>What you're looking at</h2>
+  <h3>What you're looking at (the WebdriverIO report)</h3>
 
   <p>
     This report comes from a WebdriverIO test driving a small same-origin
@@ -84,7 +85,7 @@ import Layout from '../layouts/Layout.astro';
     block you can paste into Claude Code / Cursor / Cline for AI-assisted debugging.</li>
   </ul>
 
-  <h2>How this was captured</h2>
+  <h3>How the WebdriverIO report was captured</h3>
   <p>
     Same setup any user runs &mdash; <code>npx @tracelane/cli init</code> wires
     <code>@tracelane/wdio</code> into the project; the new framework-agnostic
@@ -96,7 +97,7 @@ import Layout from '../layouts/Layout.astro';
     the test author's machine.
   </p>
 
-  <h2>Get the real thing into your CI</h2>
+  <h3>Get the WebdriverIO reporter into your CI</h3>
   <p>
     Inside a WebdriverIO project, one command wires the Service + creates the reports
     directory + ignores it in git:
@@ -112,7 +113,7 @@ npx @tracelane/cli init</code></pre>
   </div>
 
   <p style="color: var(--fg-muted); font-size: 0.9rem; margin-top: 2rem;">
-    The demo report file is ~167 KB. It loads instantly because all assets are inlined
+    Each demo report is ~350 KB. They load instantly because all assets are inlined
     &mdash; same constraint your shipped reports operate under (25 MB cap, FullSnapshot
     preserved on overflow).
   </p>

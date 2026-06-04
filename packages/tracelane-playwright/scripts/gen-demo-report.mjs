@@ -43,38 +43,44 @@ const dest = join(
 const MAX_BYTES = 25 * 1024 * 1024;
 const BLOB_RE = /const EVENTS_GZ_B64 = "([^"]*)";/;
 
+// fail() throws so the module-level catch/finally below always reaps the
+// spawned server — process.exit() here would orphan it.
 function fail(msg) {
-  console.error(`\n[demo:gen] ${msg}`);
-  process.exit(1);
+  throw new Error(msg);
 }
 
 // 1. Clean output dir so a stale report can't mask a regression.
 rmSync(outDir, { recursive: true, force: true });
 mkdirSync(outDir, { recursive: true });
 
-// 2. Boot the loopback server and read the ephemeral port it bound to.
+// 2. Boot the loopback server. Spawned BEFORE the try so the finally can always
+//    reap it, even if reading the port (below) rejects.
 const srv = spawn(process.execPath, [join(demoDir, 'serve.mjs')], {
   stdio: ['ignore', 'pipe', 'inherit'],
 });
-const port = await new Promise((res, rej) => {
-  let buf = '';
-  const timer = setTimeout(() => rej(new Error('timed out waiting for DEMO_PORT')), 10_000);
-  srv.stdout.on('data', (b) => {
-    buf += b.toString();
-    const m = /DEMO_PORT=(\d+)/.exec(buf);
-    if (m) {
-      clearTimeout(timer);
-      res(m[1]);
-    }
-  });
-  srv.on('exit', (code) => {
-    clearTimeout(timer);
-    rej(new Error(`demo server exited early (code ${code})`));
-  });
-});
-console.log(`[demo:gen] loopback server on 127.0.0.1:${port}`);
 
+let exitCode = 0;
 try {
+  // Read the ephemeral port it bound to. Inside the try so a rejection here
+  // (timeout / early server exit) still hits the finally and reaps the server.
+  const port = await new Promise((res, rej) => {
+    let buf = '';
+    const timer = setTimeout(() => rej(new Error('timed out waiting for DEMO_PORT')), 10_000);
+    srv.stdout.on('data', (b) => {
+      buf += b.toString();
+      const m = /DEMO_PORT=(\d+)/.exec(buf);
+      if (m) {
+        clearTimeout(timer);
+        res(m[1]);
+      }
+    });
+    srv.on('exit', (code) => {
+      clearTimeout(timer);
+      rej(new Error(`demo server exited early (code ${code})`));
+    });
+  });
+  console.log(`[demo:gen] loopback server on 127.0.0.1:${port}`);
+
   // 3. Run Playwright against the demo config. The spec fails on purpose, so a
   //    non-zero exit is the EXPECTED, healthy outcome; exit 0 means no report.
   const r = spawnSync(
@@ -163,7 +169,7 @@ try {
   html = html.replace(BLOB_RE, PLACEHOLDER);
   html = redact(html);
   html = html.split(username).join('ci');
-  html = html.replace(PLACEHOLDER, newBlobLine);
+  html = html.replaceAll(PLACEHOLDER, newBlobLine);
 
   // 7. Dual-surface leak-guard: a raw-HTML grep alone would FALSE-PASS on the
   //    gzipped copy, so we also decode the new blob and scan its JSON.
@@ -189,6 +195,11 @@ try {
   mkdirSync(dirname(dest), { recursive: true });
   writeFileSync(dest, html);
   console.log(`[demo:gen] wrote ${dest} (${finalSize} bytes)`);
+} catch (e) {
+  console.error(`\n[demo:gen] ${e.message}`);
+  exitCode = 1;
 } finally {
   srv.kill();
 }
+
+process.exit(exitCode);
