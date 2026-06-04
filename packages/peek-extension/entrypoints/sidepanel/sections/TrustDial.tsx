@@ -15,6 +15,9 @@ export function dialSegments(): DialSegment[] {
   return PERMISSION_LEVELS.map((info) => ({ level: info.level, short: info.short }));
 }
 
+/** Stable segment list — the levels never change at runtime. */
+const SEGMENTS: readonly DialSegment[] = dialSegments();
+
 /**
  * The trust dial: the five permission levels as one left→right escalation,
  * backed by real radio inputs (a radiogroup) for keyboard + screen-reader
@@ -44,7 +47,7 @@ export function TrustDial({ origin }: { origin: string | null }): React.JSX.Elem
       ) : (
         <>
           <div className="peek-dial" role="radiogroup" aria-label="Agent permission level">
-            {dialSegments().map((seg) => {
+            {SEGMENTS.map((seg) => {
               const active = seg.level === level;
               return (
                 <label key={seg.level} className={`peek-dial-seg${active ? ' peek-dial-on' : ''}`}>

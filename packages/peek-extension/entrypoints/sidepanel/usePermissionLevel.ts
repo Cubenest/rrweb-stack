@@ -61,6 +61,7 @@ export function usePermissionLevel(origin: string | null): PermissionLevelContro
       if (!origin) return;
       setError(null);
       setBusy(true);
+      // prev must capture the CURRENT level for rollback, so `level` is a dep below — recreating `set` on level change is intentional, not a mistake.
       const prev = level;
       setLevel(next); // optimistic
       try {
