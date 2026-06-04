@@ -14,5 +14,5 @@ double-clickable, offline `file://` artifact.
   video on double-click," with a new "Why one file matters" block that names
   the `file://` / `show-trace` / `show-report` wedge honestly.
 - Output description, the "How it works" fixture bullet, and "What this is NOT"
-  retuned onto inlined-media + continuous-vs-snapshot framing.
+  reframed around inlined-media + continuous-vs-snapshot framing.
 - No API, version, option, or behavior facts changed — content/positioning only.
