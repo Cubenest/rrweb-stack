@@ -1,0 +1,157 @@
+---
+import Layout from '../layouts/Layout.astro';
+---
+
+<Layout title="peek vs Browser MCP tools (browsermcp, playwright-mcp, browser-use)">
+  <h1>peek vs Browser MCP tools</h1>
+  <p class="tagline">
+    Both give an AI agent access to a browser. The fundamental difference: a
+    fresh browser the agent controls vs your real authenticated session the
+    agent can query and replay.
+  </p>
+
+  <p>
+    The category &ldquo;browser MCP tools&rdquo; covers
+    <a href="https://github.com/browsermcp/mcp" rel="noopener">browsermcp/mcp</a>,
+    <a href="https://github.com/microsoft/playwright-mcp" rel="noopener">Microsoft&apos;s playwright-mcp</a>,
+    <a href="https://github.com/browser-use/browser-use" rel="noopener">browser-use</a>,
+    <a href="https://www.browserbase.com" rel="noopener">Browserbase</a>, and similar.
+    All give an AI agent control of a browser over MCP. This page is the honest
+    account of when each shape of tool fits &mdash; they are more complementary
+    than competing.
+  </p>
+
+  <h2>At a glance</h2>
+
+  <table>
+    <thead>
+      <tr>
+        <th></th>
+        <th>peek</th>
+        <th>Browser MCP tools (browsermcp, playwright-mcp, browser-use&hellip;)</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><strong>The browser the agent works with</strong></td>
+        <td>Your real, already-authenticated browser session. The agent reads context from what <em>you</em> were doing: the page you had open, with your login, your cookies, your state.</td>
+        <td>A fresh browser instance (local or cloud) the agent navigates from scratch. No pre-existing session or authentication.</td>
+      </tr>
+      <tr>
+        <td><strong>Primary job</strong></td>
+        <td>Give the agent retrospective context: &ldquo;what broke when I was using the app just now?&rdquo; Turns a manual session into evidence and repros the agent can reason about.</td>
+        <td>Give the agent forward control: &ldquo;go to this URL, fill this form, click this button.&rdquo; The agent acts on the web autonomously.</td>
+      </tr>
+      <tr>
+        <td><strong>Generates a Playwright repro</strong></td>
+        <td>Yes. <code>generate_playwright_repro</code> converts your real session (actual user actions + console + network) into a runnable Playwright test. The agent re-runs it to verify a fix.</td>
+        <td>Playwright-mcp can <em>run</em> Playwright scripts; it does not generate a test from a recorded session.</td>
+      </tr>
+      <tr>
+        <td><strong>Handles authentication</strong></td>
+        <td>Yes &mdash; you&apos;re already logged in. peek records your real session as you use your app; SSO, MFA, and session cookies are already in place before recording starts.</td>
+        <td>The agent must automate login from scratch (or you must supply credentials / cookie files). Complex SSO, MFA, and CAPTCHA flows are hard or impossible to automate.</td>
+      </tr>
+      <tr>
+        <td><strong>Captures what actually happened</strong></td>
+        <td>Yes. peek records rrweb DOM mutations, console events, and network as you browse naturally &mdash; including the moments of failure before you even knew to capture them.</td>
+        <td>The agent only sees what it navigates to. It cannot retrospectively access a session that already happened before the agent started.</td>
+      </tr>
+      <tr>
+        <td><strong>Redaction / privacy</strong></td>
+        <td>Auth and cookie headers deny-listed; form values and PII masked in-page before anything leaves the tab. Per-origin opt-in. Bodies off by default.</td>
+        <td>The agent has real-time read/write access to the browser it controls. The agent sees exactly what the browser sees &mdash; no automatic redaction layer.</td>
+      </tr>
+      <tr>
+        <td><strong>Where data lives</strong></td>
+        <td>Local only. Sessions in <code>~/.peek/sessions.db</code> on your machine. No cloud, no telemetry.</td>
+        <td>Varies. Local tools (browsermcp, playwright-mcp) run on your machine. Cloud tools (Browserbase) run in their infrastructure.</td>
+      </tr>
+      <tr>
+        <td><strong>Works on your live production app</strong></td>
+        <td>Yes &mdash; peek records whatever origin you enable. Useful for capturing production bugs in your own app while logged in as yourself.</td>
+        <td>Depends on the tool. Agents can navigate to any URL, but they authenticate as a fresh user unless you configure session files.</td>
+      </tr>
+      <tr>
+        <td><strong>Passive vs active</strong></td>
+        <td>Passive: records as you browse naturally. The agent queries the recording after the fact.</td>
+        <td>Active: the agent controls the browser in real time. You initiate a task and the agent drives.</td>
+      </tr>
+      <tr>
+        <td><strong>Write-back (agent acts on browser)</strong></td>
+        <td>Yes, via <code>execute_action</code> &mdash; click, type, navigate, scroll, screenshot &mdash; gated by explicit per-action user authorization and an audit log. Acts on your real browser tab.</td>
+        <td>Yes &mdash; this is the primary use case. The agent navigates and acts freely within the browser it controls.</td>
+      </tr>
+      <tr>
+        <td><strong>Cost</strong></td>
+        <td>Free. Apache 2.0.</td>
+        <td>Local tools are generally free and open-source. Hosted tools (Browserbase) charge per usage / browser-minute.</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <h2>When peek is the right choice</h2>
+
+  <ul>
+    <li>You want to debug something that already broke &mdash; console errors, a network failure, a layout issue you saw. peek gives the agent your real session context so it doesn&apos;t have to reconstruct what happened.</li>
+    <li>The app requires authentication that&apos;s hard to automate: enterprise SSO, MFA, session-based login. You&apos;re already logged in; the agent reads your session.</li>
+    <li>You want the agent to turn the bug into a <strong>runnable Playwright repro</strong> it can replay to verify the fix actually worked.</li>
+    <li>Privacy matters: you want explicit per-origin consent and a redaction layer between raw browser data and the AI agent.</li>
+    <li>You work locally and want sessions to stay on your machine (no cloud, no telemetry).</li>
+    <li>You want the agent to understand the full DOM and network context of a bug, not just what it can reconstruct by navigating to a URL itself.</li>
+  </ul>
+
+  <h2>When browser MCP tools are the right choice</h2>
+
+  <ul>
+    <li>You want the agent to <em>do</em> things autonomously: fill a form, run a workflow end-to-end, scrape a site, test a flow from scratch. These tools are built for agent-driven automation.</li>
+    <li>The task is on a public site or a site where a fresh session is fine. No pre-existing auth state needed.</li>
+    <li>You want real-time agent control of a browser &mdash; navigating, clicking, and reading the live page state as the agent works.</li>
+    <li>You need cloud-hosted isolated browsers (Browserbase) for parallel automation or running browsers in a controlled environment without touching your local machine.</li>
+  </ul>
+
+  <h2>Can you use both?</h2>
+
+  <p>
+    Yes, and this is a natural pairing. Use peek to record and understand
+    what broke in your real session, then use a tool like playwright-mcp or
+    browsermcp to let the agent <em>act</em> on the fix in a controlled
+    browser. The workflows are complementary: peek gives retrospective context;
+    browser MCP tools give forward action.
+  </p>
+
+  <p>
+    A concrete example: you hit a bug on your app while logged in, peek
+    records the session. You ask the agent to explain what went wrong &mdash; it
+    queries <code>get_session_console_errors</code> and
+    <code>get_session_network_errors</code>, finds the cause, writes a fix, then
+    uses <code>generate_playwright_repro</code> to create a test. Later, playwright-mcp
+    or a Playwright runner verifies the test passes.
+  </p>
+
+  <h2>What about Sentry Session Replay or LogRocket?</h2>
+
+  <p>
+    Different category again. Sentry Session Replay and LogRocket record
+    <em>production traffic from your end-users</em> &mdash; they are observability
+    tools that instrument your app and capture what users in production actually do.
+    peek records <em>your own developer session</em> during development or debugging.
+    These tools do not compete: one is production monitoring, the other is developer-side context for an AI agent.
+  </p>
+
+  <h2>Why this page exists</h2>
+
+  <p>
+    The browser-MCP category is growing fast and the tools look similar from
+    a feature-list distance. The key distinction &mdash; your real authenticated
+    session vs a fresh browser the agent controls &mdash; determines which tool
+    fits a given task. This page is the honest version of that comparison for
+    someone evaluating the space.
+  </p>
+
+  <p style="color: var(--fg-muted); font-size: 0.9rem; margin-top: 2rem;">
+    Found something inaccurate above? Open a PR on
+    <a href="https://github.com/Cubenest/rrweb-stack/blob/main/apps/peek-docs/src/pages/vs-browser-mcp.astro" rel="noopener">this page</a>
+    &mdash; the goal is accuracy, not advocacy.
+  </p>
+</Layout>
