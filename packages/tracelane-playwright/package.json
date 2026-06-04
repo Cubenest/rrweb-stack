@@ -40,7 +40,8 @@
     "build": "tsc -p tsconfig.json && node scripts/build-rrweb-bundle.mjs",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run --passWithNoTests",
-    "test:e2e": "node scripts/build-rrweb-bundle.mjs && node ./e2e/run.mjs"
+    "test:e2e": "node scripts/build-rrweb-bundle.mjs && node ./e2e/run.mjs",
+    "demo:gen": "tsc -p tsconfig.json && node scripts/build-rrweb-bundle.mjs && node ./scripts/gen-demo-report.mjs"
   },
   "dependencies": {
     "@tracelane/core": "workspace:*",
