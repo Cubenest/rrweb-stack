@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import type { NativeHostState } from '../../../src/messaging/protocol';
 import { permissionLevelInfo } from '../../../src/permissions/levels';
-import { getPermissionLevel } from '../../../src/permissions/store';
+import { PERMISSION_LEVELS_KEY, getPermissionLevel } from '../../../src/permissions/store';
 import { useNativeHostState } from '../useNativeHostState';
 
 export type HostTone = 'ok' | 'warn' | 'idle';
@@ -48,10 +48,10 @@ export function StatusHeader({ origin }: { origin: string | null }): React.JSX.E
       if (!cancelled) setLevelShort(permissionLevelInfo(level).short);
     });
     const onChanged = (
-      _changes: Record<string, chrome.storage.StorageChange>,
+      changes: Record<string, chrome.storage.StorageChange>,
       area: string,
     ): void => {
-      if (area !== 'sync') return;
+      if (area !== 'sync' || !(PERMISSION_LEVELS_KEY in changes)) return;
       void getPermissionLevel(origin).then((level) => {
         if (!cancelled) setLevelShort(permissionLevelInfo(level).short);
       });
