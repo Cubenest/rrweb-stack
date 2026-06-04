@@ -41,10 +41,8 @@ export function CaptureDeepDisclosure({ origin }: { origin: string | null }): Re
     setBusy(true);
     try {
       const granted = await chrome.permissions.request({ permissions: ['debugger'] });
-      if (!granted) {
-        setBusy(false);
-        return;
-      }
+      // finally clears busy on every path, including this one.
+      if (!granted) return;
       await enableDeepCapture(origin);
       setEnabled(true);
     } catch (err) {
@@ -81,7 +79,8 @@ export function CaptureDeepDisclosure({ origin }: { origin: string | null }): Re
         <div className="peek-warning" role="note">
           <strong>Heads up.</strong> Deep capture uses Chrome&rsquo;s debugger API to record
           response bodies. While it&rsquo;s on, Chrome shows a yellow &ldquo;
-          <em>peek is debugging this browser</em>&rdquo; bar at the top of every tab.
+          <em>peek is debugging this browser</em>&rdquo; bar at the top of every tab. Off by default
+          &mdash; enable only when you need response bodies in your recordings.
         </div>
         {enabled ? (
           <button

@@ -6,7 +6,7 @@ export function CaptureControls(): React.JSX.Element {
     <div className="peek-controls">
       <div className="peek-button-row">
         <button type="button" className="peek-button" disabled aria-disabled="true">
-          ⏸ Pause
+          <span aria-hidden="true">⏸ </span>Pause
         </button>
         <button
           type="button"
@@ -14,7 +14,7 @@ export function CaptureControls(): React.JSX.Element {
           disabled
           aria-disabled="true"
         >
-          ■ Stop &amp; delete
+          <span aria-hidden="true">■ </span>Stop &amp; delete
         </button>
       </div>
       <p className="peek-muted peek-hint">
