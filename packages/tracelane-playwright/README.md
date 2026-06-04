@@ -2,7 +2,9 @@
 
 # @tracelane/playwright
 
-> The recorder for your Playwright tests. A self-contained HTML report on every failure — replay the run with rrweb, inspect the console + failed-network panels, attach to any bug tracker. No SaaS, no dashboard, no signup, no cloud.
+> The recorder for your Playwright tests. When a test fails, you get **one HTML file you can email** — media inlined, so it replays the whole session like a video the moment someone double-clicks it. No server, no unzip, no `show-trace`, no toolchain. Under the hood it's rrweb **continuous** DOM replay (not discrete snapshots) across every navigation, plus the console and failed-network panels. Apache-2.0. No SaaS, no dashboard, no signup, no cloud.
+
+**Why one file matters.** A `trace.zip` can't be double-clicked — it needs `npx playwright show-trace` or the hosted web viewer over `http(s)://`. The built-in HTML reporter is a server-served folder (`show-report`); open it over `file://` and you get a blank screen. tracelane's artifact is a single `.html` with **all media inlined** — drop it in a bug ticket, email it, archive it, and it still replays standalone. (Plenty of reporters write "a single HTML file"; the part that's specific here is the fully-inlined media *plus* rrweb continuous session replay, so the file plays back like a screen recording with no dependencies.)
 
 [![npm](https://img.shields.io/npm/v/@tracelane/playwright.svg)](https://www.npmjs.com/package/@tracelane/playwright)
 [![downloads](https://img.shields.io/npm/dw/@tracelane/playwright.svg)](https://www.npmjs.com/package/@tracelane/playwright)
@@ -47,11 +49,11 @@ test('checkout', async ({ page }) => {
 
 That's it. The fixture is `auto` — every test in files that import this `test` is recorded; nothing else to wire per-test.
 
-Run your suite. On a failing test you get a single `.html` file at `./tracelane-reports/<spec>--<title>--<project>-<ts>.html` — open it in any browser, fully offline. Replay the run with [rrweb-player](https://www.rrweb.io), inspect the console + failed-network panels, attach to your bug tracker, archive it forever.
+Run your suite. On a failing test you get one `.html` file at `./tracelane-reports/<spec>--<title>--<project>-<ts>.html`. Double-click it — it opens in any browser, fully offline, with every asset inlined (nothing fetched, nothing to unzip, no local server). Scrub the run as a [rrweb](https://www.rrweb.io) continuous DOM replay, inspect the console + failed-network panels, drop it into a bug ticket, archive it forever.
 
 ## How it works
 
-- **The fixture** owns the recording. It is the only place with a live `page` + `testInfo`, so it injects the rrweb bundle via `context.addInitScript` AND hooks `page.on('framenavigated')` to call `recorder.reinject` on every main-frame navigation — so recording continues across navigations (each navigation emits a `tracelane.nav` boundary marker in the replay). It starts the recorder before your test body, and — after it — builds + writes the report. It reuses `@tracelane/core`'s recorder and `@tracelane/report`'s HTML builder.
+- **The fixture** owns the recording — and keeps it going across navigations, so the replay is one continuous session, not a set of per-page snapshots. It is the only place with a live `page` + `testInfo`, so it injects the rrweb bundle via `context.addInitScript` AND hooks `page.on('framenavigated')` to call `recorder.reinject` on every main-frame navigation (each navigation emits a `tracelane.nav` boundary marker in the replay). It starts the recorder before your test body, and — after it — builds + writes the report. It reuses `@tracelane/core`'s recorder and `@tracelane/report`'s HTML builder.
 - **The reporter** owns config only: it validates options at startup and bridges them to the fixture via `TRACELANE_*` env vars. By design it never touches `page`, prints nothing, and produces no end-of-run summary (the fixture writes the per-test reports).
 - **Failed-network capture** uses CDP on Chromium (4xx/5xx responses and no-response failures are surfaced into the report's network panel). On Firefox/WebKit it degrades silently to rrweb + console.
 - **Parallel-safe**: report filenames are namespaced by the Playwright **project name** and carry a millisecond timestamp. Different projects are isolated by name; parallel workers *within one project* share the project-name segment and rely on the timestamp (plus spec + title) to stay distinct.
@@ -69,8 +71,8 @@ Run your suite. On a failing test you get a single `.html` file at `./tracelane-
 
 ## What this is NOT
 
-- Not a SaaS. There is no upload, no signup, no dashboard, no telemetry. The artifact is a single HTML file on your filesystem.
-- Not a replacement for Playwright's trace viewer — it's a complementary, self-contained replay you can hand to anyone with a browser, no `npx playwright show-trace` required.
+- Not a SaaS. There is no upload, no signup, no dashboard, no telemetry. The artifact is a single HTML file on your filesystem — and unlike reporters that link screenshots/video by relative path, every asset is inlined, so the file keeps replaying even when it's moved or emailed on its own.
+- Not a replacement for Playwright's trace viewer. The trace viewer is the deeper local-debugging tool; tracelane is for the *handoff* — a double-clickable `file://` replay (media inlined, no local server, no `show-trace`/`show-report` step) you can hand to anyone with a browser. The capture model differs too: Playwright records discrete per-action snapshots, tracelane records a continuous rrweb session.
 
 ## Limitations
 
