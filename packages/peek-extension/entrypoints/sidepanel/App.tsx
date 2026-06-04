@@ -61,6 +61,8 @@ export function App(): React.JSX.Element {
   }, [pendingConfirm]);
 
   const resolveConfirm = useCallback((verdict: ConfirmVerdictMessage) => {
+    // Mark resolved BEFORE clearing pendingConfirm: setPendingConfirm(null)
+    // synchronously schedules the [pendingConfirm] cleanup, which reads the tracker.
     resolution.current.markResolved(verdict.requestId);
     void sendConfirmVerdict(verdict);
     setPendingConfirm(null);
