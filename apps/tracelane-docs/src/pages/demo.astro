@@ -7,19 +7,44 @@ import Layout from '../layouts/Layout.astro';
   <p class="tagline">A real tracelane <code>.html</code>, exactly as it lands on a CI runner's filesystem when a test fails.</p>
 
   <p>
-    The link below opens an actual tracelane report &mdash; the same artifact your suite
-    writes to <code>./tracelane-reports/</code> when a test fails. It contains the rrweb
-    event stream, the inlined player, the console panel, and the network panel.
-    Fully offline. No server. No backend call.
+    Below are two real tracelane reports &mdash; the same artifact your suite writes to
+    <code>./tracelane-reports/</code> when a test fails. Each contains the rrweb event
+    stream, the inlined player, the console panel, and the network panel. Fully offline.
+    No server. No backend call.
   </p>
 
+  <h2>Playwright report</h2>
+  <p>
+    Produced by <code>@tracelane/playwright</code>. This run drives a two-page checkout
+    flow &mdash; a products page, then a checkout page &mdash; so you can watch the rrweb
+    replay continue <em>across the navigation</em> (the alpha.2 nav fix; each navigation
+    drops a <code>tracelane.nav</code> boundary in the timeline). Along the way: three
+    <strong>404</strong>s on <code>/api/recommendations/&lt;sku&gt;</code>, the console
+    output, and a <strong>500</strong> from <code>/api/checkout</code> that fails the
+    test. Double-click the file &mdash; it opens in any browser fully offline, no server,
+    no unzip.
+  </p>
   <div class="btn-row">
-    <a class="cta" href="/demo/acme-shop-checkout-failure.html" target="_blank" rel="noopener">
-      Open the demo report &rarr;
+    <a class="cta" href="/demo/playwright-checkout-failure.html" target="_blank" rel="noopener">
+      Open the Playwright demo report &rarr;
+    </a>
+    <a class="cta secondary" href="/recipes/add-tracelane-to-playwright-in-5-minutes">
+      Add it to your suite &rarr;
     </a>
   </div>
 
-  <h2>What you're looking at</h2>
+  <h2>WebdriverIO report</h2>
+  <p>
+    The link below opens an actual tracelane report from a WebdriverIO suite &mdash; the
+    same artifact <code>@tracelane/wdio</code> writes on a failing test.
+  </p>
+  <div class="btn-row">
+    <a class="cta" href="/demo/acme-shop-checkout-failure.html" target="_blank" rel="noopener">
+      Open the WebdriverIO demo report &rarr;
+    </a>
+  </div>
+
+  <h3>What you're looking at (the WebdriverIO report)</h3>
 
   <p>
     This report comes from a WebdriverIO test driving a small same-origin
@@ -60,7 +85,7 @@ import Layout from '../layouts/Layout.astro';
     block you can paste into Claude Code / Cursor / Cline for AI-assisted debugging.</li>
   </ul>
 
-  <h2>How this was captured</h2>
+  <h3>How the WebdriverIO report was captured</h3>
   <p>
     Same setup any user runs &mdash; <code>npx @tracelane/cli init</code> wires
     <code>@tracelane/wdio</code> into the project; the new framework-agnostic
@@ -72,7 +97,7 @@ import Layout from '../layouts/Layout.astro';
     the test author's machine.
   </p>
 
-  <h2>Get the real thing into your CI</h2>
+  <h3>Get the WebdriverIO reporter into your CI</h3>
   <p>
     Inside a WebdriverIO project, one command wires the Service + creates the reports
     directory + ignores it in git:
@@ -88,7 +113,7 @@ npx @tracelane/cli init</code></pre>
   </div>
 
   <p style="color: var(--fg-muted); font-size: 0.9rem; margin-top: 2rem;">
-    The demo report file is ~167 KB. It loads instantly because all assets are inlined
+    Each demo report is ~350 KB. They load instantly because all assets are inlined
     &mdash; same constraint your shipped reports operate under (25 MB cap, FullSnapshot
     preserved on overflow).
   </p>

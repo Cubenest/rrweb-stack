@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Northwind Tools — Checkout</title>
+    <style>
+      :root {
+        color-scheme: light;
+      }
+      body {
+        font-family: system-ui, -apple-system, sans-serif;
+        margin: 0;
+        color: #0b1020;
+        background: #f6f8fa;
+      }
+      header {
+        background: #0b1020;
+        color: #fff;
+        padding: 1rem 2rem;
+      }
+      header h1 {
+        font-size: 1.25rem;
+        margin: 0;
+      }
+      main {
+        max-width: 640px;
+        margin: 0 auto;
+        padding: 2rem;
+      }
+      button {
+        margin-top: 1rem;
+        padding: 0.6rem 1.1rem;
+        border: 1px solid #1a7f37;
+        background: #1a7f37;
+        color: #fff;
+        border-radius: 8px;
+        font-weight: 600;
+        cursor: pointer;
+      }
+      #status {
+        margin-top: 1rem;
+        font-family: ui-monospace, monospace;
+      }
+      #status.ok {
+        color: #1a7f37;
+      }
+      #status.err {
+        color: #cf222e;
+      }
+    </style>
+  </head>
+  <body>
+    <header><h1>Northwind Tools</h1></header>
+    <main>
+      <h2>Checkout</h2>
+      <p>Review your order and place it.</p>
+      <button id="place-order">Place order</button>
+      <div id="status"></div>
+    </main>
+
+    <script>
+      const status = document.getElementById('status');
+      document.getElementById('place-order').addEventListener('click', async () => {
+        console.log('checkout: placing order');
+        try {
+          // The checkout endpoint returns a real HTTP 500 with a JSON error body.
+          const res = await fetch('/api/checkout', {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ items: 3 }),
+          });
+          const text = await res.text();
+          if (!res.ok) {
+            console.error('checkout failed: HTTP ' + res.status + ' — ' + text);
+            status.className = 'err';
+            status.textContent = 'Order failed (HTTP ' + res.status + ')';
+          } else {
+            status.className = 'ok';
+            status.textContent = 'Order placed';
+          }
+        } catch (e) {
+          console.error('checkout request errored: ' + e);
+          status.className = 'err';
+          status.textContent = 'Order failed (network error)';
+        }
+      });
+    </script>
+  </body>
+</html>

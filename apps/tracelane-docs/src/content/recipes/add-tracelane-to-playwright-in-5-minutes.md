@@ -6,6 +6,7 @@ type: hero
 status: published
 publishedAt: 2026-06-15
 integrations: [playwright]
+artifact: /demo/playwright-checkout-failure.html
 relatedRecipes: [attach-rrweb-replay-to-every-playwright-pr, debug-flaky-checkout-test-in-ci, share-failing-test-with-a-developer]
 ---
 

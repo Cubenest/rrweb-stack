@@ -1,0 +1,123 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Northwind Tools — Products</title>
+    <style>
+      :root {
+        color-scheme: light;
+      }
+      body {
+        font-family: system-ui, -apple-system, sans-serif;
+        margin: 0;
+        color: #0b1020;
+        background: #f6f8fa;
+      }
+      header {
+        background: #0b1020;
+        color: #fff;
+        padding: 1rem 2rem;
+      }
+      header h1 {
+        font-size: 1.25rem;
+        margin: 0;
+      }
+      main {
+        max-width: 880px;
+        margin: 0 auto;
+        padding: 2rem;
+      }
+      .grid {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 1rem;
+        margin-top: 1rem;
+      }
+      .card {
+        background: #fff;
+        border: 1px solid #d0d7de;
+        border-radius: 10px;
+        padding: 1rem;
+      }
+      .card .name {
+        font-weight: 600;
+      }
+      .card .sku {
+        color: #57606a;
+        font-size: 0.85rem;
+        margin-top: 0.15rem;
+      }
+      .card button {
+        margin-top: 0.75rem;
+        padding: 0.4rem 0.8rem;
+        border: 1px solid #1f6feb;
+        background: #1f6feb;
+        color: #fff;
+        border-radius: 6px;
+        cursor: pointer;
+      }
+      #cart {
+        margin-top: 1.5rem;
+        font-weight: 600;
+      }
+      a.checkout {
+        display: inline-block;
+        margin-top: 1rem;
+        padding: 0.6rem 1.1rem;
+        background: #1a7f37;
+        color: #fff;
+        border-radius: 8px;
+        text-decoration: none;
+        font-weight: 600;
+      }
+    </style>
+  </head>
+  <body>
+    <header><h1>Northwind Tools</h1></header>
+    <main>
+      <p>Pick a few items, then head to checkout.</p>
+      <div class="grid" id="grid"></div>
+      <div id="cart">Cart: 0 items</div>
+      <a class="checkout" id="to-checkout" href="/checkout.html">Go to checkout &rarr;</a>
+    </main>
+
+    <script>
+      const SKUS = [
+        { sku: 'CLAW-22', name: 'Claw hammer' },
+        { sku: 'TAPE-5M', name: '5m tape measure' },
+        { sku: 'BIT-SET', name: 'Driver bit set' },
+      ];
+      let count = 0;
+      const grid = document.getElementById('grid');
+      const cart = document.getElementById('cart');
+
+      for (const p of SKUS) {
+        const card = document.createElement('div');
+        card.className = 'card';
+        card.innerHTML =
+          '<div class="name">' + p.name + '</div><div class="sku">' + p.sku + '</div>';
+        const btn = document.createElement('button');
+        btn.textContent = 'Add to cart';
+        btn.id = 'add-' + p.sku;
+        btn.addEventListener('click', async () => {
+          count += 1;
+          cart.textContent = 'Cart: ' + count + ' items';
+          // The recommendations endpoint returns a real HTTP 404 — a genuine
+          // failed response (status populated), distinct from a connection
+          // error — so it surfaces in tracelane's Network panel.
+          try {
+            const r = await fetch('/api/recommendations/' + p.sku);
+            if (!r.ok) {
+              console.warn('recommendations unavailable for ' + p.sku + ' (HTTP ' + r.status + ')');
+            }
+          } catch (e) {
+            console.warn('recommendations fetch errored: ' + e);
+          }
+        });
+        card.appendChild(btn);
+        grid.appendChild(card);
+      }
+    </script>
+  </body>
+</html>
