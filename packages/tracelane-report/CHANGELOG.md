@@ -1,5 +1,12 @@
 # @tracelane/report
 
+## 0.1.0-alpha.15
+
+### Patch Changes
+
+- Updated dependencies [c066479]
+  - @tracelane/core@0.1.0-alpha.13
+
 ## 0.1.0-alpha.14
 
 ### Patch Changes
