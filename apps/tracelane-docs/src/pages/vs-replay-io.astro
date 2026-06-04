@@ -1,0 +1,138 @@
+---
+import Layout from '../layouts/Layout.astro';
+---
+
+<Layout title="tracelane vs Replay.io">
+  <h1>tracelane vs Replay.io</h1>
+  <p class="tagline">
+    Both help you understand a test failure after it happened. The difference
+    is what kind of answer you&apos;re after: a CI artifact you can share and
+    replay, or time-travel through the JavaScript execution itself.
+  </p>
+
+  <p>
+    Replay.io gets mentioned alongside tracelane because both address the
+    &ldquo;I can&apos;t reproduce this failure locally&rdquo; problem. They solve it at
+    different layers. This page is the honest side-by-side.
+  </p>
+
+  <h2>At a glance</h2>
+
+  <table>
+    <thead>
+      <tr>
+        <th></th>
+        <th>tracelane</th>
+        <th>Replay.io</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><strong>What it records</strong></td>
+        <td>DOM mutations (rrweb), console events, and failed network responses during a test run. A browser-surface recording &mdash; what the user sees, not the JS runtime.</td>
+        <td>The entire JavaScript execution: every function call, variable state, async operation. A deterministic recording of the runtime itself, not just the DOM.</td>
+      </tr>
+      <tr>
+        <td><strong>Replay capability</strong></td>
+        <td>DOM replay: scrub the rrweb timeline to see the page at any moment. Inspect the DOM, console, and network. Cannot replay JS execution or set post-hoc breakpoints.</td>
+        <td>Time-travel debugging: set breakpoints after recording and step through the exact execution. See the call stack, variable values, and async timeline at any point.</td>
+      </tr>
+      <tr>
+        <td><strong>Generates a Playwright repro</strong></td>
+        <td>Yes. <code>generate_playwright_repro</code> turns the recorded session into a runnable Playwright test the agent can re-run to verify a fix.</td>
+        <td>No. Replay is for debugging the root cause &mdash; it does not generate a test from the recording.</td>
+      </tr>
+      <tr>
+        <td><strong>Runtime / browser required</strong></td>
+        <td>No special browser. The rrweb recorder injects into your existing Playwright/WDIO browser instance. Nothing to install beyond the npm package.</td>
+        <td>Requires Replay&apos;s patched Chromium or Firefox runtime. Tests must be run with the Replay browser (<code>npx replay-chromium</code> or equivalent).</td>
+      </tr>
+      <tr>
+        <td><strong>Where data lives</strong></td>
+        <td>A <code>.html</code> file on your filesystem (or in a CI artifact store). Nothing uploaded.</td>
+        <td>Replay&apos;s cloud. Recordings are uploaded and hosted on app.replay.io.</td>
+      </tr>
+      <tr>
+        <td><strong>Artifact format</strong></td>
+        <td>A single self-contained <code>.html</code> file. Opens offline in any browser. Attach to Jira, Slack, or email &mdash; no account needed to view.</td>
+        <td>A URL on replay.io. Viewing requires a Replay account (the team&apos;s Replay workspace must have access). Recordings expire per plan.</td>
+      </tr>
+      <tr>
+        <td><strong>AI-agent readable</strong></td>
+        <td>Yes, via MCP tools: console errors, network failures, DOM snapshots, user actions &mdash; returning structured JSON. The rrweb event blob in the HTML is also machine-parseable.</td>
+        <td>Replay has a developer API and is adding AI features, but there is no MCP surface. An agent that wants to query a recording must use their SDK/API.</td>
+      </tr>
+      <tr>
+        <td><strong>Runner support</strong></td>
+        <td>WebdriverIO (service) and Playwright (reporter + fixture) today. Cypress on the roadmap.</td>
+        <td>Playwright, Cypress, Jest, Puppeteer &mdash; wherever you can swap in the Replay browser runtime.</td>
+      </tr>
+      <tr>
+        <td><strong>Cost</strong></td>
+        <td>Free. Apache 2.0.</td>
+        <td>Free tier (limited recordings/month); paid plans for teams and organizations.</td>
+      </tr>
+      <tr>
+        <td><strong>Air-gapped / compliance</strong></td>
+        <td>Works. Artifacts stay on your filesystem.</td>
+        <td>Requires outbound network to replay.io. Not suitable for air-gapped CI or environments with strict data-residency requirements.</td>
+      </tr>
+      <tr>
+        <td><strong>What it does NOT do</strong></td>
+        <td>Does not record JS execution internals (call stack, variable state, async flows). Cannot set post-hoc breakpoints. The artifact is a browser-surface view, not a runtime trace.</td>
+        <td>Does not produce a self-contained portable artifact you can email. Cannot generate a Playwright repro from the recording.</td>
+      </tr>
+      <tr>
+        <td><strong>Maturity</strong></td>
+        <td>Pre-1.0 (alpha as of 2026). Active development.</td>
+        <td>Mature commercial product, years in production.</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <h2>When tracelane is the right choice</h2>
+
+  <ul>
+    <li>You want the failure to produce a <strong>runnable Playwright repro</strong> the agent can replay to verify a fix &mdash; not just a record to browse.</li>
+    <li>The failure is at the UI/DOM level: a missing element, a wrong state, a console error at a specific moment. rrweb DOM replay is the right lens.</li>
+    <li>You need a portable, offline artifact: attach to a ticket, share over Slack, archive in S3. The recipient needs no account and no Replay runtime.</li>
+    <li>Air-gapped CI, or a compliance policy that prohibits uploading test data to a third-party cloud.</li>
+    <li>You use WebdriverIO (Replay requires their patched browser; tracelane uses your existing runner).</li>
+    <li>You want AI-agent access over MCP to query the session structurally.</li>
+    <li>You want the tool to work without installing a patched browser runtime.</li>
+  </ul>
+
+  <h2>When Replay.io is the right choice</h2>
+
+  <ul>
+    <li>The failure is in JavaScript internals: a race condition in async code, a state machine that hits the wrong branch, a third-party library doing something unexpected. Replay&apos;s time-travel debugger lets you set breakpoints after the fact and step through the exact execution &mdash; rrweb DOM replay doesn&apos;t see JS runtime state at all.</li>
+    <li>You need to see variable values and call stacks at the moment of failure, not just the DOM surface.</li>
+    <li>Your team is already on Cypress or Jest and can swap in the Replay browser runtime without disrupting existing infrastructure.</li>
+    <li>Uploading recordings to a hosted workspace is acceptable and your retention/sharing workflow benefits from Replay&apos;s collaboration UI.</li>
+  </ul>
+
+  <h2>Can you use both?</h2>
+
+  <p>
+    Architecturally yes, but practically you&apos;d choose based on the kind of
+    failure you&apos;re debugging. Use tracelane for failures that show up at
+    the DOM/console/network layer (the artifact is a file, shareable, AI-queryable).
+    Use Replay when you need to step through JS execution to find the root cause.
+    They are not in conflict &mdash; they answer different questions.
+  </p>
+
+  <h2>Why this page exists</h2>
+
+  <p>
+    &ldquo;replay.io alternative&rdquo; and &ldquo;tracelane vs replay&rdquo; are
+    searches a developer naturally runs when evaluating test-failure tooling. The
+    answer isn&apos;t &ldquo;one is better&rdquo; &mdash; it&apos;s that they operate at
+    different layers of the stack. This page is the honest version of that answer.
+  </p>
+
+  <p style="color: var(--fg-muted); font-size: 0.9rem; margin-top: 2rem;">
+    Found something inaccurate above? Open a PR on
+    <a href="https://github.com/Cubenest/rrweb-stack/blob/main/apps/tracelane-docs/src/pages/vs-replay-io.astro" rel="noopener">this page</a>
+    &mdash; the goal is accuracy, not advocacy.
+  </p>
+</Layout>
