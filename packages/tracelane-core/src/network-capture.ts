@@ -132,13 +132,19 @@ export async function attachNetworkCapture(executor: BrowserExecutor): Promise<v
   executor.on('Network.responseReceived', (params: unknown) => {
     const e = params as ResponseReceivedEvent;
     const response = e?.response;
-    // A response arrived — this request will not surface via loadingFailed, so
-    // drop it from the inflight map regardless of status.
-    if (typeof e?.requestId === 'string') inflight.delete(e.requestId);
+    const id = e?.requestId;
+    // Grab the tracked entry BEFORE evicting it: `requestWillBeSent` recorded
+    // the real method, whereas `response.requestHeaders` has no `:method`
+    // pseudo-header over HTTP/1.1 (the common case for dev/CI servers) and would
+    // otherwise fall back to GET — so a failed POST/PUT/DELETE would mislabel as
+    // GET. A response arrived, so this request will not surface via
+    // loadingFailed; drop it from the map regardless of status.
+    const tracked = typeof id === 'string' ? inflight.get(id) : undefined;
+    if (typeof id === 'string') inflight.delete(id);
     const status = response?.status;
     if (typeof status !== 'number' || status < 400) return;
     const url = response?.url ?? '';
-    const method = methodOf(response?.requestHeaders);
+    const method = tracked?.method ?? methodOf(response?.requestHeaders);
     emit(url, status, method);
   });
 

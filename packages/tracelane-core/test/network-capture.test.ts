@@ -61,6 +61,29 @@ describe('attachNetworkCapture', () => {
     expect(m.execute).toHaveBeenCalledWith(expect.any(Function), 'https://api.test/x', 500, 'POST');
   });
 
+  it('uses the tracked requestWillBeSent method for a 5xx response (HTTP/1.1 has no :method header)', async () => {
+    const m = mockExecutor();
+    await attachNetworkCapture(m.executor);
+    // requestWillBeSent records the real method (POST) ...
+    m.fire(
+      { requestId: 'req-co', request: { url: 'https://shop.demo/api/checkout', method: 'POST' } },
+      'Network.requestWillBeSent',
+    );
+    // ... and the response carries NO requestHeaders (the HTTP/1.1 case), so
+    // methodOf() would fall back to GET. The tracked method must win, otherwise
+    // a failed POST mislabels as GET in the network panel.
+    m.fire({
+      requestId: 'req-co',
+      response: { url: 'https://shop.demo/api/checkout', status: 500 },
+    });
+    expect(m.execute).toHaveBeenCalledWith(
+      expect.any(Function),
+      'https://shop.demo/api/checkout',
+      500,
+      'POST',
+    );
+  });
+
   it('routes a 404 response (boundary >= 400)', async () => {
     const m = mockExecutor();
     await attachNetworkCapture(m.executor);
