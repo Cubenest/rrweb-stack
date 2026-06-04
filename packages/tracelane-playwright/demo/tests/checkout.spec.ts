@@ -17,6 +17,11 @@
 import { expect, test } from '../../dist/fixture.js';
 
 const PORT = process.env.TRACELANE_DEMO_PORT;
+if (!PORT) {
+  throw new Error(
+    'TRACELANE_DEMO_PORT is not set — run this spec via `pnpm --filter @tracelane/playwright demo:gen`, not Playwright directly.',
+  );
+}
 const base = `http://127.0.0.1:${PORT}`;
 
 test('Checkout › placing an order surfaces a 500 from the payment gateway', async ({ page }) => {
