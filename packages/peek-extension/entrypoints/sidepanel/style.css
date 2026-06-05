@@ -363,10 +363,10 @@ code {
   display: none;
 }
 .peek-disclosure-summary::before {
-  content: '▸ ';
+  content: "▸ ";
 }
 .peek-disclosure[open] .peek-disclosure-summary::before {
-  content: '▾ ';
+  content: "▾ ";
 }
 .peek-disclosure-body {
   margin-top: 8px;
