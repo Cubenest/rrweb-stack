@@ -47,18 +47,26 @@ export function App(): React.JSX.Element {
     return () => chrome.runtime.onMessage.removeListener(listener);
   }, []);
 
-  // If the panel unmounts with a confirm pending, fail-closed (deny) — unless it
-  // already received a verdict (markResolved), so an Allow isn't raced by a deny.
+  // Track the latest pending confirm in a ref so the unmount cleanup below can
+  // read it without the effect re-running on every replacement.
+  const latestPending = useRef<ShowConfirmMessage | null>(null);
   useEffect(() => {
-    if (!pendingConfirm) return;
-    const requestId = pendingConfirm.requestId;
-    const tracker = resolution.current;
+    latestPending.current = pendingConfirm;
+  }, [pendingConfirm]);
+
+  // On panel UNMOUNT only: fail-closed for the latest unresolved confirm.
+  // Using an empty dep array means this cleanup runs once (on unmount), not on
+  // every prompt replacement — so replaced prompts time out SW-side (correct)
+  // rather than getting a premature panel-closed verdict.
+  useEffect(() => {
     return () => {
-      if (tracker.shouldSendCloseVerdict(requestId)) {
-        void sendConfirmVerdict(closedVerdict(requestId));
+      const current = latestPending.current;
+      if (!current) return;
+      if (resolution.current.shouldSendCloseVerdict(current.requestId)) {
+        void sendConfirmVerdict(closedVerdict(current.requestId));
       }
     };
-  }, [pendingConfirm]);
+  }, []);
 
   const resolveConfirm = useCallback((verdict: ConfirmVerdictMessage) => {
     // Mark resolved BEFORE clearing pendingConfirm: setPendingConfirm(null)
