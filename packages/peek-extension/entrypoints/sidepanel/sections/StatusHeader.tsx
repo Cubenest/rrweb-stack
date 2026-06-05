@@ -44,17 +44,21 @@ export function StatusHeader({ origin }: { origin: string | null }): React.JSX.E
       setLevelShort(null);
       return;
     }
-    void getPermissionLevel(origin).then((level) => {
-      if (!cancelled) setLevelShort(permissionLevelInfo(level).short);
-    });
+    const refreshLevelShort = async (): Promise<void> => {
+      try {
+        const level = await getPermissionLevel(origin);
+        if (!cancelled) setLevelShort(permissionLevelInfo(level).short);
+      } catch {
+        if (!cancelled) setLevelShort(null);
+      }
+    };
+    void refreshLevelShort();
     const onChanged = (
       changes: Record<string, chrome.storage.StorageChange>,
       area: string,
     ): void => {
       if (area !== 'sync' || !(PERMISSION_LEVELS_KEY in changes)) return;
-      void getPermissionLevel(origin).then((level) => {
-        if (!cancelled) setLevelShort(permissionLevelInfo(level).short);
-      });
+      void refreshLevelShort();
     };
     chrome.storage.onChanged.addListener(onChanged);
     return () => {

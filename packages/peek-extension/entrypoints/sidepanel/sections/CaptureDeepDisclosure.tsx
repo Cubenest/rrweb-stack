@@ -24,12 +24,20 @@ export function CaptureDeepDisclosure({ origin }: { origin: string | null }): Re
       setLoaded(true);
       return;
     }
-    void isDeepCaptureEnabled(origin).then((v) => {
-      if (!cancelled) {
-        setEnabled(v);
-        setLoaded(true);
-      }
-    });
+    void isDeepCaptureEnabled(origin)
+      .then((v) => {
+        if (!cancelled) {
+          setEnabled(v);
+          setLoaded(true);
+        }
+      })
+      .catch((err) => {
+        if (!cancelled) {
+          setEnabled(false);
+          setError(err instanceof Error ? err.message : String(err));
+          setLoaded(true);
+        }
+      });
     return () => {
       cancelled = true;
     };

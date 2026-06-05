@@ -29,25 +29,36 @@ export function usePermissionLevel(origin: string | null): PermissionLevelContro
   useEffect(() => {
     let cancelled = false;
     setLoaded(false);
+    setError(null);
     if (!origin) {
       setLevel(DEFAULT_PERMISSION_LEVEL);
+      setBusy(false);
       setLoaded(true);
       return;
     }
-    void getPermissionLevel(origin).then((l) => {
-      if (!cancelled) {
-        setLevel(l);
-        setLoaded(true);
+    const refresh = async (): Promise<void> => {
+      try {
+        const l = await getPermissionLevel(origin);
+        if (!cancelled) {
+          setLevel(l);
+          setError(null);
+        }
+      } catch (err) {
+        if (!cancelled) {
+          setLevel(DEFAULT_PERMISSION_LEVEL);
+          setError(err instanceof Error ? err.message : String(err));
+        }
+      } finally {
+        if (!cancelled) setLoaded(true);
       }
-    });
+    };
+    void refresh();
     const onChanged = (
       changes: Record<string, chrome.storage.StorageChange>,
       area: string,
     ): void => {
       if (area !== 'sync' || !(PERMISSION_LEVELS_KEY in changes)) return;
-      void getPermissionLevel(origin).then((l) => {
-        if (!cancelled) setLevel(l);
-      });
+      void refresh();
     };
     chrome.storage.onChanged.addListener(onChanged);
     return () => {

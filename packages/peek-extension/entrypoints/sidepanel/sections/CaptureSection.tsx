@@ -30,25 +30,31 @@ export function CaptureSection({
   const [error, setError] = useState<string | null>(null);
 
   // Reflect persisted "all tabs" consent whenever the active origin changes.
+  // Immediately reset to false so the old site's "Recording" state never leaks
+  // into the new URL while the async storage read is in flight.
   useEffect(() => {
     let cancelled = false;
-    if (!url) {
-      setEnabled(false);
-      return;
-    }
-    void isOriginEnabled(url).then((v) => {
-      if (!cancelled) setEnabled(v);
-    });
+    setEnabled(false);
+    if (!url) return;
+    void isOriginEnabled(url)
+      .then((v) => {
+        if (!cancelled) setEnabled(v);
+      })
+      .catch((err) => {
+        if (!cancelled) setError(err instanceof Error ? err.message : String(err));
+      });
     return () => {
       cancelled = true;
     };
   }, [url]);
 
-  // An activeTab grant is per-tab; clear the "this tab" feedback on tab switch.
-  // biome-ignore lint/correctness/useExhaustiveDependencies: reset is keyed on tabId only.
+  // An activeTab grant is per-tab AND per-origin: clear when the tab changes OR
+  // when the same tab navigates to a different URL (new site must not inherit
+  // the old grant). Both tabId and url are intentional deps.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: setTabEnabled is stable; tabId+url are the intentional reset signals.
   useEffect(() => {
     setTabEnabled(false);
-  }, [tabId]);
+  }, [tabId, url]);
 
   const onActivate = useCallback(
     async (scope: 'tab' | 'origin') => {
