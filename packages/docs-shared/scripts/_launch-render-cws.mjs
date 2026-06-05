@@ -23,7 +23,7 @@ import { extname, join, resolve } from 'node:path';
 import { chromium } from 'playwright';
 
 const REPO = resolve(import.meta.dirname, '..', '..', '..');
-const EXT_DIR = join(REPO, 'packages/peek-extension/chrome-mv3');
+const EXT_DIR = join(REPO, 'packages/peek-extension/.output/chrome-mv3');
 const OUT_DIR = join(REPO, 'assets/cws/screenshots');
 
 // ── fonts (shared with the main harness) ────────────────────────────────────
@@ -91,7 +91,7 @@ function chromeMockScript(state) {
       getManifest: function(){ return { version: '0.1.0', manifest_version: 3 }; },
       sendMessage: function(msg){
         if (msg && msg.type === 'getRecorderStats') return Promise.resolve(recorderStats);
-        if (msg && msg.type === 'getNativeHostState') return Promise.resolve('connected');
+        if (msg && msg.type === 'getNativeHostState') return Promise.resolve({ state: 'connected' });
         return Promise.resolve(undefined);
       },
       onMessage: evt(),
@@ -280,7 +280,7 @@ const shotAudit = await capturePanel(
   browser,
   baseUrl,
   STATE_ACTIVE,
-  'section[aria-labelledby="peek-audit-heading"]',
+  'section[aria-labelledby="peek-agent-heading"]',
 );
 
 const SHOTS = [
@@ -310,7 +310,7 @@ const SHOTS = [
   },
   {
     name: '05-audit-log',
-    title: 'Agent actions will appear in the audit log.',
+    title: 'Control what your agent can do — per site, per level.',
     frame: '5 of 5',
     stage: `<div style="background:#1f2733;border:1px solid #e2e0db;border-radius:10px;box-shadow:0 18px 48px rgba(20,20,20,.14);padding:6px"><img style="display:block;max-width:560px;border-radius:6px" src="${shotAudit}"></div>`,
   },
