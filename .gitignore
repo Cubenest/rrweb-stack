@@ -43,3 +43,6 @@ _context/
 # `_context/docs/`. Pattern retained so any leftover local copies stay
 # untracked.
 docs-private/
+
+# Visual-companion brainstorm scratch (superpowers)
+.superpowers/
