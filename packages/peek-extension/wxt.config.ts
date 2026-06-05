@@ -1,6 +1,14 @@
+import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { defineConfig } from 'wxt';
 import { buildRecorder } from './scripts/build-recorder.mjs';
+
+// CWS requires X.Y.Z.W integer format — semver pre-release strings are rejected.
+// Convert '0.1.0-alpha.10' → '0.1.0.10'; plain semver '0.1.0' stays '0.1.0'.
+const { version: _pkgVer } = JSON.parse(readFileSync('./package.json', 'utf8')) as {
+  version: string;
+};
+const cwsVersion = _pkgVer.replace(/-alpha\.(\d+)$/, '.$1').replace(/-[^.]*$/, '');
 
 // peek Chrome MV3 extension — WXT generates `manifest.json` from this config
 // plus the entrypoint files in `entrypoints/`. Do NOT hand-write manifest.json.
@@ -18,6 +26,7 @@ export default defineConfig({
   outDir: '.output',
   manifest: {
     name: 'peek',
+    version: cwsVersion,
     description: 'Capture your real browser session and expose it to AI coding agents via MCP.',
     homepage_url: 'https://github.com/Cubenest/rrweb-stack/tree/main/packages/peek-extension',
     minimum_chrome_version: '116',
