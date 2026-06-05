@@ -137,7 +137,6 @@ body {
   font-variant-numeric: tabular-nums;
 }
 
-
 .peek-error {
   margin: 10px 0 0;
   padding: 8px 10px;
@@ -165,7 +164,6 @@ body {
 .peek-warning strong {
   font-weight: 700;
 }
-
 
 .peek-footer {
   margin-top: auto;
@@ -213,6 +211,10 @@ code {
 .peek-status-ok .peek-status-dot {
   background: #34d399;
   box-shadow: 0 0 0 3px rgba(52, 211, 153, 0.2);
+}
+.peek-status-warn {
+  border-color: rgba(251, 191, 36, 0.32);
+  background: rgba(251, 191, 36, 0.08);
 }
 .peek-status-warn .peek-status-dot {
   background: #fbbf24;
@@ -296,6 +298,7 @@ code {
   overflow: hidden;
 }
 .peek-dial-seg {
+  position: relative;
   flex: 1;
   display: flex;
   align-items: center;
@@ -416,4 +419,13 @@ code {
   color: #fca5a5;
   background: #3a1414;
   border-color: #7f1d1d;
+}
+.peek-btn:hover:not(:disabled) {
+  background: #31425c;
+}
+.peek-btn-primary:hover:not(:disabled) {
+  background: var(--peek-accent-strong);
+}
+.peek-btn-danger:hover:not(:disabled) {
+  background: #4a1818;
 }
