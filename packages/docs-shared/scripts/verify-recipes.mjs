@@ -59,7 +59,11 @@ function packageExistsOnNpm(pkg) {
 
 // frontmatter + body extraction ─────────────────────────────────────────
 function parseRecipe(filepath) {
-  const raw = readFileSync(filepath, 'utf8');
+  // Normalize CRLF → LF so the frontmatter regex (and every downstream body
+  // regex) is line-ending agnostic. On a Windows checkout with core.autocrlf=true
+  // the files land as CRLF; without this the `---\n` delimiter never matches and
+  // every recipe fails to parse. No-op on LF checkouts (Linux/CI).
+  const raw = readFileSync(filepath, 'utf8').replace(/\r\n/g, '\n');
   const m = raw.match(/^---\n([\s\S]+?)\n---\n([\s\S]*)$/);
   if (!m) throw new Error(`No frontmatter delimiter in ${filepath}`);
   return { frontmatter: yaml.load(m[1]), body: m[2] };
