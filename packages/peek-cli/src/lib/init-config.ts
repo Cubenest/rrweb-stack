@@ -10,15 +10,25 @@ import { join } from 'node:path';
 /** The MCP server key peek registers under, and the block written for it. */
 export const PEEK_SERVER_KEY = 'peek';
 
-/** The `mcpServers.peek` block (P2 PRD §K.1-K.5): `npx -y @peekdev/mcp`. */
+/**
+ * The `mcpServers.peek` block (P2 PRD §K.1-K.5): `npx -y @peekdev/mcp@latest`.
+ *
+ * The version tag is load-bearing. `@peekdev/mcp` is published only under
+ * prerelease versions (`0.1.0-alpha.*`) while in alpha, and a bare
+ * `npx -y @peekdev/mcp` resolves the implicit `*` range, which per semver does
+ * NOT match prereleases — npx fails with `ETARGET: No matching version found
+ * for @peekdev/mcp@*` and the MCP client reports a connection error. Pinning
+ * `@latest` forces the dist-tag (the newest published alpha) so resolution
+ * succeeds. Revisit once a stable (non-prerelease) version ships.
+ */
 export interface PeekMcpServerBlock {
   readonly command: 'npx';
-  readonly args: readonly ['-y', '@peekdev/mcp'];
+  readonly args: readonly ['-y', '@peekdev/mcp@latest'];
 }
 
 export const PEEK_MCP_BLOCK: PeekMcpServerBlock = {
   command: 'npx',
-  args: ['-y', '@peekdev/mcp'],
+  args: ['-y', '@peekdev/mcp@latest'],
 };
 
 /** Stable identifiers for the supported MCP clients. */

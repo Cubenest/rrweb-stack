@@ -37,7 +37,7 @@ When the wizard asks which clients to configure, select **Cursor**. `peek init` 
   "mcpServers": {
     "peek": {
       "command": "npx",
-      "args": ["-y", "@peekdev/mcp"]
+      "args": ["-y", "@peekdev/mcp@latest"]
     }
   }
 }

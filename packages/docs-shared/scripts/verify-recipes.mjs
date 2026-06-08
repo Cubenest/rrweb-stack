@@ -253,11 +253,11 @@ function checkMcpWiring(body, siteName) {
     const okArgs =
       Array.isArray(peekEntry.args) &&
       peekEntry.args[0] === '-y' &&
-      peekEntry.args[1] === '@peekdev/mcp';
+      peekEntry.args[1] === '@peekdev/mcp@latest';
     if (!okCommand || !okArgs) {
       issues.push({
         severity: 'error',
-        detail: `non-canonical peek MCP entry: ${JSON.stringify(peekEntry)} (expected { command: "npx", args: ["-y", "@peekdev/mcp"] })`,
+        detail: `non-canonical peek MCP entry: ${JSON.stringify(peekEntry)} (expected { command: "npx", args: ["-y", "@peekdev/mcp@latest"] })`,
       });
     }
   }

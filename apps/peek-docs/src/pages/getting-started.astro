@@ -6,16 +6,31 @@ import Layout from '../layouts/Layout.astro';
   <h1>Getting started</h1>
   <p class="tagline">Run the MCP server, point your AI client at it, load the extension.</p>
 
+  <div class="callout">
+    <strong>Requires Node.js 22 or newer.</strong> peek&apos;s native
+    <code>better-sqlite3</code> dependency only ships prebuilt binaries for Node 22+;
+    on Node 20 (notably on Windows, which has no C/C++ build toolchain by default)
+    the install falls back to compiling from source and fails. Check with
+    <code>node --version</code> before you start.
+  </div>
+
   <h2>1. Run the MCP server</h2>
   <p>
     The simplest path is <code>npx</code> &mdash; no install needed. Your AI client will
     spawn the server for you on demand:
   </p>
-  <pre><code>npx -y @peekdev/mcp</code></pre>
+  <pre><code>npx -y @peekdev/mcp@latest</code></pre>
   <p>
     This runs the stdio MCP server (it reads and writes the local SQLite at
     <code>~/.peek/sessions.db</code>). You generally won&apos;t invoke it directly &mdash;
     your AI client (next step) does that.
+  </p>
+  <p>
+    The <code>@latest</code> tag is required while peek is in alpha: every published
+    version is a prerelease (<code>0.1.0-alpha.*</code>), and a bare
+    <code>npx -y @peekdev/mcp</code> resolves the implicit <code>*</code> range, which
+    doesn&apos;t match prereleases (<code>ETARGET: No matching version found</code>).
+    Pinning <code>@latest</code> forces the newest published build.
   </p>
 
   <h2>2. Configure your AI client</h2>
@@ -28,7 +43,7 @@ import Layout from '../layouts/Layout.astro';
   "mcpServers": {
     "peek": {
       "command": "npx",
-      "args": ["-y", "@peekdev/mcp"]
+      "args": ["-y", "@peekdev/mcp@latest"]
     }
   }
 }
@@ -39,7 +54,7 @@ import Layout from '../layouts/Layout.astro';
   "mcpServers": {
     "peek": {
       "command": "npx",
-      "args": ["-y", "@peekdev/mcp"]
+      "args": ["-y", "@peekdev/mcp@latest"]
     }
   }
 }
@@ -50,7 +65,7 @@ import Layout from '../layouts/Layout.astro';
   "servers": {
     "peek": {
       "command": "npx",
-      "args": ["-y", "@peekdev/mcp"]
+      "args": ["-y", "@peekdev/mcp@latest"]
     }
   }
 }
