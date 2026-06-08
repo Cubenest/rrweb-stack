@@ -18,7 +18,7 @@ A `tracelane-report-<spec>.html` next to your existing WDIO reporter output, gen
 ## Prerequisites
 
 - An existing WebdriverIO project (v8 or v9)
-- Node >= 20
+- Node >= 22
 
 ## Steps
 

@@ -19,7 +19,7 @@ A `tracelane-report-<spec>.html` produced by a local headless run that reproduce
 
 - An existing WebdriverIO suite with `@tracelane/wdio` installed
 - Local Chrome (or Chromium) on your machine
-- Node >= 20
+- Node >= 22
 
 ## Steps
 

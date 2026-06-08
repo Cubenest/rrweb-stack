@@ -19,7 +19,7 @@ A screenshot of the exact frame where the cart sidebar collapsed, pulled out of 
 
 - An existing WebdriverIO suite with `@tracelane/wdio` already wired in
 - A spec that exercises the page where the regression surfaced
-- Node >= 20
+- Node >= 22
 
 ## Steps
 

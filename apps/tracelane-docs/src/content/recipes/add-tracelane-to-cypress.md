@@ -18,7 +18,7 @@ A `tracelane-report-<spec>.html` next to your Cypress output folder, produced on
 ## Prerequisites
 
 - An existing Cypress project (v13+)
-- Node >= 20
+- Node >= 22
 
 > **Status: aspirational.** This recipe depends on `@tracelane/cypress`, which is currently in development. The recipe will land as `published` once the package ships. Track progress at [github.com/Cubenest/rrweb-stack/issues](https://github.com/Cubenest/rrweb-stack/issues).
 
