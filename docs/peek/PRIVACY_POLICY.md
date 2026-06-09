@@ -1,6 +1,6 @@
 # peek — Privacy Policy
 
-**Last updated: 2026-05-28**
+**Last updated: 2026-06-09**
 
 peek is a local-first developer tool. The Chrome extension captures your real
 browser session and ships it through a **native-messaging stdio bridge** to a
@@ -86,6 +86,10 @@ debugger from **every** tab on that origin immediately (not lazily).
 
 - **Per-site Enable / Disable** — in the side panel. Disable detaches the
   recorder from all tabs of that origin.
+- **Recording indicator** — an always-on toolbar badge plus a default-on
+  in-page glow (inside a closed shadow root, excluded from peek's own
+  capture) shows when recording is active. The "Show recording border"
+  toggle in the side panel hides the glow; the badge remains visible.
 - **Deep capture toggle** — separate, per-origin. Off by default.
 - **Permission level** — set per origin in the side panel. Default Level 1.
 - **Delete a session** — via the `peek delete <session-id>` CLI or by

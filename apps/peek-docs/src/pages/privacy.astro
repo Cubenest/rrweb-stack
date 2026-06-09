@@ -6,7 +6,7 @@ import Layout from '../layouts/Layout.astro';
   <h1>Privacy policy</h1>
   <p class="tagline">Local-first. Nothing leaves your machine.</p>
 
-  <p style="color: var(--fg-muted); font-size: 0.9rem;">Last updated: 2026-05-28.</p>
+  <p style="color: var(--fg-muted); font-size: 0.9rem;">Last updated: 2026-06-09.</p>
 
   <p>
     peek is a local-first developer tool. The Chrome extension captures your real
@@ -72,6 +72,7 @@ import Layout from '../layouts/Layout.astro';
   <h2>User controls</h2>
   <ul>
     <li><strong>Per-site Enable / Disable</strong> in the side panel.</li>
+    <li><strong>Recording indicator</strong> &mdash; an always-on toolbar badge plus a default-on in-page glow (inside a closed shadow root, excluded from peek&apos;s own capture) shows when recording is active. The &ldquo;Show recording border&rdquo; toggle in the side panel hides the glow; the badge remains visible.</li>
     <li><strong>Deep capture toggle</strong> &mdash; separate, per-origin. Off by default.</li>
     <li><strong>Permission level</strong> &mdash; set per origin. Default Level 1.</li>
     <li><strong>Delete a session</strong> &mdash; <code>peek delete &lt;session-id&gt;</code> or remove rows from <code>~/.peek/sessions.db</code> directly.</li>

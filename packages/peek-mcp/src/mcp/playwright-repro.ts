@@ -46,8 +46,18 @@ function actionToStatement(action: UserAction): string | undefined {
       return action.selector ? `  await page.click(${jsString(action.selector)});` : undefined;
     case 'input': {
       if (!action.selector) return undefined;
-      if (action.elementTag === 'select')
-        return `  await page.selectOption(${jsString(action.selector)}, ${jsString(action.value ?? '')});`;
+      if (action.elementTag === 'select') {
+        // rrweb captures only a single text value per input event, so only
+        // single-value <select> interactions are representable here. A
+        // <select multiple> repro would be incorrect (only one option captured);
+        // no multi-select detection is attempted — this is a known v1 limitation.
+        const value = action.value ?? '';
+        // I1: an empty value would make Playwright throw at runtime
+        // ("did not find some options"). Emit a TODO so the script stays runnable.
+        if (value === '')
+          return '  // TODO: <select> reset to placeholder — selectOption needs a value or { index: 0 }';
+        return `  await page.selectOption(${jsString(action.selector)}, ${jsString(value)});`;
+      }
       return `  await page.fill(${jsString(action.selector)}, ${jsString(action.value ?? '')});`;
     }
     default:

@@ -56,6 +56,7 @@ Everything stays on your machine. The extension ships captured sessions through 
 
 How it works
 • Enable peek per site from the side panel. There is no "read and change all your data on all websites" — recording is per-origin opt-in, requested from a click.
+• A visible recording indicator (in-page glow + toolbar badge) shows exactly when peek is capturing — recording is never silent.
 • peek records a masked rrweb session. Form values and password/email inputs are masked in the page before anything leaves it.
 • Point your AI agent at the peek-mcp server. It can list recent sessions, read console and network errors, find the user action that preceded an error, reconstruct the DOM at any moment, query DOM history, and generate a runnable Playwright reproduction.
 • A five-level, per-origin permission model controls what the agent may do — from read-only, to suggest, to act-with-confirmation. A destructive-action blocklist (delete, transfer, pay, …) always asks for confirmation, even at the most permissive level.
