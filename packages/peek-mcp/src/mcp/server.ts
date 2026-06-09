@@ -197,7 +197,7 @@ export function createPeekMcpServer(options: CreatePeekMcpServerOptions = {}): P
       {
         title: 'List recent browser sessions',
         description:
-          "List the user's recorded browser sessions, newest first — the entry point for the get_session_* and DOM tools. Returns compact JSON rows ({ sessionId, origin, url, title, startedAt, ... }); free-text fields are clipped (origin 100, url 300, title 200 chars). If the MCP client scoped roots to specific origins and no origin filter is given, results are restricted to the first scoped origin. Start here to obtain a sessionId, then call get_session_summary.",
+          "List the user's recorded browser sessions, newest first — the entry point for the get_session_* and DOM tools. Returns compact JSON rows ({ sessionId, origin, url, title, startedAt, ... }); free-text fields are clipped (origin 100, url 300, title 200 chars). If the MCP client scoped roots to specific origins and no origin filter is given, results are restricted to the client's scoped origins. Start here to obtain a sessionId, then call get_session_summary.",
         inputSchema: {
           limit: z
             .number()
@@ -219,8 +219,8 @@ export function createPeekMcpServer(options: CreatePeekMcpServerOptions = {}): P
         const handle = getDb();
         if (!handle) return textResult(NO_DB_MESSAGE);
         // Apply the roots soft-scope: if the client scoped to origins and the
-        // caller didn't ask for a specific one, restrict to the first scoped
-        // origin set by filtering post-query (origins are few).
+        // caller didn't ask for a specific one, restrict to the scoped origin
+        // set by filtering post-query against all allowedOrigins (origins are few).
         const rows = listRecentSessions(handle, {
           limit,
           ...(origin !== undefined ? { origin } : {}),
