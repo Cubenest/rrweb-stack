@@ -1,8 +1,11 @@
 import { defineContentScript } from 'wxt/utils/define-content-script';
+import { createRecordingFrame } from '../src/indicators/frame';
+import { SHOW_RECORDING_BORDER_KEY, getShowRecordingBorder } from '../src/indicators/storage';
 import {
   type Cmd,
   type RelayConsoleEvent,
   type ShadowReport,
+  isRecordingStateMessage,
   sendCmd,
 } from '../src/messaging/protocol';
 import {
@@ -196,6 +199,73 @@ export default defineContentScript({
       document.addEventListener('DOMContentLoaded', sweepShadow, { once: true });
     } else {
       scheduleSweep();
+    }
+
+    // --- Recording-active glow (top frame only) ---------------------------
+    // Drawn inside a CLOSED shadow root (frame.ts) so rrweb never serializes it
+    // and the sweep above skips its marked host. The always-on toolbar badge is
+    // the primary signal; this is the on-page complement, gated by a user
+    // setting. We PULL current state on mount (the SW only pushes on changes, so
+    // a reloaded relay would otherwise miss an in-progress recording) and also
+    // LISTEN for live push updates.
+    if (window.top === window.self) {
+      const frame = createRecordingFrame();
+      let recording = false;
+      let showBorder = true; // default-on; refined by the stored setting below
+      const applyFrame = (): void => {
+        if (recording && showBorder) frame.show();
+        else frame.hide();
+      };
+
+      // Register the push listener BEFORE pulling, so a state change landing
+      // during the async pull isn't dropped (last-write-wins is fine for a
+      // visual indicator).
+      const onRecordingMessage = (msg: unknown): undefined => {
+        if (isRecordingStateMessage(msg)) {
+          recording = msg.recording;
+          applyFrame();
+        }
+        return undefined;
+      };
+      chrome.runtime.onMessage.addListener(onRecordingMessage);
+
+      // Pull current recording state on mount (closes the reload race).
+      void sendCmd({ type: 'getRecordingState' })
+        .then((res) => {
+          recording = res.recording;
+          applyFrame();
+        })
+        .catch(() => {
+          // SW unreachable — stay hidden; a later push will correct it.
+        });
+
+      // Read the user setting; default-on if unreadable.
+      void getShowRecordingBorder()
+        .then((v) => {
+          showBorder = v;
+          applyFrame();
+        })
+        .catch(() => {
+          // Keep the default (on).
+        });
+
+      // Live-toggle the glow when the setting changes mid-recording.
+      const onBorderSettingChanged = (
+        changes: Record<string, chrome.storage.StorageChange>,
+        area: string,
+      ): void => {
+        if (area !== 'sync' || !(SHOW_RECORDING_BORDER_KEY in changes)) return;
+        const next = changes[SHOW_RECORDING_BORDER_KEY]?.newValue;
+        showBorder = next !== false;
+        applyFrame();
+      };
+      chrome.storage.onChanged.addListener(onBorderSettingChanged);
+
+      ctx.onInvalidated(() => {
+        chrome.runtime.onMessage.removeListener(onRecordingMessage);
+        chrome.storage.onChanged.removeListener(onBorderSettingChanged);
+        frame.dispose();
+      });
     }
 
     // --- Teardown ---------------------------------------------------------
