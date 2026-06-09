@@ -1,6 +1,6 @@
 {
   "name": "@cubenest/rrweb-core",
-  "version": "0.1.0-alpha.5",
+  "version": "0.1.0-alpha.6",
   "description": "Shared rrweb-based capture substrate for tracelane and peek.",
   "keywords": [
     "rrweb",
