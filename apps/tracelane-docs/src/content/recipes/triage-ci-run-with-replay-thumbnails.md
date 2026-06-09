@@ -19,7 +19,7 @@ A single `index.html` next to your reports that lists every failing spec as a ca
 
 - A WebdriverIO suite already producing `tracelane-report-*.html` files
 - The `@tracelane/cli` installed in the project (or invoked via `npx`)
-- Node >= 20
+- Node >= 22
 
 ## Steps
 

@@ -19,7 +19,7 @@ An HTML file (e.g. `tracelane-reports/<spec>--<title>--<id>-<ts>.html` — the e
 ## Prerequisites
 
 - An existing Playwright project (`@playwright/test` >= 1.40)
-- Node >= 20
+- Node >= 22
 
 ## Steps
 

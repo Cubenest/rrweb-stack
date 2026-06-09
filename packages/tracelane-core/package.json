@@ -51,6 +51,6 @@
   },
   "homepage": "https://github.com/Cubenest/rrweb-stack/tree/main/packages/tracelane-core#readme",
   "engines": {
-    "node": ">=20.18.0"
+    "node": ">=22"
   }
 }

@@ -13,6 +13,11 @@
 
 Docs: <https://peek.cubenest.in>
 
+> **Requires Node.js ≥ 22.** peek's native `better-sqlite3` dependency only ships
+> prebuilt binaries for Node 22+ — on Node 20 (notably Windows, which has no
+> C/C++ toolchain by default) the install falls back to compiling from source and
+> fails. Use Node 22 or newer.
+
 ```sh
 npm install -g @peekdev/cli
 peek init
@@ -96,7 +101,7 @@ The skill is idempotent on re-run (no-op when the on-disk content matches the bu
   "mcpServers": {
     "peek": {
       "command": "npx",
-      "args": ["-y", "@peekdev/mcp"]
+      "args": ["-y", "@peekdev/mcp@latest"]
     }
   }
 }

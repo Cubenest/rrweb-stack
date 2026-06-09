@@ -36,7 +36,7 @@ peek init
 {
   "peek": {
     "command": "npx",
-    "args": ["-y", "@peekdev/mcp"]
+    "args": ["-y", "@peekdev/mcp@latest"]
   }
 }
 ```

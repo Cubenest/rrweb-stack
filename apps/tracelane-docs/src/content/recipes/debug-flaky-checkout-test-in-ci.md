@@ -22,7 +22,7 @@ You can poke at a live example here: [acme-shop checkout failure report](/demo/a
 
 - An existing WebdriverIO project
 - A GitHub Actions workflow running that suite
-- Node >= 20
+- Node >= 22
 
 ## Steps
 

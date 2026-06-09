@@ -18,6 +18,11 @@ Docs: <https://peek.cubenest.in>
 
 The same binary handles both roles — chosen by argv. You don't install this package directly in normal use; the [`@peekdev/cli`](https://www.npmjs.com/package/@peekdev/cli) `peek init` wizard wires it into your AI client's MCP config and into Chrome's `NativeMessagingHosts/`.
 
+> **Requires Node.js ≥ 22.** The native `better-sqlite3` dependency only ships
+> prebuilt binaries for Node 22+ — on Node 20 (notably Windows, which has no
+> C/C++ toolchain by default) the install falls back to compiling from source
+> and fails. Use Node 22 or newer.
+
 ## You probably want `@peekdev/cli` instead
 
 ```sh
@@ -42,11 +47,17 @@ If `peek init` doesn't recognize your client, paste this into your client's MCP 
   "mcpServers": {
     "peek": {
       "command": "npx",
-      "args": ["-y", "@peekdev/mcp"]
+      "args": ["-y", "@peekdev/mcp@latest"]
     }
   }
 }
 ```
+
+The `@latest` tag is required while peek is in alpha: every published version is a
+prerelease (`0.1.0-alpha.*`), and a bare `npx -y @peekdev/mcp` resolves the
+implicit `*` range, which doesn't match prereleases (`ETARGET: No matching
+version found for @peekdev/mcp@*`). Pinning `@latest` forces the newest published
+build.
 
 `PEEK_HOME` defaults to `~/.peek`; set it via `env` only if you want a non-default capture directory.
 

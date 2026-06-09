@@ -18,7 +18,7 @@ A working peek MCP server registered with whichever of Cline, Windsurf, or Codex
 ## Prerequisites
 
 - One or more of: Cline, Windsurf, Codex CLI
-- Node >= 20
+- Node >= 22 (peek's native `better-sqlite3` dependency only ships prebuilt binaries for Node 22+; older Node falls back to compiling from source and fails on stock Windows)
 - `npm i -g @peekdev/cli`
 - Chrome with the peek extension loaded (`chrome://extensions` → **Load unpacked** → `packages/peek-extension/chrome-mv3/`; not yet on the Chrome Web Store)
 
@@ -35,7 +35,7 @@ Cline stores its MCP config inside the VS Code extension's per-OS `globalStorage
   "mcpServers": {
     "peek": {
       "command": "npx",
-      "args": ["-y", "@peekdev/mcp"]
+      "args": ["-y", "@peekdev/mcp@latest"]
     }
   }
 }
@@ -58,7 +58,7 @@ Codex CLI reads MCP config from `~/.codex/config.toml` (TOML, not JSON). `peek i
 ```toml
 [mcp_servers.peek]
 command = "npx"
-args = ["-y", "@peekdev/mcp"]
+args = ["-y", "@peekdev/mcp@latest"]
 ```
 
 Then restart Codex CLI.

@@ -20,7 +20,7 @@ Every failed Playwright run uploads its `tracelane-reports/*.html` as a workflow
 
 - An existing Playwright project (`@playwright/test` >= 1.40)
 - A GitHub Actions workflow running that suite
-- Node >= 20
+- Node >= 22
 
 ## Steps
 

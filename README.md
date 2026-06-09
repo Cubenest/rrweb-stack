@@ -45,6 +45,11 @@ Docs: [tracelane.cubenest.in](https://tracelane.cubenest.in) (source under [`app
 
 Docs: [peek.cubenest.in](https://peek.cubenest.in) (source under [`apps/peek-docs/`](apps/peek-docs/)).
 
+> **peek requires Node.js ≥ 22.** Its native `better-sqlite3` dependency only
+> ships prebuilt binaries for Node 22+; on older Node (notably Windows, which
+> has no C/C++ toolchain by default) the install falls back to compiling from
+> source and fails.
+
 ## Shared substrate
 
 `@cubenest/rrweb-core` — vendored PostHog rrweb fork, PII masking primitives, large-DOM throttling, screenshot fallback, network/console capture abstractions, compression helpers. Used by both products. The fork is pinned by SHA + the substrate's NOTICE attributes both PostHog's plugin lineage and the upstream rrweb roots.

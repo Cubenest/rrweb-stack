@@ -24,7 +24,7 @@ makes the recipe shareable.
 ## Prerequisites
 
 - An existing WebdriverIO project
-- Node >= 20
+- Node >= 22
 
 ## Steps
 

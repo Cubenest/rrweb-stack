@@ -19,7 +19,7 @@ Each failed test in your Allure report has a "Session replay" attachment that op
 
 - An existing WebdriverIO + Allure reporter setup
 - The `@tracelane/wdio` service already installed
-- Node >= 20
+- Node >= 22
 
 > **Status: aspirational.** This recipe depends on `@tracelane/allure-attachment`, which is currently in development. The recipe will land as `published` once the package ships. Track progress at [github.com/Cubenest/rrweb-stack/issues](https://github.com/Cubenest/rrweb-stack/issues).
 

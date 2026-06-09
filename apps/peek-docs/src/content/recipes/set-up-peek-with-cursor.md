@@ -18,7 +18,7 @@ A working peek MCP server registered with Cursor at `~/.cursor/mcp.json`, verifi
 ## Prerequisites
 
 - Cursor with MCP enabled
-- Node >= 20
+- Node >= 22 (peek's native `better-sqlite3` dependency only ships prebuilt binaries for Node 22+; older Node falls back to compiling from source and fails on stock Windows)
 - Chrome with the peek extension loaded (`chrome://extensions` → **Load unpacked** → `packages/peek-extension/chrome-mv3/`; not yet on the Chrome Web Store)
 
 ## Steps
@@ -46,7 +46,7 @@ If the wizard can't reach your config or you'd rather hand-edit, paste this bloc
   "mcpServers": {
     "peek": {
       "command": "npx",
-      "args": ["-y", "@peekdev/mcp"]
+      "args": ["-y", "@peekdev/mcp@latest"]
     }
   }
 }
@@ -62,7 +62,7 @@ You should see either an empty list or your recent captures.
 
 ## Why this works
 
-Cursor reads `~/.cursor/mcp.json` on startup, spawns the listed MCP servers as subprocesses, and exposes their tools to the agent. `npx -y @peekdev/mcp` runs peek's MCP server on demand and talks to the local SQLite store the Chrome extension writes to.
+Cursor reads `~/.cursor/mcp.json` on startup, spawns the listed MCP servers as subprocesses, and exposes their tools to the agent. `npx -y @peekdev/mcp@latest` runs peek's MCP server on demand and talks to the local SQLite store the Chrome extension writes to. (The `@latest` tag is required while peek is in alpha — a bare `@peekdev/mcp` resolves an implicit `*` range that doesn't match prerelease versions and fails with `ETARGET`.)
 
 ## Next steps
 

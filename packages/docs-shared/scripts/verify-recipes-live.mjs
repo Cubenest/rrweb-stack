@@ -112,7 +112,7 @@ async function verifySelfContainment() {
 // Recipes: set-up-peek-with-claude-code, set-up-peek-with-cursor,
 //          set-up-peek-with-cline-windsurf-codex
 // Claim:   "running peek init produces the canonical MCP server entry:
-//           { command: 'npx', args: ['-y', '@peekdev/mcp'] }"
+//           { command: 'npx', args: ['-y', '@peekdev/mcp@latest'] }"
 // Method:  Call mergePeekConfig directly against (a) an empty config,
 //          (b) a config that already has a peek entry, (c) a config with
 //          another server already present. Assert the resulting JSON
@@ -128,7 +128,7 @@ async function verifyMcpMerge() {
   if (
     peekEntry?.command !== 'npx' ||
     peekEntry?.args?.[0] !== '-y' ||
-    peekEntry?.args?.[1] !== '@peekdev/mcp'
+    peekEntry?.args?.[1] !== '@peekdev/mcp@latest'
   ) {
     failures.push(`empty-config merge produced wrong shape: ${JSON.stringify(peekEntry)}`);
   }
@@ -155,7 +155,11 @@ async function verifyMcpMerge() {
   }
   if (snippetParsed) {
     const sp = snippetParsed?.mcpServers?.peek;
-    if (sp?.command !== 'npx' || sp?.args?.[0] !== '-y' || sp?.args?.[1] !== '@peekdev/mcp') {
+    if (
+      sp?.command !== 'npx' ||
+      sp?.args?.[0] !== '-y' ||
+      sp?.args?.[1] !== '@peekdev/mcp@latest'
+    ) {
       failures.push(`PEEK_BLOCK_SNIPPET payload differs from canonical: ${JSON.stringify(sp)}`);
     }
   }
@@ -165,7 +169,7 @@ async function verifyMcpMerge() {
     pass: failures.length === 0,
     detail:
       failures.length === 0
-        ? 'mergePeekConfig + PEEK_BLOCK_SNIPPET both emit { command: "npx", args: ["-y", "@peekdev/mcp"] }; sibling servers preserved'
+        ? 'mergePeekConfig + PEEK_BLOCK_SNIPPET both emit { command: "npx", args: ["-y", "@peekdev/mcp@latest"] }; sibling servers preserved'
         : failures.join('; '),
   };
 }

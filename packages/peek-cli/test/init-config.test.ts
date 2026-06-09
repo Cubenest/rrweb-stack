@@ -54,7 +54,7 @@ describe('mergePeekConfig', () => {
   it('creates a fresh config when none exists', () => {
     const merged = mergePeekConfig(undefined);
     expect(merged).toEqual({
-      mcpServers: { peek: { command: 'npx', args: ['-y', '@peekdev/mcp'] } },
+      mcpServers: { peek: { command: 'npx', args: ['-y', '@peekdev/mcp@latest'] } },
     });
   });
 
@@ -68,7 +68,7 @@ describe('mergePeekConfig', () => {
     const servers = merged.mcpServers as Record<string, unknown>;
     expect(Object.keys(servers).sort()).toEqual(['github', 'peek']);
     expect(servers.github).toEqual(existing.mcpServers.github);
-    expect(servers.peek).toEqual({ command: 'npx', args: ['-y', '@peekdev/mcp'] });
+    expect(servers.peek).toEqual({ command: 'npx', args: ['-y', '@peekdev/mcp@latest'] });
   });
 
   it('carries through non-mcpServers top-level keys', () => {
@@ -83,7 +83,7 @@ describe('mergePeekConfig', () => {
     };
     const merged = mergePeekConfig(existing);
     const servers = merged.mcpServers as Record<string, unknown>;
-    expect(servers.peek).toEqual({ command: 'npx', args: ['-y', '@peekdev/mcp'] });
+    expect(servers.peek).toEqual({ command: 'npx', args: ['-y', '@peekdev/mcp@latest'] });
   });
 
   it('does not mutate the input object', () => {
@@ -156,7 +156,7 @@ describe('PEEK_BLOCK_SNIPPET', () => {
   it('is the parseable peek mcpServers block', () => {
     const parsed = JSON.parse(PEEK_BLOCK_SNIPPET);
     expect(parsed).toEqual({
-      mcpServers: { peek: { command: 'npx', args: ['-y', '@peekdev/mcp'] } },
+      mcpServers: { peek: { command: 'npx', args: ['-y', '@peekdev/mcp@latest'] } },
     });
   });
 });

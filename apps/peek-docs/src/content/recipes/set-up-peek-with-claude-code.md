@@ -18,7 +18,7 @@ A working peek MCP server registered with Claude Code, verified by asking Claude
 ## Prerequisites
 
 - A recent install of Claude Code (CLI or VS Code extension)
-- Node >= 20
+- Node >= 22 (peek's native `better-sqlite3` dependency only ships prebuilt binaries for Node 22+; older Node falls back to compiling from source and fails on stock Windows)
 - Chrome with the peek extension loaded (`chrome://extensions` → **Load unpacked** → `packages/peek-extension/chrome-mv3/`; not yet on the Chrome Web Store)
 
 ## Steps
@@ -44,7 +44,7 @@ The wizard detects Claude Code's `~/.claude.json` and offers to write the MCP se
   "mcpServers": {
     "peek": {
       "command": "npx",
-      "args": ["-y", "@peekdev/mcp"]
+      "args": ["-y", "@peekdev/mcp@latest"]
     }
   }
 }
@@ -62,7 +62,7 @@ You should see either an empty list (no sessions captured yet) or your most rece
 
 ## Why this works
 
-`peek init` reads the existing `~/.claude.json`, merges in the `mcpServers.peek` entry without touching any other servers, and writes the file back. Claude Code starts the server on demand via `npx -y @peekdev/mcp`, so there's no daemon to manage.
+`peek init` reads the existing `~/.claude.json`, merges in the `mcpServers.peek` entry without touching any other servers, and writes the file back. Claude Code starts the server on demand via `npx -y @peekdev/mcp@latest`, so there's no daemon to manage. (The `@latest` tag is required while peek is in alpha — a bare `@peekdev/mcp` resolves an implicit `*` range that doesn't match prerelease versions and fails with `ETARGET`.)
 
 ## Next steps
 
