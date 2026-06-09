@@ -5,6 +5,7 @@ import {
   denyReason,
   isFromSidePanel,
   isNoReceiverError,
+  isRecordingStateMessage,
   isShowConfirm,
   sendCmd,
 } from '../messaging/protocol';
@@ -192,5 +193,20 @@ describe('denyReason — classifies a deny verdict for the audit log', () => {
   it('a timeout takes precedence even if the closed flag is set', () => {
     // The SW's own timeout fired; that's the truth regardless of any flag.
     expect(denyReason(denyVerdict(true), TIMEOUT, TIMEOUT)).toBe('timeout');
+  });
+});
+
+describe('isRecordingStateMessage', () => {
+  it('accepts a well-formed recording.state message', () => {
+    expect(isRecordingStateMessage({ type: 'recording.state', recording: true })).toBe(true);
+    expect(isRecordingStateMessage({ type: 'recording.state', recording: false })).toBe(true);
+  });
+
+  it('rejects wrong type, missing/non-boolean recording, and non-objects', () => {
+    expect(isRecordingStateMessage({ type: 'recording.state' })).toBe(false);
+    expect(isRecordingStateMessage({ type: 'other', recording: true })).toBe(false);
+    expect(isRecordingStateMessage({ type: 'recording.state', recording: 'yes' })).toBe(false);
+    expect(isRecordingStateMessage(null)).toBe(false);
+    expect(isRecordingStateMessage('recording.state')).toBe(false);
   });
 });

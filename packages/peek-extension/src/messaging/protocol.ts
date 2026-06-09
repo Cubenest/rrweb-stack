@@ -246,6 +246,27 @@ export function isShowConfirm(message: unknown): message is ShowConfirmMessage {
   return true;
 }
 
+/**
+ * SW → ISOLATED relay (content script): the active-recording state for the tab
+ * changed. The relay (top frame only) shows/hides the in-page glow. This is a
+ * fire-and-forget push (sent via `chrome.tabs.sendMessage`), NOT part of the
+ * `Cmd`/`sendCmd` request-response surface — modeled on {@link ShowConfirmMessage}.
+ */
+export interface RecordingStateMessage {
+  type: 'recording.state';
+  recording: boolean;
+}
+
+/** Type guard for {@link RecordingStateMessage} (content-side receive). */
+export function isRecordingStateMessage(msg: unknown): msg is RecordingStateMessage {
+  return (
+    typeof msg === 'object' &&
+    msg !== null &&
+    (msg as { type?: unknown }).type === 'recording.state' &&
+    typeof (msg as { recording?: unknown }).recording === 'boolean'
+  );
+}
+
 /** Why a confirm resolved to deny — recorded in the audit log (item F). */
 export type DenyReason = 'timeout' | 'user-deny' | 'panel-closed';
 
