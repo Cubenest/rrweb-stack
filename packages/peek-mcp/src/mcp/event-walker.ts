@@ -51,6 +51,8 @@ export interface UserAction {
   readonly selector?: string;
   /** For input actions: the (already-masked-by-capture) value typed. */
   readonly value?: string;
+  /** For input actions: the lowercase HTML tag name of the target element (e.g. 'select', 'input', 'textarea'). */
+  readonly elementTag?: string;
   /** For navigations: the destination URL (Meta event href). */
   readonly url?: string;
   /** A short human description, e.g. `click button.submit`. */
@@ -138,11 +140,17 @@ export function extractUserActions(events: eventWithTime[]): UserAction[] {
       const selector = resolveSelector(input.id);
       // rrweb already masks values per the recorder config; we surface as-is.
       const value = typeof input.text === 'string' ? input.text : '';
+      const nodeEntry = index?.get(input.id);
+      const elementTag =
+        nodeEntry?.node?.type === NodeType.Element
+          ? (nodeEntry.node as unknown as { tagName: string }).tagName.toLowerCase()
+          : undefined;
       actions.push({
         type: 'input',
         ts: e.timestamp,
         ...(selector !== undefined ? { selector } : {}),
         value,
+        ...(elementTag !== undefined ? { elementTag } : {}),
         summary:
           selector !== undefined
             ? `input ${selector} = ${truncate(value, 40)}`

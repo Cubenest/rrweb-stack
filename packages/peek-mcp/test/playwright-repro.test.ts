@@ -58,6 +58,22 @@ describe('generatePlaywrightRepro', () => {
     expect(script).not.toContain('page.fill');
   });
 
+  it('emits selectOption for a <select> input, fill for a text <input>', () => {
+    freshIds();
+    const lang = el('select', { attributes: { id: 'lang' } });
+    const email = el('input', { attributes: { name: 'email' } });
+    const root = documentWith([lang, email]);
+    const events = [
+      fullSnapshot(root, 1000),
+      inputEvent(lang.id, 'en', 1100),
+      inputEvent(email.id, 'me@x.com', 1200),
+    ];
+    const script = generatePlaywrightRepro(events);
+    expect(script).toContain(`await page.selectOption('#lang', 'en');`);
+    expect(script).toContain(`await page.fill('input[name="email"]', 'me@x.com');`);
+    expect(script).not.toContain(`page.fill('#lang'`);
+  });
+
   it('escapes single quotes in values', () => {
     freshIds();
     const input = el('input', { attributes: { name: 'note' } });

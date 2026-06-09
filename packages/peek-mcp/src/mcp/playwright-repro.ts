@@ -1,9 +1,10 @@
 // generate_playwright_repro (Task 3.13): turn a window of extracted user
 // actions into a runnable Playwright test string. Each action maps to the
 // idiomatic Playwright call:
-//   navigate -> await page.goto('url')
-//   click    -> await page.click('selector')
-//   input    -> await page.fill('selector', 'value')
+//   navigate          -> await page.goto('url')
+//   click             -> await page.click('selector')
+//   input (select)    -> await page.selectOption('selector', 'value')
+//   input (other)     -> await page.fill('selector', 'value')
 // The first navigation seeds the opening goto; subsequent navigations are
 // emitted inline (e.g. an in-app route change that triggered a full load).
 
@@ -43,10 +44,12 @@ function actionToStatement(action: UserAction): string | undefined {
       return action.url ? `  await page.goto(${jsString(action.url)});` : undefined;
     case 'click':
       return action.selector ? `  await page.click(${jsString(action.selector)});` : undefined;
-    case 'input':
-      return action.selector
-        ? `  await page.fill(${jsString(action.selector)}, ${jsString(action.value ?? '')});`
-        : undefined;
+    case 'input': {
+      if (!action.selector) return undefined;
+      if (action.elementTag === 'select')
+        return `  await page.selectOption(${jsString(action.selector)}, ${jsString(action.value ?? '')});`;
+      return `  await page.fill(${jsString(action.selector)}, ${jsString(action.value ?? '')});`;
+    }
     default:
       return undefined;
   }

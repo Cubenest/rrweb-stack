@@ -67,6 +67,23 @@ describe('extractUserActions', () => {
     expect(click?.selector).toBe('#late');
   });
 
+  it('carries elementTag on input actions so callers can choose the right Playwright API', () => {
+    freshIds();
+    const select = el('select', { attributes: { id: 'lang' } });
+    const input = el('input', { attributes: { name: 'email' } });
+    const root = documentWith([select, input]);
+    const events = [
+      fullSnapshot(root, 1000),
+      inputEvent(select.id, 'en', 1100),
+      inputEvent(input.id, 'me@x.com', 1200),
+    ];
+    const actions = extractUserActions(events);
+    const selectAction = actions.find((a) => a.selector === '#lang');
+    const inputAction = actions.find((a) => a.selector === 'input[name="email"]');
+    expect(selectAction?.elementTag).toBe('select');
+    expect(inputAction?.elementTag).toBe('input');
+  });
+
   it('falls back to node#id when the selector is unresolvable', () => {
     freshIds();
     const root = documentWith([el('div')]);
