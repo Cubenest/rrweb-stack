@@ -20,3 +20,11 @@ export const ENABLED_ORIGINS_KEY = 'peek:enabledOrigins';
  * hook — NOT a WXT entrypoint (must be a classic IIFE, P2 PRD §A.2).
  */
 export const RECORDER_FILE = 'rrweb-recorder.js';
+
+/**
+ * Marker attribute on the in-page recording-indicator shadow host. Used to
+ * exclude the host from rrweb capture (recorder `blockSelector`) and from
+ * peek's own closed-shadow-root sweep, so peek never records or reports its own
+ * indicator. Pure string — safe to bundle into the MAIN-world recorder IIFE.
+ */
+export const RECORDING_FRAME_HOST_ATTR = 'data-peek-rec-frame';
