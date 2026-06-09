@@ -1,5 +1,14 @@
 # @peekdev/mcp
 
+## 0.1.0-alpha.15
+
+### Patch Changes
+
+- 96c9225: Enrich MCP tool definitions — per-parameter descriptions, behavioral
+  annotations (readOnly/destructive/openWorld hints), and clearer tool
+  descriptions disclosing output shape, result caps, and cross-tool usage.
+  Improves agent tool-selection and the Glama quality score; no behavior change.
+
 ## 0.1.0-alpha.14
 
 ### Patch Changes
