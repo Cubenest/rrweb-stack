@@ -22,6 +22,7 @@
  */
 
 import { type ShadowRootInfo, traverseShadowRoots } from '@cubenest/rrweb-core';
+import { RECORDING_FRAME_HOST_ATTR } from '../constants.js';
 import type { ShadowReport } from '../messaging/protocol.js';
 
 /** The ISOLATED-world `chrome.dom.openOrClosedShadowRoot` shape we inject. */
@@ -98,6 +99,11 @@ export function collectShadowReports(
   for (const info of infos) {
     // Open roots resolved via el.shadowRoot are already covered by rrweb.
     if (info.source === 'attachShadow') continue;
+    // Skip peek's own recording-indicator host: its closed shadow root is
+    // intentional and is not an un-captured page gap to flag.
+    if (info.host instanceof Element && info.host.hasAttribute(RECORDING_FRAME_HOST_ATTR)) {
+      continue;
+    }
     reports.push(toShadowReport(info));
   }
   return reports;

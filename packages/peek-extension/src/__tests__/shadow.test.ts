@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { RECORDING_FRAME_HOST_ATTR } from '../constants';
 import {
   collectShadowReports,
   describeHost,
@@ -101,6 +102,17 @@ describe('collectShadowReports', () => {
     expect(reports).toHaveLength(1);
     expect(reports[0]).toMatchObject({ source: 'chrome.dom', mode: 'closed' });
     expect(reports[0]?.hostPath).toContain('x-card');
+  });
+
+  it("skips peek's own recording-indicator host", () => {
+    const host = document.createElement('div');
+    host.setAttribute(RECORDING_FRAME_HOST_ATTR, '');
+    const closedRoot = host.attachShadow({ mode: 'closed' });
+    document.body.appendChild(host);
+    const helper = (el: Element): ShadowRoot | null => (el === host ? closedRoot : null);
+
+    const reports = collectShadowReports(document, helper);
+    expect(reports).toHaveLength(0);
   });
 
   it('reports a heuristically-unreachable custom element when no helper is given', () => {
