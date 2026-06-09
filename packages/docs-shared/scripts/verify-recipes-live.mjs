@@ -155,7 +155,11 @@ async function verifyMcpMerge() {
   }
   if (snippetParsed) {
     const sp = snippetParsed?.mcpServers?.peek;
-    if (sp?.command !== 'npx' || sp?.args?.[0] !== '-y' || sp?.args?.[1] !== '@peekdev/mcp@latest') {
+    if (
+      sp?.command !== 'npx' ||
+      sp?.args?.[0] !== '-y' ||
+      sp?.args?.[1] !== '@peekdev/mcp@latest'
+    ) {
       failures.push(`PEEK_BLOCK_SNIPPET payload differs from canonical: ${JSON.stringify(sp)}`);
     }
   }
