@@ -105,6 +105,7 @@ pnpm --filter @peekdev/extension build
   <ul>
     <li>Open the side panel from the toolbar.</li>
     <li>Click <strong>Enable on this site</strong>. peek requests per-origin host permission from your user gesture and starts recording.</li>
+    <li>When recording is active, an <strong>in-page glow</strong> (inside a closed shadow root, excluded from peek&apos;s own capture) and a <strong>toolbar badge</strong> appear. Toggle <strong>Show recording border</strong> in the side panel to hide the glow; the badge stays visible.</li>
     <li>(Optional) Toggle <strong>Deep capture</strong> to record response bodies via <code>chrome.debugger</code>. Off by default.</li>
     <li>(Optional) Set the per-origin <strong>permission level</strong> in the side panel. Default is Level 1 (observe-only).</li>
   </ul>

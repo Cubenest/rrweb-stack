@@ -27,6 +27,10 @@ npm install -g @peekdev/cli && peek init
 - Open the side panel from the toolbar.
 - Click **Enable on this site**. peek requests the per-origin host
   permission from the user gesture and starts recording.
+- When recording is active, a toolbar badge and an in-page glow (closed
+  shadow root, excluded from peek's own capture) appear. Toggle **Show
+  recording border** in the side panel to hide the glow while the badge
+  stays visible.
 - (Optional) Toggle **Deep capture** to record response bodies via
   `chrome.debugger`. Off by default. Off detaches every tab of the origin.
 
