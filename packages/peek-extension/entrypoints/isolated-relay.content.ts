@@ -211,6 +211,7 @@ export default defineContentScript({
     if (window.top === window.self) {
       const frame = createRecordingFrame();
       let recording = false;
+      let gotPush = false;
       let showBorder = true; // default-on; refined by the stored setting below
       const applyFrame = (): void => {
         if (recording && showBorder) frame.show();
@@ -222,6 +223,7 @@ export default defineContentScript({
       // visual indicator).
       const onRecordingMessage = (msg: unknown): undefined => {
         if (isRecordingStateMessage(msg)) {
+          gotPush = true;
           recording = msg.recording;
           applyFrame();
         }
@@ -232,6 +234,10 @@ export default defineContentScript({
       // Pull current recording state on mount (closes the reload race).
       void sendCmd({ type: 'getRecordingState' })
         .then((res) => {
+          // A push that already landed reflects a state change at or after the
+          // SW computed this pull response, so it's at least as fresh — don't let
+          // the (possibly stale) pull overwrite it.
+          if (gotPush) return;
           recording = res.recording;
           applyFrame();
         })
