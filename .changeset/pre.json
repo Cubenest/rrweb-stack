@@ -26,6 +26,7 @@
     "network-failed-response-method",
     "peek-mcp-official-mcp-registry",
     "peek-mcp-readme-accuracy",
+    "peek-windows-node22-npx-pin",
     "peek-write-path",
     "phase4c-alpha7-cleanup",
     "phase4c-alpha8-p18-counts",
@@ -53,11 +54,13 @@
     "phase6-tracelane-report-revamp",
     "playwright-live-demo-report",
     "playwright-readme-reframe",
+    "playwright-select-option",
     "rrweb-core-esm-fix",
     "time-synced-panels-polish",
     "time-synced-panels",
     "tracelane-index-command",
     "tracelane-playwright-phase0",
-    "tracelane-playwright"
+    "tracelane-playwright",
+    "tracelane-rrweb-node22-engines"
   ]
 }

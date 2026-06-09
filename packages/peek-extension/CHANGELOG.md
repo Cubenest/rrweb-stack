@@ -1,5 +1,12 @@
 # @peekdev/extension
 
+## 0.1.0-alpha.11
+
+### Patch Changes
+
+- Updated dependencies [6ca4c92]
+  - @cubenest/rrweb-core@0.1.0-alpha.6
+
 ## 0.1.0-alpha.10
 
 ### Minor Changes
