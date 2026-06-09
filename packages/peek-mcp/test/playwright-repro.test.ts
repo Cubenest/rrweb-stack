@@ -133,4 +133,28 @@ describe('generatePlaywrightRepro', () => {
     const script = generatePlaywrightRepro(events, { maxActions: 200 });
     expect(script).not.toContain('truncated');
   });
+
+  // I1 — empty <select> guard: an empty value must not emit selectOption('')
+  // which throws at Playwright runtime ("did not find some options"). Instead
+  // a TODO comment is emitted so the generated script stays runnable.
+  it('emits a TODO comment instead of selectOption when the <select> value is empty (I1)', () => {
+    freshIds();
+    const lang = el('select', { attributes: { id: 'lang' } });
+    const root = documentWith([lang]);
+    const events = [fullSnapshot(root, 1000), inputEvent(lang.id, '', 1100)];
+    const script = generatePlaywrightRepro(events);
+    expect(script).not.toContain('page.selectOption');
+    expect(script).toContain('// TODO: <select> reset to placeholder');
+  });
+
+  // I3 — escaping test on the selectOption path: a value with a single quote
+  // and a newline must be JS-escaped correctly (same jsString() path as fill).
+  it('escapes single quotes and newlines in a <select> value (I3)', () => {
+    freshIds();
+    const lang = el('select', { attributes: { id: 'lang' } });
+    const root = documentWith([lang]);
+    const events = [fullSnapshot(root, 1000), inputEvent(lang.id, "a'b\nc", 1100)];
+    const script = generatePlaywrightRepro(events);
+    expect(script).toContain(`await page.selectOption('#lang', 'a\\'b\\nc');`);
+  });
 });
