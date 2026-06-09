@@ -92,6 +92,11 @@ export interface ShadowReport {
 export type Cmd =
   | { type: 'getNativeHostState' }
   | { type: 'getRecorderStats'; tabId: number }
+  // Relay (top frame) → SW, on mount: pull the current recording state so a
+  // freshly-injected content script (e.g. after a reload) shows the glow even
+  // when the SW-side state didn't change. tabId is filled by the SW from
+  // sender.tab.id, so it's not on the wire shape.
+  | { type: 'getRecordingState' }
   // Side panel → SW. Fired after `requestActivation(url, 'tab')` returns granted
   // for an activeTab-scope grant. The chrome.tabs.onUpdated / storage.onChanged
   // listeners that normally trigger injection don't fire for activeTab grants
@@ -124,13 +129,15 @@ export interface RelayAck {
 /** Per-command response types. */
 export type CmdResponse<C extends Cmd> = C extends { type: 'getNativeHostState' }
   ? { state: NativeHostState }
-  : C extends { type: 'getRecorderStats' }
-    ? RecorderStats
-    : C extends { type: 'activateRecorderForTab' }
-      ? ActivateRecorderResult
-      : C extends { type: 'recorder.events' | 'recorder.shadow' }
-        ? RelayAck
-        : never;
+  : C extends { type: 'getRecordingState' }
+    ? { recording: boolean }
+    : C extends { type: 'getRecorderStats' }
+      ? RecorderStats
+      : C extends { type: 'activateRecorderForTab' }
+        ? ActivateRecorderResult
+        : C extends { type: 'recorder.events' | 'recorder.shadow' }
+          ? RelayAck
+          : never;
 
 /**
  * Error thrown by {@link sendCmd} when the SW can't be reached.

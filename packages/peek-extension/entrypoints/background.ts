@@ -1,7 +1,8 @@
 import { defineBackground } from 'wxt/utils/define-background';
 import { originFromUrl } from '../src/activation/origin';
-import { diffAddedOrigins, isOriginEnabled } from '../src/activation/storage';
+import { diffAddedOrigins } from '../src/activation/storage';
 import { INITIAL_BACKOFF_MS, jitter, nextBackoffMs } from '../src/background/backoff';
+import { type ActionSurface, applyBadge } from '../src/background/badge';
 import {
   type NativeOutbound,
   consoleAppend,
@@ -10,6 +11,7 @@ import {
   shadowReport,
 } from '../src/background/native-protocol';
 import { synthesizeNetMessagesFromEvents } from '../src/background/network-plugin-synth';
+import { RecordingStateStore, isTabRecording } from '../src/background/recording-state';
 import { SessionRegistry } from '../src/background/session';
 import { RecorderStatsStore } from '../src/background/stats';
 import { ENABLED_ORIGINS_KEY, NATIVE_HOST_ID } from '../src/constants';
@@ -25,6 +27,7 @@ import type {
   CmdResponse,
   ConfirmVerdictMessage,
   NativeHostState,
+  RecordingStateMessage,
   RelayAck,
   ShowConfirmMessage,
 } from '../src/messaging/protocol';
@@ -40,7 +43,7 @@ import {
   dispatchAction,
   resolveTarget as resolveTargetInPage,
 } from '../src/permissions/dispatcher';
-import { getPermissionLevel, setPermissionLevel } from '../src/permissions/store';
+import { setPermissionLevel } from '../src/permissions/store';
 import { YoloSessionStore } from '../src/permissions/yolo';
 import { injectRecorder } from '../src/recorder/inject';
 
@@ -89,6 +92,42 @@ export default defineBackground({
     // native host owns durable state.
     const stats = new RecorderStatsStore();
     const sessions = new SessionRegistry();
+
+    // Recording-active indicator (per-tab). Drives the always-on toolbar badge
+    // and pushes state to the ISOLATED relay's in-page glow. In-memory like
+    // stats/sessions — re-derived on wake by reconcileIndicators().
+    const recordingState = new RecordingStateStore();
+    const actionSurface = chrome.action as unknown as ActionSurface;
+
+    async function setTabRecording(tabId: number, recording: boolean): Promise<void> {
+      const changed = recordingState.set(tabId, recording);
+      // Re-assert the badge unconditionally so a stale per-tab badge left by a
+      // previous SW instance is corrected on wake (idempotent, best-effort).
+      await applyBadge(actionSurface, tabId, recording);
+      if (!changed) return;
+      try {
+        await chrome.tabs.sendMessage(tabId, {
+          type: 'recording.state',
+          recording,
+        } satisfies RecordingStateMessage);
+      } catch {
+        // No content script in the tab (chrome:// page, or not injected yet) —
+        // best-effort; the badge already carries the signal.
+      }
+    }
+
+    async function reconcileIndicators(): Promise<void> {
+      let tabs: chrome.tabs.Tab[];
+      try {
+        tabs = await chrome.tabs.query({});
+      } catch {
+        return;
+      }
+      for (const tab of tabs) {
+        if (tab.id === undefined) continue;
+        await setTabRecording(tab.id, await isTabRecording(tab.url));
+      }
+    }
 
     // Permission state (3d-3). Both in-memory + scoped to this SW instance.
     const yolo = new YoloSessionStore();
@@ -456,6 +495,7 @@ export default defineBackground({
 
     // Top-level call so the port is (re)opened on every SW wake.
     connectNative();
+    void reconcileIndicators();
 
     // --- MAIN-world recorder injection on enabled tabs (Task 3.19) ---------
     // The ISOLATED relay is a static content script (auto-runs at
@@ -465,16 +505,9 @@ export default defineBackground({
     // document_start; `injectImmediately` does the rest. isOriginEnabled gates
     // on the user's persisted per-site consent (ADR-0008).
     async function maybeInject(tabId: number, url: string | undefined): Promise<void> {
-      if (!url) return;
-      try {
-        if (!(await isOriginEnabled(url))) return;
-        // Level 0 = Off: ADR-0010 says the tool surface is disabled AND
-        // recording is suppressed on the site. Bail before injecting.
-        const origin = originFromUrl(url);
-        if (origin !== null && (await getPermissionLevel(origin)) === 0) return;
-      } catch {
-        return; // storage read failed — skip, try again on the next event
-      }
+      const recording = await isTabRecording(url);
+      await setTabRecording(tabId, recording);
+      if (!recording) return;
       const result = await injectRecorder(tabId);
       if (!result.ok) {
         // Common + benign: the tab navigated away, or the host permission was
@@ -594,6 +627,7 @@ export default defineBackground({
     chrome.tabs.onRemoved.addListener((tabId) => {
       stats.clear(tabId);
       sessions.clear(tabId);
+      recordingState.clear(tabId);
       // Detach the debugger from a closed tab (best-effort — Chrome may
       // have already auto-detached on close). The manager is idempotent
       // for the unattached case.
@@ -636,6 +670,14 @@ export default defineBackground({
             sendResponse(response);
             return false;
           }
+          case 'getRecordingState': {
+            const tabId = sender.tab?.id;
+            const response: CmdResponse<{ type: 'getRecordingState' }> = {
+              recording: tabId !== undefined ? recordingState.get(tabId) : false,
+            };
+            sendResponse(response);
+            return false;
+          }
           case 'getRecorderStats': {
             const response: CmdResponse<{ type: 'getRecorderStats'; tabId: number }> = stats.get(
               message.tabId,
@@ -651,7 +693,9 @@ export default defineBackground({
             // path. The in-page guard (`window.__peekRecorderInstalled`) makes
             // a double-inject safe.
             void injectRecorder(message.tabId).then((result) => {
-              if (!result.ok) {
+              if (result.ok) {
+                void setTabRecording(message.tabId, true);
+              } else {
                 console.debug('[peek] activateRecorderForTab inject failed:', result.error);
               }
               const response: CmdResponse<{ type: 'activateRecorderForTab'; tabId: number }> = {
