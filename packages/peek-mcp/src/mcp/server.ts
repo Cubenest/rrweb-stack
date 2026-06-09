@@ -195,13 +195,25 @@ export function createPeekMcpServer(options: CreatePeekMcpServerOptions = {}): P
     server.registerTool(
       'list_recent_sessions',
       {
+        title: 'List recent browser sessions',
         description:
-          "List the user's recently recorded browser sessions, newest first. " +
-          'Returns compact rows with ids to pass to the get_session_* tools.',
+          "List the user's recorded browser sessions, newest first — the entry point for the get_session_* and DOM tools. Returns compact JSON rows ({ sessionId, origin, url, title, startedAt, ... }); free-text fields are clipped (origin 100, url 300, title 200 chars). If the MCP client scoped roots to specific origins and no origin filter is given, results are restricted to the first scoped origin. Start here to obtain a sessionId, then call get_session_summary.",
         inputSchema: {
-          limit: z.number().int().min(1).max(50).default(10),
-          origin: z.string().optional(),
+          limit: z
+            .number()
+            .int()
+            .min(1)
+            .max(50)
+            .default(10)
+            .describe('Maximum sessions to return (1-50, newest first; default 10).'),
+          origin: z
+            .string()
+            .optional()
+            .describe(
+              "Filter to one origin, e.g. 'https://app.example.com'. Omit to list across all recorded origins (subject to client roots scoping).",
+            ),
         },
+        annotations: { readOnlyHint: true, openWorldHint: false },
       },
       ({ limit, origin }) => {
         const handle = getDb();
@@ -235,10 +247,13 @@ export function createPeekMcpServer(options: CreatePeekMcpServerOptions = {}): P
     server.registerTool(
       'get_session_summary',
       {
+        title: 'Summarize a session',
         description:
-          'Get an LLM-readable narrative summary of one session: pages visited, ' +
-          'click/input counts, navigations, and error counts.',
-        inputSchema: { sessionId: z.string() },
+          'Get an LLM-readable narrative summary of one session: pages visited, click/input/navigation counts, and error counts. Use this first for an overview before drilling into get_session_console_errors / get_session_network_errors. Returns a structured JSON summary.',
+        inputSchema: {
+          sessionId: z.string().describe('Session id from list_recent_sessions.'),
+        },
+        annotations: { readOnlyHint: true, openWorldHint: false },
       },
       ({ sessionId }) => {
         const handle = getDb();
@@ -256,14 +271,27 @@ export function createPeekMcpServer(options: CreatePeekMcpServerOptions = {}): P
     server.registerTool(
       'get_session_console_errors',
       {
+        title: 'List console errors',
         description:
-          'List console error messages recorded in a session, oldest first. ' +
-          'Each row has an id usable with get_user_action_before_error.',
+          'List console error messages recorded in a session, oldest first. Each row has a numeric id to pass to get_user_action_before_error. Returns JSON rows ({ id, ts, level, message, stack }); message clipped to 500 and stack to 800 chars. For error counts at a glance, use get_session_summary first.',
         inputSchema: {
-          sessionId: z.string(),
-          since: z.number().int().optional(),
-          limit: z.number().int().min(1).max(200).default(50),
+          sessionId: z.string().describe('Session id from list_recent_sessions.'),
+          since: z
+            .number()
+            .int()
+            .optional()
+            .describe(
+              'Only return errors with ts >= this epoch-ms timestamp (to page forward through a long session). Omit to start from the beginning.',
+            ),
+          limit: z
+            .number()
+            .int()
+            .min(1)
+            .max(200)
+            .default(50)
+            .describe('Maximum errors to return (1-200, oldest first; default 50).'),
         },
+        annotations: { readOnlyHint: true, openWorldHint: false },
       },
       ({ sessionId, since, limit }) => {
         const handle = getDb();
@@ -288,14 +316,29 @@ export function createPeekMcpServer(options: CreatePeekMcpServerOptions = {}): P
     server.registerTool(
       'get_session_network_errors',
       {
+        title: 'List failed network requests',
         description:
-          'List failed/notable network requests in a session (status >= statusGte ' +
-          'or a network error), oldest first.',
+          'List failed or notable network requests in a session (HTTP status >= statusGte, or a transport-level network error), oldest first. Returns JSON rows ({ id, ts, method, url, status, statusText, resourceType, durationMs, errorText }); url and errorText clipped to 300 chars.',
         inputSchema: {
-          sessionId: z.string(),
-          statusGte: z.number().int().min(100).max(599).default(400),
-          limit: z.number().int().min(1).max(200).default(50),
+          sessionId: z.string().describe('Session id from list_recent_sessions.'),
+          statusGte: z
+            .number()
+            .int()
+            .min(100)
+            .max(599)
+            .default(400)
+            .describe(
+              'Minimum HTTP status treated as notable (100-599; default 400, i.e. 4xx/5xx). Transport-level errors are always included regardless.',
+            ),
+          limit: z
+            .number()
+            .int()
+            .min(1)
+            .max(200)
+            .default(50)
+            .describe('Maximum requests to return (1-200, oldest first; default 50).'),
         },
+        annotations: { readOnlyHint: true, openWorldHint: false },
       },
       ({ sessionId, statusGte, limit }) => {
         const handle = getDb();
@@ -321,15 +364,21 @@ export function createPeekMcpServer(options: CreatePeekMcpServerOptions = {}): P
     server.registerTool(
       'get_user_action_before_error',
       {
+        title: 'Actions before an error',
         description:
-          'Show the last N user actions (click/type/navigate) before a console ' +
-          'error, to reconstruct what the user did. errorId comes from ' +
-          'get_session_console_errors.',
+          'Reconstruct what the user did right before a console error: returns the last `window` user actions (click/type/navigate) preceding the error, to explain how it was triggered. Returns JSON { errorId, errorTs, actions }. Get errorId from get_session_console_errors first.',
         inputSchema: {
-          sessionId: z.string(),
-          errorId: z.number().int(),
-          window: z.number().int().min(1).max(50).default(10),
+          sessionId: z.string().describe('Session id from list_recent_sessions.'),
+          errorId: z.number().int().describe('Console error id from get_session_console_errors.'),
+          window: z
+            .number()
+            .int()
+            .min(1)
+            .max(50)
+            .default(10)
+            .describe('How many preceding user actions to return (1-50; default 10).'),
         },
+        annotations: { readOnlyHint: true, openWorldHint: false },
       },
       ({ sessionId, errorId, window }) => {
         const handle = getDb();
@@ -349,14 +398,27 @@ export function createPeekMcpServer(options: CreatePeekMcpServerOptions = {}): P
     server.registerTool(
       'generate_playwright_repro',
       {
+        title: 'Generate Playwright repro',
         description:
-          'Generate a runnable Playwright test from the user actions in a session ' +
-          '(optionally limited to a [startTs, endTs] window).',
+          'Generate a runnable Playwright test (TypeScript) reproducing the user actions in a session: clicks, typing, navigation, and <select> changes. Optionally limit to a [startTs, endTs] epoch-ms window. Returns the test source as text. Note: only single-value <select> is represented (rrweb captures one value per input).',
         inputSchema: {
-          sessionId: z.string(),
-          startTs: z.number().int().optional(),
-          endTs: z.number().int().optional(),
+          sessionId: z.string().describe('Session id from list_recent_sessions.'),
+          startTs: z
+            .number()
+            .int()
+            .optional()
+            .describe(
+              'Only include actions at or after this epoch-ms timestamp. Omit to start at the session beginning.',
+            ),
+          endTs: z
+            .number()
+            .int()
+            .optional()
+            .describe(
+              'Only include actions at or before this epoch-ms timestamp. Omit to run through the session end.',
+            ),
         },
+        annotations: { readOnlyHint: true, openWorldHint: false },
       },
       ({ sessionId, startTs, endTs }) => {
         const handle = getDb();
@@ -378,15 +440,25 @@ export function createPeekMcpServer(options: CreatePeekMcpServerOptions = {}): P
     server.registerTool(
       'get_dom_snapshot',
       {
+        title: 'Reconstruct DOM at a time',
         description:
-          'Reconstruct the DOM at a timestamp (or a selector subtree within it) ' +
-          'and return it as HTML. v1 applies structural/attribute/text mutations ' +
-          'on top of the nearest full snapshot.',
+          'Reconstruct the page DOM as it existed at a timestamp (or a selector subtree within it) and return it as HTML. Applies structural/attribute/text mutations on top of the nearest full snapshot at or before ts. Returns JSON { baseSnapshotTs, mutationsApplied, html }; html clipped to 24000 chars. Fails if no full snapshot exists at or before ts.',
         inputSchema: {
-          sessionId: z.string(),
-          ts: z.number().int(),
-          selector: z.string().optional(),
+          sessionId: z.string().describe('Session id from list_recent_sessions.'),
+          ts: z
+            .number()
+            .int()
+            .describe(
+              'Epoch-ms timestamp to reconstruct the DOM at. Use timestamps from get_session_summary, error rows, or get_user_action_before_error.',
+            ),
+          selector: z
+            .string()
+            .optional()
+            .describe(
+              'CSS selector to return only that subtree. Omit to return the full document.',
+            ),
         },
+        annotations: { readOnlyHint: true, openWorldHint: false },
       },
       ({ sessionId, ts, selector }) => {
         const handle = getDb();
@@ -412,15 +484,27 @@ export function createPeekMcpServer(options: CreatePeekMcpServerOptions = {}): P
     server.registerTool(
       'query_dom_history',
       {
+        title: 'DOM change timeline',
         description:
-          "Timeline of attribute and/or text changes for a selector's node over " +
-          'a session. op restricts to attributeChanges or innerText.',
+          'Timeline of attribute and/or text changes over a session for the node matching a CSS selector - useful for tracking how one element evolved. Returns JSON { selector, changes }. Use op to restrict to attribute changes or innerText; omit for both.',
         inputSchema: {
-          sessionId: z.string(),
-          selector: z.string(),
-          op: z.enum(['attributeChanges', 'innerText']).optional(),
-          limit: z.number().int().min(1).max(500).default(100),
+          sessionId: z.string().describe('Session id from list_recent_sessions.'),
+          selector: z
+            .string()
+            .describe("CSS selector for the node to track, e.g. '#status' or '.cart-count'."),
+          op: z
+            .enum(['attributeChanges', 'innerText'])
+            .optional()
+            .describe("Restrict to 'attributeChanges' or 'innerText'. Omit to include both."),
+          limit: z
+            .number()
+            .int()
+            .min(1)
+            .max(500)
+            .default(100)
+            .describe('Maximum changes to return (1-500; default 100).'),
         },
+        annotations: { readOnlyHint: true, openWorldHint: false },
       },
       ({ sessionId, selector, op, limit }) => {
         const handle = getDb();
@@ -443,14 +527,24 @@ export function createPeekMcpServer(options: CreatePeekMcpServerOptions = {}): P
     server.registerTool(
       'request_authorization',
       {
+        title: 'Request action authorization',
         description:
-          'Ask the user to authorize an action in their browser via the side-' +
-          'panel banner (Level 3 act-with-confirm). Returns a one-shot ' +
-          'confirmToken to pass to execute_action, or denies the request. ' +
-          'Every call is recorded to ~/.peek/audit.log.',
+          'Ask the user to authorize a browser action via the side-panel banner (Level-3 act-with-confirm). On Allow, returns a one-shot confirmToken to pass to execute_action; on Deny, returns the denial. Every call - allowed or denied - is recorded to ~/.peek/audit.log. Use before execute_action when the origin is at permission Level 3, or to pre-authorize.',
         inputSchema: {
-          sessionId: z.string(),
-          action: ActionSchema,
+          sessionId: z
+            .string()
+            .describe(
+              'Session id (origin context) from list_recent_sessions; determines the per-origin permission level.',
+            ),
+          action: ActionSchema.describe(
+            'The browser action to authorize (e.g. click/type/navigate; see the action schema).',
+          ),
+        },
+        annotations: {
+          readOnlyHint: false,
+          destructiveHint: false,
+          idempotentHint: false,
+          openWorldHint: true,
         },
       },
       async ({ sessionId, action }) => {
@@ -471,18 +565,30 @@ export function createPeekMcpServer(options: CreatePeekMcpServerOptions = {}): P
     server.registerTool(
       'execute_action',
       {
+        title: 'Execute a browser action',
         description:
-          "Execute an action in the user's browser. Requires per-origin " +
-          'permission Level 3+ (Level 3 prompts unless confirmToken is passed; ' +
-          'Level 4 auto-allows non-destructive). The destructive-action ' +
-          'override (delete/remove/transfer/send/pay/purchase/buy/confirm/' +
-          'subscribe/logout/sign out/unsubscribe/cancel subscription/wire/' +
-          'withdraw) always prompts, even at Level 4. Every call is ' +
-          'recorded to ~/.peek/audit.log.',
+          "Execute an action (click/type/navigate/...) in the user's live browser. Requires per-origin permission Level 3+: Level 3 raises a confirm banner unless a valid confirmToken from request_authorization is passed; Level 4 auto-allows non-destructive actions; Level <3 denies. The destructive-action override (delete/remove/transfer/send/pay/purchase/buy/confirm/subscribe/logout/sign out/unsubscribe/cancel subscription/wire/withdraw) always prompts, even at Level 4. Every call is recorded to ~/.peek/audit.log.",
         inputSchema: {
-          sessionId: z.string(),
-          action: ActionSchema,
-          confirmToken: z.string().optional(),
+          sessionId: z
+            .string()
+            .describe(
+              'Session id (origin context) from list_recent_sessions; determines the per-origin permission level.',
+            ),
+          action: ActionSchema.describe(
+            'The browser action to execute (e.g. click/type/navigate; see the action schema).',
+          ),
+          confirmToken: z
+            .string()
+            .optional()
+            .describe(
+              'One-shot token from a prior request_authorization Allow, to skip the Level-3 banner. Omit to trigger the banner (Level 3) or rely on Level-4 auto-allow.',
+            ),
+        },
+        annotations: {
+          readOnlyHint: false,
+          destructiveHint: true,
+          idempotentHint: false,
+          openWorldHint: true,
         },
       },
       async ({ sessionId, action, confirmToken }) => {
