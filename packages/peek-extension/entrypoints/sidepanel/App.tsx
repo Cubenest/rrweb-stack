@@ -9,6 +9,7 @@ import { ConfirmResolutionTracker, isShowConfirmFromBackground } from './confirm
 import { AgentControlSection } from './sections/AgentControlSection';
 import { CaptureSection } from './sections/CaptureSection';
 import { ConfirmBanner, closedVerdict } from './sections/ConfirmBanner';
+import { RecordingBorderToggle } from './sections/RecordingBorderToggle';
 import { StatusHeader } from './sections/StatusHeader';
 import { useActiveTab } from './useActiveTab';
 
@@ -90,6 +91,7 @@ export function App(): React.JSX.Element {
       <StatusHeader origin={origin} />
       <CaptureSection origin={origin} title={title} tabId={tabId} url={url} />
       <AgentControlSection origin={origin} />
+      <RecordingBorderToggle />
 
       <footer className="peek-footer">
         <span>v0.1.0-alpha · local-only · no telemetry</span>

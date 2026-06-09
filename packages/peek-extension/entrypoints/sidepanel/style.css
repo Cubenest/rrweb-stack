@@ -429,3 +429,21 @@ code {
 .peek-btn-danger:hover:not(:disabled) {
   background: #4a1818;
 }
+
+/* ---- Preferences ---- */
+.peek-prefs {
+  margin-top: 10px;
+  border-top: 1px dashed var(--peek-border);
+  padding-top: 9px;
+}
+.peek-pref-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--peek-muted);
+  cursor: pointer;
+}
+.peek-pref-row input {
+  accent-color: var(--peek-accent);
+}
