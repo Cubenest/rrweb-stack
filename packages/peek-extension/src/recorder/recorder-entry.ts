@@ -91,6 +91,8 @@ const GUARD = '__peekRecorderInstalled';
   // doesn't silence the session entirely (matches the pre-fix behavior).
   let relayReady = false;
   const earlyBuffer: unknown[] = [];
+  // [peek-diag] counter for postRrweb calls
+  let _diagPostCount = 0;
 
   const flushBuffer = (): void => {
     for (const payload of earlyBuffer) {
@@ -104,6 +106,12 @@ const GUARD = '__peekRecorderInstalled';
   };
 
   const postRrweb = (payload: unknown): void => {
+    _diagPostCount++;
+    if (_diagPostCount === 1) {
+      console.debug('[peek-diag] recorder first postRrweb emitted');
+    } else if (_diagPostCount % 50 === 0) {
+      console.debug('[peek-diag] recorder postRrweb count=%d', _diagPostCount);
+    }
     if (!relayReady) {
       if (earlyBuffer.length < RELAY_BUFFER_CAP) earlyBuffer.push(payload);
       // At the cap we silently drop overflow; preserves bounded memory in the
@@ -131,7 +139,9 @@ const GUARD = '__peekRecorderInstalled';
     if (relayReady) return;
     relayReady = true;
     window.removeEventListener('message', onHandshake);
+    const _diagDrainCount = earlyBuffer.length;
     flushBuffer();
+    console.debug('[peek-diag] recorder relay-ready (buffer drained, n=%d)', _diagDrainCount);
   };
   window.addEventListener('message', onHandshake);
 
@@ -164,6 +174,7 @@ const GUARD = '__peekRecorderInstalled';
   // FullSnapshot (≤120 s later) restores a reconstruction anchor.
   setTimeout(() => {
     if (relayReady) return;
+    console.warn('[peek-diag] recorder fail-open fired (relay-ready never received)');
     relayReady = true;
     clearInterval(probeTimer);
     window.removeEventListener('message', onHandshake);
@@ -234,7 +245,9 @@ const GUARD = '__peekRecorderInstalled';
         }),
       ],
     } as Parameters<typeof record>[0]);
+    console.debug('[peek-diag] recorder record() started');
   } catch (err) {
+    console.warn('[peek-diag] recorder record() init FAILED: %s', String(err));
     postRrweb({ __peekError: 'record_init_failed', detail: String(err) });
   }
 })();

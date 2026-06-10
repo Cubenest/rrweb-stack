@@ -56,8 +56,14 @@ export async function injectRecorder(
       injectImmediately: true,
       files: [RECORDER_FILE],
     });
+    console.debug('[peek-diag] inject OK tab=%d', tabId);
     return { ok: true, tabId };
   } catch (err) {
+    console.warn(
+      '[peek-diag] inject FAIL tab=%d err=%s',
+      tabId,
+      err instanceof Error ? err.message : String(err),
+    );
     return {
       ok: false,
       tabId,

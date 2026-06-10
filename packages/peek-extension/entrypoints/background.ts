@@ -193,8 +193,10 @@ export default defineBackground({
       const mgr = getOrInitDeepCapture();
       if (!mgr) return; // permission not granted yet — nothing to do.
       try {
-        if (enabled) await mgr.attach(tabId);
-        else await mgr.detach(tabId);
+        if (enabled) {
+          console.debug('[peek-diag] deepcapture attach tab=%d', tabId);
+          await mgr.attach(tabId);
+        } else await mgr.detach(tabId);
       } catch (err) {
         console.debug('[peek] Deep capture sync failed:', err);
       }
@@ -508,6 +510,7 @@ export default defineBackground({
       const recording = await isTabRecording(url);
       await setTabRecording(tabId, recording);
       if (!recording) return;
+      console.debug('[peek-diag] maybeInject -> inject tab=%d url=%s', tabId, url);
       const result = await injectRecorder(tabId);
       if (!result.ok) {
         // Common + benign: the tab navigated away, or the host permission was
@@ -739,6 +742,12 @@ export default defineBackground({
       sender: chrome.runtime.MessageSender,
     ): void {
       const tabId = sender.tab?.id;
+      console.debug(
+        '[peek-diag] handleRelayEvents tab=%s events=%d console=%d',
+        String(tabId),
+        message.events?.length ?? 0,
+        message.console?.length ?? 0,
+      );
       if (tabId === undefined) return;
       stats.addEvents(tabId, message.events.length, message.console.length);
       const ref = sessions.ensure(tabId, { url: sender.tab?.url, title: sender.tab?.title });

@@ -72,9 +72,13 @@ export default defineContentScript({
     // recorder keeps producing and the next flush retries. We never want an
     // unhandled rejection or a thrown error to break the page.
     const send = (cmd: Cmd): void => {
-      void sendCmd(cmd).catch(() => {
+      void sendCmd(cmd).catch((err: unknown) => {
         // SW down or handler error — drop this batch. Capture is best-effort;
         // losing a batch is acceptable, breaking the page is not.
+        console.warn(
+          '[peek-diag] relay send REJECTED: %s',
+          err instanceof Error ? err.message : String(err),
+        );
       });
     };
 
@@ -98,6 +102,7 @@ export default defineContentScript({
     const announceReady = (): void => {
       try {
         window.postMessage({ source: PEEK_RRWEB_SOURCE, kind: 'relay-ready' }, '*');
+        console.debug('[peek-diag] relay announceReady sent');
       } catch {
         // postMessage can't realistically fail on a same-window primitive
         // payload, but defense-in-depth — don't break the page.
@@ -140,7 +145,14 @@ export default defineContentScript({
     // null extraction but must STILL be dropped, not fall through to rrwebBatch.
     // The invariant "console-plugin events never reach rrwebBatch" holds for ALL
     // shapes — defense-in-depth on the privacy boundary.
+    let _diagHandleRrwebCount = 0;
     const handleRrweb = (payload: unknown): void => {
+      _diagHandleRrwebCount++;
+      if (_diagHandleRrwebCount === 1) {
+        console.debug('[peek-diag] relay handleRrweb count=%d', _diagHandleRrwebCount);
+      } else if (_diagHandleRrwebCount % 50 === 0) {
+        console.debug('[peek-diag] relay handleRrweb count=%d', _diagHandleRrwebCount);
+      }
       if (isConsolePluginEvent(payload)) {
         const consoleEvent = extractConsoleEvent(payload);
         if (consoleEvent && consoleBatch.add(consoleEvent)) flush();
