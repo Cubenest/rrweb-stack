@@ -57,6 +57,8 @@
     "playwright-readme-reframe",
     "playwright-select-option",
     "recording-active-indicator",
+    "repro-engine-tier0",
+    "repro-tier2-visibility",
     "rrweb-core-esm-fix",
     "time-synced-panels-polish",
     "time-synced-panels",
