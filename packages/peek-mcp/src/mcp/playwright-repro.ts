@@ -52,9 +52,9 @@ function actionToStatement(action: UserAction): string | undefined {
       const sel = jsString(action.selector);
       if (action.elementTag === 'input') {
         if (action.inputType === 'checkbox' || action.inputType === 'radio') {
-          return action.checked === true
-            ? `  await page.check(${sel});`
-            : `  await page.uncheck(${sel});`;
+          if (action.checked === true) return `  await page.check(${sel});`;
+          if (action.checked === false) return `  await page.uncheck(${sel});`;
+          return `  // TODO: <input type="${action.inputType}"> ${action.selector} — checked state unknown; add check()/uncheck()`;
         }
         if (
           action.inputType === 'hidden' ||

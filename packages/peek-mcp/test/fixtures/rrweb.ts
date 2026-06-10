@@ -91,7 +91,14 @@ export function inputEvent(
 ): eventWithTime {
   return {
     type: EventType.IncrementalSnapshot,
-    data: { source: IncrementalSource.Input, id, text: value, isChecked: opts.isChecked ?? false },
+    data: {
+      source: IncrementalSource.Input,
+      id,
+      text: value,
+      // Only carry isChecked when explicitly provided, so callers can model an
+      // input event with an unknown checked state (checkbox/radio).
+      ...(opts.isChecked !== undefined ? { isChecked: opts.isChecked } : {}),
+    },
     timestamp,
   } as unknown as eventWithTime;
 }

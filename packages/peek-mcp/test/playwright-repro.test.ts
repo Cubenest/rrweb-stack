@@ -254,6 +254,19 @@ describe('generatePlaywrightRepro', () => {
     expect(script).not.toContain('page.fill');
   });
 
+  it('emits a TODO when a checkbox/radio checked state is unknown', () => {
+    freshIds();
+    const remember = el('input', { attributes: { type: 'checkbox', id: 'remember' } });
+    const root = documentWith([remember]);
+    // No isChecked passed → the event carries no isChecked → checked is undefined.
+    const events = [fullSnapshot(root, 1000), inputEvent(remember.id, 'on', 1100)];
+    const script = generatePlaywrightRepro(events);
+    expect(script).toContain('// TODO: <input type="checkbox"> #remember — checked state unknown');
+    expect(script).not.toContain('page.check');
+    expect(script).not.toContain('page.uncheck');
+    expect(script).not.toContain('page.fill');
+  });
+
   it('skips a hidden input with a TODO instead of filling it', () => {
     freshIds();
     const hidden = el('input', { attributes: { type: 'hidden', name: 'csrf' } });
