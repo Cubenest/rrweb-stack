@@ -21,6 +21,13 @@ export interface SessionSummary {
   readonly navigations: number;
   readonly consoleErrorCount: number;
   readonly networkErrorCount: number;
+  /**
+   * Whether this session has DOM/replay events. False means get_dom_snapshot
+   * and generate_playwright_repro are unavailable.
+   */
+  readonly hasReplay: boolean;
+  /** The raw event_count from the sessions table (0 when no blob was captured). */
+  readonly eventCount: number;
   /** A one-paragraph natural-language narrative for the model. */
   readonly narrative: string;
 }
@@ -74,6 +81,8 @@ export function buildSessionSummary(
   const title = clip(row.title, MAX_TITLE);
   const origin = clip(row.origin, MAX_ORIGIN);
 
+  const hasReplay = events.length > 0;
+
   const durationSec = Math.round(row.durationMs / 1000);
   const titlePart = title ? ` ("${title}")` : '';
   const originPart = origin ? ` on ${origin}` : '';
@@ -83,7 +92,10 @@ export function buildSessionSummary(
       ? ` Recorded ${consoleErrorCount} console error(s) and ${networkErrorCount} network error(s).`
       : ' No console or network errors were recorded.';
   const visited = `The user visited ${pages.length} page(s), made ${clicks} click(s) and ${inputs} input(s)${acrossPart}.`;
-  const narrative = `Session ${row.id}${titlePart}${originPart} lasted ~${durationSec}s. ${visited}${errorsSentence}`;
+  const noReplayWarning = !hasReplay
+    ? ` ⚠️ No DOM/replay events were captured for this session (event_count ${row.eventCount}); get_dom_snapshot and generate_playwright_repro are unavailable. This commonly happens when Deep capture (chrome.debugger) was attached, which currently suppresses rrweb capture — network/console rows may still be present.`
+    : '';
+  const narrative = `Session ${row.id}${titlePart}${originPart} lasted ~${durationSec}s. ${visited}${errorsSentence}${noReplayWarning}`;
 
   return {
     id: row.id,
@@ -97,6 +109,8 @@ export function buildSessionSummary(
     navigations: navActions.length,
     consoleErrorCount,
     networkErrorCount,
+    hasReplay,
+    eventCount: row.eventCount,
     narrative,
   };
 }

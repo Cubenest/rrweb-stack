@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { openDb } from '../src/db/open.js';
 import { type SessionSummaryRow, getSessionSummaryRow } from '../src/mcp/queries.js';
 import { buildSessionSummary } from '../src/mcp/summary.js';
+import { metaNav } from './fixtures/rrweb.js';
 
 let db: Database;
 
@@ -66,7 +67,32 @@ describe('buildSessionSummary', () => {
     seedSession({ id: 's_acts', url: 'https://app/start' });
     // No events here — tallies are zero, narrative still coherent.
     const summary = buildSessionSummary(db, mustRow('s_acts'), []);
-    expect(summary).toMatchObject({ clicks: 0, inputs: 0, navigations: 0 });
+    expect(summary).toMatchObject({
+      clicks: 0,
+      inputs: 0,
+      navigations: 0,
+      hasReplay: false,
+      eventCount: 0,
+    });
     expect(summary.narrative).toContain('No console or network errors were recorded.');
+  });
+
+  it('flags hasReplay:false and warns in narrative when event_count is 0 (Deep-capture suppression)', () => {
+    seedSession({ id: 's_noreplay', origin: 'https://example.com', url: 'https://example.com/' });
+    const summary = buildSessionSummary(db, mustRow('s_noreplay'), []);
+    expect(summary.hasReplay).toBe(false);
+    expect(summary.eventCount).toBe(0);
+    expect(summary.narrative).toContain('No DOM/replay events were captured');
+  });
+
+  it('sets hasReplay:true and leaves narrative unchanged when events are present', () => {
+    seedSession({ id: 's_replay', origin: 'https://example.com', url: 'https://example.com/' });
+    // Use a well-formed Meta event (type=4) — safe to pass through extractUserActions.
+    const summary = buildSessionSummary(db, mustRow('s_replay'), [
+      metaNav('https://example.com/', 1000),
+    ]);
+    expect(summary.hasReplay).toBe(true);
+    expect(summary.eventCount).toBe(0); // row.eventCount from seed (no real blob inserted)
+    expect(summary.narrative).not.toContain('No DOM/replay events were captured');
   });
 });
