@@ -155,6 +155,16 @@ export default defineContentScript({
     // we respond there.
     announceReady();
 
+    // Flush before a fast tab close / backgrounding (the 1s interval +
+    // ctx.onInvalidated don't cover normal tab close). MV3 caveat: the SW may
+    // be asleep at unload, so sendCmd can still drop — best-effort.
+    const onPageHide = (): void => flush();
+    window.addEventListener('pagehide', onPageHide);
+    const onVisibility = (): void => {
+      if (document.visibilityState === 'hidden') flush();
+    };
+    document.addEventListener('visibilitychange', onVisibility);
+
     // --- Closed shadow root sweep (Task 3.21) -----------------------------
     // rrweb (MAIN world) misses CLOSED shadow roots; chrome.dom is ISOLATED-
     // only. Sweep the DOM on mutations (debounced) and report gaps. Best-effort
@@ -279,6 +289,8 @@ export default defineContentScript({
     // have and detach so we don't leak listeners/timers into the page.
     ctx.onInvalidated(() => {
       window.removeEventListener('message', onMessage);
+      window.removeEventListener('pagehide', onPageHide);
+      document.removeEventListener('visibilitychange', onVisibility);
       observer.disconnect();
       clearInterval(timer);
       if (shadowTimer !== null) clearTimeout(shadowTimer);
