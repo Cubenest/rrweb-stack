@@ -1,5 +1,15 @@
 # @peekdev/mcp
 
+## 0.1.0-alpha.16
+
+### Minor Changes
+
+- 07534d5: Improve generated Playwright repros: coalesce duplicate navigations and double-fired clicks, collapse typing bursts to the final value, element-type-aware actions (checkbox→check/uncheck, skip hidden/file inputs), and assert the final URL (`toHaveURL`). Does NOT yet recover Enter-to-submit / search intent (tracked separately).
+
+### Patch Changes
+
+- 500e976: get_session_summary now reports `hasReplay`/`eventCount` and warns when a session captured no DOM/replay events (e.g. recorded with Deep capture / chrome.debugger attached, which currently suppresses rrweb capture) — so replay-less sessions are visible instead of silently looking healthy.
+
 ## 0.1.0-alpha.15
 
 ### Patch Changes
