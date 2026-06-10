@@ -4,9 +4,12 @@
 //   navigate          -> await page.goto('url')
 //   click             -> await page.click('selector')
 //   input (select)    -> await page.selectOption('selector', 'value')
+//   input (checkbox/radio) -> await page.check/uncheck('selector')
 //   input (other)     -> await page.fill('selector', 'value')
 // The first navigation seeds the opening goto; subsequent navigations are
 // emitted inline (e.g. an in-app route change that triggered a full load).
+// After the actions, a final `await expect(page).toHaveURL(...)` is emitted
+// for the last navigation so the repro verifies the end state, not just replays.
 
 import type { UserAction } from './event-walker.js';
 import { extractUserActions } from './event-walker.js';
@@ -46,6 +49,26 @@ function actionToStatement(action: UserAction): string | undefined {
       return action.selector ? `  await page.click(${jsString(action.selector)});` : undefined;
     case 'input': {
       if (!action.selector) return undefined;
+      const sel = jsString(action.selector);
+      if (action.elementTag === 'input') {
+        if (action.inputType === 'checkbox' || action.inputType === 'radio') {
+          return action.checked === true
+            ? `  await page.check(${sel});`
+            : `  await page.uncheck(${sel});`;
+        }
+        if (
+          action.inputType === 'hidden' ||
+          action.inputType === 'submit' ||
+          action.inputType === 'button' ||
+          action.inputType === 'reset' ||
+          action.inputType === 'image'
+        ) {
+          return `  // TODO: skipped <input type="${action.inputType}"> (not a user text entry)`;
+        }
+        if (action.inputType === 'file') {
+          return `  // TODO: file input ${action.selector} — setInputFiles can't be reconstructed from a recording`;
+        }
+      }
       if (action.elementTag === 'select') {
         // rrweb captures only a single text value per input event, so only
         // single-value <select> interactions are representable here. A
@@ -108,10 +131,23 @@ export function generatePlaywrightRepro(
     }
   }
 
+  // T0.5: assert the end state. Find the last navigate (with a url) in the
+  // capped window and verify the page landed there — turning a blind replay
+  // into a test with a real oracle for the final URL.
+  for (let i = actions.length - 1; i >= 0; i -= 1) {
+    const a = actions[i];
+    if (a && a.type === 'navigate' && a.url) {
+      lines.push(`  await expect(page).toHaveURL(${jsString(a.url)});`);
+      break;
+    }
+  }
+
   lines.push('});');
   lines.push('');
   return lines.join('\n');
 }
 
-// `expect` is imported in the generated script for the author to add assertions;
-// we don't synthesize assertions in v1 (we have no oracle for "correct" state).
+// `expect` is used for the final-URL assertion above (the one oracle we can
+// derive from a recording). We don't synthesize other assertions — we have no
+// ground truth for "correct" intermediate state — so the author still adds
+// content/visibility checks as needed.

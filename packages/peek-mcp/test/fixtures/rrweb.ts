@@ -83,10 +83,15 @@ export function clickEvent(id: number, timestamp: number): eventWithTime {
   } as unknown as eventWithTime;
 }
 
-export function inputEvent(id: number, value: string, timestamp: number): eventWithTime {
+export function inputEvent(
+  id: number,
+  value: string,
+  timestamp: number,
+  opts: { readonly isChecked?: boolean } = {},
+): eventWithTime {
   return {
     type: EventType.IncrementalSnapshot,
-    data: { source: IncrementalSource.Input, id, text: value, isChecked: false },
+    data: { source: IncrementalSource.Input, id, text: value, isChecked: opts.isChecked ?? false },
     timestamp,
   } as unknown as eventWithTime;
 }

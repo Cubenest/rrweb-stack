@@ -53,6 +53,10 @@ export interface UserAction {
   readonly value?: string;
   /** For input actions: the lowercase HTML tag name of the target element (e.g. 'select', 'input', 'textarea'). */
   readonly elementTag?: string;
+  /** For input elements: the lowercased `type` attribute (e.g. 'checkbox', 'radio', 'hidden', 'text') when present. */
+  readonly inputType?: string;
+  /** For input elements: the checked state at the time of the input event (checkbox/radio). */
+  readonly checked?: boolean;
   /** For navigations: the destination URL (Meta event href). */
   readonly url?: string;
   /** A short human description, e.g. `click button.submit`. */
@@ -141,16 +145,23 @@ export function extractUserActions(events: eventWithTime[]): UserAction[] {
       // rrweb already masks values per the recorder config; we surface as-is.
       const value = typeof input.text === 'string' ? input.text : '';
       const nodeEntry = index?.get(input.id);
-      const elementTag =
-        nodeEntry?.node?.type === NodeType.Element
-          ? (nodeEntry.node as unknown as { tagName: string }).tagName.toLowerCase()
-          : undefined;
+      const isElement = nodeEntry?.node?.type === NodeType.Element;
+      const elementTag = isElement
+        ? (nodeEntry.node as unknown as { tagName: string }).tagName.toLowerCase()
+        : undefined;
+      const rawType = isElement
+        ? (nodeEntry.node as unknown as { attributes?: Record<string, unknown> }).attributes?.type
+        : undefined;
+      const inputType = typeof rawType === 'string' ? rawType.toLowerCase() : undefined;
+      const checked = typeof input.isChecked === 'boolean' ? input.isChecked : undefined;
       actions.push({
         type: 'input',
         ts: e.timestamp,
         ...(selector !== undefined ? { selector } : {}),
         value,
         ...(elementTag !== undefined ? { elementTag } : {}),
+        ...(inputType !== undefined ? { inputType } : {}),
+        ...(checked !== undefined ? { checked } : {}),
         summary:
           selector !== undefined
             ? `input ${selector} = ${truncate(value, 40)}`
@@ -159,7 +170,72 @@ export function extractUserActions(events: eventWithTime[]): UserAction[] {
     }
   }
 
-  return actions;
+  return coalesceActions(actions);
+}
+
+/**
+ * Max gap (ms) between two same-selector clicks for them to be treated as one
+ * (a pointer double-fire / double-click). Clicks spaced wider are intentional
+ * repeats and kept.
+ */
+export const COALESCE_CLICK_WINDOW_MS = 700;
+
+/**
+ * Collapse recording artifacts into the actions a human would describe, in a
+ * single left-to-right pass comparing each action to the previously-KEPT one:
+ *
+ *   • navigate dedup  — drop a navigate whose url matches the immediately
+ *     preceding kept navigate (the duplicate goto rrweb often emits). A
+ *     re-navigation separated by other actions is a real one and kept.
+ *   • click dedup     — drop a click whose selector matches the immediately
+ *     preceding kept click within {@link COALESCE_CLICK_WINDOW_MS} (double-fire
+ *     / double-click). Same-selector clicks spaced wider, or with another
+ *     action between, are kept.
+ *   • input coalesce  — replace the preceding kept input on the same selector
+ *     with the current one, collapsing a typing burst to its final value/checked
+ *     state.
+ *
+ * Returns a new array; inputs are not mutated and order is preserved.
+ */
+export function coalesceActions(actions: UserAction[]): UserAction[] {
+  const kept: UserAction[] = [];
+  for (const action of actions) {
+    const prev = kept[kept.length - 1];
+
+    if (prev) {
+      if (
+        action.type === 'navigate' &&
+        prev.type === 'navigate' &&
+        action.url !== undefined &&
+        action.url === prev.url
+      ) {
+        continue;
+      }
+
+      if (
+        action.type === 'click' &&
+        prev.type === 'click' &&
+        action.selector !== undefined &&
+        action.selector === prev.selector &&
+        action.ts - prev.ts <= COALESCE_CLICK_WINDOW_MS
+      ) {
+        continue;
+      }
+
+      if (
+        action.type === 'input' &&
+        prev.type === 'input' &&
+        action.selector !== undefined &&
+        action.selector === prev.selector
+      ) {
+        kept[kept.length - 1] = action;
+        continue;
+      }
+    }
+
+    kept.push(action);
+  }
+  return kept;
 }
 
 /** Fold a mutation's added nodes into the live index (best-effort, recursive). */
