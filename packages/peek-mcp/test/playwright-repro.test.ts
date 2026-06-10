@@ -45,6 +45,7 @@ describe('generatePlaywrightRepro', () => {
       `  await page.fill('input[name="password"]', 'hunter2');`,
       `  await page.click('#login');`,
       `  await page.goto('https://app.test/dashboard');`,
+      `  await expect(page).toHaveURL('https://app.test/dashboard');`,
     ]);
     expect(script.trimEnd().endsWith('});')).toBe(true);
   });
@@ -112,16 +113,23 @@ describe('generatePlaywrightRepro', () => {
 
   it('caps output to the latest N actions with a truncation note (I1)', () => {
     freshIds();
-    const button = el('button', { attributes: { id: 'b' } });
-    const root = documentWith([button]);
+    // Distinct targets so click-dedup doesn't collapse them: 250 buttons, one
+    // click each. (Dedup only collapses consecutive same-selector clicks.)
+    const buttons = Array.from({ length: 250 }, (_, i) =>
+      el('button', { attributes: { id: `b${i}` } }),
+    );
+    const root = documentWith(buttons);
     const events: ReturnType<typeof clickEvent>[] = [fullSnapshot(root, 1000)];
-    for (let i = 1; i <= 250; i += 1) events.push(clickEvent(button.id, 1000 + i));
+    for (let i = 0; i < 250; i += 1) {
+      const button = buttons[i];
+      if (button) events.push(clickEvent(button.id, 1001 + i));
+    }
 
     const script = generatePlaywrightRepro(events, { maxActions: 200 });
     const clickLines = script.split('\n').filter((l) => l.includes('page.click'));
     expect(clickLines).toHaveLength(200);
     expect(script).toContain('// truncated: showing last 200 of 250 actions');
-    // The kept actions are the LATEST 200 (ts 1051..1250); the earliest is dropped.
+    // The kept actions are the LATEST 200; the earliest is dropped.
     expect(script).not.toContain('// truncated: showing last 200 of 250 actions\n  // ');
   });
 
@@ -156,5 +164,139 @@ describe('generatePlaywrightRepro', () => {
     const events = [fullSnapshot(root, 1000), inputEvent(lang.id, "a'b\nc", 1100)];
     const script = generatePlaywrightRepro(events);
     expect(script).toContain(`await page.selectOption('#lang', 'a\\'b\\nc');`);
+  });
+
+  // --- Tier-0 coalescing / dedup -----------------------------------------
+
+  it('dedups two consecutive navigations to the same url into one goto', () => {
+    freshIds();
+    const root = documentWith([el('div')]);
+    const events = [
+      metaNav('https://app.test/home', 1000),
+      metaNav('https://app.test/home', 1001),
+      fullSnapshot(root, 1002),
+    ];
+    const script = generatePlaywrightRepro(events);
+    const gotoLines = script.split('\n').filter((l) => l.includes('page.goto'));
+    expect(gotoLines).toEqual([`  await page.goto('https://app.test/home');`]);
+  });
+
+  it('dedups two clicks on the same selector within the coalesce window into one', () => {
+    freshIds();
+    const button = el('button', { attributes: { id: 'go' } });
+    const root = documentWith([button]);
+    const events = [
+      fullSnapshot(root, 1000),
+      clickEvent(button.id, 1100),
+      clickEvent(button.id, 1200), // 100ms later, within 700ms window
+    ];
+    const script = generatePlaywrightRepro(events);
+    const clickLines = script.split('\n').filter((l) => l.includes('page.click'));
+    expect(clickLines).toEqual([`  await page.click('#go');`]);
+  });
+
+  it('keeps two clicks on the same selector spaced beyond the coalesce window', () => {
+    freshIds();
+    const button = el('button', { attributes: { id: 'go' } });
+    const root = documentWith([button]);
+    const events = [
+      fullSnapshot(root, 1000),
+      clickEvent(button.id, 1100),
+      clickEvent(button.id, 2000), // 900ms later, beyond 700ms window
+    ];
+    const script = generatePlaywrightRepro(events);
+    const clickLines = script.split('\n').filter((l) => l.includes('page.click'));
+    expect(clickLines).toEqual([`  await page.click('#go');`, `  await page.click('#go');`]);
+  });
+
+  it('coalesces a typing burst into a single fill with the final value', () => {
+    freshIds();
+    const input = el('input', { attributes: { name: 'q' } });
+    const root = documentWith([input]);
+    const events = [
+      fullSnapshot(root, 1000),
+      inputEvent(input.id, 'h', 1100),
+      inputEvent(input.id, 'he', 1110),
+      inputEvent(input.id, 'hel', 1120),
+      inputEvent(input.id, 'hello', 1130),
+    ];
+    const script = generatePlaywrightRepro(events);
+    const fillLines = script.split('\n').filter((l) => l.includes('page.fill'));
+    expect(fillLines).toEqual([`  await page.fill('input[name="q"]', 'hello');`]);
+  });
+
+  it('emits page.check for a checked checkbox and page.uncheck for an unchecked one', () => {
+    freshIds();
+    const remember = el('input', { attributes: { type: 'checkbox', id: 'remember' } });
+    const optout = el('input', { attributes: { type: 'checkbox', id: 'optout' } });
+    const root = documentWith([remember, optout]);
+    const events = [
+      fullSnapshot(root, 1000),
+      inputEvent(remember.id, 'on', 1100, { isChecked: true }),
+      inputEvent(optout.id, '', 1200, { isChecked: false }),
+    ];
+    const script = generatePlaywrightRepro(events);
+    expect(script).toContain(`await page.check('#remember');`);
+    expect(script).toContain(`await page.uncheck('#optout');`);
+    expect(script).not.toContain('page.fill');
+  });
+
+  it('emits page.check for a radio input', () => {
+    freshIds();
+    const radio = el('input', { attributes: { type: 'radio', id: 'plan-pro' } });
+    const root = documentWith([radio]);
+    const events = [
+      fullSnapshot(root, 1000),
+      inputEvent(radio.id, 'pro', 1100, { isChecked: true }),
+    ];
+    const script = generatePlaywrightRepro(events);
+    expect(script).toContain(`await page.check('#plan-pro');`);
+    expect(script).not.toContain('page.fill');
+  });
+
+  it('emits a TODO when a checkbox/radio checked state is unknown', () => {
+    freshIds();
+    const remember = el('input', { attributes: { type: 'checkbox', id: 'remember' } });
+    const root = documentWith([remember]);
+    // No isChecked passed → the event carries no isChecked → checked is undefined.
+    const events = [fullSnapshot(root, 1000), inputEvent(remember.id, 'on', 1100)];
+    const script = generatePlaywrightRepro(events);
+    expect(script).toContain('// TODO: <input type="checkbox"> #remember — checked state unknown');
+    expect(script).not.toContain('page.check');
+    expect(script).not.toContain('page.uncheck');
+    expect(script).not.toContain('page.fill');
+  });
+
+  it('skips a hidden input with a TODO instead of filling it', () => {
+    freshIds();
+    const hidden = el('input', { attributes: { type: 'hidden', name: 'csrf' } });
+    const root = documentWith([hidden]);
+    const events = [fullSnapshot(root, 1000), inputEvent(hidden.id, 'tok123', 1100)];
+    const script = generatePlaywrightRepro(events);
+    expect(script).not.toContain('page.fill');
+    expect(script).toContain('// TODO: skipped <input type="hidden">');
+  });
+
+  it('emits a final-URL assertion for the last navigation', () => {
+    freshIds();
+    const button = el('button', { attributes: { id: 'go' } });
+    const root = documentWith([button]);
+    const events = [
+      metaNav('https://app.test/a', 1000),
+      fullSnapshot(root, 1000),
+      clickEvent(button.id, 1100),
+      metaNav('https://app.test/b', 1200),
+    ];
+    const script = generatePlaywrightRepro(events);
+    expect(script).toContain(`await expect(page).toHaveURL('https://app.test/b');`);
+  });
+
+  it('does not emit a final-URL assertion when there is no navigation', () => {
+    freshIds();
+    const button = el('button', { attributes: { id: 'go' } });
+    const root = documentWith([button]);
+    const events = [fullSnapshot(root, 1000), clickEvent(button.id, 1100)];
+    const script = generatePlaywrightRepro(events);
+    expect(script).not.toContain('toHaveURL');
   });
 });

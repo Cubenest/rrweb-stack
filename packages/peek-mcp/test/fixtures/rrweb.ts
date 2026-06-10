@@ -83,10 +83,22 @@ export function clickEvent(id: number, timestamp: number): eventWithTime {
   } as unknown as eventWithTime;
 }
 
-export function inputEvent(id: number, value: string, timestamp: number): eventWithTime {
+export function inputEvent(
+  id: number,
+  value: string,
+  timestamp: number,
+  opts: { readonly isChecked?: boolean } = {},
+): eventWithTime {
   return {
     type: EventType.IncrementalSnapshot,
-    data: { source: IncrementalSource.Input, id, text: value, isChecked: false },
+    data: {
+      source: IncrementalSource.Input,
+      id,
+      text: value,
+      // Only carry isChecked when explicitly provided, so callers can model an
+      // input event with an unknown checked state (checkbox/radio).
+      ...(opts.isChecked !== undefined ? { isChecked: opts.isChecked } : {}),
+    },
     timestamp,
   } as unknown as eventWithTime;
 }

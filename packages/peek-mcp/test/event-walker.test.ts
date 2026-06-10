@@ -97,27 +97,36 @@ describe('extractUserActions', () => {
 describe('userActionsBeforeError', () => {
   it('returns the last N actions at/before the error timestamp', () => {
     freshIds();
+    // Distinct buttons so coalescing doesn't collapse the consecutive clicks.
+    const a = el('button', { attributes: { id: 'a' } });
     const b = el('button', { attributes: { id: 'b' } });
-    const root = documentWith([b]);
+    const c = el('button', { attributes: { id: 'c' } });
+    const root = documentWith([a, b, c]);
     const events = [
       fullSnapshot(root, 1000),
-      clickEvent(b.id, 1100),
+      clickEvent(a.id, 1100),
       clickEvent(b.id, 1200),
-      clickEvent(b.id, 1300), // after the error — excluded
+      clickEvent(c.id, 1300), // after the error — excluded
     ];
     const before = userActionsBeforeError(events, 1250, 10);
-    expect(before.map((a) => a.ts)).toEqual([1100, 1200]);
+    expect(before.map((ev) => ev.ts)).toEqual([1100, 1200]);
   });
 
   it('caps the window to the most recent N', () => {
     freshIds();
-    const b = el('button', { attributes: { id: 'b' } });
-    const root = documentWith([b]);
+    // Distinct buttons so coalescing doesn't collapse the consecutive clicks.
+    const buttons = Array.from({ length: 20 }, (_, i) =>
+      el('button', { attributes: { id: `b${i}` } }),
+    );
+    const root = documentWith(buttons);
     const events = [fullSnapshot(root, 1000)];
-    for (let i = 1; i <= 20; i += 1) events.push(clickEvent(b.id, 1000 + i));
+    for (let i = 1; i <= 20; i += 1) {
+      const button = buttons[i - 1];
+      if (button) events.push(clickEvent(button.id, 1000 + i));
+    }
     const before = userActionsBeforeError(events, 9999, 3);
     expect(before).toHaveLength(3);
-    expect(before.map((a) => a.ts)).toEqual([1018, 1019, 1020]);
+    expect(before.map((ev) => ev.ts)).toEqual([1018, 1019, 1020]);
   });
 });
 
