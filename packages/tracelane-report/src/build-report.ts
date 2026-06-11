@@ -76,6 +76,7 @@ export function buildReport(
     eventsGzB64: encodeEventsBlob(sized),
     console: consoleRows,
     network: networkRows,
+    security: [],
     markdown,
     pruned,
     eventCount: sized.length,

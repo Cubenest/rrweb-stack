@@ -8,6 +8,7 @@
 // FAB. The large vendored assets (player UMD/CSS, fflate UMD, both variable
 // fonts) and the data payloads are passed in.
 
+import type { SecurityFinding } from '@tracelane/security';
 import {
   loadFflateGunzipSource,
   loadFrauncesItalic,
@@ -30,6 +31,12 @@ export interface ReportTemplateData {
   console: ConsoleEntry[];
   /** Extracted network panel rows (Task 2.10). */
   network: NetworkEntry[];
+  /**
+   * Advisory security-hygiene findings (Task 12). Rendered as a collapsed
+   * panel; the panel + its tab are OMITTED entirely when this is empty (no
+   * zero-state). Advisory only — NOT a security audit.
+   */
+  security: SecurityFinding[];
   /** Pre-rendered "Copy as Markdown for AI paste" payload (Task 2.12). */
   markdown: string;
   /** Whether the events were pruned to fit the size budget (ADR-0005 banner). */
@@ -474,6 +481,27 @@ main.investigation {
 .row.row-net .lvl.st-5 { color: var(--amber); }
 .row.row-net .lvl.st-0 { color: var(--amber); } /* net error */
 
+/* Advisory security findings: not time-synced (no seek), so not clickable. */
+.row.row-sec { cursor: default; grid-template-columns: max-content 1fr; }
+.row.row-sec.sev-high .lvl   { color: var(--amber); }
+.row.row-sec.sev-medium .lvl { color: var(--warn); }
+.row.row-sec.sev-low .lvl    { color: var(--muted-strong); }
+.row.row-sec .sec-detail {
+  color: var(--muted);
+  font-size: 10.5px;
+  margin-top: 3px;
+  white-space: pre-wrap;
+}
+
+/* Security panel subtitle (advisory framing) shown in its toolbar. */
+.panel-toolbar-sec { flex-direction: column; align-items: stretch; gap: 8px; }
+.panel-subtitle {
+  color: var(--muted);
+  font-size: 11px;
+  font-style: italic;
+  line-height: 1.5;
+}
+
 /* "Coming soon" pane content (Actions / Timeline tabs reserved for follow-ups) */
 .coming-soon {
   padding: 32px 16px;
@@ -723,8 +751,37 @@ const BOOTSTRAP = `
     }
   }
 
+  // Advisory security-hygiene findings (Task 12). Unlike console/network rows
+  // these are NOT time-synced (a finding has no single moment in the replay) —
+  // each renders as a static, always-visible row: "[severity] title — evidence"
+  // with the detail as muted secondary text. The container is only present in
+  // the DOM when there are findings (the tab + pane are omitted when empty).
+  function renderSecurity(container, findings) {
+    if (!container) return;
+    if (!findings.length) {
+      container.appendChild(el('div', 'panel-empty', 'No advisory security findings.'));
+      return;
+    }
+    for (var i = 0; i < findings.length; i++) {
+      var f = findings[i];
+      var sev = (f.severity || 'low').toLowerCase();
+      var row = el('div', 'row row-sec sev-' + sev);
+      row.appendChild(el('span', 'lvl', sev));
+      var msg = el('span', 'msg');
+      msg.appendChild(document.createTextNode(f.title + ' — ' + f.evidence));
+      if (f.detail) {
+        msg.appendChild(el('div', 'sec-detail', f.detail));
+      }
+      row.appendChild(msg);
+      var text = (sev + ' ' + f.title + ' ' + f.evidence + ' ' + (f.detail || '')).toLowerCase();
+      row.setAttribute('data-text', text);
+      container.appendChild(row);
+    }
+  }
+
   renderConsole(document.getElementById('console-rows'), CONSOLE, FIRST_TS);
   renderNetwork(document.getElementById('network-rows'), NETWORK, FIRST_TS);
+  renderSecurity(document.getElementById('security-rows'), SECURITY);
 
   // ---- Time-sync: reveal rows as playback advances ----------------------
   // TODO(perf): re-queries DOM and re-parses data-time on every tick (~30 Hz).
@@ -945,6 +1002,7 @@ export function renderReportHtml(data: ReportTemplateData): string {
     eventsGzB64,
     console: consoleRows,
     network,
+    security,
     markdown,
     pruned,
     eventCount,
@@ -962,6 +1020,27 @@ export function renderReportHtml(data: ReportTemplateData): string {
 
   const consoleCount = consoleRows.length;
   const networkCount = network.length;
+  const securityCount = security.length;
+
+  // Advisory security tab + pane — rendered ONLY when there are findings
+  // (no zero-state; the analyzer is advisory). Mirrors the Console/Network
+  // panel markup but without time-sync (findings have no replay moment).
+  const securityTab =
+    securityCount > 0
+      ? `<button class="tab" type="button" role="tab" id="tab-security" aria-selected="false" aria-controls="pane-security" data-pane="pane-security">
+        Security <span class="count-total">${securityCount}</span>
+      </button>`
+      : '';
+  const securityPane =
+    securityCount > 0
+      ? `<div class="panel-pane" id="pane-security" role="tabpanel" aria-labelledby="tab-security">
+      <div class="panel-toolbar panel-toolbar-sec">
+        <span class="panel-subtitle">Observed during the test run — advisory hygiene signals, not a security audit.</span>
+        <input type="text" class="panel-filter" placeholder="Filter findings…" aria-label="Filter security findings" />
+      </div>
+      <div id="security-rows" class="panel-content"></div>
+    </div>`
+      : '';
 
   // Data payloads embedded as JS consts, all escaped for inline-script safety.
   const dataScript =
@@ -969,6 +1048,7 @@ export function renderReportHtml(data: ReportTemplateData): string {
     `const EVENTS_GZ_B64 = "${eventsGzB64}";\n` +
     `const CONSOLE = ${serializeForScript(consoleRows)};\n` +
     `const NETWORK = ${serializeForScript(network)};\n` +
+    `const SECURITY = ${serializeForScript(security)};\n` +
     `const MARKDOWN = ${serializeForScript(markdown)};\n` +
     `const FIRST_TS = ${firstTs};\n` +
     `const LAST_TS = ${lastTs};`;
@@ -1006,6 +1086,7 @@ ${banner}
       <button class="tab" type="button" role="tab" id="tab-network" aria-selected="false" aria-controls="pane-network" data-pane="pane-network">
         Network <span class="count">0</span><span class="count-total">/ ${networkCount}</span>
       </button>
+      ${securityTab}
       <button class="tab" type="button" role="tab" id="tab-actions" aria-selected="false" aria-controls="pane-actions" data-pane="pane-actions">
         Actions <span class="soon-pill">soon</span>
       </button>
@@ -1031,6 +1112,8 @@ ${banner}
       <div id="network-rows" class="panel-content"></div>
       <div class="panel-pending" id="network-pending" role="status" aria-live="polite">Network errors will appear during playback.</div>
     </div>
+
+    ${securityPane}
 
     <div class="panel-pane" id="pane-actions" role="tabpanel" aria-labelledby="tab-actions">
       <div class="coming-soon">
