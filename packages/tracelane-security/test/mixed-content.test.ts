@@ -34,4 +34,7 @@ describe('detectMixedContent', () => {
       ]),
     ).toHaveLength(1);
   });
+  it('returns nothing when there is no main-document meta', () => {
+    expect(detectMixedContent([m('http://cdn/a.js')])).toEqual([]);
+  });
 });

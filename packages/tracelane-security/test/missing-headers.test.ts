@@ -30,4 +30,7 @@ describe('detectMissingHeaders', () => {
   it('returns nothing when there is no main-document meta', () => {
     expect(detectMissingHeaders([])).toEqual([]);
   });
+  it('flags all five allowlisted headers when none are present', () => {
+    expect(detectMissingHeaders([mainDoc([])])).toHaveLength(5);
+  });
 });

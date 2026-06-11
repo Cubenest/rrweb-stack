@@ -26,4 +26,15 @@ describe('detectInsecureCookies', () => {
       ]),
     ).toEqual([]);
   });
+  it('emits three findings for a cookie missing all flags', () => {
+    const f = detectInsecureCookies([
+      withCookies([{ name: 'sid', secure: false, httpOnly: false, sameSite: false }]),
+    ]);
+    expect(f.map((x) => x.evidence).sort()).toEqual(['sid:HttpOnly', 'sid:SameSite', 'sid:Secure']);
+    expect(f.find((x) => x.evidence === 'sid:HttpOnly')?.severity).toBe('low');
+  });
+  it('dedupes the same insecure cookie flag across multiple responses', () => {
+    const meta = withCookies([{ name: 'sid', secure: false, httpOnly: true, sameSite: true }]);
+    expect(detectInsecureCookies([meta, meta])).toHaveLength(1);
+  });
 });
