@@ -5,6 +5,10 @@ build/
 .wxt/
 *.tsbuildinfo
 .turbo/
+# Build artifact: @tracelane/report vendors the private @tracelane/security source
+# into src/_security/ at build time (scripts/vendor-security.mjs). The private
+# package is the single source of truth; this copy is generated, never committed.
+packages/tracelane-report/src/_security/
 .next/
 .vercel/
 # Astro (apps/*-docs) — generated content-types + build cache.

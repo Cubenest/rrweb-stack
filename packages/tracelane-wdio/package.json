@@ -41,8 +41,7 @@
   },
   "dependencies": {
     "@tracelane/core": "workspace:*",
-    "@tracelane/report": "workspace:*",
-    "@tracelane/security": "workspace:*"
+    "@tracelane/report": "workspace:*"
   },
   "peerDependencies": {
     "@wdio/types": "^9.0.0",

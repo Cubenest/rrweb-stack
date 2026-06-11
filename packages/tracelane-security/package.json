@@ -1,6 +1,7 @@
 {
   "name": "@tracelane/security",
   "version": "0.1.0-alpha.1",
+  "private": true,
   "description": "Advisory, low-false-positive security-hygiene signals derived from a captured rrweb/console/network event stream. Pure analysis; advisory only, not a security audit.",
   "keywords": ["tracelane", "security", "security-hygiene", "rrweb", "static-analysis", "advisory"],
   "license": "Apache-2.0",
@@ -21,10 +22,6 @@
   },
   "dependencies": {
     "@cubenest/rrweb-core": "workspace:*"
-  },
-  "publishConfig": {
-    "access": "public",
-    "provenance": true
   },
   "repository": {
     "type": "git",

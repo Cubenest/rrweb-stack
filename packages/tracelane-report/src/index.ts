@@ -31,3 +31,8 @@ export { resolveCiMetadata } from './metadata.js';
 // Copy-as-Markdown payload (Task 2.12).
 export { buildMarkdown, extractActionLog, MAX_CONSOLE_MESSAGES, MAX_ACTIONS } from './markdown.js';
 export type { ActionEntry } from './markdown.js';
+
+// Advisory security-hygiene types. The analyzer itself is bundled in privately
+// (vendored from the internal @tracelane/security package at build); consumers
+// like @tracelane/wdio import these types from here, not from a separate package.
+export type { SecurityFinding, Severity, SecuritySignal, Suppression } from './_security/index.js';

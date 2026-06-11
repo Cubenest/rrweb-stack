@@ -8,7 +8,7 @@
 // FAB. The large vendored assets (player UMD/CSS, fflate UMD, both variable
 // fonts) and the data payloads are passed in.
 
-import type { SecurityFinding } from '@tracelane/security';
+import type { SecurityFinding } from './_security/index.js';
 import {
   loadFflateGunzipSource,
   loadFrauncesItalic,
