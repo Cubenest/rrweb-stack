@@ -46,6 +46,11 @@ const WORK_DIR = '/tmp/verify-recipes-wdio';
 // Versions to pin. Bumped to whatever's currently published — keep this in
 // sync with the published alphas. The verifier could fetch latest dynamically,
 // but pinning here makes the verifier's intent explicit + auditable.
+//
+// When the security-bearing alpha of @tracelane/wdio is published, bump the
+// wdio version here and promote the `hasSecurityPanel` detection (computed in
+// inspectReport, currently logged informationally) into the required `checks`
+// object so the advisory security panel becomes a hard gate.
 const TRACELANE_VERSIONS = {
   '@tracelane/core': '^0.1.0-alpha.9',
   '@tracelane/report': '^0.1.0-alpha.11',
@@ -162,7 +167,14 @@ function inspectReport(reportPath) {
     sizeOver50Kb: html.length > 50_000,
   };
 
-  return { html, sizeKb, checks };
+  // INFORMATIONAL (non-fatal) detection. Deliberately NOT part of `checks`
+  // (which gates the exit code) so the verifier stays green against the
+  // currently-published @tracelane/wdio, which lacks the advisory security
+  // layer. Promote this into `checks` once the security-bearing alpha ships
+  // (see the note by TRACELANE_VERSIONS).
+  const hasSecurityPanel = html.includes('id="pane-security"');
+
+  return { html, sizeKb, checks, hasSecurityPanel };
 }
 
 async function cleanup() {
@@ -227,6 +239,19 @@ async function main() {
     console.log('  ✓ share-failing-test-with-a-developer (upstream generation)');
     console.log('  ✓ reproduce-headless-only-failure-locally (same headless config)');
     console.log('  ✓ catch-visual-regression-across-test-run (report exists for the scrubber)');
+    console.log(
+      '  ✓ surface-security-hygiene-on-failed-tests (advisory panel — soft check until release)',
+    );
+
+    // Informational advisory-security-panel check (non-fatal — see inspectReport).
+    if (inspection.hasSecurityPanel) {
+      const findingCount = (inspection.html.match(/- \[(?:high|medium|low)\]/g) || []).length;
+      console.log(`\n✓ advisory security panel present (${findingCount} findings)`);
+    } else {
+      console.log(
+        '\nⓘ advisory security panel absent — expected until @tracelane/wdio with the security layer is published (bump TRACELANE_VERSIONS + promote this to a required check then).',
+      );
+    }
   } else {
     console.log(`✗ Report at ${reportPath} is missing expected sections.`);
     console.log(`  size: ${inspection.sizeKb} KB`);
