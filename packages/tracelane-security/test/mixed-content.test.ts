@@ -68,13 +68,32 @@ describe('detectMixedContent', () => {
     ).toEqual([]);
   });
 
-  it('flags an http href on a <link> (stylesheet/preload)', () => {
+  it('flags an http href on a subresource <link> (stylesheet/preload)', () => {
     const f = detectMixedContent(
       [fullSnapshot([el('link', { rel: 'stylesheet', href: 'http://cdn/s.css' })])],
       HTTPS_MAIN,
     );
     expect(f).toHaveLength(1);
     expect(f[0]?.evidence).toBe('http://cdn/s.css');
+  });
+
+  it('flags an http preload <link> regardless of rel token order/case', () => {
+    expect(
+      detectMixedContent(
+        [fullSnapshot([el('link', { rel: 'PRELOAD', href: 'http://cdn/f.woff2' })])],
+        HTTPS_MAIN,
+      ),
+    ).toHaveLength(1);
+  });
+
+  it('does NOT flag a non-subresource <link> (canonical/alternate/preconnect)', () => {
+    const links = [
+      el('link', { rel: 'canonical', href: 'http://x.test/page' }, 1),
+      el('link', { rel: 'alternate', href: 'http://x.test/feed' }, 2),
+      el('link', { rel: 'dns-prefetch', href: 'http://x.test' }, 3),
+      el('link', { href: 'http://x.test/norel' }, 4),
+    ];
+    expect(detectMixedContent([fullSnapshot(links)], HTTPS_MAIN)).toEqual([]);
   });
 
   it('dedupes the same http src', () => {

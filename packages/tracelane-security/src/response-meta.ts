@@ -38,6 +38,38 @@ function consoleArgString(payload: unknown): string {
   return first;
 }
 
+function isCookieFlags(c: unknown): boolean {
+  if (!c || typeof c !== 'object') return false;
+  const k = c as Record<string, unknown>;
+  return (
+    typeof k.name === 'string' &&
+    typeof k.secure === 'boolean' &&
+    typeof k.httpOnly === 'boolean' &&
+    typeof k.sameSite === 'boolean'
+  );
+}
+
+/**
+ * Full structural validation of a parsed `[tracelane.sec]` payload, including
+ * array ELEMENT types. A page can emit a fake `[tracelane.sec]` console line, so
+ * a shape-malformed object (e.g. `presentSecurityHeaders: [123]` or
+ * `setCookies: [{}]`) must be rejected to honor the "malformed lines are
+ * skipped" contract and protect downstream consumers from runtime errors.
+ */
+function isResponseMeta(parsed: unknown): parsed is ResponseMeta {
+  if (!parsed || typeof parsed !== 'object') return false;
+  const m = parsed as Record<string, unknown>;
+  return (
+    typeof m.url === 'string' &&
+    typeof m.status === 'number' &&
+    typeof m.isMainDocument === 'boolean' &&
+    Array.isArray(m.presentSecurityHeaders) &&
+    m.presentSecurityHeaders.every((h) => typeof h === 'string') &&
+    Array.isArray(m.setCookies) &&
+    m.setCookies.every(isCookieFlags)
+  );
+}
+
 /**
  * Read privacy-safe `[tracelane.sec]` response metadata out of a captured rrweb
  * event stream. The capture layer emits these as
@@ -52,22 +84,13 @@ export function scrapeResponseMeta(events: readonly eventWithTime[]): ResponseMe
     if (e.type !== EventType.Plugin) continue;
     const data = e.data as { plugin?: unknown; payload?: { payload?: unknown } };
     if (data.plugin !== 'rrweb/console@1') continue;
+    // Start-anchored: the producer emits the prefix at the very start of the
+    // line, so a mid-string match would only be a false positive.
     const line = consoleArgString(data.payload?.payload);
-    const idx = line.indexOf(SEC_CONSOLE_PREFIX);
-    if (idx === -1) continue;
+    if (!line.startsWith(SEC_CONSOLE_PREFIX)) continue;
     try {
-      const parsed: unknown = JSON.parse(line.slice(idx + SEC_CONSOLE_PREFIX.length).trim());
-      if (
-        parsed &&
-        typeof parsed === 'object' &&
-        typeof (parsed as ResponseMeta).url === 'string' &&
-        typeof (parsed as ResponseMeta).status === 'number' &&
-        typeof (parsed as ResponseMeta).isMainDocument === 'boolean' &&
-        Array.isArray((parsed as ResponseMeta).presentSecurityHeaders) &&
-        Array.isArray((parsed as ResponseMeta).setCookies)
-      ) {
-        out.push(parsed as ResponseMeta);
-      }
+      const parsed: unknown = JSON.parse(line.slice(SEC_CONSOLE_PREFIX.length).trim());
+      if (isResponseMeta(parsed)) out.push(parsed);
     } catch {
       /* malformed — skip */
     }

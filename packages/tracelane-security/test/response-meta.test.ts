@@ -46,6 +46,42 @@ describe('scrapeResponseMeta', () => {
     ).toEqual([]);
   });
 
+  it('skips lines where the prefix is not at the start (false-positive guard)', () => {
+    const meta = {
+      url: 'https://x/',
+      status: 200,
+      isMainDocument: true,
+      presentSecurityHeaders: [],
+      setCookies: [],
+    };
+    expect(
+      scrapeResponseMeta([secEvent(`logged: ${SEC_CONSOLE_PREFIX} ${JSON.stringify(meta)}`)]),
+    ).toEqual([]);
+  });
+
+  it('rejects shape-malformed array element types', () => {
+    const badHeaders = {
+      url: 'https://x/',
+      status: 200,
+      isMainDocument: true,
+      presentSecurityHeaders: [123],
+      setCookies: [],
+    };
+    const badCookies = {
+      url: 'https://x/',
+      status: 200,
+      isMainDocument: true,
+      presentSecurityHeaders: [],
+      setCookies: [{ name: 'sid' }],
+    };
+    expect(
+      scrapeResponseMeta([secEvent(`${SEC_CONSOLE_PREFIX} ${JSON.stringify(badHeaders)}`)]),
+    ).toEqual([]);
+    expect(
+      scrapeResponseMeta([secEvent(`${SEC_CONSOLE_PREFIX} ${JSON.stringify(badCookies)}`)]),
+    ).toEqual([]);
+  });
+
   it('ignores non-plugin events', () => {
     const meta = {
       url: 'https://x/',

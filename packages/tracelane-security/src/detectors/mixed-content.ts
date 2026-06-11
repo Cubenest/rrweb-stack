@@ -13,11 +13,35 @@ import { collectRoots, walk } from '../serialized-dom.js';
  * Scope (kept tight to limit false positives for the MVP):
  *   - the `src` attribute on ANY element (img, script, iframe, video, audio,
  *     source, …),
- *   - the `href` attribute ONLY on `<link>` (stylesheets/preloads). `<a href>`
- *     is a navigation, not a subresource, so it is NOT flagged.
+ *   - the `href` attribute ONLY on a `<link>` whose `rel` actually fetches a
+ *     subresource (stylesheet/preload/icon/…). A `<link rel="canonical">` or
+ *     `<a href>` is a navigation/metadata hint, not a subresource, so it is NOT
+ *     flagged.
  *   - `srcset` is not parsed.
  * Dedupes by url; advisory, never an audit result.
  */
+
+// `<link rel>` values that actually fetch a resource over the wire (so an
+// `http://` href is genuine mixed content). Excludes metadata/hint rels like
+// canonical, alternate, author, license, and the connection-only hints
+// dns-prefetch/preconnect (which establish a connection but load no content).
+const SUBRESOURCE_LINK_RELS = new Set([
+  'stylesheet',
+  'preload',
+  'modulepreload',
+  'prefetch',
+  'prerender',
+  'icon',
+  'manifest',
+]);
+
+function linkLoadsSubresource(rel: unknown): boolean {
+  if (typeof rel !== 'string') return false;
+  return rel
+    .toLowerCase()
+    .split(/\s+/)
+    .some((token) => SUBRESOURCE_LINK_RELS.has(token));
+}
 export function detectMixedContent(
   events: readonly eventWithTime[],
   metas: readonly ResponseMeta[],
@@ -34,7 +58,7 @@ export function detectMixedContent(
       const attrs = n.attributes ?? {};
       const tag = n.tagName?.toLowerCase();
       const urls: unknown[] = [attrs.src];
-      if (tag === 'link') urls.push(attrs.href);
+      if (tag === 'link' && linkLoadsSubresource(attrs.rel)) urls.push(attrs.href);
       for (const u of urls) {
         if (typeof u !== 'string' || !u.startsWith('http://') || seen.has(u)) continue;
         seen.add(u);

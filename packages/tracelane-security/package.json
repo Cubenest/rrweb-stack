@@ -1,6 +1,6 @@
 {
   "name": "@tracelane/security",
-  "version": "0.1.0",
+  "version": "0.1.0-alpha.0",
   "description": "Advisory, low-false-positive security-hygiene signals derived from a captured rrweb/console/network event stream. Pure analysis; advisory only, not a security audit.",
   "keywords": ["tracelane", "security", "security-hygiene", "rrweb", "static-analysis", "advisory"],
   "license": "Apache-2.0",
