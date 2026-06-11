@@ -75,4 +75,23 @@ describe('detectReverseTabnabbing', () => {
       detectReverseTabnabbing([fullSnapshot([anchor({ target: '_blank' })])])[0]?.evidence,
     ).toBe('(no href)');
   });
+  it('is case-insensitive on target and rel', () => {
+    expect(
+      detectReverseTabnabbing([fullSnapshot([anchor({ target: '_BLANK', href: 'https://up' })])]),
+    ).toHaveLength(1);
+    expect(
+      detectReverseTabnabbing([
+        fullSnapshot([anchor({ target: '_BLANK', rel: 'NOOPENER', href: 'https://up2' })]),
+      ]),
+    ).toEqual([]);
+  });
+  it('flags two distinct hrefs (dedup is per-href, not global)', () => {
+    const f = detectReverseTabnabbing([
+      fullSnapshot([
+        anchor({ target: '_blank', href: 'https://a' }),
+        anchor({ target: '_blank', href: 'https://b' }),
+      ]),
+    ]);
+    expect(f).toHaveLength(2);
+  });
 });
