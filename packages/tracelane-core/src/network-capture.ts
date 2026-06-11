@@ -29,10 +29,14 @@ import type { BrowserExecutor } from './browser-executor.js';
 /** The fields of a CDP `Network.responseReceived` event we read (P1 PRD §E.1). */
 interface ResponseReceivedEvent {
   requestId?: string;
+  /** Resource type; `'Document'` marks the top-level (main) document load. */
+  type?: string;
   response?: {
     url?: string;
     status?: number;
     requestHeaders?: Record<string, string>;
+    /** Response headers (case-preserving). Note: omits `Set-Cookie`. */
+    headers?: Record<string, string>;
   };
 }
 
@@ -43,6 +47,8 @@ interface ResponseReceivedEvent {
  */
 interface RequestWillBeSentEvent {
   requestId?: string;
+  /** Resource type; `'Document'` marks the top-level (main) document request. */
+  type?: string;
   request?: {
     url?: string;
     method?: string;
@@ -55,6 +61,105 @@ interface LoadingFailedEvent {
   errorText?: string;
   /** Present when the load was cancelled rather than failed; still a no-response. */
   canceled?: boolean;
+}
+
+/**
+ * Fields of a CDP `Network.responseReceivedExtraInfo` we read. This event (NOT
+ * `responseReceived`) is where CDP exposes the raw `Set-Cookie` response header;
+ * `responseReceived.response.headers` omits it. We read FLAG PRESENCE + cookie
+ * NAME only — never the cookie value (privacy invariant, P1 security MVP).
+ */
+interface ResponseReceivedExtraInfoEvent {
+  requestId?: string;
+  headers?: Record<string, string>;
+}
+
+/** Options for {@link attachNetworkCapture}. */
+export interface AttachNetworkCaptureOptions {
+  /**
+   * Capture privacy-safe MAIN-DOCUMENT response metadata (security-header
+   * PRESENCE + cookie FLAGS only) on a `[tracelane.sec]` console line. Default
+   * `true`; set `false` to fully disable — the `[tracelane.net]` behavior is
+   * unaffected either way.
+   */
+  security?: boolean;
+}
+
+/**
+ * The fixed allowlist of security-relevant response-header names whose PRESENCE
+ * (never value) we surface. Lowercased; CDP header keys are case-preserving so
+ * presence checks compare case-insensitively.
+ */
+const SEC_HEADER_ALLOWLIST = [
+  'content-security-policy',
+  'strict-transport-security',
+  'x-frame-options',
+  'x-content-type-options',
+  'referrer-policy',
+] as const;
+
+/** A privacy-safe per-cookie record: NAME + flag presence booleans only. */
+interface CookieFlags {
+  name: string;
+  secure: boolean;
+  httpOnly: boolean;
+  sameSite: boolean;
+}
+
+/** The privacy-safe main-document response metadata carried on `[tracelane.sec]`. */
+interface ResponseMeta {
+  url: string;
+  status: number;
+  isMainDocument: true;
+  presentSecurityHeaders: string[];
+  setCookies: CookieFlags[];
+}
+
+/**
+ * Return the allowlisted security-header NAMES present in `headers` (lowercased).
+ * Pure; never reads or returns any header VALUE.
+ */
+function presentSecurityHeaders(
+  headers: Record<string, string> | undefined,
+  allow: readonly string[],
+): string[] {
+  if (!headers) return [];
+  const lower = new Set(Object.keys(headers).map((k) => k.toLowerCase()));
+  return allow.filter((h) => lower.has(h));
+}
+
+/**
+ * Parse a CDP `set-cookie` header into per-cookie FLAG PRESENCE records. CDP
+ * joins multiple Set-Cookie headers with newlines. Captures only the cookie
+ * NAME (left of the first `=`) and three flag booleans — NEVER the value.
+ */
+function parseSetCookies(setCookieHeader: string | undefined): CookieFlags[] {
+  if (!setCookieHeader) return [];
+  return setCookieHeader
+    .split('\n')
+    .map((l) => l.trim())
+    .filter(Boolean)
+    .map((line) => {
+      const name = (line.split('=', 1)[0] ?? '').trim();
+      const low = line.toLowerCase();
+      return {
+        name,
+        secure: /(?:^|;)\s*secure(?:\s*;|\s*$)/.test(low),
+        httpOnly: /(?:^|;)\s*httponly(?:\s*;|\s*$)/.test(low),
+        sameSite: /(?:^|;)\s*samesite\s*=/.test(low),
+      };
+    });
+}
+
+/**
+ * Page-side logger for the `[tracelane.sec]` line. Self-contained (no Node
+ * closures) so it can be `.toString()`-serialized by `execute` (PRD §A.4),
+ * mirroring `logNetworkErrorInPage`. The console plugin captures this
+ * `console.error`; the `[tracelane.sec]` prefix lets the report scrape it back
+ * out. The payload is a pre-stringified JSON `ResponseMeta`.
+ */
+function logResponseMetaInPage(metaJson: string): void {
+  console.error(`[tracelane.sec] ${metaJson}`);
 }
 
 /** Status sentinel for a request that produced no response (a true 0 once parsed). */
@@ -103,7 +208,11 @@ function methodOf(headers: Record<string, string> | undefined): string {
  * either succeeded (`responseReceived`) or failed (`loadingFailed`) so the map
  * can't grow unbounded over a long session.
  */
-export async function attachNetworkCapture(executor: BrowserExecutor): Promise<void> {
+export async function attachNetworkCapture(
+  executor: BrowserExecutor,
+  options: AttachNetworkCaptureOptions = {},
+): Promise<void> {
+  const security = options.security !== false;
   await executor.cdp('Network', 'enable');
 
   // Correlation map: a `loadingFailed` carries only a requestId, so remember the
@@ -120,6 +229,42 @@ export async function attachNetworkCapture(executor: BrowserExecutor): Promise<v
       });
   };
 
+  // --- Privacy-safe main-document security metadata ([tracelane.sec]) ---------
+  // We track the top-level document's requestId, then assemble a ResponseMeta
+  // from `responseReceived` (header presence) + `responseReceivedExtraInfo`
+  // (cookie flags). Either may arrive first; we emit ONCE when we first have the
+  // response part, and fold in extraInfo if it has already arrived (or wait for
+  // it briefly via the microtask the fire-and-forget execute already implies).
+  // To stay robust to ordering without blocking, we emit on whichever of the two
+  // "completes" the main-doc picture: emit on `responseReceived`, but if
+  // extraInfo arrived first we already stashed its cookies, and if extraInfo
+  // arrives after we re-emit only if we had NOT already emitted. We guard with an
+  // `emitted` flag so we never emit twice.
+  let mainDocId: string | undefined;
+  let mainDocMeta: ResponseMeta | undefined;
+  let mainDocCookies: CookieFlags[] | undefined;
+  let mainDocEmitted = false;
+
+  const emitSec = (meta: ResponseMeta): void => {
+    if (mainDocEmitted) return;
+    mainDocEmitted = true;
+    void executor
+      .execute(logResponseMetaInPage as (...args: unknown[]) => void, JSON.stringify(meta))
+      .catch(() => {
+        /* page may be navigating; drop this one line */
+      });
+  };
+
+  // Try to emit once we have the response part. Fold in cookies if extraInfo has
+  // already landed; otherwise emit with whatever cookies we have (possibly []).
+  // We only call this from `responseReceived`, so extraInfo arriving later (after
+  // we've emitted) is a no-op — the guard prevents a double emit.
+  const tryEmitSec = (): void => {
+    if (!mainDocMeta) return;
+    if (mainDocCookies) mainDocMeta.setCookies = mainDocCookies;
+    emitSec(mainDocMeta);
+  };
+
   executor.on('Network.requestWillBeSent', (params: unknown) => {
     const e = params as RequestWillBeSentEvent;
     const id = e?.requestId;
@@ -127,7 +272,30 @@ export async function attachNetworkCapture(executor: BrowserExecutor): Promise<v
     if (typeof id !== 'string' || typeof url !== 'string') return;
     const method = typeof e.request?.method === 'string' ? e.request.method : 'GET';
     inflight.set(id, { method, url });
+    // Remember the top-level document's requestId so we can attach security meta
+    // to its response. Only the first Document wins (the main navigation).
+    if (security && e.type === 'Document' && mainDocId === undefined) {
+      mainDocId = id;
+    }
   });
+
+  if (security) {
+    executor.on('Network.responseReceivedExtraInfo', (params: unknown) => {
+      const e = params as ResponseReceivedExtraInfoEvent;
+      if (typeof e?.requestId !== 'string' || e.requestId !== mainDocId) return;
+      // CDP exposes Set-Cookie here (header keys are typically lowercased in
+      // extra-info), not on responseReceived.response.headers.
+      const headers = e.headers ?? {};
+      const setCookieKey = Object.keys(headers).find((k) => k.toLowerCase() === 'set-cookie');
+      const cookies = parseSetCookies(setCookieKey ? headers[setCookieKey] : undefined);
+      mainDocCookies = cookies;
+      // If the response part already arrived and emitted, this is a no-op (the
+      // emit guard holds). If it arrived but we had no cookies yet, re-fold and
+      // emit now. If the response part has NOT arrived yet, just stash; the
+      // responseReceived handler will fold these in.
+      if (mainDocMeta && !mainDocEmitted) tryEmitSec();
+    });
+  }
 
   executor.on('Network.responseReceived', (params: unknown) => {
     const e = params as ResponseReceivedEvent;
@@ -141,6 +309,25 @@ export async function attachNetworkCapture(executor: BrowserExecutor): Promise<v
     // loadingFailed; drop it from the map regardless of status.
     const tracked = typeof id === 'string' ? inflight.get(id) : undefined;
     if (typeof id === 'string') inflight.delete(id);
+
+    // Main-document security metadata. Per CDP, responseReceivedExtraInfo fires
+    // BEFORE responseReceived, so any cookies have usually already been stashed;
+    // we fold them in and emit ONCE here. If extraInfo never comes, we still emit
+    // with `setCookies: []`. The emit guard prevents a double emit if a stray
+    // extraInfo arrives afterwards.
+    if (security && typeof id === 'string' && id === mainDocId && !mainDocEmitted) {
+      const status = response?.status;
+      const meta: ResponseMeta = {
+        url: response?.url ?? '',
+        status: typeof status === 'number' ? status : 0,
+        isMainDocument: true,
+        presentSecurityHeaders: presentSecurityHeaders(response?.headers, SEC_HEADER_ALLOWLIST),
+        setCookies: mainDocCookies ?? [],
+      };
+      mainDocMeta = meta;
+      tryEmitSec();
+    }
+
     const status = response?.status;
     if (typeof status !== 'number' || status < 400) return;
     const url = response?.url ?? '';
@@ -163,5 +350,12 @@ export async function attachNetworkCapture(executor: BrowserExecutor): Promise<v
   });
 }
 
-// Exposed for unit tests: the page-side logger + method resolver are pure.
-export const __internal = { logNetworkErrorInPage, methodOf };
+// Exposed for unit tests: the page-side loggers + pure resolvers/parsers.
+export const __internal = {
+  logNetworkErrorInPage,
+  methodOf,
+  logResponseMetaInPage,
+  presentSecurityHeaders,
+  parseSetCookies,
+  SEC_HEADER_ALLOWLIST,
+};

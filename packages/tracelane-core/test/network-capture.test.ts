@@ -183,7 +183,265 @@ describe('attachNetworkCapture', () => {
   });
 });
 
+// Task 8 / P1 security MVP: a privacy-safe [tracelane.sec] line carrying
+// MAIN-DOCUMENT response metadata — security-header PRESENCE + cookie FLAGS
+// ONLY, never values. The emit pattern mirrors [tracelane.net]: a self-contained
+// page-side logger passed to executor.execute, fire-and-forget.
+describe('attachNetworkCapture — [tracelane.sec] response metadata', () => {
+  // Pull the single [tracelane.sec] emission out of the execute mock by running
+  // each captured page-side logger and inspecting what it would console.error.
+  function secEmissions(execute: ReturnType<typeof vi.fn>): string[] {
+    const lines: string[] = [];
+    const spy = vi.spyOn(console, 'error').mockImplementation((...a: unknown[]) => {
+      const first = a[0];
+      if (typeof first === 'string' && first.startsWith('[tracelane.sec]')) lines.push(first);
+    });
+    for (const call of execute.mock.calls) {
+      const fn = call[0] as ((...args: unknown[]) => void) | undefined;
+      if (typeof fn === 'function') fn(...call.slice(1));
+    }
+    spy.mockRestore();
+    return lines;
+  }
+
+  function netEmissions(execute: ReturnType<typeof vi.fn>): string[] {
+    const lines: string[] = [];
+    const spy = vi.spyOn(console, 'error').mockImplementation((...a: unknown[]) => {
+      const first = a[0];
+      if (typeof first === 'string' && first.startsWith('[tracelane.net]')) lines.push(first);
+    });
+    for (const call of execute.mock.calls) {
+      const fn = call[0] as ((...args: unknown[]) => void) | undefined;
+      if (typeof fn === 'function') fn(...call.slice(1));
+    }
+    spy.mockRestore();
+    return lines;
+  }
+
+  function parseSec(line: string): {
+    url: string;
+    status: number;
+    isMainDocument: boolean;
+    presentSecurityHeaders: string[];
+    setCookies: { name: string; secure: boolean; httpOnly: boolean; sameSite: boolean }[];
+  } {
+    return JSON.parse(line.slice('[tracelane.sec] '.length));
+  }
+
+  it('emits exactly one privacy-safe [tracelane.sec] line for the main document', async () => {
+    const m = mockExecutor();
+    await attachNetworkCapture(m.executor);
+
+    // Main-document request (CDP marks it type: 'Document').
+    m.fire(
+      {
+        requestId: 'doc-1',
+        type: 'Document',
+        request: { url: 'https://shop.demo/', method: 'GET' },
+      },
+      'Network.requestWillBeSent',
+    );
+    // Per CDP, responseReceivedExtraInfo fires BEFORE responseReceived. Set-Cookie
+    // carries a real value — the emitted line must NEVER contain it.
+    m.fire(
+      {
+        requestId: 'doc-1',
+        headers: { 'set-cookie': 'sid=secretvalue; HttpOnly' },
+      },
+      'Network.responseReceivedExtraInfo',
+    );
+    // Response with real-looking header VALUES for some allowlisted headers.
+    m.fire(
+      {
+        requestId: 'doc-1',
+        type: 'Document',
+        response: {
+          url: 'https://shop.demo/',
+          status: 200,
+          headers: {
+            'Content-Security-Policy': "default-src 'self'; script-src 'unsafe-inline'",
+            'X-Frame-Options': 'DENY',
+            'Content-Type': 'text/html; charset=utf-8',
+          },
+        },
+      },
+      'Network.responseReceived',
+    );
+
+    const lines = secEmissions(m.execute);
+    expect(lines).toHaveLength(1);
+
+    const meta = parseSec(lines[0] as string);
+    expect(meta.isMainDocument).toBe(true);
+    expect(meta.url).toBe('https://shop.demo/');
+    expect(meta.status).toBe(200);
+    expect([...meta.presentSecurityHeaders].sort()).toEqual(
+      ['content-security-policy', 'x-frame-options'].sort(),
+    );
+    expect(meta.setCookies).toEqual([
+      { name: 'sid', secure: false, httpOnly: true, sameSite: false },
+    ]);
+
+    // PRIVACY INVARIANT: no header VALUE and no cookie VALUE may leak.
+    const raw = lines[0] as string;
+    expect(raw).not.toContain("default-src 'self'");
+    expect(raw).not.toContain('unsafe-inline');
+    expect(raw).not.toContain('DENY');
+    expect(raw).not.toContain('secretvalue');
+  });
+
+  it('emits a [tracelane.sec] line on responseReceived even if extraInfo never arrives', async () => {
+    const m = mockExecutor();
+    await attachNetworkCapture(m.executor);
+    m.fire(
+      { requestId: 'doc-2', type: 'Document', request: { url: 'https://x.test/', method: 'GET' } },
+      'Network.requestWillBeSent',
+    );
+    m.fire(
+      {
+        requestId: 'doc-2',
+        type: 'Document',
+        response: {
+          url: 'https://x.test/',
+          status: 200,
+          headers: { 'Strict-Transport-Security': 'max-age=63072000' },
+        },
+      },
+      'Network.responseReceived',
+    );
+    // No extraInfo. Flush via the same microtask the emit uses is unnecessary —
+    // emit-on-responseReceived is synchronous here.
+    const lines = secEmissions(m.execute);
+    expect(lines).toHaveLength(1);
+    const meta = parseSec(lines[0] as string);
+    expect(meta.presentSecurityHeaders).toEqual(['strict-transport-security']);
+    expect(meta.setCookies).toEqual([]);
+    expect(lines[0]).not.toContain('63072000');
+  });
+
+  it('handles extraInfo arriving BEFORE responseReceived (emits once)', async () => {
+    const m = mockExecutor();
+    await attachNetworkCapture(m.executor);
+    m.fire(
+      { requestId: 'doc-3', type: 'Document', request: { url: 'https://y.test/', method: 'GET' } },
+      'Network.requestWillBeSent',
+    );
+    m.fire(
+      { requestId: 'doc-3', headers: { 'set-cookie': 'a=1; Secure; SameSite=Lax' } },
+      'Network.responseReceivedExtraInfo',
+    );
+    m.fire(
+      {
+        requestId: 'doc-3',
+        type: 'Document',
+        response: {
+          url: 'https://y.test/',
+          status: 200,
+          headers: { 'Referrer-Policy': 'no-referrer' },
+        },
+      },
+      'Network.responseReceived',
+    );
+    const lines = secEmissions(m.execute);
+    expect(lines).toHaveLength(1);
+    const meta = parseSec(lines[0] as string);
+    expect(meta.presentSecurityHeaders).toEqual(['referrer-policy']);
+    expect(meta.setCookies).toEqual([{ name: 'a', secure: true, httpOnly: false, sameSite: true }]);
+  });
+
+  it('does not emit a [tracelane.sec] line for a non-document (subresource) response', async () => {
+    const m = mockExecutor();
+    await attachNetworkCapture(m.executor);
+    m.fire(
+      {
+        requestId: 'img-1',
+        type: 'Image',
+        request: { url: 'https://shop.demo/logo.png', method: 'GET' },
+      },
+      'Network.requestWillBeSent',
+    );
+    m.fire(
+      {
+        requestId: 'img-1',
+        type: 'Image',
+        response: { url: 'https://shop.demo/logo.png', status: 200, headers: {} },
+      },
+      'Network.responseReceived',
+    );
+    expect(secEmissions(m.execute)).toHaveLength(0);
+  });
+
+  it('with security:false, NO [tracelane.sec] line is emitted but [tracelane.net] is unchanged', async () => {
+    const m = mockExecutor();
+    await attachNetworkCapture(m.executor, { security: false });
+    // Main-document flow that WOULD emit a sec line if enabled.
+    m.fire(
+      { requestId: 'doc-x', type: 'Document', request: { url: 'https://z.test/', method: 'GET' } },
+      'Network.requestWillBeSent',
+    );
+    m.fire(
+      {
+        requestId: 'doc-x',
+        type: 'Document',
+        response: { url: 'https://z.test/', status: 200, headers: { 'X-Frame-Options': 'DENY' } },
+      },
+      'Network.responseReceived',
+    );
+    m.fire(
+      { requestId: 'doc-x', headers: { 'set-cookie': 'sid=secret; HttpOnly' } },
+      'Network.responseReceivedExtraInfo',
+    );
+    expect(secEmissions(m.execute)).toHaveLength(0);
+
+    // [tracelane.net] behavior unchanged: a 500 still routes a net line.
+    m.fire({ response: { url: 'https://z.test/api', status: 500 } });
+    const net = netEmissions(m.execute);
+    expect(net).toHaveLength(1);
+    expect(net[0]).toContain('[tracelane.net] GET 500 https://z.test/api');
+  });
+});
+
 describe('network-capture internals', () => {
+  it('presentSecurityHeaders returns lowercased allowlisted names present', () => {
+    const present = __internal.presentSecurityHeaders(
+      {
+        'Content-Security-Policy': "default-src 'self'",
+        'X-Frame-Options': 'DENY',
+        'Content-Type': 'text/html',
+      },
+      __internal.SEC_HEADER_ALLOWLIST,
+    );
+    expect([...present].sort()).toEqual(['content-security-policy', 'x-frame-options'].sort());
+    expect(__internal.presentSecurityHeaders(undefined, __internal.SEC_HEADER_ALLOWLIST)).toEqual(
+      [],
+    );
+  });
+
+  it('parseSetCookies extracts NAME + flag presence only, never values', () => {
+    expect(__internal.parseSetCookies('sid=secretvalue; HttpOnly')).toEqual([
+      { name: 'sid', secure: false, httpOnly: true, sameSite: false },
+    ]);
+    expect(__internal.parseSetCookies('a=1; Secure; HttpOnly; SameSite=Strict')).toEqual([
+      { name: 'a', secure: true, httpOnly: true, sameSite: true },
+    ]);
+    // Multiple cookies joined with newlines (CDP form).
+    expect(__internal.parseSetCookies('x=1; Secure\ny=2; HttpOnly')).toEqual([
+      { name: 'x', secure: true, httpOnly: false, sameSite: false },
+      { name: 'y', secure: false, httpOnly: true, sameSite: false },
+    ]);
+    expect(__internal.parseSetCookies(undefined)).toEqual([]);
+    // No value leak.
+    const out = JSON.stringify(__internal.parseSetCookies('token=abc.def.ghi; Secure'));
+    expect(out).not.toContain('abc.def.ghi');
+  });
+
+  it('logResponseMetaInPage writes a [tracelane.sec]-prefixed console.error', () => {
+    const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    __internal.logResponseMetaInPage('{"url":"u"}');
+    expect(spy).toHaveBeenCalledWith('[tracelane.sec] {"url":"u"}');
+    spy.mockRestore();
+  });
+
   it('methodOf reads :method, falls back to method, then GET', () => {
     expect(__internal.methodOf({ ':method': 'PUT' })).toBe('PUT');
     expect(__internal.methodOf({ method: 'DELETE' })).toBe('DELETE');
