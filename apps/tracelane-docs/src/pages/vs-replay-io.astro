@@ -63,6 +63,11 @@ import Layout from '../layouts/Layout.astro';
         <td>Replay has a developer API and is adding AI features, but there is no MCP surface. An agent that wants to query a recording must use their SDK/API.</td>
       </tr>
       <tr>
+        <td><strong>Security-hygiene signals</strong></td>
+        <td>Surfaces advisory, OWASP-aligned hygiene signals &mdash; missing security headers, insecure cookies, mixed content, reverse tabnabbing &mdash; right in the failed-test report and in the Copy-as-Markdown-for-AI output. Advisory, not a scanner.</td>
+        <td>No. Replay records the JS execution for debugging; it does not surface security-hygiene signals.</td>
+      </tr>
+      <tr>
         <td><strong>Runner support</strong></td>
         <td>WebdriverIO (service) and Playwright (reporter + fixture) today. Cypress on the roadmap.</td>
         <td>Playwright, Cypress, Jest, Puppeteer &mdash; wherever you can swap in the Replay browser runtime.</td>
