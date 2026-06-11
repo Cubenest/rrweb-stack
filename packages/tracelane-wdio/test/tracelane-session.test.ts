@@ -326,27 +326,64 @@ describe.skipIf(!bundleBuilt)('TraceLaneSession — security toggle (Task 13)', 
     expect(cdpCalls).toHaveLength(1);
   });
 
-  it('security:false renders no advisory section in the report', async () => {
+  // A page buffer that carries a real `[tracelane.sec]` console-plugin line the
+  // analyzer turns into findings: HTTPS main document with NO security headers
+  // ⇒ missing-CSP/HSTS/etc. The sec line is recorded the way the rrweb console
+  // plugin records a console.error (EventType.Plugin / 'rrweb/console@1', string
+  // args JSON-encoded under data.payload.payload), mirroring @tracelane/security's
+  // own tests. Plus the minimal meta + FullSnapshot events the report renders.
+  function seedPageBufferWithSecFinding(): void {
+    const meta = {
+      url: 'https://app.test/',
+      status: 200,
+      isMainDocument: true,
+      presentSecurityHeaders: [],
+      setCookies: [],
+    };
+    seedPageBuffer([
+      { type: 4, data: { href: 'https://app.test', width: 800, height: 600 }, timestamp: 1 },
+      { type: 2, data: { node: {}, initialOffset: { left: 0, top: 0 } }, timestamp: 2 },
+      {
+        type: 6, // EventType.Plugin
+        timestamp: 3,
+        data: {
+          plugin: 'rrweb/console@1',
+          payload: {
+            level: 'error',
+            payload: [JSON.stringify(`[tracelane.sec] ${JSON.stringify(meta)}`)],
+          },
+        },
+      },
+    ]);
+  }
+
+  async function renderReportHtml(security: boolean): Promise<string> {
     const outDir = join(tmpdir(), `tl-sec-${Date.now()}-${Math.random().toString(36).slice(2)}`);
     try {
-      const session = new TraceLaneSession(
-        { mode: 'all', outDir, security: false },
-        'mocha',
-        '0-0',
-      );
+      const session = new TraceLaneSession({ mode: 'all', outDir, security }, 'mocha', '0-0');
       const browser = mockBrowser({ cdpWorks: true });
       await session.onBefore(browser);
       await session.onBeforeTest('a test', 'test/sec.spec.ts');
-      seedPageBuffer([
-        { type: 4, data: { href: 'https://app.test', width: 800, height: 600 }, timestamp: 1 },
-      ]);
+      seedPageBufferWithSecFinding();
       const path = (await session.onAfterTest({ passed: true, duration: 5 })) as string;
-      const html = readFileSync(path, 'utf8');
-      // The security analyzer was not run; the advisory signal id text is absent.
-      expect(html).not.toContain('tracelane.sec');
+      return readFileSync(path, 'utf8');
     } finally {
       rmSync(outDir, { recursive: true, force: true });
     }
+  }
+
+  it('security default (on): the report renders the advisory hygiene section', async () => {
+    // The same sec line that produces findings below — with security on, analyze()
+    // runs and the markdown carries the advisory section.
+    const html = await renderReportHtml(true);
+    expect(html).toContain('Security hygiene (advisory)');
+  });
+
+  it('security:false: the report omits the advisory hygiene section', async () => {
+    // Identical events; with security off, analyze() is skipped and the section
+    // is absent. The pair proves the flag flips report behavior.
+    const html = await renderReportHtml(false);
+    expect(html).not.toContain('Security hygiene (advisory)');
   });
 });
 
