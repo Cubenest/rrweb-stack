@@ -1,7 +1,13 @@
 import { EventType, IncrementalSource, MouseInteractions } from '@cubenest/rrweb-core';
 import type { eventWithTime } from '@cubenest/rrweb-core';
+import type { SecurityFinding } from '@tracelane/security';
 import { describe, expect, it } from 'vitest';
-import { MAX_CONSOLE_MESSAGES, buildMarkdown, extractActionLog } from '../src/markdown';
+import {
+  type ActionEntry,
+  MAX_CONSOLE_MESSAGES,
+  buildMarkdown,
+  extractActionLog,
+} from '../src/markdown';
 import type { ConsoleEntry, NetworkEntry } from '../src/panels';
 import type { ReportMeta } from '../src/types';
 
@@ -130,5 +136,51 @@ describe('buildMarkdown (Task 2.12 / P1 PRD §F.3)', () => {
     expect(md).toContain('## Last 0 console messages');
     expect(md).toContain('_None captured._');
     expect(md).toContain('_No user actions captured._');
+  });
+});
+
+describe('buildMarkdown — advisory security section (Task 10)', () => {
+  const consoleRows: ConsoleEntry[] = [];
+  const networkRows: NetworkEntry[] = [];
+  const actions: ActionEntry[] = [];
+  const findings: SecurityFinding[] = [
+    {
+      id: 'missing-security-header:content-security-policy',
+      signal: 'missing-security-header',
+      severity: 'medium',
+      title: 'Missing Content-Security-Policy',
+      detail: 'The main document response had no Content-Security-Policy header.',
+      evidence: 'https://app.test/',
+      advisory: true,
+    },
+    {
+      id: 'insecure-cookie:sid',
+      signal: 'insecure-cookie',
+      severity: 'high',
+      title: 'Cookie set without Secure flag',
+      detail: 'Cookie "sid" was set without the Secure attribute over HTTPS.',
+      evidence: 'sid',
+      advisory: true,
+    },
+  ];
+
+  it('emits the advisory heading, disclaimer, and one bullet per finding when findings are passed', () => {
+    const md = buildMarkdown(META, consoleRows, networkRows, actions, findings);
+    expect(md).toContain('## Security hygiene (advisory)');
+    expect(md).toContain(
+      '_Observed during the test run — advisory hygiene signals, not a security audit._',
+    );
+    expect(md).toContain('- [medium] Missing Content-Security-Policy — https://app.test/');
+    expect(md).toContain('- [high] Cookie set without Secure flag — sid');
+  });
+
+  it('omits the security section entirely when no findings are passed', () => {
+    const md = buildMarkdown(META, consoleRows, networkRows, actions, []);
+    expect(md).not.toContain('## Security hygiene (advisory)');
+  });
+
+  it('omits the security section when the findings argument is defaulted', () => {
+    const md = buildMarkdown(META, consoleRows, networkRows, actions);
+    expect(md).not.toContain('## Security hygiene (advisory)');
   });
 });
