@@ -284,6 +284,72 @@ describe.skipIf(!bundleBuilt)('TraceLaneSession — network capture degrade (#2)
   });
 });
 
+describe.skipIf(!bundleBuilt)('TraceLaneSession — security toggle (Task 13)', () => {
+  let warnSpy: ReturnType<typeof vi.spyOn>;
+
+  beforeEach(() => {
+    resetPageState();
+    warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+  });
+
+  afterEach(() => {
+    warnSpy.mockRestore();
+  });
+
+  /** The CDP event names the session subscribed to via `executor.on(...)`. */
+  function registeredCdpEvents(browser: MockBrowser): string[] {
+    return (browser.on as ReturnType<typeof vi.fn>).mock.calls.map((c) => c[0] as string);
+  }
+
+  it('registers the [tracelane.sec] extra-info listener by default (security on)', async () => {
+    const session = new TraceLaneSession({ mode: 'all' }, 'mocha', '0-0');
+    const browser = mockBrowser({ cdpWorks: true });
+    await session.onBefore(browser);
+    await session.onBeforeTest('a test', 'test/x.spec.ts');
+    // attachNetworkCapture(executor, { security: true }) registers the
+    // sec-only responseReceivedExtraInfo handler.
+    expect(registeredCdpEvents(browser)).toContain('Network.responseReceivedExtraInfo');
+  });
+
+  it('does NOT register the [tracelane.sec] listener when security:false', async () => {
+    const session = new TraceLaneSession({ mode: 'all', security: false }, 'mocha', '0-0');
+    const browser = mockBrowser({ cdpWorks: true });
+    await session.onBefore(browser);
+    await session.onBeforeTest('a test', 'test/x.spec.ts');
+    // security:false threads { security: false } to attachNetworkCapture, which
+    // then skips the responseReceivedExtraInfo subscription entirely.
+    expect(registeredCdpEvents(browser)).not.toContain('Network.responseReceivedExtraInfo');
+    // The [tracelane.net] failure path is unaffected — Network.enable still ran.
+    const cdpCalls = (browser.cdp as ReturnType<typeof vi.fn>).mock.calls.filter(
+      (c) => c[0] === 'Network' && c[1] === 'enable',
+    );
+    expect(cdpCalls).toHaveLength(1);
+  });
+
+  it('security:false renders no advisory section in the report', async () => {
+    const outDir = join(tmpdir(), `tl-sec-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+    try {
+      const session = new TraceLaneSession(
+        { mode: 'all', outDir, security: false },
+        'mocha',
+        '0-0',
+      );
+      const browser = mockBrowser({ cdpWorks: true });
+      await session.onBefore(browser);
+      await session.onBeforeTest('a test', 'test/sec.spec.ts');
+      seedPageBuffer([
+        { type: 4, data: { href: 'https://app.test', width: 800, height: 600 }, timestamp: 1 },
+      ]);
+      const path = (await session.onAfterTest({ passed: true, duration: 5 })) as string;
+      const html = readFileSync(path, 'utf8');
+      // The security analyzer was not run; the advisory signal id text is absent.
+      expect(html).not.toContain('tracelane.sec');
+    } finally {
+      rmSync(outDir, { recursive: true, force: true });
+    }
+  });
+});
+
 describe.skipIf(!bundleBuilt)('TraceLaneSession — no teardown drain (#5)', () => {
   let outDir: string;
   let warnSpy: ReturnType<typeof vi.spyOn>;

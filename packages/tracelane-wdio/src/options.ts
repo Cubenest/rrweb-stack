@@ -71,6 +71,8 @@ export interface TraceLaneOptions {
   cooldownMs?: number;
   /** Options forwarded to the in-page rrweb console plugin. */
   consolePluginOptions?: ConsolePluginOptions;
+  /** Advisory security-hygiene signals in the report (default true). Set false to disable capture + analysis. */
+  security?: boolean;
   /**
    * Report-output tweaks.
    *

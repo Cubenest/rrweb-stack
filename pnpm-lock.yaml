@@ -273,6 +273,9 @@ importers:
       '@tracelane/report':
         specifier: workspace:*
         version: link:../tracelane-report
+      '@tracelane/security':
+        specifier: workspace:*
+        version: link:../tracelane-security
     devDependencies:
       '@cubenest/rrweb-core':
         specifier: workspace:*
