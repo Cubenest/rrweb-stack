@@ -53,7 +53,7 @@ export const config: Options.Testrunner = {
   async onPrepare() {
     server = createServer((req, res) => {
       if (req.url === '/' || req.url === '/index.html') {
-        res.writeHead(200, { 'content-type': 'text/html' });
+        res.writeHead(200, { 'content-type': 'text/html', 'set-cookie': 'demo_session=abc123' });
         res.end(fixtureHtml);
         return;
       }

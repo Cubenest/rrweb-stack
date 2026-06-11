@@ -36,6 +36,8 @@ open tracelane-reports/*.html         # opens the offline replay (macOS)
 
 Three signal types in one report: rrweb DOM mutations, console log line, failed network call.
 
+The fixture also exercises tracelane's advisory security-hygiene layer: the page serves a deliberately insecure `Set-Cookie` (`demo_session=abc123`, no `Secure`/`HttpOnly`/`SameSite`) and includes a `target="_blank"` link with no `rel="noopener"`, so the **insecure-cookie** and **reverse-tabnabbing** signals fire on this local http fixture. The **missing-headers** and **mixed-content** signals are HTTPS-gated and only appear on real HTTPS pages, so they won't show up against the `127.0.0.1` fixture.
+
 ## What `passing.spec.ts` does
 
 The same nav + a true assertion. Test passes. **No report** should be written (ADR-0005 failed-only quota gate).
