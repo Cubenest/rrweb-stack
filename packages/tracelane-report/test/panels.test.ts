@@ -6,6 +6,7 @@ import {
   NETWORK_CONSOLE_PREFIX,
   NETWORK_EVENT_TAG,
   NETWORK_PLUGIN,
+  SEC_CONSOLE_PREFIX,
   extractConsole,
   extractNetwork,
 } from '../src/panels';
@@ -360,6 +361,23 @@ describe('extractConsole — [tracelane.net] filtering (audit A-4)', () => {
   it('drops [tracelane.net] CDP network lines so a failure is not double-rendered', () => {
     const rows = extractConsole([
       consoleEvent('error', [`"${NETWORK_CONSOLE_PREFIX} GET 404 https://api/me"`], 5),
+      consoleEvent('log', ['"a normal log line"'], 6),
+    ]);
+    expect(rows).toEqual([{ level: 'log', message: 'a normal log line', timestamp: 6 }]);
+  });
+});
+
+describe('extractConsole — [tracelane.sec] filtering (Task 9)', () => {
+  it('drops [tracelane.sec] response-metadata lines so they never appear in the console panel', () => {
+    const meta = {
+      url: 'https://app.test/',
+      status: 200,
+      isMainDocument: true,
+      presentSecurityHeaders: [],
+      setCookies: [],
+    };
+    const rows = extractConsole([
+      consoleEvent('error', [`"${SEC_CONSOLE_PREFIX} ${JSON.stringify(meta)}"`], 5),
       consoleEvent('log', ['"a normal log line"'], 6),
     ]);
     expect(rows).toEqual([{ level: 'log', message: 'a normal log line', timestamp: 6 }]);

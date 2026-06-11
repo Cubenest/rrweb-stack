@@ -16,6 +16,8 @@
 
 import type { eventWithTime } from '@cubenest/rrweb-core';
 import { pruneToSizeBudget } from '@tracelane/core';
+import { analyze } from '@tracelane/security';
+import type { SecurityFinding, Suppression } from '@tracelane/security';
 import { encodeEventsBlob } from './embed.js';
 import { buildMarkdown, extractActionLog } from './markdown.js';
 import { resolveCiMetadata } from './metadata.js';
@@ -36,6 +38,18 @@ export interface BuildReportOptions {
    * audit A-8).
    */
   footer?: boolean;
+  /**
+   * Run the advisory `@tracelane/security` analyzer over the captured stream
+   * and surface its findings in the report (Markdown section + collapsed
+   * panel). Default true. Pass `false` to skip analysis entirely — `analyze`
+   * is not called and nothing security-related is rendered.
+   */
+  security?: boolean;
+  /**
+   * Suppressions forwarded to the analyzer (e.g. silence a known-acceptable
+   * signal/url). Ignored when `security` is `false`.
+   */
+  securitySuppress?: Suppression[];
 }
 
 /**
@@ -50,7 +64,12 @@ export function buildReport(
   meta: ReportMeta,
   options: BuildReportOptions = {},
 ): string {
-  const { enforceSizeBudget = true, footer = true } = options;
+  const {
+    enforceSizeBudget = true,
+    footer = true,
+    security = true,
+    securitySuppress = [],
+  } = options;
 
   // Keep the report within budget; surface a banner if anything was dropped.
   const { events: sized, pruned } = enforceSizeBudget
@@ -61,7 +80,12 @@ export function buildReport(
   const consoleRows = extractConsole(sized);
   const networkRows = extractNetwork(sized);
   const actions = extractActionLog(sized);
-  const markdown = buildMarkdown(resolvedMeta, consoleRows, networkRows, actions);
+  // Advisory security-hygiene analysis (default on). Runs over the SAME
+  // size-pruned events the other extractors consume; skipped when disabled.
+  const securityFindings: SecurityFinding[] = security
+    ? analyze(sized, { suppress: securitySuppress })
+    : [];
+  const markdown = buildMarkdown(resolvedMeta, consoleRows, networkRows, actions, securityFindings);
 
   // First/last event timestamps drive the hero meta strip's "Events" item,
   // the replay-header session-range label, and the failure marker on the
@@ -76,6 +100,7 @@ export function buildReport(
     eventsGzB64: encodeEventsBlob(sized),
     console: consoleRows,
     network: networkRows,
+    security: securityFindings,
     markdown,
     pruned,
     eventCount: sized.length,

@@ -1,3 +1,4 @@
+import { EventType } from '@cubenest/rrweb-core';
 import type { eventWithTime } from '@cubenest/rrweb-core';
 import type { BrowserExecutor } from './browser-executor.js';
 import { type Mode, resolveMode } from './mode.js';
@@ -92,6 +93,8 @@ export interface Recorder {
   finalize(outcome: TestOutcome): Promise<FinalizeResult>;
   /** The merged Node-side event buffer (live reference). */
   getBuffer(): eventWithTime[];
+  /** Append a Node-side rrweb Custom event directly to the buffer — immune to page navigation timing (unlike a page console.error). */
+  addCustomEvent(tag: string, payload: unknown): void;
 }
 
 /** Inject + eval the rrweb bundle string in the page (defines `window.rrweb`). */
@@ -99,6 +102,30 @@ function injectBundleScript(bundle: string): void {
   // window.eval runs the bundle in global page scope (so `window.rrweb` becomes
   // a real global), which is the intended injection behavior in the page context.
   (window as unknown as { eval: (code: string) => void }).eval(bundle);
+}
+
+/**
+ * Bounded retry for page-side re-injection. `framenavigated` can fire while the
+ * new document's execution context is still being (re)created, so the first
+ * page-evaluate races the navigation and throws "Execution context was
+ * destroyed". On a real (latency-bearing) navigation that single failure would
+ * otherwise be swallowed by the caller and silently lose ALL DOM capture on the
+ * new page. The context stabilizes within a few ms of navigation, so a short
+ * bounded retry reliably recovers recording.
+ */
+const REINJECT_MAX_ATTEMPTS = 6;
+const REINJECT_RETRY_MS = 100;
+
+/** True for the transient errors a page op throws when it races a navigation. */
+function isNavigationRace(err: unknown): boolean {
+  const msg = err instanceof Error ? err.message : String(err);
+  return /execution context was destroyed|context was destroyed|frame (was )?detached|target closed|because of a navigation/i.test(
+    msg,
+  );
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 export function createRecorder(options: RecorderOptions): Recorder {
@@ -142,18 +169,47 @@ export function createRecorder(options: RecorderOptions): Recorder {
   async function reinject(url: string): Promise<boolean> {
     // Re-eval the bundle (the page may have been torn down by navigation), then
     // re-run init. The init script's return value is the authority on whether a
-    // fresh recording started.
-    await executor.execute(injectBundleScript as (...args: unknown[]) => void, rrwebBundle);
-    const sid = await runInit();
-    if (sid === 0) return false; // cooldown-suppressed (same-doc hash/HMR); no nav boundary
-    await executor.execute(tracelaneNavScript as (...args: unknown[]) => void, url, Date.now());
-    return true;
+    // fresh recording started. Retry on navigation-race errors so a single
+    // page-evaluate that races the in-flight nav doesn't silently lose all DOM
+    // capture on the new page (the failure mode on real, latency-bearing sites).
+    let lastErr: unknown;
+    for (let attempt = 0; attempt < REINJECT_MAX_ATTEMPTS; attempt++) {
+      try {
+        await executor.execute(injectBundleScript as (...args: unknown[]) => void, rrwebBundle);
+        const sid = await runInit();
+        if (sid === 0) return false; // cooldown-suppressed (same-doc hash/HMR); no nav boundary
+        await executor.execute(tracelaneNavScript as (...args: unknown[]) => void, url, Date.now());
+        return true;
+      } catch (err) {
+        lastErr = err;
+        if (!isNavigationRace(err)) throw err; // a real failure, not a transient nav race
+        if (attempt < REINJECT_MAX_ATTEMPTS - 1) await sleep(REINJECT_RETRY_MS);
+      }
+    }
+    throw lastErr; // retries exhausted; the caller treats reinject as best-effort
+  }
+
+  function addCustomEvent(tag: string, payload: unknown): void {
+    buffer.push({
+      type: EventType.Custom,
+      timestamp: Date.now(),
+      data: { tag, payload },
+    } as eventWithTime);
   }
 
   async function drain(): Promise<eventWithTime[]> {
-    const batch = (await executor.execute(
-      tracelaneDrainScript as (...args: unknown[]) => unknown[],
-    )) as eventWithTime[] | null | undefined;
+    let batch: eventWithTime[] | null | undefined;
+    try {
+      batch = (await executor.execute(tracelaneDrainScript as (...args: unknown[]) => unknown[])) as
+        | eventWithTime[]
+        | null
+        | undefined;
+    } catch (err) {
+      // A poll firing mid-navigation hits "context destroyed"; skip this cycle.
+      // The next poll (or the init script's pagehide flush) recovers the events.
+      if (isNavigationRace(err)) return [];
+      throw err;
+    }
     if (batch && batch.length > 0) {
       buffer.push(...batch);
       return batch;
@@ -198,5 +254,6 @@ export function createRecorder(options: RecorderOptions): Recorder {
     stop,
     finalize,
     getBuffer: () => buffer,
+    addCustomEvent,
   };
 }

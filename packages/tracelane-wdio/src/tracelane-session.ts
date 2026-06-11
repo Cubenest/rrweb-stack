@@ -6,6 +6,7 @@
 // "the same logic exported as plain hook functions"). The session owns the
 // recorder, the current-test metadata, and the report-write decision.
 
+import { cwd } from 'node:process';
 import {
   type ConsolePluginOptions,
   type Mode,
@@ -17,6 +18,7 @@ import {
 import { type ReportMeta, writeReport } from '@tracelane/report';
 import { type Framework, normalizeResult } from './framework-result.js';
 import { DEFAULT_OUT_DIR, type TraceLaneOptions } from './options.js';
+import { loadSecuritySuppressions } from './security-suppress.js';
 import { type WdioBrowser, createWdioExecutor } from './wdio-executor.js';
 
 /** The current-test bookkeeping kept between `beforeTest` and `afterTest`. */
@@ -44,6 +46,8 @@ export class TraceLaneSession {
   private readonly captureRrweb: boolean;
   private readonly captureNetwork: boolean;
   private readonly captureConsole: boolean;
+  /** Advisory security-hygiene capture + analysis. Default on (P1 security MVP). */
+  private readonly security: boolean;
   private framework: Framework | string | undefined;
   private cid: string | undefined;
 
@@ -61,6 +65,9 @@ export class TraceLaneSession {
     this.captureRrweb = options.capture?.rrweb !== false;
     this.captureNetwork = options.capture?.network !== false;
     this.captureConsole = options.capture?.console !== false;
+    // Advisory security-hygiene defaults on; `security: false` disables both the
+    // [tracelane.sec] capture and the report-side analysis.
+    this.security = options.security !== false;
     this.framework = framework;
     this.cid = cid;
   }
@@ -148,7 +155,10 @@ export class TraceLaneSession {
     if (!this.captureNetwork || this.networkAttached || this.networkUnavailable) return;
     if (!this.browser) return;
     try {
-      await attachNetworkCapture(createWdioExecutor(this.browser));
+      await attachNetworkCapture(createWdioExecutor(this.browser), {
+        security: this.security,
+        onSecurityMeta: (m) => this.recorder?.addCustomEvent('tracelane.sec', m),
+      });
       this.networkAttached = true;
     } catch {
       // Give up for the rest of the session and say so once.
@@ -198,12 +208,18 @@ export class TraceLaneSession {
     }
 
     const meta = this.buildMeta(normalized);
+    // Load the optional suppression file at report-write time. The loader never
+    // throws and falls back to `[]`, so a missing/malformed file can't break the
+    // report. Skip the read entirely when security is off.
+    const securitySuppress = this.security ? loadSecuritySuppressions(cwd()) : [];
     const path = writeReport({
       outDir: this.outDir,
       cid: this.cid,
       events,
       meta,
       footer: this.options.report?.footer,
+      security: this.security,
+      securitySuppress,
     });
     this.current = undefined;
     return path;

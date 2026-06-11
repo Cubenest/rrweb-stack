@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { BrowserExecutor } from '../src/browser-executor.js';
 import { __internal, attachNetworkCapture } from '../src/network-capture';
+import type { ResponseMeta } from '../src/network-capture';
 
 // NOTE: the cross-package contract test (the `[tracelane.net]` line →
 // @tracelane/report extractNetwork classification) lives in
@@ -183,7 +184,292 @@ describe('attachNetworkCapture', () => {
   });
 });
 
+// Task 8 / P1 security MVP: privacy-safe MAIN-DOCUMENT response metadata —
+// security-header PRESENCE + cookie FLAGS ONLY, never values. Delivered Node-side
+// through the `onSecurityMeta` callback (the recorder injects it as a
+// `tracelane.sec` rrweb Custom event — reliable across navigation, unlike the old
+// page console.error which raced rrweb's per-navigation re-injection).
+describe('attachNetworkCapture — onSecurityMeta response metadata', () => {
+  // The sec emit is deferred to a microtask (so cookie flags from
+  // responseReceivedExtraInfo are folded in regardless of CDP arrival order), so
+  // tests must flush microtasks before inspecting the callback.
+  const flushMicrotasks = (): Promise<void> =>
+    new Promise<void>((r) => {
+      queueMicrotask(r);
+    });
+
+  // Helper for the security:false net-channel check: pull [tracelane.net] lines
+  // out of the execute mock by running each captured page-side logger.
+  function netEmissions(execute: ReturnType<typeof vi.fn>): string[] {
+    const lines: string[] = [];
+    const spy = vi.spyOn(console, 'error').mockImplementation((...a: unknown[]) => {
+      const first = a[0];
+      if (typeof first === 'string' && first.startsWith('[tracelane.net]')) lines.push(first);
+    });
+    for (const call of execute.mock.calls) {
+      const fn = call[0] as ((...args: unknown[]) => void) | undefined;
+      if (typeof fn === 'function') fn(...call.slice(1));
+    }
+    spy.mockRestore();
+    return lines;
+  }
+
+  it('calls onSecurityMeta exactly once with privacy-safe main-document metadata', async () => {
+    const m = mockExecutor();
+    const onSecurityMeta = vi.fn<(meta: ResponseMeta) => void>();
+    await attachNetworkCapture(m.executor, { onSecurityMeta });
+
+    // Main-document request (CDP marks it type: 'Document').
+    m.fire(
+      {
+        requestId: 'doc-1',
+        type: 'Document',
+        request: { url: 'https://shop.demo/', method: 'GET' },
+      },
+      'Network.requestWillBeSent',
+    );
+    // Per CDP, responseReceivedExtraInfo fires BEFORE responseReceived. Set-Cookie
+    // carries a real value — the emitted meta must NEVER contain it.
+    m.fire(
+      {
+        requestId: 'doc-1',
+        headers: { 'set-cookie': 'sid=secretvalue; HttpOnly' },
+      },
+      'Network.responseReceivedExtraInfo',
+    );
+    // Response with real-looking header VALUES for some allowlisted headers.
+    m.fire(
+      {
+        requestId: 'doc-1',
+        type: 'Document',
+        response: {
+          url: 'https://shop.demo/',
+          status: 200,
+          headers: {
+            'Content-Security-Policy': "default-src 'self'; script-src 'unsafe-inline'",
+            'X-Frame-Options': 'DENY',
+            'Content-Type': 'text/html; charset=utf-8',
+          },
+        },
+      },
+      'Network.responseReceived',
+    );
+
+    await flushMicrotasks();
+    expect(onSecurityMeta).toHaveBeenCalledTimes(1);
+
+    const meta = onSecurityMeta.mock.calls[0]?.[0] as ResponseMeta;
+    expect(meta.isMainDocument).toBe(true);
+    expect(meta.url).toBe('https://shop.demo/');
+    expect(meta.status).toBe(200);
+    expect([...meta.presentSecurityHeaders].sort()).toEqual(
+      ['content-security-policy', 'x-frame-options'].sort(),
+    );
+    expect(meta.setCookies).toEqual([
+      { name: 'sid', secure: false, httpOnly: true, sameSite: false },
+    ]);
+
+    // PRIVACY INVARIANT: no header VALUE and no cookie VALUE may leak.
+    const raw = JSON.stringify(meta);
+    expect(raw).not.toContain("default-src 'self'");
+    expect(raw).not.toContain('unsafe-inline');
+    expect(raw).not.toContain('DENY');
+    expect(raw).not.toContain('secretvalue');
+  });
+
+  it('calls onSecurityMeta on responseReceived even if extraInfo never arrives', async () => {
+    const m = mockExecutor();
+    const onSecurityMeta = vi.fn<(meta: ResponseMeta) => void>();
+    await attachNetworkCapture(m.executor, { onSecurityMeta });
+    m.fire(
+      { requestId: 'doc-2', type: 'Document', request: { url: 'https://x.test/', method: 'GET' } },
+      'Network.requestWillBeSent',
+    );
+    m.fire(
+      {
+        requestId: 'doc-2',
+        type: 'Document',
+        response: {
+          url: 'https://x.test/',
+          status: 200,
+          headers: { 'Strict-Transport-Security': 'max-age=63072000' },
+        },
+      },
+      'Network.responseReceived',
+    );
+    // No extraInfo ever arrives; the deferred microtask still emits, with [].
+    await flushMicrotasks();
+    expect(onSecurityMeta).toHaveBeenCalledTimes(1);
+    const meta = onSecurityMeta.mock.calls[0]?.[0] as ResponseMeta;
+    expect(meta.presentSecurityHeaders).toEqual(['strict-transport-security']);
+    expect(meta.setCookies).toEqual([]);
+    expect(JSON.stringify(meta)).not.toContain('63072000');
+  });
+
+  it('handles extraInfo arriving BEFORE responseReceived (calls back once)', async () => {
+    const m = mockExecutor();
+    const onSecurityMeta = vi.fn<(meta: ResponseMeta) => void>();
+    await attachNetworkCapture(m.executor, { onSecurityMeta });
+    m.fire(
+      { requestId: 'doc-3', type: 'Document', request: { url: 'https://y.test/', method: 'GET' } },
+      'Network.requestWillBeSent',
+    );
+    m.fire(
+      { requestId: 'doc-3', headers: { 'set-cookie': 'a=1; Secure; SameSite=Lax' } },
+      'Network.responseReceivedExtraInfo',
+    );
+    m.fire(
+      {
+        requestId: 'doc-3',
+        type: 'Document',
+        response: {
+          url: 'https://y.test/',
+          status: 200,
+          headers: { 'Referrer-Policy': 'no-referrer' },
+        },
+      },
+      'Network.responseReceived',
+    );
+    await flushMicrotasks();
+    expect(onSecurityMeta).toHaveBeenCalledTimes(1);
+    const meta = onSecurityMeta.mock.calls[0]?.[0] as ResponseMeta;
+    expect(meta.presentSecurityHeaders).toEqual(['referrer-policy']);
+    expect(meta.setCookies).toEqual([{ name: 'a', secure: true, httpOnly: false, sameSite: true }]);
+  });
+
+  // INVERTED CDP ORDER (responseReceived BEFORE responseReceivedExtraInfo). The
+  // deferred-microtask emit must still fold in the cookie flags — proving the
+  // insecure-cookie LEAD signal is NOT dropped when CDP delivers the events in
+  // the less-common order. Calls back exactly once.
+  it('handles responseReceived arriving BEFORE extraInfo (cookies still captured)', async () => {
+    const m = mockExecutor();
+    const onSecurityMeta = vi.fn<(meta: ResponseMeta) => void>();
+    await attachNetworkCapture(m.executor, { onSecurityMeta });
+    m.fire(
+      { requestId: 'doc-4', type: 'Document', request: { url: 'https://w.test/', method: 'GET' } },
+      'Network.requestWillBeSent',
+    );
+    // responseReceived FIRST ...
+    m.fire(
+      {
+        requestId: 'doc-4',
+        type: 'Document',
+        response: {
+          url: 'https://w.test/',
+          status: 200,
+          headers: { 'X-Content-Type-Options': 'nosniff' },
+        },
+      },
+      'Network.responseReceived',
+    );
+    // ... then extraInfo with the Set-Cookie (same task batch, before the
+    // deferred microtask runs). The cookie value must NEVER leak.
+    m.fire(
+      { requestId: 'doc-4', headers: { 'set-cookie': 'token=leakme; SameSite=Strict' } },
+      'Network.responseReceivedExtraInfo',
+    );
+    await flushMicrotasks();
+    expect(onSecurityMeta).toHaveBeenCalledTimes(1);
+    const meta = onSecurityMeta.mock.calls[0]?.[0] as ResponseMeta;
+    expect(meta.presentSecurityHeaders).toEqual(['x-content-type-options']);
+    // Cookie flags survived the inverted order (NOT empty) — insecure-cookie
+    // signal preserved: token is neither Secure nor HttpOnly.
+    expect(meta.setCookies).toEqual([
+      { name: 'token', secure: false, httpOnly: false, sameSite: true },
+    ]);
+    expect(JSON.stringify(meta)).not.toContain('leakme');
+  });
+
+  it('does not call onSecurityMeta for a non-document (subresource) response', async () => {
+    const m = mockExecutor();
+    const onSecurityMeta = vi.fn<(meta: ResponseMeta) => void>();
+    await attachNetworkCapture(m.executor, { onSecurityMeta });
+    m.fire(
+      {
+        requestId: 'img-1',
+        type: 'Image',
+        request: { url: 'https://shop.demo/logo.png', method: 'GET' },
+      },
+      'Network.requestWillBeSent',
+    );
+    m.fire(
+      {
+        requestId: 'img-1',
+        type: 'Image',
+        response: { url: 'https://shop.demo/logo.png', status: 200, headers: {} },
+      },
+      'Network.responseReceived',
+    );
+    await flushMicrotasks();
+    expect(onSecurityMeta).not.toHaveBeenCalled();
+  });
+
+  it('with security:false, onSecurityMeta is NOT called but [tracelane.net] is unchanged', async () => {
+    const m = mockExecutor();
+    const onSecurityMeta = vi.fn<(meta: ResponseMeta) => void>();
+    await attachNetworkCapture(m.executor, { security: false, onSecurityMeta });
+    // Main-document flow that WOULD emit a sec meta if enabled.
+    m.fire(
+      { requestId: 'doc-x', type: 'Document', request: { url: 'https://z.test/', method: 'GET' } },
+      'Network.requestWillBeSent',
+    );
+    m.fire(
+      {
+        requestId: 'doc-x',
+        type: 'Document',
+        response: { url: 'https://z.test/', status: 200, headers: { 'X-Frame-Options': 'DENY' } },
+      },
+      'Network.responseReceived',
+    );
+    m.fire(
+      { requestId: 'doc-x', headers: { 'set-cookie': 'sid=secret; HttpOnly' } },
+      'Network.responseReceivedExtraInfo',
+    );
+    await flushMicrotasks();
+    expect(onSecurityMeta).not.toHaveBeenCalled();
+
+    // [tracelane.net] behavior unchanged: a 500 still routes a net line.
+    m.fire({ response: { url: 'https://z.test/api', status: 500 } });
+    const net = netEmissions(m.execute);
+    expect(net).toHaveLength(1);
+    expect(net[0]).toContain('[tracelane.net] GET 500 https://z.test/api');
+  });
+});
+
 describe('network-capture internals', () => {
+  it('presentSecurityHeaders returns lowercased allowlisted names present', () => {
+    const present = __internal.presentSecurityHeaders(
+      {
+        'Content-Security-Policy': "default-src 'self'",
+        'X-Frame-Options': 'DENY',
+        'Content-Type': 'text/html',
+      },
+      __internal.SEC_HEADER_ALLOWLIST,
+    );
+    expect([...present].sort()).toEqual(['content-security-policy', 'x-frame-options'].sort());
+    expect(__internal.presentSecurityHeaders(undefined, __internal.SEC_HEADER_ALLOWLIST)).toEqual(
+      [],
+    );
+  });
+
+  it('parseSetCookies extracts NAME + flag presence only, never values', () => {
+    expect(__internal.parseSetCookies('sid=secretvalue; HttpOnly')).toEqual([
+      { name: 'sid', secure: false, httpOnly: true, sameSite: false },
+    ]);
+    expect(__internal.parseSetCookies('a=1; Secure; HttpOnly; SameSite=Strict')).toEqual([
+      { name: 'a', secure: true, httpOnly: true, sameSite: true },
+    ]);
+    // Multiple cookies joined with newlines (CDP form).
+    expect(__internal.parseSetCookies('x=1; Secure\ny=2; HttpOnly')).toEqual([
+      { name: 'x', secure: true, httpOnly: false, sameSite: false },
+      { name: 'y', secure: false, httpOnly: true, sameSite: false },
+    ]);
+    expect(__internal.parseSetCookies(undefined)).toEqual([]);
+    // No value leak.
+    const out = JSON.stringify(__internal.parseSetCookies('token=abc.def.ghi; Secure'));
+    expect(out).not.toContain('abc.def.ghi');
+  });
+
   it('methodOf reads :method, falls back to method, then GET', () => {
     expect(__internal.methodOf({ ':method': 'PUT' })).toBe('PUT');
     expect(__internal.methodOf({ method: 'DELETE' })).toBe('DELETE');

@@ -11,7 +11,7 @@ relatedRecipes: [debug-flaky-checkout-test-in-ci, share-failing-test-with-a-deve
 
 ## What you'll end up with
 
-A `tracelane-report-<spec>.html` next to your existing WDIO reporter output, generated automatically whenever a spec fails. The file is self-contained — open it in any browser to scrub the rrweb replay, inspect the console, and see failed network requests.
+A `tracelane-report-<spec>.html` next to your existing WDIO reporter output, generated automatically whenever a spec fails. The file is self-contained — open it in any browser to scrub the rrweb replay, inspect the console, and see failed network requests. On HTTPS pages the report also includes an advisory Security-hygiene panel (see the security-hygiene recipe) flagging things like missing security headers and insecure cookies.
 
 ![Tracelane HTML report from a WebdriverIO suite](/recipes/assets/add-tracelane-to-webdriverio-in-5-minutes.png)
 

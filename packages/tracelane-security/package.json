@@ -1,0 +1,41 @@
+{
+  "name": "@tracelane/security",
+  "version": "0.1.0-alpha.0",
+  "description": "Advisory, low-false-positive security-hygiene signals derived from a captured rrweb/console/network event stream. Pure analysis; advisory only, not a security audit.",
+  "keywords": ["tracelane", "security", "security-hygiene", "rrweb", "static-analysis", "advisory"],
+  "license": "Apache-2.0",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": ["dist", "NOTICE", "README.md"],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run --passWithNoTests"
+  },
+  "dependencies": {
+    "@cubenest/rrweb-core": "workspace:*"
+  },
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Cubenest/rrweb-stack",
+    "directory": "packages/tracelane-security"
+  },
+  "bugs": {
+    "url": "https://github.com/Cubenest/rrweb-stack/issues"
+  },
+  "homepage": "https://github.com/Cubenest/rrweb-stack/tree/main/packages/tracelane-security#readme",
+  "engines": {
+    "node": ">=22"
+  }
+}

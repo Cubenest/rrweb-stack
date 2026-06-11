@@ -7,6 +7,7 @@
 
 import { EventType, IncrementalSource, MouseInteractions } from '@cubenest/rrweb-core';
 import type { eventWithTime } from '@cubenest/rrweb-core';
+import type { SecurityFinding } from '@tracelane/security';
 import type { ConsoleEntry, NetworkEntry } from './panels.js';
 import type { ReportMeta } from './types.js';
 
@@ -80,6 +81,7 @@ export function buildMarkdown(
   consoleRows: readonly ConsoleEntry[],
   networkRows: readonly NetworkEntry[],
   actions: readonly ActionEntry[],
+  securityFindings: readonly SecurityFinding[] = [],
 ): string {
   const out: string[] = [];
 
@@ -121,6 +123,17 @@ export function buildMarkdown(
     out.push('_No user actions captured._');
   } else {
     lastActions.forEach((a, i) => out.push(`${i + 1}. ${a.description}`));
+  }
+
+  // Advisory security-hygiene section — additive, omitted entirely when there
+  // are no findings (Task 10). These are observations, NOT a security audit.
+  if (securityFindings.length > 0) {
+    out.push('');
+    out.push('## Security hygiene (advisory)');
+    out.push('_Observed during the test run — advisory hygiene signals, not a security audit._');
+    for (const s of securityFindings) {
+      out.push(bullet(`[${s.severity}] ${s.title} — ${s.evidence}`));
+    }
   }
 
   return `${out.join('\n')}\n`;

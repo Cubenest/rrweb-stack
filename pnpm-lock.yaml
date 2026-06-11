@@ -68,9 +68,15 @@ importers:
         specifier: ^3.25.76
         version: 3.25.76
     devDependencies:
+      '@cubenest/rrweb-core':
+        specifier: workspace:*
+        version: link:../rrweb-core
       '@modelcontextprotocol/sdk':
         specifier: ^1.29.0
         version: 1.29.0(zod@3.25.76)
+      '@tracelane/report':
+        specifier: workspace:*
+        version: link:../tracelane-report
       js-yaml:
         specifier: ^4.1.1
         version: 4.1.1
@@ -245,6 +251,9 @@ importers:
       '@tracelane/core':
         specifier: workspace:*
         version: link:../tracelane-core
+      '@tracelane/security':
+        specifier: workspace:*
+        version: link:../tracelane-security
       fflate:
         specifier: ^0.8.2
         version: 0.8.3
@@ -256,6 +265,12 @@ importers:
         specifier: ^25.0.1
         version: 25.0.1
 
+  packages/tracelane-security:
+    dependencies:
+      '@cubenest/rrweb-core':
+        specifier: workspace:*
+        version: link:../rrweb-core
+
   packages/tracelane-wdio:
     dependencies:
       '@tracelane/core':
@@ -264,6 +279,9 @@ importers:
       '@tracelane/report':
         specifier: workspace:*
         version: link:../tracelane-report
+      '@tracelane/security':
+        specifier: workspace:*
+        version: link:../tracelane-security
     devDependencies:
       '@cubenest/rrweb-core':
         specifier: workspace:*

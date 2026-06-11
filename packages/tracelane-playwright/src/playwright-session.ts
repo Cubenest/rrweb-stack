@@ -94,10 +94,20 @@ export async function runStart(input: StartInput): Promise<StartedSession> {
   // execute(); cdp/on are used solely by attachNetworkCapture).
   const executor = createPlaywrightExecutor(page, cdp);
 
+  const recorder = createRecorder({
+    executor,
+    rrwebBundle,
+    mode: options.mode,
+    // MVP: in-page network plugin off; the CDP path above is the network
+    // channel. The recorder still captures rrweb + console on all browsers.
+  });
+
   // Network capture is best-effort: if it fails, detach CDP and continue.
   if (cdp) {
     try {
-      await attachNetworkCapture(executor);
+      await attachNetworkCapture(executor, {
+        onSecurityMeta: (m) => recorder.addCustomEvent('tracelane.sec', m),
+      });
     } catch {
       await cdp.detach().catch(() => {});
       cdp = undefined;
@@ -106,14 +116,6 @@ export async function runStart(input: StartInput): Promise<StartedSession> {
       );
     }
   }
-
-  const recorder = createRecorder({
-    executor,
-    rrwebBundle,
-    mode: options.mode,
-    // MVP: in-page network plugin off; the CDP path above is the network
-    // channel. The recorder still captures rrweb + console on all browsers.
-  });
 
   // Capture start is best-effort: a CSP / injection failure must NOT fail the
   // user's test. Degrade to a disabled session that writes no report.

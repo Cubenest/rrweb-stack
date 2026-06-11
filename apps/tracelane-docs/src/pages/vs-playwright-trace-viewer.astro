@@ -48,6 +48,11 @@ import Layout from '../layouts/Layout.astro';
         <td>Not natively. The <code>trace.zip</code> binary format requires tooling to parse. trace.playwright.dev has no MCP surface.</td>
       </tr>
       <tr>
+        <td><strong>Security-hygiene signals</strong></td>
+        <td>Surfaces advisory, OWASP-aligned hygiene signals &mdash; missing security headers, insecure cookies, mixed content, reverse tabnabbing &mdash; right in the failed-test report and in the Copy-as-Markdown-for-AI output. Advisory, not a scanner.</td>
+        <td>No. The trace records what the test did; it does not flag security-hygiene issues.</td>
+      </tr>
+      <tr>
         <td><strong>Runner support</strong></td>
         <td>WebdriverIO (service) and Playwright (reporter + fixture) today. Cypress on the roadmap.</td>
         <td>Playwright only.</td>
