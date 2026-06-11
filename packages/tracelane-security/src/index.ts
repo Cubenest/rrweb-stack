@@ -54,7 +54,7 @@ export function analyze(
   const metas = safe<ResponseMeta[]>(() => scrapeResponseMeta(events), []);
   const findings: SecurityFinding[] = [
     ...safe<SecurityFinding[]>(() => detectMissingHeaders(metas), []),
-    ...safe<SecurityFinding[]>(() => detectMixedContent(metas), []),
+    ...safe<SecurityFinding[]>(() => detectMixedContent(events, metas), []),
     ...safe<SecurityFinding[]>(() => detectInsecureCookies(metas), []),
     ...safe<SecurityFinding[]>(() => detectReverseTabnabbing(events), []),
   ];
