@@ -57,7 +57,15 @@ export function scrapeResponseMeta(events: readonly eventWithTime[]): ResponseMe
     if (idx === -1) continue;
     try {
       const parsed: unknown = JSON.parse(line.slice(idx + SEC_CONSOLE_PREFIX.length).trim());
-      if (parsed && typeof parsed === 'object' && 'url' in parsed) {
+      if (
+        parsed &&
+        typeof parsed === 'object' &&
+        typeof (parsed as ResponseMeta).url === 'string' &&
+        typeof (parsed as ResponseMeta).status === 'number' &&
+        typeof (parsed as ResponseMeta).isMainDocument === 'boolean' &&
+        Array.isArray((parsed as ResponseMeta).presentSecurityHeaders) &&
+        Array.isArray((parsed as ResponseMeta).setCookies)
+      ) {
         out.push(parsed as ResponseMeta);
       }
     } catch {

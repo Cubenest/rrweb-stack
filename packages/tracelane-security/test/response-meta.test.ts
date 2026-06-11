@@ -38,6 +38,14 @@ describe('scrapeResponseMeta', () => {
     expect(scrapeResponseMeta([secEvent(`${SEC_CONSOLE_PREFIX} not-json`)])).toEqual([]);
   });
 
+  it('skips a JSON object missing required fields', () => {
+    expect(
+      scrapeResponseMeta([
+        secEvent(`${SEC_CONSOLE_PREFIX} ${JSON.stringify({ url: 'https://x/' })}`),
+      ]),
+    ).toEqual([]);
+  });
+
   it('ignores non-plugin events', () => {
     const meta = {
       url: 'https://x/',
