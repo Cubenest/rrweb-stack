@@ -188,6 +188,14 @@ describe('attachNetworkCapture', () => {
 // ONLY, never values. The emit pattern mirrors [tracelane.net]: a self-contained
 // page-side logger passed to executor.execute, fire-and-forget.
 describe('attachNetworkCapture — [tracelane.sec] response metadata', () => {
+  // The sec emit is deferred to a microtask (so cookie flags from
+  // responseReceivedExtraInfo are folded in regardless of CDP arrival order), so
+  // tests must flush microtasks before inspecting the captured execute calls.
+  const flushMicrotasks = (): Promise<void> =>
+    new Promise<void>((r) => {
+      queueMicrotask(r);
+    });
+
   // Pull the single [tracelane.sec] emission out of the execute mock by running
   // each captured page-side logger and inspecting what it would console.error.
   function secEmissions(execute: ReturnType<typeof vi.fn>): string[] {
@@ -268,6 +276,7 @@ describe('attachNetworkCapture — [tracelane.sec] response metadata', () => {
       'Network.responseReceived',
     );
 
+    await flushMicrotasks();
     const lines = secEmissions(m.execute);
     expect(lines).toHaveLength(1);
 
@@ -309,8 +318,8 @@ describe('attachNetworkCapture — [tracelane.sec] response metadata', () => {
       },
       'Network.responseReceived',
     );
-    // No extraInfo. Flush via the same microtask the emit uses is unnecessary —
-    // emit-on-responseReceived is synchronous here.
+    // No extraInfo ever arrives; the deferred microtask still emits, with [].
+    await flushMicrotasks();
     const lines = secEmissions(m.execute);
     expect(lines).toHaveLength(1);
     const meta = parseSec(lines[0] as string);
@@ -342,11 +351,55 @@ describe('attachNetworkCapture — [tracelane.sec] response metadata', () => {
       },
       'Network.responseReceived',
     );
+    await flushMicrotasks();
     const lines = secEmissions(m.execute);
     expect(lines).toHaveLength(1);
     const meta = parseSec(lines[0] as string);
     expect(meta.presentSecurityHeaders).toEqual(['referrer-policy']);
     expect(meta.setCookies).toEqual([{ name: 'a', secure: true, httpOnly: false, sameSite: true }]);
+  });
+
+  // INVERTED CDP ORDER (responseReceived BEFORE responseReceivedExtraInfo). The
+  // deferred-microtask emit must still fold in the cookie flags — proving the
+  // insecure-cookie LEAD signal is NOT dropped when CDP delivers the events in
+  // the less-common order. Emits exactly once.
+  it('handles responseReceived arriving BEFORE extraInfo (cookies still captured)', async () => {
+    const m = mockExecutor();
+    await attachNetworkCapture(m.executor);
+    m.fire(
+      { requestId: 'doc-4', type: 'Document', request: { url: 'https://w.test/', method: 'GET' } },
+      'Network.requestWillBeSent',
+    );
+    // responseReceived FIRST ...
+    m.fire(
+      {
+        requestId: 'doc-4',
+        type: 'Document',
+        response: {
+          url: 'https://w.test/',
+          status: 200,
+          headers: { 'X-Content-Type-Options': 'nosniff' },
+        },
+      },
+      'Network.responseReceived',
+    );
+    // ... then extraInfo with the Set-Cookie (same task batch, before the
+    // deferred microtask runs). The cookie value must NEVER leak.
+    m.fire(
+      { requestId: 'doc-4', headers: { 'set-cookie': 'token=leakme; SameSite=Strict' } },
+      'Network.responseReceivedExtraInfo',
+    );
+    await flushMicrotasks();
+    const lines = secEmissions(m.execute);
+    expect(lines).toHaveLength(1);
+    const meta = parseSec(lines[0] as string);
+    expect(meta.presentSecurityHeaders).toEqual(['x-content-type-options']);
+    // Cookie flags survived the inverted order (NOT empty) — insecure-cookie
+    // signal preserved: token is neither Secure nor HttpOnly.
+    expect(meta.setCookies).toEqual([
+      { name: 'token', secure: false, httpOnly: false, sameSite: true },
+    ]);
+    expect(lines[0]).not.toContain('leakme');
   });
 
   it('does not emit a [tracelane.sec] line for a non-document (subresource) response', async () => {
@@ -368,6 +421,7 @@ describe('attachNetworkCapture — [tracelane.sec] response metadata', () => {
       },
       'Network.responseReceived',
     );
+    await flushMicrotasks();
     expect(secEmissions(m.execute)).toHaveLength(0);
   });
 
@@ -391,6 +445,7 @@ describe('attachNetworkCapture — [tracelane.sec] response metadata', () => {
       { requestId: 'doc-x', headers: { 'set-cookie': 'sid=secret; HttpOnly' } },
       'Network.responseReceivedExtraInfo',
     );
+    await flushMicrotasks();
     expect(secEmissions(m.execute)).toHaveLength(0);
 
     // [tracelane.net] behavior unchanged: a 500 still routes a net line.

@@ -232,37 +232,31 @@ export async function attachNetworkCapture(
   // --- Privacy-safe main-document security metadata ([tracelane.sec]) ---------
   // We track the top-level document's requestId, then assemble a ResponseMeta
   // from `responseReceived` (header presence) + `responseReceivedExtraInfo`
-  // (cookie flags). Either may arrive first; we emit ONCE when we first have the
-  // response part, and fold in extraInfo if it has already arrived (or wait for
-  // it briefly via the microtask the fire-and-forget execute already implies).
-  // To stay robust to ordering without blocking, we emit on whichever of the two
-  // "completes" the main-doc picture: emit on `responseReceived`, but if
-  // extraInfo arrived first we already stashed its cookies, and if extraInfo
-  // arrives after we re-emit only if we had NOT already emitted. We guard with an
-  // `emitted` flag so we never emit twice.
+  // (cookie flags). Both CDP events for the main-document response are delivered
+  // in the same task batch; we defer the single emit to a microtask (scheduled
+  // from `responseReceived`) so cookie flags from `responseReceivedExtraInfo`
+  // are folded in regardless of arrival order — whichever event arrives second
+  // has landed in the same task before the microtask runs. The
+  // `responseReceivedExtraInfo` handler only STASHES cookies; it never emits.
+  // `mainDocEmitted` guarantees exactly-once (so a missing/late extraInfo still
+  // emits with whatever cookies were stashed, possibly `[]`).
   let mainDocId: string | undefined;
   let mainDocMeta: ResponseMeta | undefined;
   let mainDocCookies: CookieFlags[] | undefined;
   let mainDocEmitted = false;
 
-  const emitSec = (meta: ResponseMeta): void => {
-    if (mainDocEmitted) return;
+  // Emit exactly once, folding in any stashed cookies. Called from the deferred
+  // microtask scheduled by `responseReceived`; the guard makes a second call
+  // (e.g. if ever scheduled twice) a no-op. Fire-and-forget.
+  const tryEmitSec = (): void => {
+    if (mainDocEmitted || !mainDocMeta) return;
     mainDocEmitted = true;
+    if (mainDocCookies) mainDocMeta.setCookies = mainDocCookies;
     void executor
-      .execute(logResponseMetaInPage as (...args: unknown[]) => void, JSON.stringify(meta))
+      .execute(logResponseMetaInPage as (...args: unknown[]) => void, JSON.stringify(mainDocMeta))
       .catch(() => {
         /* page may be navigating; drop this one line */
       });
-  };
-
-  // Try to emit once we have the response part. Fold in cookies if extraInfo has
-  // already landed; otherwise emit with whatever cookies we have (possibly []).
-  // We only call this from `responseReceived`, so extraInfo arriving later (after
-  // we've emitted) is a no-op — the guard prevents a double emit.
-  const tryEmitSec = (): void => {
-    if (!mainDocMeta) return;
-    if (mainDocCookies) mainDocMeta.setCookies = mainDocCookies;
-    emitSec(mainDocMeta);
   };
 
   executor.on('Network.requestWillBeSent', (params: unknown) => {
@@ -288,12 +282,12 @@ export async function attachNetworkCapture(
       const headers = e.headers ?? {};
       const setCookieKey = Object.keys(headers).find((k) => k.toLowerCase() === 'set-cookie');
       const cookies = parseSetCookies(setCookieKey ? headers[setCookieKey] : undefined);
+      // STASH ONLY — never emit here. The deferred microtask scheduled by
+      // `responseReceived` folds these in. If meta already exists, also write
+      // through so it's covered even if this handler runs after the microtask
+      // was scheduled (the microtask reads mainDocMeta.setCookies / mainDocCookies).
       mainDocCookies = cookies;
-      // If the response part already arrived and emitted, this is a no-op (the
-      // emit guard holds). If it arrived but we had no cookies yet, re-fold and
-      // emit now. If the response part has NOT arrived yet, just stash; the
-      // responseReceived handler will fold these in.
-      if (mainDocMeta && !mainDocEmitted) tryEmitSec();
+      if (mainDocMeta) mainDocMeta.setCookies = cookies;
     });
   }
 
@@ -325,7 +319,10 @@ export async function attachNetworkCapture(
         setCookies: mainDocCookies ?? [],
       };
       mainDocMeta = meta;
-      tryEmitSec();
+      // Defer the single emit so a same-task-batch responseReceivedExtraInfo
+      // (which may arrive before OR after this event) lands its cookie flags
+      // first. The mainDocEmitted guard keeps it exactly-once.
+      queueMicrotask(() => tryEmitSec());
     }
 
     const status = response?.status;
