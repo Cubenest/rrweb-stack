@@ -1,19 +1,6 @@
-import { EventType } from '@cubenest/rrweb-core';
 import type { eventWithTime } from '@cubenest/rrweb-core';
 import type { SecurityFinding } from '../index.js';
-
-interface SNode {
-  type?: number;
-  tagName?: string;
-  attributes?: Record<string, unknown>;
-  childNodes?: SNode[];
-}
-
-function* walk(node: SNode | undefined): Generator<SNode> {
-  if (!node) return;
-  yield node;
-  for (const child of node.childNodes ?? []) yield* walk(child);
-}
+import { collectRoots, walk } from '../serialized-dom.js';
 
 function relIsSafe(rel: unknown): boolean {
   if (typeof rel !== 'string') return false;
@@ -28,17 +15,7 @@ function relIsSafe(rel: unknown): boolean {
  * node objects; no DOM API. Dedupes by href; advisory, never an audit result.
  */
 export function detectReverseTabnabbing(events: readonly eventWithTime[]): SecurityFinding[] {
-  const roots: SNode[] = [];
-  for (const e of events) {
-    if (e.type === EventType.FullSnapshot) {
-      roots.push((e.data as { node: SNode }).node);
-    } else if (e.type === EventType.IncrementalSnapshot) {
-      const adds = (e.data as { adds?: { node?: SNode }[] }).adds;
-      if (Array.isArray(adds)) {
-        for (const a of adds) if (a.node) roots.push(a.node);
-      }
-    }
-  }
+  const roots = collectRoots(events);
   const out: SecurityFinding[] = [];
   const seen = new Set<string>();
   for (const root of roots) {
