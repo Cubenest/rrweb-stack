@@ -245,6 +245,9 @@ importers:
       '@tracelane/core':
         specifier: workspace:*
         version: link:../tracelane-core
+      '@tracelane/security':
+        specifier: workspace:*
+        version: link:../tracelane-security
       fflate:
         specifier: ^0.8.2
         version: 0.8.3

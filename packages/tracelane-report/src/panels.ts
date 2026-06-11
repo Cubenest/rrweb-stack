@@ -47,6 +47,15 @@ export const NETWORK_PLUGIN = NETWORK_PLUGIN_NAME;
 export const NETWORK_EVENT_TAG = 'tracelane.test.network-error';
 /** console.error prefix for the v1 network fallback (P1 PRD §E.2). */
 export const NETWORK_CONSOLE_PREFIX = '[tracelane.net]';
+/**
+ * console.error prefix the capture layer uses for privacy-safe response
+ * metadata consumed by `@tracelane/security`. Like the network-scrape lines,
+ * these are a non-console signal and are filtered OUT of the console panel —
+ * the security analyzer surfaces them as advisory findings instead. Defined
+ * locally (mirroring {@link NETWORK_CONSOLE_PREFIX}) rather than imported from
+ * `@tracelane/security` just for a string constant.
+ */
+export const SEC_CONSOLE_PREFIX = '[tracelane.sec]';
 
 interface PluginEventData {
   plugin?: unknown;
@@ -130,10 +139,15 @@ function extractConsoleRows(events: readonly eventWithTime[]): ConsoleEntry[] {
  * ('[tracelane.net] …'): they are a *network* signal that `extractNetwork`
  * already surfaces as structured rows in the Network panel. Letting them
  * through here double-renders the same failure as a raw console string,
- * inconsistently with the structured row (audit A-4).
+ * inconsistently with the structured row (audit A-4). Also drops the
+ * '[tracelane.sec] …' response-metadata lines: those are a *security* signal
+ * the analyzer turns into advisory findings, not console output (Task 9).
  */
 export function extractConsole(events: readonly eventWithTime[]): ConsoleEntry[] {
-  return extractConsoleRows(events).filter((row) => !row.message.includes(NETWORK_CONSOLE_PREFIX));
+  return extractConsoleRows(events).filter(
+    (row) =>
+      !row.message.includes(NETWORK_CONSOLE_PREFIX) && !row.message.includes(SEC_CONSOLE_PREFIX),
+  );
 }
 
 /** Parse a '[tracelane.net] <METHOD> <STATUS> <URL>' console line, if it is one. */
