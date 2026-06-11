@@ -81,11 +81,37 @@ describe('analyze', () => {
     expect(unsup.length).toBeGreaterThan(0);
     expect(sup.some((f) => f.signal === 'missing-security-header')).toBe(false);
   });
-  it('never throws on malformed events (pure + total)', () => {
-    const junk = [
-      { type: 999, timestamp: 0, data: null },
-      { type: EventType.Plugin, timestamp: 0, data: {} },
+  it('breaks severity ties by signal (localeCompare)', () => {
+    // Meta missing only x-frame-options → one `medium` missing-security-header.
+    // Anchor with target=_blank + no rel → one `medium` reverse-tabnabbing.
+    // Both are `medium`, so the tie-break must order by signal:
+    // 'missing-security-header' (m) < 'reverse-tabnabbing' (r).
+    const meta = {
+      url: 'https://app.test/',
+      status: 200,
+      isMainDocument: true,
+      presentSecurityHeaders: [
+        'content-security-policy',
+        'strict-transport-security',
+        'x-content-type-options',
+        'referrer-policy',
+      ],
+      setCookies: [],
+    };
+    const findings = analyze([secEvent(meta), anchorSnapshot()]);
+    const medium = findings.filter((f) => f.severity === 'medium').map((f) => f.signal);
+    expect(medium).toEqual(['missing-security-header', 'reverse-tabnabbing']);
+  });
+  it('never throws even when a detector hits malformed event data (pure + total)', () => {
+    const throwy = [
+      { type: EventType.FullSnapshot, timestamp: 0, data: null }, // reverse-tabnabbing: (null).node throws
+      {
+        type: EventType.Plugin,
+        timestamp: 0,
+        data: { plugin: 'rrweb/console@1', payload: null },
+      }, // scrape path: payload null
     ] as unknown as eventWithTime[];
-    expect(() => analyze(junk)).not.toThrow();
+    expect(() => analyze(throwy)).not.toThrow();
+    expect(analyze(throwy)).toEqual([]);
   });
 });
