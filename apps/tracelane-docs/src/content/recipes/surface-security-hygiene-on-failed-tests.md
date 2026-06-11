@@ -3,7 +3,7 @@ title: "Surface security-hygiene signals on failed tests"
 lede: "When my e2e suite already drives the real app, I want OWASP-aligned hygiene notes to fall out of the run I already have — not a separate scanner to wire up."
 description: "Read advisory security-hygiene signals — missing headers, insecure cookies, mixed content, reverse tabnabbing — straight from your failed-test tracelane report."
 type: hero
-status: draft
+status: published
 publishedAt: 2026-06-15
 integrations: [webdriverio, security]
 artifact: /demo/security-hygiene-advisory.html
