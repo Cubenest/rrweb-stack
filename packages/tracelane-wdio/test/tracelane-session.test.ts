@@ -326,12 +326,12 @@ describe.skipIf(!bundleBuilt)('TraceLaneSession — security toggle (Task 13)', 
     expect(cdpCalls).toHaveLength(1);
   });
 
-  // A page buffer that carries a real `[tracelane.sec]` console-plugin line the
-  // analyzer turns into findings: HTTPS main document with NO security headers
-  // ⇒ missing-CSP/HSTS/etc. The sec line is recorded the way the rrweb console
-  // plugin records a console.error (EventType.Plugin / 'rrweb/console@1', string
-  // args JSON-encoded under data.payload.payload), mirroring @tracelane/security's
-  // own tests. Plus the minimal meta + FullSnapshot events the report renders.
+  // A page buffer that carries a `tracelane.sec` rrweb Custom event the analyzer
+  // turns into findings: HTTPS main document with NO security headers ⇒
+  // missing-CSP/HSTS/etc. This is the event the capture layer now injects
+  // Node-side (via recorder.addCustomEvent) instead of a page console.error —
+  // reliable across navigation. Plus the minimal meta + FullSnapshot events the
+  // report renders.
   function seedPageBufferWithSecFinding(): void {
     const meta = {
       url: 'https://app.test/',
@@ -344,15 +344,9 @@ describe.skipIf(!bundleBuilt)('TraceLaneSession — security toggle (Task 13)', 
       { type: 4, data: { href: 'https://app.test', width: 800, height: 600 }, timestamp: 1 },
       { type: 2, data: { node: {}, initialOffset: { left: 0, top: 0 } }, timestamp: 2 },
       {
-        type: 6, // EventType.Plugin
+        type: 5, // EventType.Custom
         timestamp: 3,
-        data: {
-          plugin: 'rrweb/console@1',
-          payload: {
-            level: 'error',
-            payload: [JSON.stringify(`[tracelane.sec] ${JSON.stringify(meta)}`)],
-          },
-        },
+        data: { tag: 'tracelane.sec', payload: meta },
       },
     ]);
   }

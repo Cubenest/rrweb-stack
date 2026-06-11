@@ -12,6 +12,9 @@ export type { Suppression };
 /** console.error prefix the capture layer uses for privacy-safe response metadata. */
 export const SEC_CONSOLE_PREFIX = '[tracelane.sec]';
 
+/** rrweb Custom event tag the capture layer uses for privacy-safe response metadata. */
+export const SEC_EVENT_TAG = 'tracelane.sec';
+
 export type SecuritySignal =
   | 'missing-security-header'
   | 'mixed-content'

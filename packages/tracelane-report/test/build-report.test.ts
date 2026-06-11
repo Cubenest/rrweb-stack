@@ -141,21 +141,15 @@ describe('buildReport — self-contained HTML (Task 2.9)', () => {
 
 describe('buildReport — advisory security analysis (Task 11)', () => {
   /**
-   * A `[tracelane.sec]` response-metadata console-plugin event, built the same
-   * way `@tracelane/security`'s tests do: the console plugin JSON-encodes string
-   * args, so the line is double-stringified. `scrapeResponseMeta` parses it back.
+   * A `tracelane.sec` response-metadata rrweb Custom event, built the same way
+   * the capture layer injects it (Node-side, payload = the meta object).
+   * `scrapeResponseMeta` reads it back.
    */
   function secEvent(meta: unknown): eventWithTime {
     return {
-      type: EventType.Plugin,
+      type: EventType.Custom,
       timestamp: 0,
-      data: {
-        plugin: 'rrweb/console@1',
-        payload: {
-          level: 'error',
-          payload: [JSON.stringify(`[tracelane.sec] ${JSON.stringify(meta)}`)],
-        },
-      },
+      data: { tag: 'tracelane.sec', payload: meta },
     } as unknown as eventWithTime;
   }
 

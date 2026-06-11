@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { BrowserExecutor } from '../src/browser-executor.js';
 import { __internal, attachNetworkCapture } from '../src/network-capture';
+import type { ResponseMeta } from '../src/network-capture';
 
 // NOTE: the cross-package contract test (the `[tracelane.net]` line →
 // @tracelane/report extractNetwork classification) lives in
@@ -183,35 +184,22 @@ describe('attachNetworkCapture', () => {
   });
 });
 
-// Task 8 / P1 security MVP: a privacy-safe [tracelane.sec] line carrying
-// MAIN-DOCUMENT response metadata — security-header PRESENCE + cookie FLAGS
-// ONLY, never values. The emit pattern mirrors [tracelane.net]: a self-contained
-// page-side logger passed to executor.execute, fire-and-forget.
-describe('attachNetworkCapture — [tracelane.sec] response metadata', () => {
+// Task 8 / P1 security MVP: privacy-safe MAIN-DOCUMENT response metadata —
+// security-header PRESENCE + cookie FLAGS ONLY, never values. Delivered Node-side
+// through the `onSecurityMeta` callback (the recorder injects it as a
+// `tracelane.sec` rrweb Custom event — reliable across navigation, unlike the old
+// page console.error which raced rrweb's per-navigation re-injection).
+describe('attachNetworkCapture — onSecurityMeta response metadata', () => {
   // The sec emit is deferred to a microtask (so cookie flags from
   // responseReceivedExtraInfo are folded in regardless of CDP arrival order), so
-  // tests must flush microtasks before inspecting the captured execute calls.
+  // tests must flush microtasks before inspecting the callback.
   const flushMicrotasks = (): Promise<void> =>
     new Promise<void>((r) => {
       queueMicrotask(r);
     });
 
-  // Pull the single [tracelane.sec] emission out of the execute mock by running
-  // each captured page-side logger and inspecting what it would console.error.
-  function secEmissions(execute: ReturnType<typeof vi.fn>): string[] {
-    const lines: string[] = [];
-    const spy = vi.spyOn(console, 'error').mockImplementation((...a: unknown[]) => {
-      const first = a[0];
-      if (typeof first === 'string' && first.startsWith('[tracelane.sec]')) lines.push(first);
-    });
-    for (const call of execute.mock.calls) {
-      const fn = call[0] as ((...args: unknown[]) => void) | undefined;
-      if (typeof fn === 'function') fn(...call.slice(1));
-    }
-    spy.mockRestore();
-    return lines;
-  }
-
+  // Helper for the security:false net-channel check: pull [tracelane.net] lines
+  // out of the execute mock by running each captured page-side logger.
   function netEmissions(execute: ReturnType<typeof vi.fn>): string[] {
     const lines: string[] = [];
     const spy = vi.spyOn(console, 'error').mockImplementation((...a: unknown[]) => {
@@ -226,19 +214,10 @@ describe('attachNetworkCapture — [tracelane.sec] response metadata', () => {
     return lines;
   }
 
-  function parseSec(line: string): {
-    url: string;
-    status: number;
-    isMainDocument: boolean;
-    presentSecurityHeaders: string[];
-    setCookies: { name: string; secure: boolean; httpOnly: boolean; sameSite: boolean }[];
-  } {
-    return JSON.parse(line.slice('[tracelane.sec] '.length));
-  }
-
-  it('emits exactly one privacy-safe [tracelane.sec] line for the main document', async () => {
+  it('calls onSecurityMeta exactly once with privacy-safe main-document metadata', async () => {
     const m = mockExecutor();
-    await attachNetworkCapture(m.executor);
+    const onSecurityMeta = vi.fn<(meta: ResponseMeta) => void>();
+    await attachNetworkCapture(m.executor, { onSecurityMeta });
 
     // Main-document request (CDP marks it type: 'Document').
     m.fire(
@@ -250,7 +229,7 @@ describe('attachNetworkCapture — [tracelane.sec] response metadata', () => {
       'Network.requestWillBeSent',
     );
     // Per CDP, responseReceivedExtraInfo fires BEFORE responseReceived. Set-Cookie
-    // carries a real value — the emitted line must NEVER contain it.
+    // carries a real value — the emitted meta must NEVER contain it.
     m.fire(
       {
         requestId: 'doc-1',
@@ -277,10 +256,9 @@ describe('attachNetworkCapture — [tracelane.sec] response metadata', () => {
     );
 
     await flushMicrotasks();
-    const lines = secEmissions(m.execute);
-    expect(lines).toHaveLength(1);
+    expect(onSecurityMeta).toHaveBeenCalledTimes(1);
 
-    const meta = parseSec(lines[0] as string);
+    const meta = onSecurityMeta.mock.calls[0]?.[0] as ResponseMeta;
     expect(meta.isMainDocument).toBe(true);
     expect(meta.url).toBe('https://shop.demo/');
     expect(meta.status).toBe(200);
@@ -292,16 +270,17 @@ describe('attachNetworkCapture — [tracelane.sec] response metadata', () => {
     ]);
 
     // PRIVACY INVARIANT: no header VALUE and no cookie VALUE may leak.
-    const raw = lines[0] as string;
+    const raw = JSON.stringify(meta);
     expect(raw).not.toContain("default-src 'self'");
     expect(raw).not.toContain('unsafe-inline');
     expect(raw).not.toContain('DENY');
     expect(raw).not.toContain('secretvalue');
   });
 
-  it('emits a [tracelane.sec] line on responseReceived even if extraInfo never arrives', async () => {
+  it('calls onSecurityMeta on responseReceived even if extraInfo never arrives', async () => {
     const m = mockExecutor();
-    await attachNetworkCapture(m.executor);
+    const onSecurityMeta = vi.fn<(meta: ResponseMeta) => void>();
+    await attachNetworkCapture(m.executor, { onSecurityMeta });
     m.fire(
       { requestId: 'doc-2', type: 'Document', request: { url: 'https://x.test/', method: 'GET' } },
       'Network.requestWillBeSent',
@@ -320,17 +299,17 @@ describe('attachNetworkCapture — [tracelane.sec] response metadata', () => {
     );
     // No extraInfo ever arrives; the deferred microtask still emits, with [].
     await flushMicrotasks();
-    const lines = secEmissions(m.execute);
-    expect(lines).toHaveLength(1);
-    const meta = parseSec(lines[0] as string);
+    expect(onSecurityMeta).toHaveBeenCalledTimes(1);
+    const meta = onSecurityMeta.mock.calls[0]?.[0] as ResponseMeta;
     expect(meta.presentSecurityHeaders).toEqual(['strict-transport-security']);
     expect(meta.setCookies).toEqual([]);
-    expect(lines[0]).not.toContain('63072000');
+    expect(JSON.stringify(meta)).not.toContain('63072000');
   });
 
-  it('handles extraInfo arriving BEFORE responseReceived (emits once)', async () => {
+  it('handles extraInfo arriving BEFORE responseReceived (calls back once)', async () => {
     const m = mockExecutor();
-    await attachNetworkCapture(m.executor);
+    const onSecurityMeta = vi.fn<(meta: ResponseMeta) => void>();
+    await attachNetworkCapture(m.executor, { onSecurityMeta });
     m.fire(
       { requestId: 'doc-3', type: 'Document', request: { url: 'https://y.test/', method: 'GET' } },
       'Network.requestWillBeSent',
@@ -352,9 +331,8 @@ describe('attachNetworkCapture — [tracelane.sec] response metadata', () => {
       'Network.responseReceived',
     );
     await flushMicrotasks();
-    const lines = secEmissions(m.execute);
-    expect(lines).toHaveLength(1);
-    const meta = parseSec(lines[0] as string);
+    expect(onSecurityMeta).toHaveBeenCalledTimes(1);
+    const meta = onSecurityMeta.mock.calls[0]?.[0] as ResponseMeta;
     expect(meta.presentSecurityHeaders).toEqual(['referrer-policy']);
     expect(meta.setCookies).toEqual([{ name: 'a', secure: true, httpOnly: false, sameSite: true }]);
   });
@@ -362,10 +340,11 @@ describe('attachNetworkCapture — [tracelane.sec] response metadata', () => {
   // INVERTED CDP ORDER (responseReceived BEFORE responseReceivedExtraInfo). The
   // deferred-microtask emit must still fold in the cookie flags — proving the
   // insecure-cookie LEAD signal is NOT dropped when CDP delivers the events in
-  // the less-common order. Emits exactly once.
+  // the less-common order. Calls back exactly once.
   it('handles responseReceived arriving BEFORE extraInfo (cookies still captured)', async () => {
     const m = mockExecutor();
-    await attachNetworkCapture(m.executor);
+    const onSecurityMeta = vi.fn<(meta: ResponseMeta) => void>();
+    await attachNetworkCapture(m.executor, { onSecurityMeta });
     m.fire(
       { requestId: 'doc-4', type: 'Document', request: { url: 'https://w.test/', method: 'GET' } },
       'Network.requestWillBeSent',
@@ -390,21 +369,21 @@ describe('attachNetworkCapture — [tracelane.sec] response metadata', () => {
       'Network.responseReceivedExtraInfo',
     );
     await flushMicrotasks();
-    const lines = secEmissions(m.execute);
-    expect(lines).toHaveLength(1);
-    const meta = parseSec(lines[0] as string);
+    expect(onSecurityMeta).toHaveBeenCalledTimes(1);
+    const meta = onSecurityMeta.mock.calls[0]?.[0] as ResponseMeta;
     expect(meta.presentSecurityHeaders).toEqual(['x-content-type-options']);
     // Cookie flags survived the inverted order (NOT empty) — insecure-cookie
     // signal preserved: token is neither Secure nor HttpOnly.
     expect(meta.setCookies).toEqual([
       { name: 'token', secure: false, httpOnly: false, sameSite: true },
     ]);
-    expect(lines[0]).not.toContain('leakme');
+    expect(JSON.stringify(meta)).not.toContain('leakme');
   });
 
-  it('does not emit a [tracelane.sec] line for a non-document (subresource) response', async () => {
+  it('does not call onSecurityMeta for a non-document (subresource) response', async () => {
     const m = mockExecutor();
-    await attachNetworkCapture(m.executor);
+    const onSecurityMeta = vi.fn<(meta: ResponseMeta) => void>();
+    await attachNetworkCapture(m.executor, { onSecurityMeta });
     m.fire(
       {
         requestId: 'img-1',
@@ -422,13 +401,14 @@ describe('attachNetworkCapture — [tracelane.sec] response metadata', () => {
       'Network.responseReceived',
     );
     await flushMicrotasks();
-    expect(secEmissions(m.execute)).toHaveLength(0);
+    expect(onSecurityMeta).not.toHaveBeenCalled();
   });
 
-  it('with security:false, NO [tracelane.sec] line is emitted but [tracelane.net] is unchanged', async () => {
+  it('with security:false, onSecurityMeta is NOT called but [tracelane.net] is unchanged', async () => {
     const m = mockExecutor();
-    await attachNetworkCapture(m.executor, { security: false });
-    // Main-document flow that WOULD emit a sec line if enabled.
+    const onSecurityMeta = vi.fn<(meta: ResponseMeta) => void>();
+    await attachNetworkCapture(m.executor, { security: false, onSecurityMeta });
+    // Main-document flow that WOULD emit a sec meta if enabled.
     m.fire(
       { requestId: 'doc-x', type: 'Document', request: { url: 'https://z.test/', method: 'GET' } },
       'Network.requestWillBeSent',
@@ -446,7 +426,7 @@ describe('attachNetworkCapture — [tracelane.sec] response metadata', () => {
       'Network.responseReceivedExtraInfo',
     );
     await flushMicrotasks();
-    expect(secEmissions(m.execute)).toHaveLength(0);
+    expect(onSecurityMeta).not.toHaveBeenCalled();
 
     // [tracelane.net] behavior unchanged: a 500 still routes a net line.
     m.fire({ response: { url: 'https://z.test/api', status: 500 } });
@@ -488,13 +468,6 @@ describe('network-capture internals', () => {
     // No value leak.
     const out = JSON.stringify(__internal.parseSetCookies('token=abc.def.ghi; Secure'));
     expect(out).not.toContain('abc.def.ghi');
-  });
-
-  it('logResponseMetaInPage writes a [tracelane.sec]-prefixed console.error', () => {
-    const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
-    __internal.logResponseMetaInPage('{"url":"u"}');
-    expect(spy).toHaveBeenCalledWith('[tracelane.sec] {"url":"u"}');
-    spy.mockRestore();
   });
 
   it('methodOf reads :method, falls back to method, then GET', () => {

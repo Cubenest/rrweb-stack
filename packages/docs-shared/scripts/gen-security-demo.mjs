@@ -12,17 +12,7 @@ const REPO = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
 const OUT = join(REPO, 'apps/tracelane-docs/public/demo/security-hygiene-advisory.html');
 
 function secEvent(meta) {
-  return {
-    type: EventType.Plugin,
-    timestamp: 0,
-    data: {
-      plugin: 'rrweb/console@1',
-      payload: {
-        level: 'error',
-        payload: [JSON.stringify(`[tracelane.sec] ${JSON.stringify(meta)}`)],
-      },
-    },
-  };
+  return { type: EventType.Custom, timestamp: 0, data: { tag: 'tracelane.sec', payload: meta } };
 }
 const mainDocMeta = {
   url: 'https://shop.example/checkout',

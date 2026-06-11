@@ -1,3 +1,4 @@
+import { EventType } from '@cubenest/rrweb-core';
 import type { eventWithTime } from '@cubenest/rrweb-core';
 import type { BrowserExecutor } from './browser-executor.js';
 import { type Mode, resolveMode } from './mode.js';
@@ -92,6 +93,8 @@ export interface Recorder {
   finalize(outcome: TestOutcome): Promise<FinalizeResult>;
   /** The merged Node-side event buffer (live reference). */
   getBuffer(): eventWithTime[];
+  /** Append a Node-side rrweb Custom event directly to the buffer — immune to page navigation timing (unlike a page console.error). */
+  addCustomEvent(tag: string, payload: unknown): void;
 }
 
 /** Inject + eval the rrweb bundle string in the page (defines `window.rrweb`). */
@@ -150,6 +153,14 @@ export function createRecorder(options: RecorderOptions): Recorder {
     return true;
   }
 
+  function addCustomEvent(tag: string, payload: unknown): void {
+    buffer.push({
+      type: EventType.Custom,
+      timestamp: Date.now(),
+      data: { tag, payload },
+    } as eventWithTime);
+  }
+
   async function drain(): Promise<eventWithTime[]> {
     const batch = (await executor.execute(
       tracelaneDrainScript as (...args: unknown[]) => unknown[],
@@ -198,5 +209,6 @@ export function createRecorder(options: RecorderOptions): Recorder {
     stop,
     finalize,
     getBuffer: () => buffer,
+    addCustomEvent,
   };
 }

@@ -1,19 +1,13 @@
 import { EventType } from '@cubenest/rrweb-core';
 import type { eventWithTime } from '@cubenest/rrweb-core';
 import { describe, expect, it } from 'vitest';
-import { SEC_CONSOLE_PREFIX, analyze } from '../src/index.js';
+import { analyze } from '../src/index.js';
 
 function secEvent(meta: unknown): eventWithTime {
   return {
-    type: EventType.Plugin,
+    type: EventType.Custom,
     timestamp: 0,
-    data: {
-      plugin: 'rrweb/console@1',
-      payload: {
-        level: 'error',
-        payload: [JSON.stringify(`${SEC_CONSOLE_PREFIX} ${JSON.stringify(meta)}`)],
-      },
-    },
+    data: { tag: 'tracelane.sec', payload: meta },
   } as unknown as eventWithTime;
 }
 function anchorSnapshot(): eventWithTime {

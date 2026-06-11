@@ -83,6 +83,12 @@ export interface AttachNetworkCaptureOptions {
    * unaffected either way.
    */
   security?: boolean;
+  /**
+   * Node-side sink for the privacy-safe main-document response metadata. When
+   * set, the meta is delivered here (e.g. recorder.addCustomEvent) instead of a
+   * page console.error — reliable across navigation. Receives names + flags only.
+   */
+  onSecurityMeta?: (meta: ResponseMeta) => void;
 }
 
 /**
@@ -107,7 +113,7 @@ interface CookieFlags {
 }
 
 /** The privacy-safe main-document response metadata carried on `[tracelane.sec]`. */
-interface ResponseMeta {
+export interface ResponseMeta {
   url: string;
   status: number;
   isMainDocument: true;
@@ -149,17 +155,6 @@ function parseSetCookies(setCookieHeader: string | undefined): CookieFlags[] {
         sameSite: /(?:^|;)\s*samesite\s*=/.test(low),
       };
     });
-}
-
-/**
- * Page-side logger for the `[tracelane.sec]` line. Self-contained (no Node
- * closures) so it can be `.toString()`-serialized by `execute` (PRD §A.4),
- * mirroring `logNetworkErrorInPage`. The console plugin captures this
- * `console.error`; the `[tracelane.sec]` prefix lets the report scrape it back
- * out. The payload is a pre-stringified JSON `ResponseMeta`.
- */
-function logResponseMetaInPage(metaJson: string): void {
-  console.error(`[tracelane.sec] ${metaJson}`);
 }
 
 /** Status sentinel for a request that produced no response (a true 0 once parsed). */
@@ -252,11 +247,7 @@ export async function attachNetworkCapture(
     if (mainDocEmitted || !mainDocMeta) return;
     mainDocEmitted = true;
     if (mainDocCookies) mainDocMeta.setCookies = mainDocCookies;
-    void executor
-      .execute(logResponseMetaInPage as (...args: unknown[]) => void, JSON.stringify(mainDocMeta))
-      .catch(() => {
-        /* page may be navigating; drop this one line */
-      });
+    options.onSecurityMeta?.(mainDocMeta);
   };
 
   executor.on('Network.requestWillBeSent', (params: unknown) => {
@@ -351,7 +342,6 @@ export async function attachNetworkCapture(
 export const __internal = {
   logNetworkErrorInPage,
   methodOf,
-  logResponseMetaInPage,
   presentSecurityHeaders,
   parseSetCookies,
   SEC_HEADER_ALLOWLIST,

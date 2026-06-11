@@ -155,7 +155,10 @@ export class TraceLaneSession {
     if (!this.captureNetwork || this.networkAttached || this.networkUnavailable) return;
     if (!this.browser) return;
     try {
-      await attachNetworkCapture(createWdioExecutor(this.browser), { security: this.security });
+      await attachNetworkCapture(createWdioExecutor(this.browser), {
+        security: this.security,
+        onSecurityMeta: (m) => this.recorder?.addCustomEvent('tracelane.sec', m),
+      });
       this.networkAttached = true;
     } catch {
       // Give up for the rest of the session and say so once.
