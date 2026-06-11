@@ -82,6 +82,18 @@ export const config: Options.Testrunner = {
     <li><a href="https://www.npmjs.com/package/@tracelane/report" rel="noopener">@tracelane/report on npm</a></li>
   </ul>
 
+  <div class="callout">
+    <strong>Advisory security hygiene (on by default):</strong> reports include a
+    collapsed <strong>Security hygiene</strong> panel surfacing missing security
+    headers, insecure cookies, mixed content, and reverse tabnabbing &mdash;
+    derived from the session tracelane already captures. The same findings appear
+    in the Copy-as-Markdown-for-AI output. It&apos;s <em>advisory</em>, not an audit
+    or a scanner. Disable it with <code>security: false</code> in the service
+    options, or suppress individual findings with a
+    <code>tracelane.security.suppress.json</code> file in your project root.
+    <pre><code>services: [[TracelaneService, {`{ security: false }`}]],</code></pre>
+  </div>
+
   <h3>Browser &amp; framework support</h3>
   <ul>
     <li><strong>Mocha</strong>, <strong>Jasmine</strong>, <strong>Cucumber</strong> (via <code>beforeScenario</code>/<code>afterScenario</code>) &mdash; supported.</li>
