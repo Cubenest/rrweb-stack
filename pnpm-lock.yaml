@@ -251,9 +251,6 @@ importers:
       '@tracelane/core':
         specifier: workspace:*
         version: link:../tracelane-core
-      '@tracelane/security':
-        specifier: workspace:*
-        version: link:../tracelane-security
       fflate:
         specifier: ^0.8.2
         version: 0.8.3
@@ -261,6 +258,9 @@ importers:
         specifier: 1.0.0-alpha.4
         version: 1.0.0-alpha.4
     devDependencies:
+      '@tracelane/security':
+        specifier: workspace:*
+        version: link:../tracelane-security
       jsdom:
         specifier: ^25.0.1
         version: 25.0.1
@@ -279,9 +279,6 @@ importers:
       '@tracelane/report':
         specifier: workspace:*
         version: link:../tracelane-report
-      '@tracelane/security':
-        specifier: workspace:*
-        version: link:../tracelane-security
     devDependencies:
       '@cubenest/rrweb-core':
         specifier: workspace:*

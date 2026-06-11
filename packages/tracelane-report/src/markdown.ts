@@ -7,7 +7,7 @@
 
 import { EventType, IncrementalSource, MouseInteractions } from '@cubenest/rrweb-core';
 import type { eventWithTime } from '@cubenest/rrweb-core';
-import type { SecurityFinding } from '@tracelane/security';
+import type { SecurityFinding } from './_security/index.js';
 import type { ConsoleEntry, NetworkEntry } from './panels.js';
 import type { ReportMeta } from './types.js';
 

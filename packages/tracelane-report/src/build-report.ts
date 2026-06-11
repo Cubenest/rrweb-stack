@@ -16,8 +16,8 @@
 
 import type { eventWithTime } from '@cubenest/rrweb-core';
 import { pruneToSizeBudget } from '@tracelane/core';
-import { analyze } from '@tracelane/security';
-import type { SecurityFinding, Suppression } from '@tracelane/security';
+import { analyze } from './_security/index.js';
+import type { SecurityFinding, Suppression } from './_security/index.js';
 import { encodeEventsBlob } from './embed.js';
 import { buildMarkdown, extractActionLog } from './markdown.js';
 import { resolveCiMetadata } from './metadata.js';

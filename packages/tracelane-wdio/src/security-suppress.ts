@@ -13,7 +13,7 @@
 
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import type { Suppression } from '@tracelane/security';
+import type { Suppression } from '@tracelane/report';
 
 /** The fixed filename looked up in the project cwd. */
 export const SUPPRESS_FILE_NAME = 'tracelane.security.suppress.json';

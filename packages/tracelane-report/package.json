@@ -19,20 +19,20 @@
   },
   "files": ["dist", "NOTICE", "README.md"],
   "scripts": {
-    "build": "tsc -p tsconfig.json",
-    "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "vitest run --passWithNoTests"
+    "build": "node scripts/vendor-security.mjs && tsc -p tsconfig.json",
+    "typecheck": "node scripts/vendor-security.mjs && tsc -p tsconfig.json --noEmit",
+    "test": "node scripts/vendor-security.mjs && vitest run --passWithNoTests"
   },
   "dependencies": {
     "@cubenest/rrweb-core": "workspace:*",
     "@fontsource-variable/fraunces": "^5.2.7",
     "@fontsource-variable/jetbrains-mono": "^5.2.7",
     "@tracelane/core": "workspace:*",
-    "@tracelane/security": "workspace:*",
     "fflate": "^0.8.2",
     "rrweb-player": "1.0.0-alpha.4"
   },
   "devDependencies": {
+    "@tracelane/security": "workspace:*",
     "jsdom": "^25.0.1"
   },
   "publishConfig": {

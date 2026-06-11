@@ -10,7 +10,7 @@
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { eventWithTime } from '@cubenest/rrweb-core';
-import type { Suppression } from '@tracelane/security';
+import type { Suppression } from './_security/index.js';
 import { type BuildReportOptions, buildReport } from './build-report.js';
 import type { ReportMeta } from './types.js';
 
