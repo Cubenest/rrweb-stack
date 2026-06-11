@@ -139,6 +139,68 @@ describe('buildReport — self-contained HTML (Task 2.9)', () => {
   });
 });
 
+describe('buildReport — advisory security analysis (Task 11)', () => {
+  /**
+   * A `[tracelane.sec]` response-metadata console-plugin event, built the same
+   * way `@tracelane/security`'s tests do: the console plugin JSON-encodes string
+   * args, so the line is double-stringified. `scrapeResponseMeta` parses it back.
+   */
+  function secEvent(meta: unknown): eventWithTime {
+    return {
+      type: EventType.Plugin,
+      timestamp: 0,
+      data: {
+        plugin: 'rrweb/console@1',
+        payload: {
+          level: 'error',
+          payload: [JSON.stringify(`[tracelane.sec] ${JSON.stringify(meta)}`)],
+        },
+      },
+    } as unknown as eventWithTime;
+  }
+
+  // HTTPS main document with no security headers → a missing-security-header
+  // finding flows all the way through analyze() → markdown + panel.
+  const insecureMeta = {
+    url: 'https://app.test/',
+    status: 200,
+    isMainDocument: true,
+    presentSecurityHeaders: [],
+    setCookies: [],
+  };
+
+  function eventsWithSecFinding(): eventWithTime[] {
+    return [...sampleEvents(), secEvent(insecureMeta)];
+  }
+
+  it('renders the advisory panel + markdown section when analysis finds something (default on)', () => {
+    const html = buildReport(eventsWithSecFinding(), META);
+    // HTML panel marker present.
+    expect(html).toContain('id="pane-security"');
+    expect(html).toContain('id="tab-security"');
+    // Markdown-for-AI carries the advisory section.
+    const dataScript = inlineScripts(html).find((s) => s.includes('const MARKDOWN'));
+    if (dataScript === undefined) throw new Error('data-consts script not found');
+    expect(dataScript).toContain('## Security hygiene (advisory)');
+  });
+
+  it('emits neither the panel nor the markdown section when security is false', () => {
+    const html = buildReport(eventsWithSecFinding(), META, { security: false });
+    expect(html).not.toContain('id="pane-security"');
+    expect(html).not.toContain('id="tab-security"');
+    expect(html).not.toContain('## Security hygiene (advisory)');
+  });
+
+  it('omits the panel + section when analysis finds nothing (no zero-state)', () => {
+    // No [tracelane.sec] events at all → no findings → additive layer omitted.
+    const html = buildReport(sampleEvents(), META);
+    expect(html).not.toContain('id="pane-security"');
+    expect(html).not.toContain('## Security hygiene (advisory)');
+    // The SECURITY payload is still embedded (as an empty array).
+    expect(html).toContain('const SECURITY = [];');
+  });
+});
+
 describe('buildReport — accessibility (audit A-7)', () => {
   it('wires aria-selected + aria-controls on tabs and aria-labelledby on panes', () => {
     const html = buildReport(sampleEvents(), META);
