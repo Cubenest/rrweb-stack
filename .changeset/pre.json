@@ -57,15 +57,18 @@
     "playwright-live-demo-report",
     "playwright-readme-reframe",
     "playwright-select-option",
+    "recorder-reinject-nav-race",
     "recording-active-indicator",
     "repro-engine-tier0",
     "repro-tier2-visibility",
     "rrweb-core-esm-fix",
+    "sec-meta-custom-event-channel",
     "time-synced-panels-polish",
     "time-synced-panels",
     "tracelane-index-command",
     "tracelane-playwright-phase0",
     "tracelane-playwright",
-    "tracelane-rrweb-node22-engines"
+    "tracelane-rrweb-node22-engines",
+    "tracelane-security-mvp"
   ]
 }

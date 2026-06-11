@@ -1,6 +1,6 @@
 {
   "name": "@tracelane/report",
-  "version": "0.1.0-alpha.16",
+  "version": "0.1.0-alpha.17",
   "description": "Self-contained, offline HTML report builder for tracelane. Embeds the rrweb player and a gzipped event blob into a single .html file.",
   "keywords": ["tracelane", "html-report", "rrweb", "session-replay", "testing", "offline"],
   "license": "Apache-2.0",

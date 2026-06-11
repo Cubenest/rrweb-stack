@@ -1,5 +1,33 @@
 # @tracelane/core
 
+## 0.1.0-alpha.15
+
+### Patch Changes
+
+- b688e07: Make DOM capture resilient to navigation timing. On real (latency-bearing) cross-document navigations, the recorder's page-side re-injection could race the in-flight navigation, throw "Execution context was destroyed", and be silently swallowed — losing all rrweb DOM capture (FullSnapshot + mutations) on the new page while CDP-derived data still landed. `reinject` now retries past transient navigation-race errors (and `drain` skips a cycle instead of throwing), so recording reliably (re)starts on the navigated page. This restores replay + DOM-derived signals (e.g. the advisory mixed-content / reverse-tabnabbing security checks) on real sites.
+- b688e07: Fix: deliver `[tracelane.sec]` main-document response metadata via a Node-side
+  rrweb Custom event instead of a page `console.error`.
+
+  The advisory security layer surfaced main-document response metadata (security-
+  header presence + cookie flags) by having `attachNetworkCapture` call a page
+  `console.error('[tracelane.sec] ' + json)`. The main-document response fires at
+  navigation time, and that page `console.error` raced rrweb's per-navigation
+  re-injection — it landed outside the console plugin's recording window and was
+  lost. As a result the `missing-security-header`, `insecure-cookie`, and
+  `mixed-content` findings never fired end-to-end (only the pure-DOM
+  `reverse-tabnabbing` worked).
+
+  The capture layer now delivers the meta Node-side through a new
+  `onSecurityMeta` callback on `attachNetworkCapture`; the adapters wire it to
+  `recorder.addCustomEvent('tracelane.sec', meta)`, appending the meta directly to
+  the recorder's Node buffer as an rrweb Custom event (immune to navigation
+  timing). `@tracelane/security`'s `scrapeResponseMeta` now reads
+  `EventType.Custom` events (tag `tracelane.sec`) instead of console lines. The
+  privacy invariant is unchanged: names + flags only, never header or cookie
+  values.
+
+- b688e07: Add an advisory, low-false-positive security-hygiene layer. A new `@tracelane/security` analyzer surfaces missing security headers, mixed content, insecure cookies, and reverse-tabnabbing as a collapsed "Security hygiene (advisory)" panel in the report and in the Copy-as-Markdown-for-AI output. On by default; disable with `security: false`; suppress findings via `tracelane.security.suppress.json`. Advisory only — not a security audit/scan. Capture is privacy-safe (security-header presence + cookie flags, never values).
+
 ## 0.1.0-alpha.14
 
 ### Patch Changes
