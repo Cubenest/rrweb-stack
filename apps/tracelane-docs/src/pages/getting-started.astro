@@ -88,7 +88,10 @@ export const config: Options.Testrunner = {
     headers, insecure cookies, mixed content, and reverse tabnabbing &mdash;
     derived from the session tracelane already captures. The same findings appear
     in the Copy-as-Markdown-for-AI output. It&apos;s <em>advisory</em>, not an audit
-    or a scanner. Disable it with <code>security: false</code> in the service
+    or a scanner. The mixed-content and reverse-tabnabbing checks read the rrweb
+    DOM snapshot and work on any browser; the header and cookie checks need the
+    CDP network path (Chromium with CDP active) and are skipped when it isn&apos;t.
+    Disable the whole layer with <code>security: false</code> in the service
     options, or suppress individual findings with a
     <code>tracelane.security.suppress.json</code> file in your project root.
     <pre><code>services: [[TracelaneService, {`{ security: false }`}]],</code></pre>

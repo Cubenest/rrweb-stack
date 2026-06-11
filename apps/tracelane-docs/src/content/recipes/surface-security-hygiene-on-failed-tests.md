@@ -74,10 +74,12 @@ Matching findings are dropped from both the panel and the Markdown output.
 
 ## What it flags
 
-- **Missing security headers** — CSP, HSTS, X-Frame-Options, X-Content-Type-Options, Referrer-Policy. **HTTPS pages only** (gated to avoid localhost noise).
-- **Insecure cookies** — missing `Secure` / `HttpOnly` / `SameSite`. Any scheme.
-- **Mixed content** — an `http://` subresource on an `https` page. **HTTPS pages only**, sourced from the rrweb DOM snapshot.
-- **Reverse tabnabbing** — `target="_blank"` links without `rel="noopener"`. Any scheme, from the DOM.
+- **Missing security headers** — CSP, HSTS, X-Frame-Options, X-Content-Type-Options, Referrer-Policy. **HTTPS pages only** (gated to avoid localhost noise). _Needs the CDP network path (see below)._
+- **Insecure cookies** — missing `Secure` / `HttpOnly` / `SameSite`. Any scheme. _Needs the CDP network path (see below)._
+- **Mixed content** — an `http://` subresource on an `https` page. **HTTPS pages only**, read from the rrweb DOM snapshot — works on any browser.
+- **Reverse tabnabbing** — `target="_blank"` links without `rel="noopener"`. Any scheme, read from the DOM — works on any browser.
+
+> **Header + cookie signals need response metadata**, which tracelane reads over the Chrome DevTools Protocol — the same optional CDP enrichment that powers authoritative network status. On a CDP-capable session (Chromium with the devtools/CDP network path active) all four signals light up; without it, tracelane degrades gracefully and you still get the two **DOM-derived** signals (mixed content, reverse tabnabbing). The mixed-content and tabnabbing checks never need CDP.
 
 ## Why this works
 
