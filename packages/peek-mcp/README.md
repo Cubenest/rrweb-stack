@@ -8,6 +8,7 @@
 [![downloads](https://img.shields.io/npm/dw/@peekdev/mcp.svg)](https://www.npmjs.com/package/@peekdev/mcp)
 [![license](https://img.shields.io/npm/l/@peekdev/mcp.svg)](https://github.com/Cubenest/rrweb-stack/blob/main/LICENSE)
 [![CI](https://github.com/Cubenest/rrweb-stack/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/Cubenest/rrweb-stack/actions/workflows/ci.yml)
+[![rrweb-stack MCP server](https://glama.ai/mcp/servers/Cubenest/rrweb-stack/badges/score.svg)](https://glama.ai/mcp/servers/Cubenest/rrweb-stack)
 
 Docs: <https://peek.cubenest.in>
 
