@@ -1,5 +1,24 @@
 # @peekdev/extension
 
+## 0.1.0-alpha.14
+
+### Patch Changes
+
+- 209c1b3: feat: implement all remaining execute_action verbs (back/forward/reload/waitFor/screenshot/enter/dblclick) and fix screenshot capture
+
+  Extension:
+
+  - `back` / `forward` / `reload` — history navigation verbs in the MAIN-world dispatcher
+  - `waitFor` — MutationObserver + timeout race; waits for a selector to attach or a pure delay
+  - `screenshot` — CDP `Page.captureScreenshot` via the already-declared `debugger` permission (replaces `captureVisibleTab` which requires `<all_urls>` / an `activeTab` user gesture unavailable in the MCP→native-host→SW call path)
+  - `enter` — dispatches keydown/keypress/keyup with key=Enter on a selector or the active element; triggers native form submission in most frameworks
+  - `dblclick` — dispatches a `dblclick` MouseEvent on a resolved selector
+
+  peek-mcp:
+
+  - Adds `EnterActionSchema` and `DblClickActionSchema` to the Zod `ActionSchema` union so the MCP tool surfaces both verbs to AI clients
+  - `writeScreenshotFile`: host-socket spills the screenshot `dataUrl` to `~/.peek/screenshots/<requestId>.png` (0600) and returns a path pointer instead of a multi-MB base64 blob in the MCP context
+
 ## 0.1.0-alpha.13
 
 ### Patch Changes
@@ -67,6 +86,7 @@
   @cubenest/rrweb-core@alpha.2.
 
   @peekdev/extension:
+
   - MAIN-world recorder (recorder-entry.ts) registers getRecordNetworkPlugin
     in record()'s plugins array. Defaults stay conservative (bodies +
     headers off; PerformanceObserver path on) — peek's privacy posture is
@@ -86,6 +106,7 @@
     extractor @tracelane/report's panels.ts already uses).
 
   @peekdev/mcp:
+
   - No schema change. The network_events table + the network.append ingest
     handler still take their input from the SW relay's NetMessage
     envelopes — now synthesized from plugin events instead of forwarded
@@ -110,6 +131,7 @@
 
 - 15e4f8c: Phase 4c alpha.7 cleanups — close the 3 remaining annoyances from the
   manual QA walk (docs/qa/findings-2026-05-28.md):
+
   - J.6 (peek-extension + peek-mcp): rrweb recorder now emits a fresh
     FullSnapshot every 2 minutes (checkoutEveryNms: 120_000) and every
     5000 events. Bounds the look-back window for get_dom_snapshot so AI
@@ -144,6 +166,7 @@
   after the user toggled Deep capture off — a privacy regression.
 
   Now:
+
   - `detach(tabId)` ALWAYS calls `chrome.debugger.detach` and swallows
     the "Debugger is not attached" + "tab closed" errors.
   - `detachOrigin(origin, tabIds)` accepts a caller-supplied list of
@@ -160,6 +183,7 @@
 ### Patch Changes
 
 - Phase 4c QA loop #3 — two targeted fixes from the maintainer's alpha.3 walk:
+
   - **P-13** (`@peekdev/cli`): `peek init` is now idempotent. Before prompting
     for the unpacked extension ID, it reads the first existing native-host
     manifest's `allowed_origins`, extracts any previously-saved dev ID via the

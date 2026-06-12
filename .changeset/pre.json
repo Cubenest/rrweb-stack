@@ -26,6 +26,7 @@
     "launch-audit-tracelane-wdio",
     "network-failed-response-method",
     "peek-act-mainworld-dispatch",
+    "peek-execute-action-verbs",
     "peek-mcp-official-mcp-registry",
     "peek-mcp-readme-accuracy",
     "peek-mcp-tool-definitions",
