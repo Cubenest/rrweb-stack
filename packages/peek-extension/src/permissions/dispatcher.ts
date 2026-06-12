@@ -36,20 +36,18 @@ type DispatchableAction = { readonly type: string; readonly [k: string]: unknown
 /** The serializable result the SW forwards back to the host. */
 export type DispatchResult = { ok: true; details?: unknown } | { ok: false; error: string };
 
-/** Resolve a single element for an untrusted selector (+ optional nth match). */
-function resolveElement(selector: string, nth?: number): Element | null {
-  if (typeof selector !== 'string' || selector.length === 0) return null;
-  try {
-    if (typeof nth === 'number' && nth > 0) {
-      const all = document.querySelectorAll(selector);
-      return all.item(nth) ?? null;
-    }
-    return document.querySelector(selector);
-  } catch {
-    // An invalid selector string throws a SyntaxError — treat as not found.
-    return null;
-  }
-}
+/**
+ * Resolve a single element for an untrusted selector (+ optional nth match).
+ *
+ * NOTE: this logic is INLINED as a nested `resolveElement` inside both
+ * {@link dispatchAction} and {@link resolveTarget} — they must be self-contained
+ * for MAIN-world injection (a module-scope helper does NOT travel through
+ * `chrome.scripting.executeScript({ world: 'MAIN', func })`'s `.toString()`
+ * serialization and would be `undefined` in the page → ReferenceError). There is
+ * intentionally no module-scope copy here: keeping one would be dead code (and
+ * tempt a future caller into reintroducing the serialization bug). Keep the two
+ * nested copies in sync if you change the resolution behavior.
+ */
 
 /**
  * Execute one allowed action in the page. Self-contained + serializable result.
@@ -57,6 +55,25 @@ function resolveElement(selector: string, nth?: number): Element | null {
  * unsupported action) — never throws.
  */
 export function dispatchAction(action: DispatchableAction): DispatchResult {
+  // INLINED for MAIN-world injection: `dispatchAction` is passed by reference to
+  // `chrome.scripting.executeScript({ world: 'MAIN', func })`, which serializes
+  // ONLY this function's own source into the page. A module-scope helper would
+  // be `undefined` there (ReferenceError on first use). Declare resolveElement
+  // as a nested function so it travels with the dispatcher. Keep it in sync with
+  // the identical nested copy in resolveTarget.
+  function resolveElement(selector: string, nth?: number): Element | null {
+    if (typeof selector !== 'string' || selector.length === 0) return null;
+    try {
+      if (typeof nth === 'number' && nth > 0) {
+        const all = document.querySelectorAll(selector);
+        return all.item(nth) ?? null;
+      }
+      return document.querySelector(selector);
+    } catch {
+      // An invalid selector string throws a SyntaxError — treat as not found.
+      return null;
+    }
+  }
   switch (action.type) {
     case 'click': {
       const selector = typeof action.selector === 'string' ? action.selector : '';
@@ -131,6 +148,22 @@ export interface ResolvedTarget {
  * undefined), matching {@link dispatchAction}'s click branch.
  */
 export function resolveTarget(selector: string, nth?: number): ResolvedTarget {
+  // INLINED for MAIN-world injection (see dispatchAction): this function is also
+  // serialized into the page via `executeScript({ world: 'MAIN', func })`, so it
+  // must not depend on the module-scope resolveElement. Declare it nested.
+  function resolveElement(sel: string, n?: number): Element | null {
+    if (typeof sel !== 'string' || sel.length === 0) return null;
+    try {
+      if (typeof n === 'number' && n > 0) {
+        const all = document.querySelectorAll(sel);
+        return all.item(n) ?? null;
+      }
+      return document.querySelector(sel);
+    } catch {
+      // An invalid selector string throws a SyntaxError — treat as not found.
+      return null;
+    }
+  }
   const el = resolveElement(selector, nth);
   if (!el) return {};
   const text = (el.textContent ?? '').trim();

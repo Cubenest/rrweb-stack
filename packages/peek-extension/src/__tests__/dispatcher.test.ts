@@ -114,6 +114,79 @@ describe('dispatchAction — unsupported action', () => {
   });
 });
 
+// --- SERIALIZATION boundary (the executeScript({ world:'MAIN', func }) path) ---
+//
+// dispatchAction / resolveTarget are passed by reference to
+// chrome.scripting.executeScript({ world:'MAIN', func }). Chrome serializes ONLY
+// the function's own `.toString()` source into the page — module-scope helpers
+// (resolveElement) do NOT travel. The tests above call the functions directly in
+// jsdom where resolveElement IS in module scope, so they can't catch a missing
+// dependency. These reconstruct each function from its source in a scope WITHOUT
+// resolveElement (exactly what the page's MAIN world sees) and assert it neither
+// throws a ReferenceError nor silently no-ops. `new Function` closes over only
+// globals (document/window/URL/Event/…), not this module — mirroring the page.
+describe('MAIN-world serialization (no module-scope helpers in the page)', () => {
+  /** Rebuild a fn from its source in a scope with NO module-scope helpers. */
+  function reconstructInPageScope<T extends (...args: never[]) => unknown>(fn: T): T {
+    // Reconstruct from `.toString()` in a fresh scope (no module-scope helpers),
+    // emulating what executeScript serializes into the page's MAIN world.
+    return new Function(`return (${fn.toString()})`)() as T;
+  }
+
+  it('dispatchAction({type:"type"}) actually sets .value after serialization', () => {
+    const injected = reconstructInPageScope(dispatchAction);
+    const input = document.getElementById('i') as HTMLInputElement;
+    let res: unknown;
+    expect(() => {
+      res = injected({ type: 'type', selector: '#i', text: 'hi', delay: 0 });
+    }).not.toThrow();
+    expect(res).toEqual({ ok: true });
+    expect(input.value).toBe('hi');
+  });
+
+  it('dispatchAction({type:"click"}) actually clicks after serialization', () => {
+    const injected = reconstructInPageScope(dispatchAction);
+    let clicked = false;
+    document.getElementById('b')?.addEventListener('click', () => {
+      clicked = true;
+    });
+    let res: unknown;
+    expect(() => {
+      res = injected({ type: 'click', selector: '#b', button: 'left' });
+    }).not.toThrow();
+    expect(res).toEqual({ ok: true });
+    expect(clicked).toBe(true);
+  });
+
+  it('dispatchAction({type:"scroll", selector}) scrolls into view after serialization', () => {
+    const injected = reconstructInPageScope(dispatchAction);
+    const el = document.getElementById('tall') as HTMLElement;
+    let called = false;
+    el.scrollIntoView = (() => {
+      called = true;
+    }) as typeof el.scrollIntoView;
+    let res: unknown;
+    expect(() => {
+      res = injected({ type: 'scroll', selector: '#tall' });
+    }).not.toThrow();
+    expect(res).toEqual({ ok: true });
+    expect(called).toBe(true);
+  });
+
+  it('resolveTarget resolves matcher signals after serialization', () => {
+    const injected = reconstructInPageScope(resolveTarget);
+    let res: unknown;
+    expect(() => {
+      res = injected('#b');
+    }).not.toThrow();
+    expect(res).toMatchObject({
+      text: 'Save now',
+      ariaLabel: 'Save',
+      nearbyHeading: 'Account settings',
+    });
+  });
+});
+
 describe('resolveTarget', () => {
   it('returns text + ariaLabel + nearbyHeading for the matched element', () => {
     expect(resolveTarget('#b')).toMatchObject({
