@@ -1,5 +1,5 @@
 import { EventEmitter } from 'node:events';
-import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import * as net from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -71,6 +71,7 @@ function makeServer(overrides?: {
   loadPolicy?: () => LoadedPolicy;
   ids?: string[];
   maxLineBytes?: number;
+  writeScreenshot?: (requestId: string, buf: Buffer) => { path: string; bytes: number };
 }) {
   const posted: unknown[] = [];
   const net = new FakeNetServer();
@@ -81,6 +82,9 @@ function makeServer(overrides?: {
     loadPolicy: overrides?.loadPolicy ?? (() => EMPTY_POLICY),
     generateRequestId: () => idQueue[n++] ?? `rid-${n}`,
     ...(overrides?.maxLineBytes !== undefined ? { maxLineBytes: overrides.maxLineBytes } : {}),
+    ...(overrides?.writeScreenshot !== undefined
+      ? { writeScreenshot: overrides.writeScreenshot }
+      : {}),
     createServer: (handler) => {
       net.onConnection(handler);
       return net as never;
@@ -88,6 +92,26 @@ function makeServer(overrides?: {
   });
   server.listen();
   return { server, net, posted };
+}
+
+/** A 1x1 transparent PNG, base64 (the smallest valid PNG payload). */
+const PNG_1X1_B64 =
+  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
+
+/** Feed an act.request so an `act.response` written for `rid` lands on `conn`. */
+function feedScreenshotRequest(conn: FakeConnection): void {
+  conn.feed(
+    `${JSON.stringify({
+      kind: 'act.request',
+      id: 'wire-shot',
+      payload: {
+        tool: 'execute_action',
+        sessionId: 's',
+        action: { type: 'screenshot' },
+        client: 'cursor',
+      },
+    })}\n`,
+  );
 }
 
 describe('HostSocketServer', () => {
@@ -353,6 +377,131 @@ describe('HostSocketServer', () => {
       approver: 'user',
     });
     expect(conn.frames()).toHaveLength(1);
+  });
+});
+
+// SCREENSHOT SPILL-TO-DISK: a screenshot `details.dataUrl` is decoded + written
+// to ~/.peek/screenshots/<requestId>.png and REPLACED with a compact pointer so
+// a multi-MB base64 PNG never round-trips over the socket. STRICT GUARD: any
+// reply WITHOUT a dataUrl passes through byte-for-byte with ZERO fs calls.
+describe('HostSocketServer — screenshot spill-to-disk (toResponsePayload)', () => {
+  it('writes the PNG + returns { path, bytes, format } and DROPS dataUrl when present', () => {
+    const calls: Array<{ requestId: string; bytes: number }> = [];
+    const { server, net } = makeServer({
+      writeScreenshot: (requestId, buf) => {
+        calls.push({ requestId, bytes: buf.length });
+        return { path: `/fake/screenshots/${requestId}.png`, bytes: buf.length };
+      },
+    });
+    const conn = net.connect();
+    feedScreenshotRequest(conn);
+
+    const rawBytes = Buffer.from(PNG_1X1_B64, 'base64').length;
+    server.onSwMessage({
+      type: 'action.result',
+      requestId: 'rid-1',
+      tool: 'execute_action',
+      verdict: 'allow',
+      result: 'ok',
+      approver: 'user',
+      details: {
+        dataUrl: `data:image/png;base64,${PNG_1X1_B64}`,
+        format: 'png',
+        selectorCropped: false,
+      },
+    });
+
+    // The injected writer ran exactly once with the decoded PNG bytes.
+    expect(calls).toEqual([{ requestId: 'rid-1', bytes: rawBytes }]);
+
+    const payload = conn.frames()[0]?.payload as Record<string, unknown>;
+    const details = payload.details as Record<string, unknown>;
+    expect(details).toEqual({
+      path: '/fake/screenshots/rid-1.png',
+      bytes: rawBytes,
+      format: 'png',
+    });
+    // The fat base64 dataUrl never makes it onto the wire.
+    expect('dataUrl' in details).toBe(false);
+  });
+
+  it('STRICT GUARD: a non-screenshot reply passes through with ZERO fs calls', () => {
+    let writeCalls = 0;
+    const { server, net } = makeServer({
+      writeScreenshot: (requestId, buf) => {
+        writeCalls += 1;
+        return { path: `/fake/${requestId}.png`, bytes: buf.length };
+      },
+    });
+    const conn = net.connect();
+    conn.feed(
+      `${JSON.stringify({
+        kind: 'act.request',
+        id: 'wire-click',
+        payload: {
+          tool: 'execute_action',
+          sessionId: 's',
+          action: { type: 'click', selector: '#x', button: 'left' },
+          client: 'cursor',
+        },
+      })}\n`,
+    );
+    // A click reply carrying a details object WITHOUT a dataUrl — must be
+    // untouched and trigger ZERO fs writes.
+    server.onSwMessage({
+      type: 'action.result',
+      requestId: 'rid-1',
+      tool: 'execute_action',
+      verdict: 'allow',
+      result: 'ok',
+      approver: 'user',
+      details: { dispatched: true, matched: true },
+    });
+    expect(writeCalls).toBe(0); // the spy was NEVER invoked
+    const payload = conn.frames()[0]?.payload as Record<string, unknown>;
+    expect(payload.details).toEqual({ dispatched: true, matched: true }); // byte-for-byte
+  });
+
+  it('default writeScreenshot writes a 0600 PNG under PEEK_HOME/screenshots', () => {
+    const home = mkdtempSync(join(tmpdir(), 'peek-shot-'));
+    const prevHome = process.env.PEEK_HOME;
+    process.env.PEEK_HOME = home;
+    try {
+      // No writeScreenshot override → exercises the real writeScreenshotFile.
+      const { server, net } = makeServer();
+      const conn = net.connect();
+      feedScreenshotRequest(conn);
+      server.onSwMessage({
+        type: 'action.result',
+        requestId: 'rid-1',
+        tool: 'execute_action',
+        verdict: 'allow',
+        result: 'ok',
+        approver: 'user',
+        details: { dataUrl: `data:image/png;base64,${PNG_1X1_B64}`, format: 'png' },
+      });
+      const details = (conn.frames()[0]?.payload as Record<string, unknown>).details as Record<
+        string,
+        unknown
+      >;
+      const path = details.path as string;
+      expect(path).toBe(join(home, 'screenshots', 'rid-1.png'));
+      expect(existsSync(path)).toBe(true);
+      // The file is the decoded PNG bytes, not the base64 text.
+      expect(readFileSync(path)).toEqual(Buffer.from(PNG_1X1_B64, 'base64'));
+      if (process.platform !== 'win32') {
+        expect(statSync(path).mode & 0o777).toBe(0o600);
+      }
+    } finally {
+      if (prevHome === undefined) {
+        process.env.PEEK_HOME = undefined;
+        // biome-ignore lint/performance/noDelete: restore a truly-absent env var
+        delete process.env.PEEK_HOME;
+      } else {
+        process.env.PEEK_HOME = prevHome;
+      }
+      rmSync(home, { recursive: true, force: true });
+    }
   });
 });
 

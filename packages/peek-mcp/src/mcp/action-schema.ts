@@ -73,6 +73,21 @@ export const WaitForActionSchema = z.object({
 });
 export type WaitForAction = z.infer<typeof WaitForActionSchema>;
 
+/** Press Enter on the active element or a specific selector (focus → keydown/keypress/keyup). */
+export const EnterActionSchema = z.object({
+  type: z.literal('enter'),
+  selector: z.string().optional(),
+});
+export type EnterAction = z.infer<typeof EnterActionSchema>;
+
+/** Double-click a target element. */
+export const DblClickActionSchema = z.object({
+  type: z.literal('dblclick'),
+  selector: z.string().min(1),
+  nth: z.number().int().min(0).optional(),
+});
+export type DblClickAction = z.infer<typeof DblClickActionSchema>;
+
 /** The full Action discriminated union (P2 PRD §E.4). */
 export const ActionSchema = z.discriminatedUnion('type', [
   ClickActionSchema,
@@ -84,6 +99,8 @@ export const ActionSchema = z.discriminatedUnion('type', [
   ScrollActionSchema,
   ScreenshotActionSchema,
   WaitForActionSchema,
+  EnterActionSchema,
+  DblClickActionSchema,
 ]);
 export type Action = z.infer<typeof ActionSchema>;
 

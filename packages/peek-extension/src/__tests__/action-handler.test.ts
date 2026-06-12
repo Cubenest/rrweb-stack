@@ -1,5 +1,6 @@
 import { fakeBrowser } from '@webext-core/fake-browser';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { captureScreenshot, isReadOnlyAction } from '../../entrypoints/background';
 import { addEnabledOrigin } from '../activation/storage';
 import {
   type ActionHandlerDeps,
@@ -592,6 +593,138 @@ describe('handleActionRequest — dispatch failure surfaces as result=error', ()
     const out = await handleActionRequest(makeRequest(), ctx.deps);
     expect(out.result).toBe('error');
     expect(out.error).toContain('chrome.scripting unavailable');
+  });
+});
+
+// --- SW-level screenshot capture + read-only bypass (Lane 2) ----------------
+// `captureScreenshot` and `isReadOnlyAction` are module-scope SW helpers in
+// entrypoints/background.ts (importing the module does NOT run `main()` — wxt's
+// defineBackground only stores the config; the SW invokes main() at runtime).
+
+/**
+ * Install a fake `chrome.tabs` surface for the screenshot helper (active-tab
+ * guard only — get + query). Returns a restore() to put the originals back.
+ */
+function stubTabs(fake: {
+  get: (id: number) => Promise<{ windowId?: number }>;
+  query: (q: { active: boolean; windowId: number }) => Promise<Array<{ id?: number }>>;
+}): () => void {
+  const tabs = (globalThis as unknown as { chrome: { tabs: Record<string, unknown> } }).chrome.tabs;
+  const saved = { get: tabs.get, query: tabs.query };
+  tabs.get = fake.get as unknown as typeof tabs.get;
+  tabs.query = fake.query as unknown as typeof tabs.query;
+  return () => {
+    tabs.get = saved.get;
+    tabs.query = saved.query;
+  };
+}
+
+/**
+ * Install a fake `chrome.debugger` surface for the CDP screenshot path.
+ * `chrome.debugger` is absent from fakeBrowser, so we set it directly on
+ * globalThis.chrome. Returns a restore() to put the original back.
+ */
+function stubDebugger(fake: {
+  attach?: (target: { tabId: number }, version: string) => Promise<void>;
+  sendCommand?: (target: { tabId: number }, method: string, params?: unknown) => Promise<unknown>;
+  detach?: (target: { tabId: number }) => Promise<void>;
+}): () => void {
+  const root = globalThis as unknown as { chrome: Record<string, unknown> };
+  const hadProp = Object.prototype.hasOwnProperty.call(root.chrome, 'debugger');
+  const saved = root.chrome.debugger;
+  root.chrome.debugger = {
+    attach: fake.attach ?? (async () => {}),
+    sendCommand: fake.sendCommand ?? (async () => ({ data: 'AAAA' })),
+    detach: fake.detach ?? (async () => {}),
+  };
+  return () => {
+    // If `chrome.debugger` didn't exist originally (fakeBrowser doesn't include
+    // it), delete the property rather than setting it to undefined — fakeBrowser
+    // iterates its own entries in reset() and throws on undefined values.
+    if (!hadProp) {
+      // Setting to undefined puts `undefined` into fakeBrowser's property bag and crashes
+      // fakeBrowser.reset() (it iterates entries + calls .resetState() on each value).
+      // biome-ignore lint/performance/noDelete: must delete, not assign undefined — see comment above
+      delete root.chrome.debugger;
+    } else {
+      root.chrome.debugger = saved;
+    }
+  };
+}
+
+describe('captureScreenshot — mandatory active-tab guard (Lane 2)', () => {
+  it('active-tab MISMATCH → { ok:false } and does NOT call chrome.debugger', async () => {
+    let attached = 0;
+    const restoreTabs = stubTabs({
+      get: async () => ({ windowId: 7 }),
+      // The active tab in window 7 is a DIFFERENT tab (id 99) than the target (42).
+      query: async () => [{ id: 99 }],
+    });
+    const restoreDbg = stubDebugger({
+      attach: async () => {
+        attached += 1;
+      },
+    });
+    try {
+      const out = await captureScreenshot(42, { type: 'screenshot' });
+      expect(out.ok).toBe(false);
+      if (!out.ok) expect(out.error).toMatch(/active/i);
+      expect(attached).toBe(0); // guard fires before CDP is touched
+    } finally {
+      restoreTabs();
+      restoreDbg();
+    }
+  });
+
+  it('active-tab MATCH → { ok:true } with details.dataUrl + selectorCropped:false', async () => {
+    const restoreTabs = stubTabs({
+      get: async () => ({ windowId: 7 }),
+      query: async () => [{ id: 42 }], // active tab IS the target
+    });
+    const restoreDbg = stubDebugger({
+      attach: async (target, version) => {
+        expect(target.tabId).toBe(42);
+        expect(version).toBe('1.3');
+      },
+      sendCommand: async (_target, method, params) => {
+        expect(method).toBe('Page.captureScreenshot');
+        expect((params as Record<string, unknown>).format).toBe('png');
+        return { data: 'AAAA' };
+      },
+      detach: async (target) => {
+        expect(target.tabId).toBe(42);
+      },
+    });
+    try {
+      // selector is accepted but IGNORED in v1.
+      const out = await captureScreenshot(42, { type: 'screenshot', selector: '#delete-account' });
+      expect(out.ok).toBe(true);
+      if (out.ok) {
+        expect(out.details).toEqual({
+          dataUrl: 'data:image/png;base64,AAAA',
+          format: 'png',
+          selectorCropped: false,
+        });
+      }
+    } finally {
+      restoreTabs();
+      restoreDbg();
+    }
+  });
+});
+
+describe('isReadOnlyAction — resolveTarget read-only bypass (Lane 2)', () => {
+  it('returns true for waitFor and screenshot (the verbs resolveTarget short-circuits)', () => {
+    expect(isReadOnlyAction({ type: 'waitFor', selector: '#x', timeoutMs: 1000 })).toBe(true);
+    expect(isReadOnlyAction({ type: 'screenshot' })).toBe(true);
+    expect(isReadOnlyAction({ type: 'screenshot', selector: '#delete-account' })).toBe(true);
+  });
+
+  it('returns false for element-operating verbs (click/type/scroll/navigate)', () => {
+    expect(isReadOnlyAction({ type: 'click', selector: '#x', button: 'left' })).toBe(false);
+    expect(isReadOnlyAction({ type: 'type', selector: '#x', text: 'a', delay: 40 })).toBe(false);
+    expect(isReadOnlyAction({ type: 'scroll', selector: '#x' })).toBe(false);
+    expect(isReadOnlyAction({ type: 'navigate', url: 'https://example.com' })).toBe(false);
   });
 });
 

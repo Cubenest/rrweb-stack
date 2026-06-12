@@ -37,7 +37,11 @@ import {
   InMemoryConfirmTokenStore,
   handleActionRequest,
 } from '../src/permissions/action-handler';
-import type { ActionResultMessage } from '../src/permissions/action-protocol';
+import type {
+  Action,
+  ActionResultMessage,
+  ScreenshotAction,
+} from '../src/permissions/action-protocol';
 import { isActionRequest } from '../src/permissions/action-protocol';
 import {
   dispatchAction,
@@ -49,6 +53,93 @@ import { injectRecorder } from '../src/recorder/inject';
 
 /** Fail-closed timeout for a pending Level-3 confirm (locked MVP decision). */
 const CONFIRM_TIMEOUT_MS = 2 * 60_000;
+
+/**
+ * Read-only verbs that NEVER touch a DOM element destructively: a passive
+ * `waitFor` (observe-or-timeout) and a `screenshot` (pixel capture). The
+ * destructive-confirm matcher inspects an action's resolved element; a read-only
+ * verb must skip element resolution entirely so a benign capture/wait can never
+ * trip the destructive matcher (e.g. a `screenshot` whose `selector` happens to
+ * land on a "Delete" button must NOT force a confirm — it isn't clicking it).
+ */
+export function isReadOnlyAction(action: Action): boolean {
+  return action.type === 'waitFor' || action.type === 'screenshot';
+}
+
+/**
+ * Screenshot via CDP `Page.captureScreenshot`. `chrome.tabs.captureVisibleTab`
+ * requires `<all_urls>` or an `activeTab` user gesture — neither available in
+ * the MCP → native-host → SW call path (no user gesture). CDP uses the
+ * `debugger` permission already in static `permissions` (wxt.config.ts P-14),
+ * so it works programmatically without violating ADR-0008.
+ *
+ * If the debugger is already attached (Deep capture), reuses the session.
+ * Otherwise attaches temporarily, captures, then detaches.
+ */
+async function captureViaDebugger(tabId: number): Promise<string> {
+  let didAttach = false;
+  try {
+    await chrome.debugger.attach({ tabId }, '1.3');
+    didAttach = true;
+  } catch (err) {
+    // "Another debugger is already attached" (Deep capture) — reuse the session.
+    const msg = err instanceof Error ? err.message : String(err);
+    if (!msg.toLowerCase().includes('already attached')) throw err;
+  }
+  try {
+    const result = (await chrome.debugger.sendCommand({ tabId }, 'Page.captureScreenshot', {
+      format: 'png',
+      quality: 80,
+      captureBeyondViewport: false,
+    })) as { data: string };
+    return `data:image/png;base64,${result.data}`;
+  } finally {
+    if (didAttach) {
+      // Best-effort: tab may have been closed during capture.
+      await chrome.debugger.detach({ tabId }).catch(() => {});
+    }
+  }
+}
+
+/**
+ * SW-level screenshot capture (a page cannot screenshot itself, so this is
+ * handled BEFORE the MAIN-world dispatch). MANDATORY active-tab guard: CDP
+ * captures a tab's rendered state; a non-visible tab may have a stale paint
+ * tree. We refuse rather than auto-activate.
+ *
+ * `action.selector` is accepted but IGNORED in v1 (no element-crop yet); the
+ * reply always sets `selectorCropped:false` so the caller knows it got the full
+ * visible viewport.
+ */
+export async function captureScreenshot(
+  tabId: number,
+  _action: ScreenshotAction,
+): Promise<{ ok: true; details: unknown } | { ok: false; error: string }> {
+  let windowId: number;
+  try {
+    const tab = await chrome.tabs.get(tabId);
+    if (tab.windowId === undefined) {
+      return { ok: false, error: 'screenshot target tab has no window' };
+    }
+    windowId = tab.windowId;
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : String(err) };
+  }
+  // Active-tab guard: a non-visible tab may have a stale/blank paint tree.
+  const [active] = await chrome.tabs.query({ active: true, windowId });
+  if (active?.id !== tabId) {
+    return { ok: false, error: 'screenshot requires the target tab to be active' };
+  }
+  try {
+    const dataUrl = await captureViaDebugger(tabId);
+    return { ok: true, details: { dataUrl, format: 'png', selectorCropped: false } };
+  } catch (err) {
+    return {
+      ok: false,
+      error: `screenshot failed: ${err instanceof Error ? err.message : String(err)}`,
+    };
+  }
+}
 
 /**
  * Background service worker (ADR-0009).
@@ -287,6 +378,11 @@ export default defineBackground({
      * resolves to an empty target (the gate still runs; Level 3 still confirms).
      */
     const resolveTarget: ActionHandlerDeps['resolveTarget'] = async ({ tabId, action }) => {
+      // Read-only verbs (waitFor / screenshot) emit NO destructive signals: they
+      // never operate on the resolved element, so resolving one would risk the
+      // destructive matcher firing on an incidental selector hit. Short-circuit
+      // BEFORE element resolution.
+      if (isReadOnlyAction(action)) return {};
       const selector = 'selector' in action ? action.selector : undefined;
       if (typeof selector !== 'string' || selector.length === 0) return {};
       // Item B: thread `nth` so the destructive matcher inspects the SAME
@@ -318,6 +414,12 @@ export default defineBackground({
       tabId,
       action,
     }) => {
+      // `screenshot` is the ONE verb the MAIN-world dispatcher can't run (a page
+      // can't screenshot itself). Handle it here, SW-side, BEFORE the
+      // executeScript call — captureVisibleTab is an SW-only API.
+      if (action.type === 'screenshot') {
+        return await captureScreenshot(tabId, action);
+      }
       try {
         const [frame] = await chrome.scripting.executeScript({
           target: { tabId },

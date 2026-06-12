@@ -28,13 +28,25 @@
  * arrives from an AI client over MCP (untrusted), so we type it as "an object
  * with a string `type` plus arbitrary extra props" and narrow defensively per
  * branch. The protocol `Action` union is structurally assignable to this, so
- * background.ts can hand the SW's `action` straight through. Unrecognized
- * `type`s (back/forward/reload/screenshot/waitFor) hit the `default` → rejected.
+ * background.ts can hand the SW's `action` straight through.
+ *
+ * The dispatcher handles eight in-page verbs: click / type / navigate / scroll
+ * / back / forward / reload / waitFor. `screenshot` is the ONE verb NOT handled
+ * here — it needs `chrome.tabs.captureVisibleTab`, an SW-only API absent from
+ * the page's MAIN world — so background.ts intercepts it before routing to this
+ * dispatcher (a `screenshot` that reached here would hit the `default` →
+ * rejected; the sentinel test documents that boundary by design).
  */
 type DispatchableAction = { readonly type: string; readonly [k: string]: unknown };
 
-/** The serializable result the SW forwards back to the host. */
-export type DispatchResult = { ok: true; details?: unknown } | { ok: false; error: string };
+/**
+ * The serializable result the SW forwards back to the host. Both variants may
+ * carry `details` — `waitFor` attaches `{ matched, elapsedMs }` even on the
+ * timed-out failure path so the caller can see how long it waited.
+ */
+export type DispatchResult =
+  | { ok: true; details?: unknown }
+  | { ok: false; error: string; details?: unknown };
 
 /**
  * Resolve a single element for an untrusted selector (+ optional nth match).
@@ -53,8 +65,12 @@ export type DispatchResult = { ok: true; details?: unknown } | { ok: false; erro
  * Execute one allowed action in the page. Self-contained + serializable result.
  * Returns `{ ok: false, error }` for any failure (missing element, bad URL,
  * unsupported action) — never throws.
+ *
+ * Async because `waitFor` awaits a MutationObserver/timeout race. Chrome's
+ * `executeScript` awaits a returned Promise and surfaces the resolved value as
+ * `frame.result`, so the synchronous branches simply resolve immediately.
  */
-export function dispatchAction(action: DispatchableAction): DispatchResult {
+export async function dispatchAction(action: DispatchableAction): Promise<DispatchResult> {
   // INLINED for MAIN-world injection: `dispatchAction` is passed by reference to
   // `chrome.scripting.executeScript({ world: 'MAIN', func })`, which serializes
   // ONLY this function's own source into the page. A module-scope helper would
@@ -120,6 +136,117 @@ export function dispatchAction(action: DispatchableAction): DispatchResult {
       const x = typeof action.x === 'number' ? action.x : 0;
       const y = typeof action.y === 'number' ? action.y : 0;
       window.scrollTo(x, y);
+      return { ok: true };
+    }
+    case 'back': {
+      // BARE ok (no details) — matches the navigate precedent.
+      if (window.history.length <= 1) {
+        return { ok: false, error: 'no history entry to go back to' };
+      }
+      window.history.back();
+      return { ok: true };
+    }
+    case 'forward': {
+      window.history.forward();
+      return { ok: true };
+    }
+    case 'reload': {
+      window.location.reload();
+      return { ok: true };
+    }
+    case 'waitFor': {
+      // Wait for `selector` to attach to the DOM (non-null querySelector — NOT
+      // visibility), OR — when no selector is given — for a pure delay to
+      // elapse. Self-contained for MAIN-world injection: ALL helper logic lives
+      // nested in this branch (no module-scope deps survive `.toString()`).
+      const selector = typeof action.selector === 'string' ? action.selector : '';
+      // Clamp under the 5-min host-bridge timeout so the await always resolves
+      // before the host gives up on the request.
+      const requested = typeof action.timeoutMs === 'number' ? action.timeoutMs : 5000;
+      const timeout = Math.min(requested, 240000);
+      const startedAt = performance.now();
+      const matches = (): boolean => {
+        if (selector.length === 0) return false;
+        try {
+          return document.querySelector(selector) !== null;
+        } catch {
+          // Invalid selector string throws a SyntaxError — treat as no match.
+          return false;
+        }
+      };
+      // Fast path: already attached.
+      if (matches()) {
+        return { ok: true, details: { matched: true, elapsedMs: performance.now() - startedAt } };
+      }
+      // Race a MutationObserver (resolves on first match) against a timeout cap.
+      const matched = await new Promise<boolean>((resolve) => {
+        let observer: MutationObserver | null = null;
+        let timer: ReturnType<typeof setTimeout> | null = null;
+        const finish = (result: boolean): void => {
+          if (observer) observer.disconnect();
+          if (timer !== null) clearTimeout(timer);
+          resolve(result);
+        };
+        observer = new MutationObserver(() => {
+          if (matches()) finish(true);
+        });
+        observer.observe(document.documentElement, {
+          childList: true,
+          subtree: true,
+          attributes: true,
+        });
+        timer = setTimeout(() => finish(false), timeout);
+      });
+      const elapsedMs = performance.now() - startedAt;
+      if (matched) {
+        return { ok: true, details: { matched: true, elapsedMs } };
+      }
+      // No selector given → a pure delay that completed: success.
+      if (selector.length === 0) {
+        return { ok: true, details: { matched: false, elapsedMs } };
+      }
+      // Selector given but never attached within the cap: failure.
+      return {
+        ok: false,
+        error: `waitFor timed out: ${selector}`,
+        details: { matched: false, elapsedMs },
+      };
+    }
+    case 'enter': {
+      // Focus the selector if given; otherwise dispatch to the currently active
+      // element. Fires keydown → keypress → keyup so both native form-submit
+      // handlers and framework key-listener patterns receive the full sequence.
+      const selector = typeof action.selector === 'string' ? action.selector : '';
+      let target: Element | null;
+      if (selector.length > 0) {
+        target = resolveElement(selector);
+        if (!target) return { ok: false, error: `element not found: ${selector}` };
+        (target as HTMLElement).focus?.();
+      } else {
+        target = document.activeElement;
+      }
+      const el = (target ?? document.body) as HTMLElement;
+      const opts: KeyboardEventInit = {
+        key: 'Enter',
+        code: 'Enter',
+        keyCode: 13,
+        which: 13,
+        bubbles: true,
+        cancelable: true,
+      };
+      el.dispatchEvent(new KeyboardEvent('keydown', opts));
+      el.dispatchEvent(new KeyboardEvent('keypress', opts));
+      el.dispatchEvent(new KeyboardEvent('keyup', opts));
+      return { ok: true };
+    }
+    case 'dblclick': {
+      const selector = typeof action.selector === 'string' ? action.selector : '';
+      const nth = typeof action.nth === 'number' ? action.nth : undefined;
+      const el = resolveElement(selector, nth);
+      if (!el) return { ok: false, error: `element not found: ${selector}` };
+      (el as HTMLElement).dispatchEvent(
+        new MouseEvent('dblclick', { bubbles: true, cancelable: true }),
+      );
       return { ok: true };
     }
     default:

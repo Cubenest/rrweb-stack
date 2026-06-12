@@ -49,6 +49,15 @@ export interface WaitForAction {
   selector?: string;
   timeoutMs: number;
 }
+export interface EnterAction {
+  type: 'enter';
+  selector?: string;
+}
+export interface DblClickAction {
+  type: 'dblclick';
+  selector: string;
+  nth?: number;
+}
 
 export type Action =
   | ClickAction
@@ -59,7 +68,9 @@ export type Action =
   | ReloadAction
   | ScrollAction
   | ScreenshotAction
-  | WaitForAction;
+  | WaitForAction
+  | EnterAction
+  | DblClickAction;
 
 /** host → SW: please run / authorize this action. */
 export interface ActionRequestMessage {

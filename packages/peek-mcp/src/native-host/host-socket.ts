@@ -22,10 +22,12 @@
 // timeout must not throw). The policy deltas are loaded per request (the file
 // is tiny) and forwarded so the SW's destructive matcher merges them.
 
-import { statSync, unlinkSync } from 'node:fs';
+import { mkdirSync, statSync, unlinkSync, writeFileSync } from 'node:fs';
 import * as net from 'node:net';
 import { platform } from 'node:os';
+import { join } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
+import { peekHomeDir } from '../db/open.js';
 import type {
   ActionConfirmShownMessage,
   ActionRequestMessage,
@@ -146,6 +148,30 @@ export interface HostSocketServerDeps {
    * this to degrade — set `socketServer = undefined` — instead of crashing.
    */
   onListenError?: (err: Error) => void;
+  /**
+   * Spill a decoded screenshot PNG to disk and return its on-disk pointer.
+   * Defaults to {@link writeScreenshotFile} (writes `~/.peek/screenshots/
+   * <requestId>.png`, 0600). Injectable so tests can assert the fs path is
+   * taken ONLY for a screenshot reply (zero calls otherwise).
+   */
+  writeScreenshot?: (requestId: string, buf: Buffer) => { path: string; bytes: number };
+}
+
+/**
+ * Default screenshot spill-to-disk: write the decoded PNG under
+ * `~/.peek/screenshots/<requestId>.png` with 0600 perms (mirrors the ingest.ts
+ * blob-write precedent) and return its `{ path, bytes }`. Kept as a standalone
+ * export so the {@link HostSocketServer} can inject a fake in tests.
+ */
+export function writeScreenshotFile(
+  requestId: string,
+  buf: Buffer,
+): { path: string; bytes: number } {
+  const dir = join(peekHomeDir(), 'screenshots');
+  mkdirSync(dir, { recursive: true });
+  const path = join(dir, `${requestId}.png`);
+  writeFileSync(path, buf, { mode: 0o600 });
+  return { path, bytes: buf.length };
 }
 
 /** Per in-flight request: which connection issued it + its socket wire id. */
@@ -160,8 +186,23 @@ interface InFlight {
  * expects (a {@link HostActionResponse}). Drops the wire-protocol envelope
  * fields (`type`, `requestId`, `tool`) and keeps the verdict/result data —
  * INCLUDING `confirmToken` when the SW issued one (request_authorization).
+ *
+ * SCREENSHOT SPILL-TO-DISK: a `screenshot` action's `details.dataUrl` is a
+ * base64 PNG that can be megabytes — far too large to round-trip back to the
+ * MCP client over the socket as inline JSON. This is the single chokepoint
+ * every `action.result` flows through, so we spill it to disk HERE: write the
+ * decoded PNG under `~/.peek/screenshots/<requestId>.png` (0600, mirroring the
+ * ingest.ts blob-write precedent) and REPLACE `details` with a compact
+ * `{ path, bytes, format }` pointer.
+ *
+ * STRICT GUARD: the fs path (`writeScreenshot`) is invoked ONLY when
+ * `details.dataUrl` is present. Every non-screenshot reply passes through
+ * byte-for-byte with ZERO fs calls.
  */
-function toResponsePayload(result: ActionResultMessage): Record<string, unknown> {
+function toResponsePayload(
+  result: ActionResultMessage,
+  writeScreenshot: (requestId: string, buf: Buffer) => { path: string; bytes: number },
+): Record<string, unknown> {
   const payload: Record<string, unknown> = {
     verdict: result.verdict,
     result: result.result,
@@ -172,6 +213,17 @@ function toResponsePayload(result: ActionResultMessage): Record<string, unknown>
   if (result.details !== undefined) payload.details = result.details;
   if (result.error !== undefined) payload.error = result.error;
   if (result.confirmToken !== undefined) payload.confirmToken = result.confirmToken;
+
+  // Spill a screenshot dataUrl to disk (see doc comment). Guarded so any other
+  // reply shape — including a `details` object WITHOUT `dataUrl` — is untouched
+  // and makes ZERO fs calls (writeScreenshot is never invoked).
+  const details = result.details as { dataUrl?: unknown } | null | undefined;
+  if (details && typeof details.dataUrl === 'string') {
+    const b64 = details.dataUrl.replace(/^data:image\/png;base64,/, '');
+    const buf = Buffer.from(b64, 'base64');
+    const { path, bytes } = writeScreenshot(result.requestId, buf);
+    payload.details = { path, bytes, format: 'png' };
+  }
   return payload;
 }
 
@@ -194,6 +246,7 @@ export class HostSocketServer {
       maxLineBytes: deps.maxLineBytes ?? DEFAULT_MAX_LINE_BYTES,
       probeSocketAlive: deps.probeSocketAlive ?? ((p) => probeSocketAlive(p)),
       unlinkSocket: deps.unlinkSocket ?? ((p) => cleanupStaleSocket(p)),
+      writeScreenshot: deps.writeScreenshot ?? ((id, buf) => writeScreenshotFile(id, buf)),
       ...(deps.onListenError ? { onListenError: deps.onListenError } : {}),
       createServer:
         deps.createServer ??
@@ -284,7 +337,7 @@ export class HostSocketServer {
     const frame = {
       kind: 'act.response',
       id: inFlight.wireId,
-      payload: toResponsePayload(message),
+      payload: toResponsePayload(message, this.#deps.writeScreenshot),
     };
     try {
       inFlight.conn.write(`${JSON.stringify(frame)}\n`);
