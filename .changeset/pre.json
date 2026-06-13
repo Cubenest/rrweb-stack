@@ -14,7 +14,8 @@
     "@tracelane/wdio": "0.1.0-alpha.0",
     "peek-docs": "0.0.0",
     "tracelane-docs": "0.0.0",
-    "@cubenest/docs-shared": "0.0.0"
+    "@cubenest/docs-shared": "0.0.0",
+    "@peekdev/todomvc-demo": "0.0.0"
   },
   "changesets": [
     "fix-cli-description-npx-command",
@@ -30,6 +31,7 @@
     "peek-mcp-official-mcp-registry",
     "peek-mcp-readme-accuracy",
     "peek-mcp-tool-definitions",
+    "peek-suggest-highlight",
     "peek-windows-node22-npx-pin",
     "peek-write-path",
     "phase4c-alpha7-cleanup",

@@ -1,5 +1,22 @@
 # @peekdev/mcp
 
+## 0.1.0-alpha.18
+
+### Patch Changes
+
+- aa79091: feat: implement the Level-2 "Suggest" tier — MCP-driven DOM highlight overlay
+
+  peek-mcp:
+  - `suggest_element` (selector, optional label) — draws a non-destructive highlight overlay on an element in the live browser, to point something out without changing the page. Available at per-origin permission Level 2 (Suggest) and above.
+  - `clear_highlight` — removes the active overlay. Idempotent.
+  - New `highlight` / `clear_highlight` action schemas; new honest `level-2-suggest` audit approver.
+
+  Extension:
+  - Self-contained MAIN-world `applyHighlight` / `clearHighlight` overlay functions (fixed-position ring + optional label badge, re-anchored on scroll/resize, replace-on-reapply, persists until cleared).
+  - The SW auto-allows highlight/clear_highlight at Level 2+ via a dedicated non-mutating path — no destructive check, no confirm banner, no token. Levels 0/1 deny.
+
+  This activates the previously-reserved Level-2 "Suggest-only" tier.
+
 ## 0.1.0-alpha.17
 
 ### Patch Changes
@@ -7,7 +24,6 @@
 - 209c1b3: feat: implement all remaining execute_action verbs (back/forward/reload/waitFor/screenshot/enter/dblclick) and fix screenshot capture
 
   Extension:
-
   - `back` / `forward` / `reload` — history navigation verbs in the MAIN-world dispatcher
   - `waitFor` — MutationObserver + timeout race; waits for a selector to attach or a pure delay
   - `screenshot` — CDP `Page.captureScreenshot` via the already-declared `debugger` permission (replaces `captureVisibleTab` which requires `<all_urls>` / an `activeTab` user gesture unavailable in the MCP→native-host→SW call path)
@@ -15,7 +31,6 @@
   - `dblclick` — dispatches a `dblclick` MouseEvent on a resolved selector
 
   peek-mcp:
-
   - Adds `EnterActionSchema` and `DblClickActionSchema` to the Zod `ActionSchema` union so the MCP tool surfaces both verbs to AI clients
   - `writeScreenshotFile`: host-socket spills the screenshot `dataUrl` to `~/.peek/screenshots/<requestId>.png` (0600) and returns a path pointer instead of a multi-MB base64 blob in the MCP context
 
@@ -43,7 +58,6 @@
 ### Patch Changes
 
 - 6ca4c92: Fix peek MCP server failing to start on Windows (two independent causes).
-
   1. **npx couldn't resolve the package.** The canonical `mcpServers.peek` block
      `peek init` writes (and the README's manual snippet) used a bare
      `npx -y @peekdev/mcp`. While peek is in alpha, every published version is a
@@ -88,7 +102,6 @@ version found for @peekdev/mcp@*`, so the MCP client reports a connection
 ### Patch Changes
 
 - 20e8471: Docs-only: 4 README accuracy fixes against source of truth.
-
   - Acknowledge that the cross-process IPC bridge for `execute_action` /
     `request_authorization` (the `LocalSocketHostBridge`) is in development;
     alpha.11 returns `bridge not wired in this MCP process` on those calls,
@@ -111,7 +124,6 @@ version found for @peekdev/mcp@*`, so the MCP client reports a connection
 ### Patch Changes
 
 - 6eb4046: Launch-readiness metadata + documentation accuracy fixes:
-
   - Add `bugs` and `engines.node` (`>=20.18.0`) to every published package.
   - Strip internal ticket references (ADR-NNNN) from user-facing strings (npm
     `description` fields and a CLI error message).
@@ -139,7 +151,6 @@ version found for @peekdev/mcp@*`, so the MCP client reports a connection
   `<peek-home>/rrweb-events/<sessionId>/<seq>.json.gz` and writes the per-session
   directory into `sessions.events_blob_path`. The reader had two problems on that
   layout:
-
   1. It called `readFileSync` on `events_blob_path`, which is a directory — node
      threw `EISDIR`, the catch wrapped it as `SessionEventsError("corrupt or
 truncated recording")`, and the event-walker tools surfaced that as
@@ -165,7 +176,6 @@ truncated recording")`, and the event-walker tools surfaced that as
   that publishes these npm packages).
 
   Per-package change is identical and minimal:
-
   - Insert a single `Docs: <hosted-url>` line in the README right below the
     hero GIF / above-the-fold install snippet.
   - Update `package.json` `homepage` to point at the deployed docs site
@@ -183,7 +193,6 @@ truncated recording")`, and the event-walker tools surfaced that as
   | `@peekdev/mcp`    | <https://peek.cubenest.in>      |
 
   Companion (non-published) changes shipped in the same commit:
-
   - Root `README.md` "Docs:" lines updated from relative `apps/*-docs/`
     links to the hosted URLs, with the source-tree path kept in
     parentheses for contributors.
@@ -228,7 +237,6 @@ truncated recording")`, and the event-walker tools surfaced that as
 
   Companion changes (not visible on npm but shipped to the public repo
   in the same commit):
-
   - `.github/FUNDING.yml` (`github: [harry-harish]`) so the GitHub
     Sponsors button appears on the repo header
   - `.github/ISSUE_TEMPLATE/{config,bug,feature}.yml` so new issues are
@@ -244,7 +252,6 @@ truncated recording")`, and the event-walker tools surfaced that as
   Added a maintainer-facing "Distribution" section to `packages/peek-mcp/README.md`
   linking to the four pre-filled registry-submission scaffolds at
   `docs/peek/distribution/`:
-
   - the official MCP Registry (`registry.modelcontextprotocol.io`) via the
     `mcp-publisher` CLI + a `server.json`;
   - PulseMCP (URL-only submission form + auto-ingest from the MCP Registry);
@@ -281,7 +288,6 @@ truncated recording")`, and the event-walker tools surfaced that as
 ### Patch Changes
 
 - e73211d: Phase 5 launch-readiness: README hero rewrite for the npm landing pages.
-
   - `@peekdev/cli` + `@peekdev/mcp`: shipping a README for the first time.
     The alpha.x publishes to date had no README at all — npm rendered
     "no readme found" on the package pages. Both now lead with the locked
@@ -296,7 +302,6 @@ truncated recording")`, and the event-walker tools surfaced that as
     header + stronger redirect to @tracelane/wdio for npm-search landers.
 
   Per the Phase 5 launch plan (docs/PHASE_5_LAUNCH_PLAN.md):
-
   - Gate B2 (first-paragraph, no marketing voice) → GREEN both products
   - Gate B3 (install command above the fold) → GREEN both products
   - Gate B1 (hero GIF) — vhs scaffold at assets/tracelane-hero.tape;
@@ -308,7 +313,6 @@ truncated recording")`, and the event-walker tools surfaced that as
 
 - 15e4f8c: Phase 4c alpha.7 cleanups — close the 3 remaining annoyances from the
   manual QA walk (docs/qa/findings-2026-05-28.md):
-
   - J.6 (peek-extension + peek-mcp): rrweb recorder now emits a fresh
     FullSnapshot every 2 minutes (checkoutEveryNms: 120_000) and every
     5000 events. Bounds the look-back window for get_dom_snapshot so AI
@@ -333,7 +337,6 @@ truncated recording")`, and the event-walker tools surfaced that as
 ### Patch Changes
 
 - Phase 4c QA fix loop #2 — alpha.3 republishes against the 2026-05-28 walk:
-
   - **`@tracelane/wdio` rrweb recording empty** (T-9, showstopper) — the Service + hooks factory were re-injecting the recorder from `beforeCommand('url', ...)`, which fires BEFORE the navigation. The about-to-be-torn-down page got the bundle eval; the actual loaded page got nothing. Moved re-injection to `afterCommand('url', ...)` so rrweb lands on the new page. Verified end-to-end: the smoke fixture now captures 15+ events (FullSnapshot + interactions) where alpha.2 captured 0.
   - **`@peekdev/cli peek init` writes empty `allowed_origins`** (P-10, showstopper) — the shipped `extension-ids.json` has `PLACEHOLDER_*` strings for all three slots, which `allowedOrigins()` correctly drops, leaving the native-host manifest with `"allowed_origins": []`. Chrome then silently blocks `chrome.runtime.connectNative()` from the unpacked extension. The wizard now prompts for the locally-loaded extension ID (validated against Chrome's 32-char a–p shape) and overrides `extensionIds.dev` before building the manifest. Empty input is allowed (skip — only useful with a populated CWS slot).
   - **`@tracelane/wdio` `TraceLaneService` type incompatibility** (T-4) — the alpha.2 intersection fix on `options` was insufficient; the 2nd and 3rd constructor parameters were narrower than `Services.ServiceClass` requires. Widened to `Capabilities.ResolvedTestrunnerCapabilities` and `Options.Testrunner` so `services: [[TraceLaneService, { ... }]]` typechecks without `@ts-expect-error`.
