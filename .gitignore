@@ -9,6 +9,9 @@ build/
 # into src/_security/ at build time (scripts/vendor-security.mjs). The private
 # package is the single source of truth; this copy is generated, never committed.
 packages/tracelane-report/src/_security/
+# Generated: apps/peek-docs/scripts/bundle-demo.mjs builds apps/peek-todomvc-demo
+# and copies it here (served at /demo). Built at deploy time, never committed.
+apps/peek-docs/public/demo/
 .next/
 .vercel/
 # Astro (apps/*-docs) — generated content-types + build cache.

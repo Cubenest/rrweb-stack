@@ -1,0 +1,97 @@
+@import "tailwindcss";
+
+/* Class-based dark mode (toggled on <html class="dark">) */
+@custom-variant dark (&:is(.dark *));
+
+:root {
+  --background: #f3f2f8;
+  --foreground: #1b1a22;
+  --card: #ffffff;
+  --card-foreground: #1b1a22;
+  --muted: #f1f0f5;
+  --muted-foreground: #6c6878;
+  --border: #e7e6ee;
+  --input: #e7e6ee;
+  --primary: #7c5cff;
+  --primary-foreground: #ffffff;
+  --accent: #f0ecff;
+  --accent-foreground: #4a2fd0;
+  --ring: #7c5cff;
+  --danger: #ef4565;
+  --glow: rgba(124, 92, 255, 0.20);
+  --radius: 1rem;
+}
+
+.dark {
+  --background: #0a0a0e;
+  --foreground: #ececf2;
+  --card: #15151c;
+  --card-foreground: #ececf2;
+  --muted: #1b1b24;
+  --muted-foreground: #9a96a8;
+  --border: #262630;
+  --input: #2a2a35;
+  --primary: #8b6dff;
+  --primary-foreground: #ffffff;
+  --accent: #1d1830;
+  --accent-foreground: #c8bbff;
+  --ring: #8b6dff;
+  --danger: #ff5d7a;
+  --glow: rgba(139, 109, 255, 0.14);
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-ring: var(--ring);
+  --color-danger: var(--danger);
+
+  --radius-sm: calc(var(--radius) - 6px);
+  --radius-md: calc(var(--radius) - 3px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+
+  --font-sans: "Inter", system-ui, -apple-system, sans-serif;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background:
+    radial-gradient(900px 520px at 50% -12%, var(--glow), transparent 58%),
+    var(--background);
+  background-attachment: fixed;
+  color: var(--foreground);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  transition: background-color 0.3s ease, color 0.3s ease;
+}
+
+/* Hide the native checkbox we use under the custom toggle */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
