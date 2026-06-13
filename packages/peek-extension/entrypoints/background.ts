@@ -47,6 +47,7 @@ import {
   dispatchAction,
   resolveTarget as resolveTargetInPage,
 } from '../src/permissions/dispatcher';
+import { type HighlightResult, applyHighlight, clearHighlight } from '../src/permissions/highlight';
 import { setPermissionLevel } from '../src/permissions/store';
 import { YoloSessionStore } from '../src/permissions/yolo';
 import { injectRecorder } from '../src/recorder/inject';
@@ -419,6 +420,44 @@ export default defineBackground({
       // executeScript call — captureVisibleTab is an SW-only API.
       if (action.type === 'screenshot') {
         return await captureScreenshot(tabId, action);
+      }
+      // `highlight` / `clear_highlight` run their OWN self-contained MAIN-world
+      // functions (not the generic dispatcher), so route them here — mirroring
+      // the screenshot special-case above.
+      if (action.type === 'highlight') {
+        try {
+          const [frame] = await chrome.scripting.executeScript({
+            target: { tabId },
+            world: 'MAIN',
+            func: applyHighlight,
+            args: [action.selector, action.label] as Parameters<typeof applyHighlight>,
+          });
+          return (
+            (frame?.result as HighlightResult | undefined) ?? {
+              ok: false,
+              error: 'no result from MAIN-world highlight',
+            }
+          );
+        } catch (err) {
+          return { ok: false, error: err instanceof Error ? err.message : String(err) };
+        }
+      }
+      if (action.type === 'clear_highlight') {
+        try {
+          const [frame] = await chrome.scripting.executeScript({
+            target: { tabId },
+            world: 'MAIN',
+            func: clearHighlight,
+          });
+          return (
+            (frame?.result as HighlightResult | undefined) ?? {
+              ok: false,
+              error: 'no result from MAIN-world clear_highlight',
+            }
+          );
+        } catch (err) {
+          return { ok: false, error: err instanceof Error ? err.message : String(err) };
+        }
       }
       try {
         const [frame] = await chrome.scripting.executeScript({
