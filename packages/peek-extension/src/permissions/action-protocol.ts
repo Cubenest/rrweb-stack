@@ -58,6 +58,14 @@ export interface DblClickAction {
   selector: string;
   nth?: number;
 }
+export interface HighlightAction {
+  type: 'highlight';
+  selector: string;
+  label?: string;
+}
+export interface ClearHighlightAction {
+  type: 'clear_highlight';
+}
 
 export type Action =
   | ClickAction
@@ -70,7 +78,9 @@ export type Action =
   | ScreenshotAction
   | WaitForAction
   | EnterAction
-  | DblClickAction;
+  | DblClickAction
+  | HighlightAction
+  | ClearHighlightAction;
 
 /** host → SW: please run / authorize this action. */
 export interface ActionRequestMessage {
