@@ -600,6 +600,75 @@ export function createPeekMcpServer(options: CreatePeekMcpServerOptions = {}): P
         });
       },
     );
+
+    // 11. suggest_element (Level-2 Suggest tier) -----------------------------
+    // Non-mutating highlight overlay. Routed through the execute_action audit
+    // path (wire tool='execute_action'); the SW intercepts the `highlight`
+    // action BEFORE the act gate and auto-allows it at per-origin Level 2+.
+    server.registerTool(
+      'suggest_element',
+      {
+        title: 'Highlight an element in the live browser',
+        description:
+          "Draw a non-destructive highlight overlay on a CSS selector in the user's live browser, with an optional label, to point something out. Available at per-origin permission Level 2 (Suggest) and above; it never clicks, types, or navigates. The overlay persists until clear_highlight is called. Every call is recorded to ~/.peek/audit.log.",
+        inputSchema: {
+          sessionId: z
+            .string()
+            .describe(
+              'Session id (origin context) from list_recent_sessions; determines the per-origin permission level.',
+            ),
+          selector: z.string().min(1).describe('CSS selector of the element to highlight.'),
+          label: z
+            .string()
+            .max(120)
+            .optional()
+            .describe('Optional short text shown in a badge next to the highlight (<=120 chars).'),
+        },
+        annotations: {
+          readOnlyHint: false,
+          destructiveHint: false,
+          idempotentHint: true,
+          openWorldHint: true,
+        },
+      },
+      async ({ sessionId, selector, label }) => {
+        return await dispatchActTool({
+          tool: 'execute_action',
+          sessionId,
+          action: { type: 'highlight', selector, ...(label !== undefined ? { label } : {}) },
+        });
+      },
+    );
+
+    // 12. clear_highlight (Level-2 Suggest tier) -----------------------------
+    server.registerTool(
+      'clear_highlight',
+      {
+        title: 'Clear the highlight overlay',
+        description:
+          "Remove the highlight overlay previously drawn by suggest_element in the user's live browser. Available at per-origin permission Level 2 (Suggest) and above. Idempotent. Recorded to ~/.peek/audit.log.",
+        inputSchema: {
+          sessionId: z
+            .string()
+            .describe(
+              'Session id (origin context) from list_recent_sessions; determines the per-origin permission level.',
+            ),
+        },
+        annotations: {
+          readOnlyHint: false,
+          destructiveHint: false,
+          idempotentHint: true,
+          openWorldHint: true,
+        },
+      },
+      async ({ sessionId }) => {
+        return await dispatchActTool({
+          tool: 'execute_action',
+          sessionId,
+          action: { type: 'clear_highlight' },
+        });
+      },
+    );
   }
 
   // --- Act-tool dispatch (shared between execute_action + request_authorization) ---
@@ -712,4 +781,7 @@ export const PEEK_MCP_TOOLS = [
   // Write tools (Phase 3d, Level 3+).
   'request_authorization',
   'execute_action',
+  // Suggest tools (Level 2+ — non-mutating highlight overlay).
+  'suggest_element',
+  'clear_highlight',
 ] as const;

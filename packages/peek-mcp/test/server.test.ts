@@ -101,7 +101,7 @@ function textOf(result: { content: Array<{ type: string; text?: string }> }): st
 }
 
 describe('peek MCP server: tools/list', () => {
-  it('lists exactly the documented tool surface (8 read + 2 write)', async () => {
+  it('lists exactly the documented tool surface (8 read + 2 write + 2 suggest)', async () => {
     const { dbPath, eventsDir } = seedStore(dir, [loginSession()]);
     const { client, close } = await connectClient({ dbPath, eventsDir });
     try {
@@ -111,6 +111,8 @@ describe('peek MCP server: tools/list', () => {
       // Phase 3d landed the two Level-3+ act tools; they MUST appear.
       expect(names).toContain('execute_action');
       expect(names).toContain('request_authorization');
+      expect(names).toContain('suggest_element');
+      expect(names).toContain('clear_highlight');
     } finally {
       await close();
     }
@@ -269,9 +271,9 @@ describe('peek MCP server: graceful no-DB', () => {
       eventsDir: join(dir, 'rrweb-events'),
     });
     try {
-      // tools/list still works (8 read + 2 write).
+      // tools/list still works (8 read + 2 write + 2 suggest).
       const { tools } = await client.listTools();
-      expect(tools).toHaveLength(10);
+      expect(tools).toHaveLength(12);
       // and a call returns the friendly message rather than erroring.
       const res = await client.callTool({ name: 'list_recent_sessions', arguments: {} });
       expect(textOf(res as never)).toContain('No sessions recorded yet');
@@ -612,6 +614,78 @@ describe('peek MCP server: execute_action (Task 3.24)', () => {
       expect((res as { isError?: boolean }).isError).toBe(true);
       // No bridge dispatch should have happened — validation failed first.
       expect(bridge.pending).toHaveLength(0);
+    } finally {
+      await close();
+    }
+  });
+});
+
+describe('peek MCP server: suggest_element + clear_highlight dispatch', () => {
+  it('suggest_element WITH a label dispatches a highlight action carrying the label', async () => {
+    const { dbPath, eventsDir } = seedStore(dir, [loginSession()]);
+    const bridge = new RegistryBackedHostBridge();
+    const { client, close } = await connectClient({ dbPath, eventsDir, hostBridge: bridge });
+    try {
+      const callP = client.callTool({
+        name: 'suggest_element',
+        arguments: { sessionId: 's_login', selector: '#login', label: 'Click here' },
+      });
+      for (let i = 0; i < 20 && bridge.pending.length === 0; i++) {
+        await new Promise((r) => setTimeout(r, 5));
+      }
+      // Routed through the execute_action audit path on the wire.
+      expect(bridge.pending[0]?.req.tool).toBe('execute_action');
+      expect(bridge.pending[0]?.req.action).toEqual({
+        type: 'highlight',
+        selector: '#login',
+        label: 'Click here',
+      });
+      bridge.resolveNext({ verdict: 'allow', result: 'ok', approver: 'level-2-suggest' });
+      await callP;
+    } finally {
+      await close();
+    }
+  });
+
+  it('suggest_element WITHOUT a label omits the label key entirely', async () => {
+    const { dbPath, eventsDir } = seedStore(dir, [loginSession()]);
+    const bridge = new RegistryBackedHostBridge();
+    const { client, close } = await connectClient({ dbPath, eventsDir, hostBridge: bridge });
+    try {
+      const callP = client.callTool({
+        name: 'suggest_element',
+        arguments: { sessionId: 's_login', selector: '#login' },
+      });
+      for (let i = 0; i < 20 && bridge.pending.length === 0; i++) {
+        await new Promise((r) => setTimeout(r, 5));
+      }
+      const action = bridge.pending[0]?.req.action as Record<string, unknown>;
+      // Locks the `...(label !== undefined ? { label } : {})` spread: no key.
+      expect(action).toEqual({ type: 'highlight', selector: '#login' });
+      expect('label' in action).toBe(false);
+      bridge.resolveNext({ verdict: 'allow', result: 'ok', approver: 'level-2-suggest' });
+      await callP;
+    } finally {
+      await close();
+    }
+  });
+
+  it('clear_highlight dispatches a clear_highlight action', async () => {
+    const { dbPath, eventsDir } = seedStore(dir, [loginSession()]);
+    const bridge = new RegistryBackedHostBridge();
+    const { client, close } = await connectClient({ dbPath, eventsDir, hostBridge: bridge });
+    try {
+      const callP = client.callTool({
+        name: 'clear_highlight',
+        arguments: { sessionId: 's_login' },
+      });
+      for (let i = 0; i < 20 && bridge.pending.length === 0; i++) {
+        await new Promise((r) => setTimeout(r, 5));
+      }
+      expect(bridge.pending[0]?.req.tool).toBe('execute_action');
+      expect(bridge.pending[0]?.req.action).toEqual({ type: 'clear_highlight' });
+      bridge.resolveNext({ verdict: 'allow', result: 'ok', approver: 'level-2-suggest' });
+      await callP;
     } finally {
       await close();
     }
