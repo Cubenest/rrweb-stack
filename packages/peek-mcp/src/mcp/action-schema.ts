@@ -88,6 +88,20 @@ export const DblClickActionSchema = z.object({
 });
 export type DblClickAction = z.infer<typeof DblClickActionSchema>;
 
+/** Draw a non-destructive highlight overlay on a target, with an optional label. */
+export const HighlightActionSchema = z.object({
+  type: z.literal('highlight'),
+  selector: z.string().min(1),
+  label: z.string().max(120).optional(),
+});
+export type HighlightAction = z.infer<typeof HighlightActionSchema>;
+
+/** Remove the active highlight overlay — no DOM target. */
+export const ClearHighlightActionSchema = z.object({
+  type: z.literal('clear_highlight'),
+});
+export type ClearHighlightAction = z.infer<typeof ClearHighlightActionSchema>;
+
 /** The full Action discriminated union (P2 PRD §E.4). */
 export const ActionSchema = z.discriminatedUnion('type', [
   ClickActionSchema,
@@ -101,6 +115,8 @@ export const ActionSchema = z.discriminatedUnion('type', [
   WaitForActionSchema,
   EnterActionSchema,
   DblClickActionSchema,
+  HighlightActionSchema,
+  ClearHighlightActionSchema,
 ]);
 export type Action = z.infer<typeof ActionSchema>;
 

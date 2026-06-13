@@ -16,6 +16,9 @@ describe('ActionSchema (P2 PRD §E.4 discriminated union)', () => {
       { type: 'screenshot', selector: '#hero' },
       { type: 'waitFor', selector: '#loaded' },
       { type: 'waitFor', timeoutMs: 1000 },
+      { type: 'highlight', selector: '#a' },
+      { type: 'highlight', selector: '#a', label: 'Click this' },
+      { type: 'clear_highlight' },
     ]) {
       const result = ActionSchema.safeParse(action);
       expect(result.success, JSON.stringify(action)).toBe(true);
@@ -42,6 +45,24 @@ describe('ActionSchema (P2 PRD §E.4 discriminated union)', () => {
     expect(ActionSchema.safeParse({ type: 'click', selector: '#a', button: 'turbo' }).success).toBe(
       false,
     );
+  });
+
+  it('accepts highlight (optional label, max 120) + clear_highlight; rejects bad highlight', () => {
+    expect(ActionSchema.safeParse({ type: 'highlight', selector: '#a' }).success).toBe(true);
+    expect(ActionSchema.safeParse({ type: 'highlight', selector: '#a', label: 'x' }).success).toBe(
+      true,
+    );
+    expect(ActionSchema.safeParse({ type: 'clear_highlight' }).success).toBe(true);
+    // empty selector rejected
+    expect(ActionSchema.safeParse({ type: 'highlight', selector: '' }).success).toBe(false);
+    // label over 120 chars rejected
+    expect(
+      ActionSchema.safeParse({ type: 'highlight', selector: '#a', label: 'y'.repeat(121) }).success,
+    ).toBe(false);
+    // label exactly at the 120 limit is accepted (pins the boundary)
+    expect(
+      ActionSchema.safeParse({ type: 'highlight', selector: '#a', label: 'z'.repeat(120) }).success,
+    ).toBe(true);
   });
 
   it('rejects nth that is non-integer / negative', () => {
