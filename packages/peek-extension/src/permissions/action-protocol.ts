@@ -106,7 +106,7 @@ export interface ActionResultMessage {
   tool: 'execute_action' | 'request_authorization';
   verdict: 'allow' | 'deny';
   result: 'ok' | 'denied' | 'error';
-  approver: 'user' | 'allow-list-match' | 'level-4-auto';
+  approver: 'user' | 'allow-list-match' | 'level-4-auto' | 'level-2-suggest';
   approvalMs?: number;
   destructiveTerm?: string;
   details?: unknown;

@@ -63,7 +63,7 @@ export interface HostActionResponse {
   /** verdict + result from the SW (see action-protocol.ts ActionResultMessage). */
   readonly verdict: 'allow' | 'deny';
   readonly result: 'ok' | 'denied' | 'error';
-  readonly approver: 'user' | 'allow-list-match' | 'level-4-auto';
+  readonly approver: 'user' | 'allow-list-match' | 'level-4-auto' | 'level-2-suggest';
   readonly approvalMs?: number;
   readonly destructiveTerm?: string;
   readonly details?: unknown;
