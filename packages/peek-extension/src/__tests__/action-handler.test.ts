@@ -131,6 +131,73 @@ describe('handleActionRequest — Level 0 / 1 / 2 deny', () => {
   }
 });
 
+describe('handleActionRequest — highlight (Suggest tier, Level 2+)', () => {
+  it('highlight at Level 2 → allow + dispatches once (no prompt)', async () => {
+    await enableOriginAtLevel('https://example.com', 2);
+    const ctx = makeDeps();
+    const out = await handleActionRequest(
+      makeRequest({ action: { type: 'highlight', selector: '#x', label: 'hi' } }),
+      ctx.deps,
+    );
+    expect(out.verdict).toBe('allow');
+    expect(out.result).toBe('ok');
+    expect(out.approver).toBe('level-2-suggest');
+    expect(ctx.promptCalls).toBe(0);
+    expect(ctx.dispatchCalls).toBe(1);
+  });
+
+  it('highlight at Level 1 → deny (level-too-low-for-highlight), no dispatch', async () => {
+    await enableOriginAtLevel('https://example.com', 1);
+    const ctx = makeDeps();
+    const out = await handleActionRequest(
+      makeRequest({ action: { type: 'highlight', selector: '#x' } }),
+      ctx.deps,
+    );
+    expect(out.verdict).toBe('deny');
+    expect(out.result).toBe('denied');
+    expect(String(out.error)).toContain('level-too-low-for-highlight');
+    expect(ctx.dispatchCalls).toBe(0);
+  });
+
+  it('clear_highlight at Level 2 → allow', async () => {
+    await enableOriginAtLevel('https://example.com', 2);
+    const ctx = makeDeps();
+    const out = await handleActionRequest(
+      makeRequest({ action: { type: 'clear_highlight' } }),
+      ctx.deps,
+    );
+    expect(out.verdict).toBe('allow');
+    expect(out.result).toBe('ok');
+    expect(ctx.dispatchCalls).toBe(1);
+  });
+
+  it('highlight on a NON-enabled origin → deny (origin guard fires before the highlight branch)', async () => {
+    // Do NOT enable the origin — proves the isOriginEnabled guard (which
+    // precedes the highlight branch) still denies highlights on unactivated sites.
+    const ctx = makeDeps();
+    const out = await handleActionRequest(
+      makeRequest({ action: { type: 'highlight', selector: '#x' } }),
+      ctx.deps,
+    );
+    expect(out.verdict).toBe('deny');
+    expect(String(out.error)).toContain('not enabled');
+    expect(ctx.dispatchCalls).toBe(0);
+  });
+
+  it('highlight at Level 4 (YOLO) → allow (>=2 admits L4, still level-2-suggest approver)', async () => {
+    await enableOriginAtLevel('https://example.com', 4);
+    const ctx = makeDeps();
+    const out = await handleActionRequest(
+      makeRequest({ action: { type: 'highlight', selector: '#x' } }),
+      ctx.deps,
+    );
+    expect(out.verdict).toBe('allow');
+    expect(out.result).toBe('ok');
+    expect(out.approver).toBe('level-2-suggest');
+    expect(ctx.dispatchCalls).toBe(1);
+  });
+});
+
 describe('handleActionRequest — Level 3 act-with-confirm', () => {
   it('execute_action prompts the user; allow → dispatch + ok', async () => {
     await enableOriginAtLevel('https://example.com', 3);

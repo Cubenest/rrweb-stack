@@ -70,9 +70,10 @@ export function gate(input: GateInput): GateResult {
     case 1:
       return { verdict: 'deny', reason: 'level-1-read-only' };
     case 2:
-      // Level 2 highlights via a separate non-mutating overlay path. An
-      // `execute_action` call IS a mutation, so it's denied here. Highlight
-      // tools (future) will route around this gate.
+      // Level 2 is the "Suggest" tier: the highlight / clear_highlight actions
+      // are intercepted in action-handler.ts BEFORE this gate and auto-allowed
+      // at Level >= 2 via a separate non-mutating overlay path. An
+      // `execute_action` MUTATION is still denied here.
       return { verdict: 'deny', reason: 'level-2-suggest-only' };
     case 3:
       return { verdict: 'confirm', reason: 'level-3-act-with-confirm' };

@@ -313,6 +313,40 @@ export async function handleActionRequest(
   // on — the tab may navigate elsewhere during the up-to-2-min confirm wait.
   const guarded = { origin, effectiveLevel };
 
+  // ---- Highlight overlays (Level-2 "Suggest" tier) ----------------------
+  // Highlights are NON-mutating: a ring drawn over an element, never a click/
+  // type/navigate. They route around the execute_action gate entirely (see
+  // gate.ts Level-2 note): no destructive matcher, no confirm banner, no token,
+  // no TOCTOU re-validation (there is no confirm-wait to create a TOCTOU
+  // window). Auto-allowed at effective Level >= 2; denied below.
+  if (request.action.type === 'highlight' || request.action.type === 'clear_highlight') {
+    if (effectiveLevel < 2) {
+      return result(request, 'deny', 'denied', {
+        approver: 'user',
+        error: `level-too-low-for-highlight (level ${effectiveLevel})`,
+      });
+    }
+    let highlightRes: Awaited<ReturnType<ActionHandlerDeps['dispatchInMainWorld']>>;
+    try {
+      highlightRes = await deps.dispatchInMainWorld({ tabId: tab.id, action: request.action });
+    } catch (err) {
+      return result(request, 'allow', 'error', {
+        approver: 'level-2-suggest',
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+    if (highlightRes.ok) {
+      return result(request, 'allow', 'ok', {
+        approver: 'level-2-suggest',
+        ...(highlightRes.details !== undefined ? { details: highlightRes.details } : {}),
+      });
+    }
+    return result(request, 'allow', 'error', {
+      approver: 'level-2-suggest',
+      error: highlightRes.error,
+    });
+  }
+
   const target = await deps.resolveTarget({ tabId: tab.id, action: request.action });
   const destructive = isDestructive(target, {
     add: request.policy.add,
