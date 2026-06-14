@@ -45,3 +45,42 @@ describe('isViewCommand', () => {
     expect(isViewCommand('RAISE')).toBe(false);
   });
 });
+
+describe('isViewCommand — handoff commands (Plan B)', () => {
+  it('accepts ENTER_HANDOFF with prompt + framing (+ optional selector)', () => {
+    expect(
+      isViewCommand({
+        kind: 'ENTER_HANDOFF',
+        generation: 3,
+        prompt: 'Solve it',
+        framing: 'The AI asked…',
+      }),
+    ).toBe(true);
+    expect(
+      isViewCommand({
+        kind: 'ENTER_HANDOFF',
+        generation: 3,
+        prompt: 'Solve it',
+        framing: 'x',
+        selector: '#c',
+      }),
+    ).toBe(true);
+  });
+  it('rejects ENTER_HANDOFF without a string prompt/framing', () => {
+    expect(isViewCommand({ kind: 'ENTER_HANDOFF', generation: 3, framing: 'x' })).toBe(false);
+    expect(isViewCommand({ kind: 'ENTER_HANDOFF', generation: 3, prompt: 'x' })).toBe(false);
+  });
+  it('accepts EXIT_HANDOFF', () => {
+    expect(isViewCommand({ kind: 'EXIT_HANDOFF', generation: 4 })).toBe(true);
+  });
+});
+
+describe('isShieldInbound — shield.resume (Plan B)', () => {
+  it('accepts shield.resume with and without a value', () => {
+    expect(isShieldInbound({ type: 'shield.resume' })).toBe(true);
+    expect(isShieldInbound({ type: 'shield.resume', value: 'abc' })).toBe(true);
+  });
+  it('rejects shield.resume with a non-string value', () => {
+    expect(isShieldInbound({ type: 'shield.resume', value: 42 })).toBe(false);
+  });
+});

@@ -877,9 +877,10 @@ export default defineBackground({
           if (!origin) return false;
           if (shieldMessage.type === 'shield.stop') {
             void shield.onStop(tabId);
-          } else {
+          } else if (shieldMessage.type === 'shield.ready') {
             void shield.onViewReady(tabId, origin, shieldMessage.generation);
           }
+          // shield.resume routing is wired in Task 8.
           return false;
         }
         // Level-3 confirm verdict from the side panel (Phase 3e). Resolve the

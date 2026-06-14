@@ -204,6 +204,10 @@ export function createShieldView(deps: ShieldViewDeps): ShieldView {
         phase = 'down';
         teardownHost();
         break;
+      // Plan B handoff cases — wired in Task 5; no-ops here to keep typecheck exhaustive.
+      case 'ENTER_HANDOFF':
+      case 'EXIT_HANDOFF':
+        break;
     }
   };
 
