@@ -669,6 +669,77 @@ export function createPeekMcpServer(options: CreatePeekMcpServerOptions = {}): P
         });
       },
     );
+
+    // 13. request_user_input (Plan B — input handoff) ------------------------
+    // Pause the agent + hand the keyboard back to the user for ONE editable,
+    // non-destructive field (or a free-text prompt), then resume. Rides the
+    // execute_action audit path on the wire; the SW gates it at per-origin
+    // Level 4 with the control shield up. The per-request bridge timeout is
+    // clamped to 30s ABOVE the handoff timeout so the SW controller's timer
+    // fires first → structured {resumed:false,'timeout'} (not a transport error).
+    server.registerTool(
+      'request_user_input',
+      {
+        title: 'Pause and ask the user to fill something in on the page',
+        description:
+          "Pause the agent and hand the keyboard back to the user for ONE editable, non-destructive field (or a free-text prompt), then resume. Requires the origin at Level 4 with the control shield up. Blocks until the user clicks Done, a timeout fires, or the run is stopped. Returns { resumed:true, value? } or { resumed:false, reason }. The returned value is only included when readBack:true and the field isn't a password/OTP/credit-card field. Recorded to ~/.peek/audit.log (prompt + selector only — never the value).",
+        inputSchema: {
+          sessionId: z
+            .string()
+            .describe(
+              'Session id (origin context) from list_recent_sessions; determines the per-origin permission level.',
+            ),
+          prompt: z
+            .string()
+            .max(280)
+            .describe(
+              'What to ask the user to do (shown in the card, below a peek-authored framing line).',
+            ),
+          selector: z
+            .string()
+            .optional()
+            .describe(
+              'CSS selector of the editable field to unlock for the user. Omit for a free-text prompt card.',
+            ),
+          readBack: z
+            .boolean()
+            .optional()
+            .describe(
+              'If true, return what the user typed to the agent (never for password/OTP/cc fields). Default false.',
+            ),
+          timeoutMs: z
+            .number()
+            .int()
+            .min(0)
+            .max(600000)
+            .optional()
+            .describe('How long to wait for the user (default 120000, max 600000).'),
+        },
+        annotations: {
+          readOnlyHint: false,
+          destructiveHint: false,
+          idempotentHint: false,
+          openWorldHint: true,
+        },
+      },
+      async ({ sessionId, prompt, selector, readBack, timeoutMs }) => {
+        const handoffTimeout = Math.min(Math.max(timeoutMs ?? 120000, 0), 600000);
+        return await dispatchActTool({
+          tool: 'execute_action',
+          sessionId,
+          action: {
+            type: 'request_user_input',
+            prompt,
+            ...(selector !== undefined ? { selector } : {}),
+            readBack: readBack ?? false,
+            timeoutMs: handoffTimeout,
+          },
+          // The bridge waits 30s longer than the handoff so the SW controller's
+          // timer fires first → structured {resumed:false,'timeout'}.
+          timeoutMs: handoffTimeout + 30_000,
+        });
+      },
+    );
   }
 
   // --- Act-tool dispatch (shared between execute_action + request_authorization) ---
@@ -677,6 +748,13 @@ export function createPeekMcpServer(options: CreatePeekMcpServerOptions = {}): P
     sessionId: string;
     action: import('./action-schema.js').Action;
     confirmToken?: string;
+    /**
+     * Per-request bridge wait budget (ms). Threaded into bridge.request so the
+     * caller can wait LONGER than the action's own timeout — used by
+     * request_user_input so the SW controller's timer fires first. Omitted →
+     * the bridge falls back to its own DEFAULT_BRIDGE_TIMEOUT_MS.
+     */
+    timeoutMs?: number;
   }): Promise<ReturnType<typeof jsonResult>> {
     const bridge = options.hostBridge ?? new MissingHostBridge();
     const clientImpl = server.server.getClientVersion();
@@ -692,6 +770,7 @@ export function createPeekMcpServer(options: CreatePeekMcpServerOptions = {}): P
         action: input.action,
         client,
         ...(input.confirmToken !== undefined ? { confirmToken: input.confirmToken } : {}),
+        ...(input.timeoutMs !== undefined ? { timeoutMs: input.timeoutMs } : {}),
       });
     } catch (err) {
       bridgeError = err;
@@ -784,4 +863,6 @@ export const PEEK_MCP_TOOLS = [
   // Suggest tools (Level 2+ — non-mutating highlight overlay).
   'suggest_element',
   'clear_highlight',
+  // Input handoff (Plan B — Level 4 with the control shield up).
+  'request_user_input',
 ] as const;

@@ -101,7 +101,7 @@ function textOf(result: { content: Array<{ type: string; text?: string }> }): st
 }
 
 describe('peek MCP server: tools/list', () => {
-  it('lists exactly the documented tool surface (8 read + 2 write + 2 suggest)', async () => {
+  it('lists exactly the documented tool surface (8 read + 2 write + 2 suggest + 1 handoff)', async () => {
     const { dbPath, eventsDir } = seedStore(dir, [loginSession()]);
     const { client, close } = await connectClient({ dbPath, eventsDir });
     try {
@@ -113,6 +113,7 @@ describe('peek MCP server: tools/list', () => {
       expect(names).toContain('request_authorization');
       expect(names).toContain('suggest_element');
       expect(names).toContain('clear_highlight');
+      expect(names).toContain('request_user_input');
     } finally {
       await close();
     }
@@ -271,9 +272,9 @@ describe('peek MCP server: graceful no-DB', () => {
       eventsDir: join(dir, 'rrweb-events'),
     });
     try {
-      // tools/list still works (8 read + 2 write + 2 suggest).
+      // tools/list still works (8 read + 2 write + 2 suggest + 1 handoff).
       const { tools } = await client.listTools();
-      expect(tools).toHaveLength(12);
+      expect(tools).toHaveLength(13);
       // and a call returns the friendly message rather than erroring.
       const res = await client.callTool({ name: 'list_recent_sessions', arguments: {} });
       expect(textOf(res as never)).toContain('No sessions recorded yet');
@@ -686,6 +687,127 @@ describe('peek MCP server: suggest_element + clear_highlight dispatch', () => {
       expect(bridge.pending[0]?.req.action).toEqual({ type: 'clear_highlight' });
       bridge.resolveNext({ verdict: 'allow', result: 'ok', approver: 'level-2-suggest' });
       await callP;
+    } finally {
+      await close();
+    }
+  });
+});
+
+describe('peek MCP server: request_user_input (Plan B input handoff)', () => {
+  /**
+   * A fake HostBridge that records every request (so we can assert the action
+   * shape + the per-request bridge timeout) and returns a canned response.
+   * Mirrors the plan's `fakeBridge`, adapted to the file's connectClient harness.
+   */
+  class RecordingHostBridge {
+    readonly calls: Array<{
+      action: { type: string; timeoutMs?: number; prompt?: string };
+      timeoutMs?: number;
+    }> = [];
+    #response: import('../src/mcp/host-bridge.js').HostActionResponse;
+    constructor(response: import('../src/mcp/host-bridge.js').HostActionResponse) {
+      this.#response = response;
+    }
+    async request(
+      req: import('../src/mcp/host-bridge.js').HostActionRequest,
+    ): Promise<import('../src/mcp/host-bridge.js').HostActionResponse> {
+      this.calls.push({
+        action: req.action as { type: string; timeoutMs?: number; prompt?: string },
+        ...(req.timeoutMs !== undefined ? { timeoutMs: req.timeoutMs } : {}),
+      });
+      return this.#response;
+    }
+  }
+
+  it('threads a bridge timeout > the action timeoutMs and returns details', async () => {
+    const { dbPath, eventsDir } = seedStore(dir, [loginSession()]);
+    const bridge = new RecordingHostBridge({
+      verdict: 'allow',
+      result: 'ok',
+      approver: 'user',
+      details: { resumed: true },
+    });
+    const { client, close } = await connectClient({
+      dbPath,
+      eventsDir,
+      hostBridge: bridge as never,
+    });
+    try {
+      const res = await client.callTool({
+        name: 'request_user_input',
+        arguments: { sessionId: 's_login', prompt: 'Solve it', timeoutMs: 60000 },
+      });
+      expect(bridge.calls[0]?.action).toMatchObject({
+        type: 'request_user_input',
+        prompt: 'Solve it',
+        timeoutMs: 60000,
+      });
+      // The bridge must wait LONGER than the handoff so the SW controller's
+      // timer fires first → structured {resumed:false,'timeout'} (not a
+      // transport error).
+      expect(bridge.calls[0]?.timeoutMs).toBeGreaterThan(60000);
+      const body = parseJson(res as never) as Record<string, unknown>;
+      expect(body.details).toMatchObject({ resumed: true });
+    } finally {
+      await close();
+    }
+  });
+
+  it('defaults the handoff timeout to 120000 and waits 30s longer on the bridge', async () => {
+    const { dbPath, eventsDir } = seedStore(dir, [loginSession()]);
+    const bridge = new RecordingHostBridge({
+      verdict: 'allow',
+      result: 'ok',
+      approver: 'user',
+      details: { resumed: false, reason: 'timeout' },
+    });
+    const { client, close } = await connectClient({
+      dbPath,
+      eventsDir,
+      hostBridge: bridge as never,
+    });
+    try {
+      await client.callTool({
+        name: 'request_user_input',
+        arguments: {
+          sessionId: 's_login',
+          prompt: 'Fill the field',
+          selector: '#email',
+          readBack: true,
+        },
+      });
+      const action = bridge.calls[0]?.action as Record<string, unknown>;
+      expect(action.timeoutMs).toBe(120000);
+      expect(action.selector).toBe('#email');
+      expect(action.readBack).toBe(true);
+      // 120000 (handoff) + 30000 (margin).
+      expect(bridge.calls[0]?.timeoutMs).toBe(150000);
+    } finally {
+      await close();
+    }
+  });
+
+  it('omits the selector key entirely for a free-text prompt', async () => {
+    const { dbPath, eventsDir } = seedStore(dir, [loginSession()]);
+    const bridge = new RecordingHostBridge({
+      verdict: 'allow',
+      result: 'ok',
+      approver: 'user',
+      details: { resumed: true },
+    });
+    const { client, close } = await connectClient({
+      dbPath,
+      eventsDir,
+      hostBridge: bridge as never,
+    });
+    try {
+      await client.callTool({
+        name: 'request_user_input',
+        arguments: { sessionId: 's_login', prompt: 'Anything?' },
+      });
+      const action = bridge.calls[0]?.action as Record<string, unknown>;
+      expect('selector' in action).toBe(false);
+      expect(action.readBack).toBe(false);
     } finally {
       await close();
     }
