@@ -44,7 +44,9 @@ import type {
 } from '../src/permissions/action-protocol';
 import { isActionRequest } from '../src/permissions/action-protocol';
 import {
+  type HandoffEligibility,
   dispatchAction,
+  resolveHandoffEligibility,
   resolveTarget as resolveTargetInPage,
 } from '../src/permissions/dispatcher';
 import { type HighlightResult, applyHighlight, clearHighlight } from '../src/permissions/highlight';
@@ -266,12 +268,12 @@ export default defineBackground({
         const persistent = await getPermissionLevel(origin);
         return yolo.isActive(origin) ? 4 : persistent;
       },
-      // Handoff timeout scheduling (Plan B). The handler-facing handoff routing
-      // (shield.resume, recording suspension) is wired in a later task.
-      setTimer: (fn, ms) => setTimeout(fn, ms),
-      clearTimer: (handle) => {
-        if (typeof handle === 'number') clearTimeout(handle);
-      },
+      // Handoff timeout scheduling (Plan B). Real timers; the handle is opaque
+      // (`unknown`) at the deps boundary, so cast on the way in/out — a plain
+      // `typeof === 'number'` guard would silently skip clearTimeout under
+      // object-handle setTimeout typings and orphan the handoff timeout.
+      setTimer: (fn, ms) => setTimeout(fn, ms) as unknown,
+      clearTimer: (h) => clearTimeout(h as ReturnType<typeof setTimeout>),
     });
 
     // Pending Level-3 confirm prompts (Phase 3e). Keyed by requestId; the
@@ -382,8 +384,37 @@ export default defineBackground({
           onActionLabel(tabId, label) {
             shield.onActionLabel(tabId, label);
           },
+          // Plan B: shield active means up OR already in a handoff — a
+          // selector-less `enter` must reject in BOTH (don't dispatch to Stop).
           isShieldActive(tabId) {
-            return shield.isUp(tabId);
+            return shield.isShieldActive(tabId);
+          },
+          enterHandoff(input) {
+            return shield.enterHandoff(input.tabId, {
+              prompt: input.prompt,
+              framing: input.framing,
+              ...(input.selector !== undefined ? { selector: input.selector } : {}),
+              readBack: input.readBack,
+              timeoutMs: input.timeoutMs,
+            });
+          },
+          async resolveHandoffEligibility({ tabId, selector }) {
+            const [res] = await chrome.scripting.executeScript({
+              target: { tabId },
+              world: 'MAIN',
+              func: resolveHandoffEligibility,
+              args: [selector],
+            });
+            return (
+              (res?.result as HandoffEligibility | undefined) ?? {
+                editable: false,
+                tagName: null,
+                inputType: null,
+                autocomplete: null,
+                destructiveSignals: {},
+                isConnected: false,
+              }
+            );
           },
         })
           .then((reply) => forwardActionResult(reply))
@@ -885,8 +916,15 @@ export default defineBackground({
             void shield.onStop(tabId);
           } else if (shieldMessage.type === 'shield.ready') {
             void shield.onViewReady(tabId, origin, shieldMessage.generation);
+          } else if (shieldMessage.type === 'shield.resume') {
+            // Plan B: the user finished the handoff in the view. Forward an
+            // optional value (readBack honored controller-side; never echoed for
+            // password/OTP/cc). No-op if no handoff is pending (SW-restart safe).
+            shield.onUserResume(
+              tabId,
+              shieldMessage.value !== undefined ? { value: shieldMessage.value } : undefined,
+            );
           }
-          // shield.resume routing is wired in Task 8.
           return false;
         }
         // Level-3 confirm verdict from the side panel (Phase 3e). Resolve the
@@ -988,30 +1026,43 @@ export default defineBackground({
       if (tabId === undefined) return;
       stats.addEvents(tabId, message.events.length, message.console.length);
       const ref = sessions.ensure(tabId, { url: sender.tab?.url, title: sender.tab?.title });
-      if (message.events.length > 0) forwardToHost(sessionAppend(ref, message.events));
-      if (message.console.length > 0) forwardToHost(consoleAppend(ref, message.console));
 
-      // alpha.6 (Phase 5 task #72): the network plugin emits its events through
-      // the rrweb event stream (`recorder.events`), not the legacy `recorder.net`
-      // channel. Walk the batch for `EventType.Plugin` / `rrweb/network@1` events
-      // and synthesize legacy `NetMessage` envelopes onto `network.append` so
-      // peek-mcp's `network_events` table + the `get_session_network_errors`
-      // MCP tool keep working unchanged. DOUBLE-WRITE: the plugin events also
-      // stay in the rrweb stream (above), preserving the data for the future
-      // read-path migration (alpha.10+) that walks the stream directly. Remove
-      // this synth call when that migration lands — see comment block in
-      // src/background/network-plugin-synth.ts for the removal trigger.
-      if (message.events.length > 0) {
-        const synth = synthesizeNetMessagesFromEvents(message.events);
-        if (synth.length > 0) {
-          // Count opens for the side panel — keep the legacy semantic of
-          // counting `request` envelopes (the live counter shouldn't change
-          // shape just because the capture mechanism did).
-          const opens = synth.filter((r) => r.kind === 'request').length;
-          if (opens > 0) stats.addNetwork(tabId, opens);
-          forwardToHost(networkAppend(ref, synth));
+      // Plan B recording-suspension (SW-side seam): while this tab is in a
+      // handoff the user is typing into the page, so DROP the rrweb forward —
+      // defense-in-depth, do not record/forward their keystrokes. Console events
+      // ride a separate channel below and are unaffected. NOTE: this closes the
+      // INCREMENTAL channel only; a value the user LEAVES in a field is still
+      // captured by rrweb's next FullSnapshot (design §9 channel-3 — documented).
+      if (!shield.isHandoff(tabId)) {
+        if (message.events.length > 0) forwardToHost(sessionAppend(ref, message.events));
+
+        // alpha.6 (Phase 5 task #72): the network plugin emits its events through
+        // the rrweb event stream (`recorder.events`), not the legacy `recorder.net`
+        // channel. Walk the batch for `EventType.Plugin` / `rrweb/network@1` events
+        // and synthesize legacy `NetMessage` envelopes onto `network.append` so
+        // peek-mcp's `network_events` table + the `get_session_network_errors`
+        // MCP tool keep working unchanged. DOUBLE-WRITE: the plugin events also
+        // stay in the rrweb stream (above), preserving the data for the future
+        // read-path migration (alpha.10+) that walks the stream directly. Remove
+        // this synth call when that migration lands — see comment block in
+        // src/background/network-plugin-synth.ts for the removal trigger.
+        // Derived from the same rrweb stream, so it is suspended with it.
+        if (message.events.length > 0) {
+          const synth = synthesizeNetMessagesFromEvents(message.events);
+          if (synth.length > 0) {
+            // Count opens for the side panel — keep the legacy semantic of
+            // counting `request` envelopes (the live counter shouldn't change
+            // shape just because the capture mechanism did).
+            const opens = synth.filter((r) => r.kind === 'request').length;
+            if (opens > 0) stats.addNetwork(tabId, opens);
+            forwardToHost(networkAppend(ref, synth));
+          }
         }
       }
+
+      // Console forwarding stays UNCONDITIONAL — a separate channel, not the
+      // page's keystroke surface (design §9: console is unaffected by handoff).
+      if (message.console.length > 0) forwardToHost(consoleAppend(ref, message.console));
     }
 
     function handleRelayShadow(
