@@ -4,8 +4,8 @@ import type { ShieldInbound, ViewCommand } from './protocol';
 
 export { SHIELD_HOST_ATTR };
 
-/** Indigo, distinct from the recording-frame red; max z-index; reduced-motion gated. */
-const SHIELD_CSS = `
+/** Indigo, distinct from the recording-frame red; max z-index; reduced-motion gated. Exported for a string-level reduced-motion guard test (jsdom can't evaluate @media). */
+export const SHIELD_CSS = `
 .peek-shield-scrim {
   all: initial;
   position: fixed;

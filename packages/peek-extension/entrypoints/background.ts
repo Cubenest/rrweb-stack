@@ -238,6 +238,16 @@ export default defineBackground({
     // Control-shield (Plan A). Pure SW state machine; every chrome.* effect
     // goes through these deps. Drives the Level-4 lockout overlay in the
     // isolated relay via chrome.tabs.sendMessage to frameId 0.
+    //
+    // SCOPE NOTE: the shield is driven by persistent-level changes (the
+    // PERMISSION_LEVELS_KEY storage.onChanged fan-out below) + reconcile on
+    // wake/view-ready. YOLO-derived effective Level 4 is intentionally NOT a
+    // trigger here because yolo.activate() has no production caller (design
+    // §13). When YOLO activation is wired later, it MUST notify the shield
+    // directly — call shield.onLevelChanged(tabId, origin, 4) on activate and
+    // subscribe yolo.onExpiry to fan a lower out to the origin's tabs — because
+    // YOLO transitions don't write storage, so they never hit the fan-out
+    // (storage stays at the floor → the before===after check skips it).
     const shield = new ShieldController({
       commandView(tabId, cmd) {
         // Top frame only (frameId 0); best-effort like setTabRecording.

@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ShieldInbound } from '../shield/protocol';
-import { SHIELD_HOST_ATTR, createShieldView } from '../shield/view';
+import { SHIELD_CSS, SHIELD_HOST_ATTR, createShieldView } from '../shield/view';
 
 let sent: ShieldInbound[];
 let view: ReturnType<typeof createShieldView>;
@@ -132,5 +132,15 @@ describe('shield view', () => {
     const wheel = markTrusted(new WheelEvent('wheel', { bubbles: true, cancelable: true }));
     window.dispatchEvent(wheel);
     expect(wheel.defaultPrevented).toBe(false);
+  });
+
+  // Spec §12 test 21: the overlay's animation must be gated behind
+  // prefers-reduced-motion. jsdom can't evaluate @media, so this is a
+  // string-level guard that the gate isn't accidentally removed (the breathe
+  // animation must live ONLY inside the no-preference block).
+  it('gates animation behind prefers-reduced-motion', () => {
+    expect(SHIELD_CSS).toContain('@media (prefers-reduced-motion: no-preference)');
+    const gateIdx = SHIELD_CSS.indexOf('@media (prefers-reduced-motion: no-preference)');
+    expect(SHIELD_CSS.indexOf('animation:')).toBeGreaterThan(gateIdx);
   });
 });

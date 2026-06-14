@@ -21,7 +21,8 @@ export function describeAction(action: Action | null, target: DispatchTarget): s
       return `Clicking '${clip(raw, 60)}'`;
     }
     case 'type': {
-      const where = target.ariaLabel ?? `the ${action.selector ?? ''} field`.trim();
+      const where =
+        target.ariaLabel ?? (action.selector ? `the ${action.selector} field` : 'the field');
       return `Typing into ${where}`;
     }
     case 'navigate': {
