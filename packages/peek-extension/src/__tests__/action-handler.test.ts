@@ -613,6 +613,44 @@ describe('handleActionRequest — resolveTarget receives the full action (item B
   });
 });
 
+describe('handleActionRequest — Plan A label hook + shield enter-guard', () => {
+  it('fires onActionLabel after resolveTarget for a click', async () => {
+    await enableOriginAtLevel('https://example.com', 4);
+    const labels: Array<{ tabId: number; label: string }> = [];
+    const ctx = makeDeps({}, { target: { text: 'Apply now' } });
+    ctx.deps.onActionLabel = (tabId, label) => labels.push({ tabId, label });
+    const out = await handleActionRequest(
+      makeRequest({ action: { type: 'click', selector: '#apply', button: 'left' } }),
+      ctx.deps,
+    );
+    expect(out.verdict).toBe('allow');
+    expect(labels.length).toBe(1);
+    expect(labels[0]?.tabId).toBe(42);
+    expect(labels[0]?.label).toContain('Clicking');
+  });
+
+  it('rejects a selector-less enter while the shield is active', async () => {
+    await enableOriginAtLevel('https://example.com', 4);
+    const ctx = makeDeps();
+    ctx.deps.isShieldActive = () => true;
+    const out = await handleActionRequest(makeRequest({ action: { type: 'enter' } }), ctx.deps);
+    expect(out.verdict).toBe('deny');
+    expect(String(out.error)).toContain('explicit selector');
+    expect(ctx.dispatchCalls).toBe(0);
+  });
+
+  it('allows a selector-bearing enter while the shield is active', async () => {
+    await enableOriginAtLevel('https://example.com', 4);
+    const ctx = makeDeps();
+    ctx.deps.isShieldActive = () => true;
+    const out = await handleActionRequest(
+      makeRequest({ action: { type: 'enter', selector: '#search' } }),
+      ctx.deps,
+    );
+    expect(out.verdict).not.toBe('deny'); // proceeds to dispatch
+  });
+});
+
 describe('handleActionRequest — pre-conditions', () => {
   it('denies when the origin is not enabled (recording was never authorized)', async () => {
     // No addEnabledOrigin call.

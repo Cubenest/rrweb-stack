@@ -18,6 +18,7 @@
  */
 
 import { isOriginEnabled } from '../activation/storage.js';
+import { describeAction } from '../shield/describe-action.js';
 import type { Action, ActionRequestMessage, ActionResultMessage } from './action-protocol.js';
 import { isDestructive } from './destructive.js';
 import { gate } from './gate.js';
@@ -245,6 +246,18 @@ export interface ActionHandlerDeps {
   }): Promise<{ ok: true; details?: unknown } | { ok: false; error: string }>;
   /** Resolve an origin string for the active tab. */
   originForTab?(tab: TabRef): string | null;
+  /**
+   * Banner-label hook (Plan A): called with a human-readable description of the
+   * action about to dispatch, AFTER the destructive target is resolved.
+   * Optional — when absent the handler behaves exactly as before.
+   */
+  onActionLabel?(tabId: number, label: string): void;
+  /**
+   * Whether the control shield currently holds focus for this tab (effective
+   * Level >= 4, shield up). Used to reject a selector-less `enter` that would
+   * otherwise dispatch to the Stop button. Optional; defaults to false.
+   */
+  isShieldActive?(tabId: number): boolean;
 }
 
 /** Default `originForTab` that uses the activation/origin module. */
@@ -313,6 +326,20 @@ export async function handleActionRequest(
   // on — the tab may navigate elsewhere during the up-to-2-min confirm wait.
   const guarded = { origin, effectiveLevel };
 
+  // Plan A: the control shield parks focus on its Stop button, so a selector-
+  // less `enter` (which dispatches to document.activeElement) would hit Stop.
+  // Require an explicit selector while the shield is active.
+  if (
+    request.action.type === 'enter' &&
+    (request.action.selector === undefined || request.action.selector === '') &&
+    deps.isShieldActive?.(tab.id) === true
+  ) {
+    return result(request, 'deny', 'denied', {
+      approver: 'user',
+      error: 'enter requires an explicit selector while the control shield is active',
+    });
+  }
+
   // ---- Highlight overlays (Level-2 "Suggest" tier) ----------------------
   // Highlights are NON-mutating: a ring drawn over an element, never a click/
   // type/navigate. They route around the execute_action gate entirely (see
@@ -352,6 +379,9 @@ export async function handleActionRequest(
     add: request.policy.add,
     remove: request.policy.remove,
   });
+  // Plan A: surface what peek is about to do in the shield banner. Fire after
+  // the target is resolved so the label can use the element's text/aria-label.
+  deps.onActionLabel?.(tab.id, describeAction(request.action, target));
   const gateResult = gate({ level: effectiveLevel, destructive: destructive.matched });
 
   // ---- 'deny' verdict ----
