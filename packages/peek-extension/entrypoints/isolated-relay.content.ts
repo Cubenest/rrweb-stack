@@ -17,6 +17,7 @@ import {
 } from '../src/recorder/messages';
 import { EventBatcher } from '../src/relay/batch';
 import { extractConsoleEvent, isConsolePluginEvent } from '../src/relay/console-extract';
+import { shouldDropRrwebDuringHandoff } from '../src/relay/handoff-suspend';
 import { collectShadowReports, getOpenOrClosedShadowRoot } from '../src/relay/shadow';
 import { isViewCommand } from '../src/shield/protocol';
 import { createShieldView } from '../src/shield/view';
@@ -68,6 +69,17 @@ export default defineContentScript({
     const rrwebBatch = new EventBatcher<unknown>();
     const consoleBatch = new EventBatcher<RelayConsoleEvent>();
     const FLUSH_INTERVAL_MS = 1000;
+
+    // Plan B recording-suspension (production-time drop, design §6/§9/§10). The
+    // shield view (top frame only) flips this on ENTER_HANDOFF and off on
+    // EXIT_HANDOFF/LOWER. While true, rrweb events the user types are DROPPED at
+    // intake — never added to the batch — so they aren't flushed on resume (the
+    // post-resume leak the SW-side `!shield.isHandoff` gate alone couldn't close,
+    // because batched events straddle the phase flip). Console events stay
+    // unconditional (a separate masked channel). The flag lives in the top-level
+    // relay scope so the page-agnostic `handleRrweb` intake can read it even
+    // though the shield view is constructed in the top-frame-only block below.
+    let shieldInHandoff = false;
 
     // Send a batch to the SW, swallowing the SW-asleep case (carry-in [10]):
     // sendCmd throws a typed ServiceWorkerUnavailableError which we drop — the
@@ -143,11 +155,17 @@ export default defineContentScript({
     // The invariant "console-plugin events never reach rrwebBatch" holds for ALL
     // shapes — defense-in-depth on the privacy boundary.
     const handleRrweb = (payload: unknown): void => {
-      if (isConsolePluginEvent(payload)) {
+      const isConsole = isConsolePluginEvent(payload);
+      if (isConsole) {
         const consoleEvent = extractConsoleEvent(payload);
         if (consoleEvent && consoleBatch.add(consoleEvent)) flush();
         return; // ALWAYS drop the raw console event, even if extraction was null
       }
+      // Plan B (§6/§9): during a handoff, drop non-console rrweb events at
+      // PRODUCTION time so they never enter the batch (and thus never flush on
+      // resume). Dropping, not buffering, is the whole point — a buffered event
+      // would still leak the user's handoff keystrokes after the phase flips.
+      if (shouldDropRrwebDuringHandoff(shieldInHandoff, isConsole)) return;
       if (rrwebBatch.add(payload)) flush();
     };
 
@@ -293,7 +311,14 @@ export default defineContentScript({
         },
       });
       const onShieldCommand = (msg: unknown): undefined => {
-        if (isViewCommand(msg)) shield.apply(msg);
+        if (isViewCommand(msg)) {
+          // Track the handoff window for the production-time rrweb drop (§6/§9).
+          // ENTER_HANDOFF suspends; EXIT_HANDOFF and LOWER (the terminal teardown
+          // for a generation) both resume. RAISE/LABEL don't change the flag.
+          if (msg.kind === 'ENTER_HANDOFF') shieldInHandoff = true;
+          else if (msg.kind === 'EXIT_HANDOFF' || msg.kind === 'LOWER') shieldInHandoff = false;
+          shield.apply(msg);
+        }
         return undefined;
       };
       chrome.runtime.onMessage.addListener(onShieldCommand);
