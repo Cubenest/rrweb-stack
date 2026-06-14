@@ -108,6 +108,12 @@ export const RequestUserInputActionSchema = z.object({
   prompt: z.string().max(280),
   selector: z.string().optional(),
   readBack: z.boolean().default(false),
+  // NOTE for the SW-handoff implementer: this ceiling (10 min) is DOUBLE the
+  // bridge's DEFAULT_BRIDGE_TIMEOUT_MS (5 min, host-bridge.ts). dispatchActTool
+  // (server.ts) calls bridge.request WITHOUT a timeoutMs, so a handoff longer
+  // than 5 min is silently cut off by the bridge before the user can respond.
+  // When wiring the handoff you MUST plumb action.timeoutMs into
+  // bridge.request({ timeoutMs }) with margin ABOVE this action timeout.
   timeoutMs: z.number().int().min(0).max(600000).default(120000),
 });
 export type RequestUserInputAction = z.infer<typeof RequestUserInputActionSchema>;
@@ -159,6 +165,11 @@ export function redactActionForAudit(action: Action): Action {
       // Record ONLY what the AI asked (prompt + selector). NEVER the returned
       // value — it lives in the result `details`, which the audit writer never
       // receives (audit.ts buildAuditEntry takes only the action).
+      //
+      // This intentionally returns a PARTIAL object (drops readBack/timeoutMs),
+      // which is why the `as Action` cast is needed — the result is audit-only
+      // (consumed solely by buildAuditEntry -> JSON.stringify) and is NOT a
+      // dispatchable Action. Do not feed it back into the dispatcher.
       return {
         type: 'request_user_input',
         prompt: action.prompt,
