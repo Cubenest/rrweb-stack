@@ -48,9 +48,15 @@ import {
   resolveTarget as resolveTargetInPage,
 } from '../src/permissions/dispatcher';
 import { type HighlightResult, applyHighlight, clearHighlight } from '../src/permissions/highlight';
-import { setPermissionLevel } from '../src/permissions/store';
+import {
+  PERMISSION_LEVELS_KEY,
+  getPermissionLevel,
+  setPermissionLevel,
+} from '../src/permissions/store';
 import { YoloSessionStore } from '../src/permissions/yolo';
 import { injectRecorder } from '../src/recorder/inject';
+import { ShieldController } from '../src/shield/controller';
+import { type ShieldInbound, isShieldInbound } from '../src/shield/protocol';
 
 /** Fail-closed timeout for a pending Level-3 confirm (locked MVP decision). */
 const CONFIRM_TIMEOUT_MS = 2 * 60_000;
@@ -218,12 +224,39 @@ export default defineBackground({
       for (const tab of tabs) {
         if (tab.id === undefined) continue;
         await setTabRecording(tab.id, await isTabRecording(tab.url));
+        // Control-shield (Plan A): re-derive the correct phase from durable
+        // level + host state on every SW wake and repair the view.
+        const origin = originFromUrl(tab.url ?? null);
+        if (origin) void shield.reconcile(tab.id, origin);
       }
     }
 
     // Permission state (3d-3). Both in-memory + scoped to this SW instance.
     const yolo = new YoloSessionStore();
     const confirmTokens = new InMemoryConfirmTokenStore();
+
+    // Control-shield (Plan A). Pure SW state machine; every chrome.* effect
+    // goes through these deps. Drives the Level-4 lockout overlay in the
+    // isolated relay via chrome.tabs.sendMessage to frameId 0.
+    const shield = new ShieldController({
+      commandView(tabId, cmd) {
+        // Top frame only (frameId 0); best-effort like setTabRecording.
+        void chrome.tabs.sendMessage(tabId, cmd, { frameId: 0 }).catch(() => {});
+      },
+      async dropToSafeLevel(origin) {
+        try {
+          await setPermissionLevel(origin, 1);
+        } catch (err) {
+          console.warn('[peek] dropToSafeLevel persist failed:', err);
+        }
+        yolo.revoke(origin);
+      },
+      isHostConnected: () => hostState === 'connected' && nativePort !== null,
+      async getEffectiveLevel(origin) {
+        const persistent = await getPermissionLevel(origin);
+        return yolo.isActive(origin) ? 4 : persistent;
+      },
+    });
 
     // Pending Level-3 confirm prompts (Phase 3e). Keyed by requestId; the
     // side panel posts a `confirmVerdict` that resolves the awaiting promise.
@@ -330,6 +363,12 @@ export default defineBackground({
           promptUserConfirmation,
           resolveTarget,
           dispatchInMainWorld,
+          onActionLabel(tabId, label) {
+            shield.onActionLabel(tabId, label);
+          },
+          isShieldActive(tabId) {
+            return shield.isUp(tabId);
+          },
         })
           .then((reply) => forwardActionResult(reply))
           .catch((err) => {
@@ -558,6 +597,8 @@ export default defineBackground({
     // also clears stats/sessions.
     chrome.tabs.onRemoved.addListener((tabId) => {
       yolo.onTabClosed(tabId);
+      // Control-shield (Plan A): forget the tab's shield state on close.
+      shield.onTabClosed(tabId);
     });
 
     /**
@@ -596,6 +637,7 @@ export default defineBackground({
         return;
       }
       hostState = 'connected';
+      shield.onHostConnectionChanged(true);
       reconnectBackoff = INITIAL_BACKOFF_MS;
       const port = nativePort;
       port.onMessage.addListener(handleHostMessage);
@@ -607,6 +649,7 @@ export default defineBackground({
         if (nativePort !== port) return;
         console.warn('[peek] native host disconnected:', chrome.runtime.lastError);
         nativePort = null;
+        shield.onHostConnectionChanged(false);
         scheduleReconnect();
       });
     }
@@ -721,6 +764,33 @@ export default defineBackground({
         }
       }
 
+      // Control-shield (Plan A): a per-origin permission-level change. Fan out
+      // to every open tab of the changed origin and let the controller raise/
+      // lower. Mirrors injectIntoEnabledOrigin's origin->tabs query.
+      const levelChange = changes[PERMISSION_LEVELS_KEY];
+      if (levelChange) {
+        const oldLevels = (levelChange.oldValue ?? {}) as Record<string, number>;
+        const newLevels = (levelChange.newValue ?? {}) as Record<string, number>;
+        const origins = new Set([...Object.keys(oldLevels), ...Object.keys(newLevels)]);
+        for (const origin of origins) {
+          const before = oldLevels[origin] ?? 1;
+          const after = newLevels[origin] ?? 1;
+          if (before === after) continue;
+          const eff = yolo.isActive(origin) ? 4 : after;
+          void (async () => {
+            let tabs: chrome.tabs.Tab[];
+            try {
+              tabs = await chrome.tabs.query({ url: `${origin}/*` });
+            } catch {
+              return;
+            }
+            for (const tab of tabs) {
+              if (tab.id !== undefined) shield.onLevelChanged(tab.id, origin, eff);
+            }
+          })();
+        }
+      }
+
       const change = changes[DEEP_CAPTURE_ORIGINS_KEY];
       if (!change) return;
 
@@ -782,6 +852,24 @@ export default defineBackground({
       (message: Cmd | ConfirmVerdictMessage, sender, sendResponse: (response: unknown) => void) => {
         // Reject messages from other extensions / web pages.
         if (sender.id !== chrome.runtime.id) {
+          return false;
+        }
+        // Control-shield (Plan A): view -> SW handshake / Stop. Hardened sender
+        // trust: must be our extension (checked above), a real tab, and the top
+        // frame. A subframe or tab-less context can't drive the shield. The
+        // router's static param type doesn't list ShieldInbound, so guard
+        // through `unknown` to narrow cleanly (the message arrives at runtime).
+        if (isShieldInbound(message as unknown)) {
+          const shieldMessage = message as unknown as ShieldInbound;
+          const tabId = sender.tab?.id;
+          if (tabId === undefined || sender.frameId !== 0) return false;
+          const origin = originFromUrl(sender.tab?.url ?? null);
+          if (!origin) return false;
+          if (shieldMessage.type === 'shield.stop') {
+            void shield.onStop(tabId);
+          } else {
+            void shield.onViewReady(tabId, origin, shieldMessage.generation);
+          }
           return false;
         }
         // Level-3 confirm verdict from the side panel (Phase 3e). Resolve the

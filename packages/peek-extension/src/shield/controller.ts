@@ -119,4 +119,9 @@ export class ShieldController {
   onTabClosed(tabId: number): void {
     this.#tabs.delete(tabId);
   }
+
+  /** Is the shield currently up for this tab? (read-only probe for the handler) */
+  isUp(tabId: number): boolean {
+    return this.#tabs.get(tabId)?.phase === 'up';
+  }
 }

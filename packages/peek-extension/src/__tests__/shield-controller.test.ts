@@ -105,4 +105,13 @@ describe('ShieldController', () => {
     expect(raise).toBeDefined();
     expect(raise?.cmd.generation).toBeGreaterThan(5);
   });
+
+  it('isUp reflects phase', () => {
+    const h = harness();
+    expect(h.c.isUp(1)).toBe(false); // before RAISE
+    h.c.onLevelChanged(1, 'https://a.test', 4);
+    expect(h.c.isUp(1)).toBe(true); // after RAISE
+    h.c.onLevelChanged(1, 'https://a.test', 1);
+    expect(h.c.isUp(1)).toBe(false); // after LOWER
+  });
 });
