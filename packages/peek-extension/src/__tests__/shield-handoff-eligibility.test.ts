@@ -9,7 +9,11 @@ beforeEach(() => {
     <input id="otp" autocomplete="one-time-code">
     <textarea id="ta"></textarea>
     <button id="btn">Delete account</button>
-    <div id="ce" contenteditable="true"></div>`;
+    <div id="ce" contenteditable="true"></div>
+    <fieldset>
+      <legend>Delete account</legend>
+      <input id="confirm" type="text" aria-label="Type DELETE to confirm">
+    </fieldset>`;
 });
 afterEach(() => {
   document.body.innerHTML = '';
@@ -37,6 +41,14 @@ describe('resolveHandoffEligibility', () => {
   it('password / one-time-code flagged via inputType + autocomplete', () => {
     expect(resolveHandoffEligibility('#pw').inputType).toBe('password');
     expect(resolveHandoffEligibility('#otp').autocomplete).toBe('one-time-code');
+  });
+  it('editable field under a destructive section heading → nearbyHeading resolved', () => {
+    // An editable input is eligible on its own signals, but an input nested in a
+    // "Delete account" fieldset must surface that heading so the SW's
+    // isDestructive matcher can refuse it (destructive coverage).
+    const r = resolveHandoffEligibility('#confirm');
+    expect(r.editable).toBe(true);
+    expect(r.destructiveSignals.nearbyHeading).toContain('Delete account');
   });
   it('missing selector → editable:false, isConnected:false', () => {
     expect(resolveHandoffEligibility('#nope')).toMatchObject({

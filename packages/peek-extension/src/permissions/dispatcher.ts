@@ -369,12 +369,31 @@ export function resolveHandoffEligibility(selector: string): HandoffEligibility 
   const editable = tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || contentEditable;
   const text = (el.textContent ?? '').trim().slice(0, 200) || null;
   const ariaLabel = el.getAttribute('aria-label');
+  // Closest section/legend/heading text — INLINED to mirror resolveTarget so an
+  // editable field nested under a destructive heading (e.g. an input inside a
+  // "Delete account" fieldset) surfaces that signal to the SW's isDestructive
+  // matcher. Self-contained (no module-scope helper) for MAIN-world injection.
+  let nearbyHeading: string | null = null;
+  const heading = el
+    .closest('section, fieldset, article, [role="region"]')
+    ?.querySelector('h1, h2, h3, h4, h5, h6, legend');
+  if (heading?.textContent) {
+    nearbyHeading = heading.textContent.trim();
+  } else {
+    // Fall back to the nearest preceding heading in document order.
+    const headings = Array.from(document.querySelectorAll('h1, h2, h3, h4, h5, h6, legend'));
+    for (const h of headings) {
+      if (h.compareDocumentPosition(el) & Node.DOCUMENT_POSITION_FOLLOWING) {
+        nearbyHeading = (h.textContent ?? '').trim();
+      }
+    }
+  }
   return {
     editable,
     tagName: tag,
     inputType,
     autocomplete,
-    destructiveSignals: { text, ariaLabel, nearbyHeading: null },
+    destructiveSignals: { text, ariaLabel, nearbyHeading },
     isConnected: el.isConnected,
   };
 }
