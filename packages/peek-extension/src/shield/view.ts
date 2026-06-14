@@ -52,7 +52,59 @@ export const SHIELD_CSS = `
   color: #fff;
   font: 600 13px/1 system-ui, sans-serif;
 }
-@media print { .peek-shield-scrim, .peek-shield-border, .peek-shield-banner { display: none !important; } }
+.peek-shield-card {
+  all: initial;
+  position: fixed;
+  top: 50%; left: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 2147483647;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  max-width: 440px;
+  width: calc(100vw - 48px);
+  padding: 20px 22px;
+  border-radius: 10px;
+  background: #1e1b4b;
+  color: #fff;
+  font: 14px/1.5 system-ui, sans-serif;
+  box-shadow: 0 12px 48px rgba(0, 0, 0, 0.5);
+  pointer-events: auto;
+}
+.peek-card-framing {
+  all: unset;
+  display: block;
+  font: 600 15px/1.4 system-ui, sans-serif;
+  color: #fff;
+}
+.peek-card-prompt {
+  all: unset;
+  display: block;
+  font: 13px/1.5 system-ui, sans-serif;
+  color: #c7d2fe;
+}
+.peek-card-input {
+  all: unset;
+  box-sizing: border-box;
+  width: 100%;
+  padding: 8px 10px;
+  border-radius: 6px;
+  background: #fff;
+  color: #111;
+  font: 14px/1.4 system-ui, sans-serif;
+}
+.peek-card-done {
+  all: unset;
+  align-self: flex-end;
+  cursor: pointer;
+  padding: 6px 16px;
+  border-radius: 6px;
+  background: #6366f1;
+  color: #fff;
+  font: 600 13px/1 system-ui, sans-serif;
+}
+@media print { .peek-shield-scrim, .peek-shield-border, .peek-shield-banner, .peek-shield-card { display: none !important; } }
 `;
 
 /** Events the capture listener inspects. Scroll/wheel/touchmove deliberately excluded. */
@@ -80,26 +132,56 @@ export interface ShieldViewDeps {
   doc?: Document;
   win?: Window;
   sendToSw(msg: ShieldInbound): void;
+  /**
+   * Test-only: when true, {@link createShieldView} returns a `__test` seam that
+   * lets jsdom drive the closed-shadow handoff card. The relay never sets it.
+   */
+  exposeTestSeam?: boolean;
 }
 
 export interface ShieldView {
   apply(cmd: ViewCommand): void;
   dispose(): void;
+  /** Present only when `deps.exposeTestSeam === true` (see {@link ShieldViewDeps}). */
+  __test?: {
+    handoffCard(): HTMLElement | null;
+    clickDone(value?: string): void;
+    field(): Element | null;
+    phase(): 'down' | 'up' | 'handoff';
+  };
 }
 
 export function createShieldView(deps: ShieldViewDeps): ShieldView {
   const doc = deps.doc ?? document;
   const win = deps.win ?? window;
 
-  let phase: 'down' | 'up' = 'down';
+  let phase: 'down' | 'up' | 'handoff' = 'down';
   let lastGen = 0;
   let host: HTMLElement | null = null;
+  let shadow: ShadowRoot | null = null;
   let stopButton: HTMLButtonElement | null = null;
   let labelEl: HTMLElement | null = null;
   let observer: MutationObserver | null = null;
 
+  // Plan B handoff state.
+  let cardEl: HTMLElement | null = null;
+  let cardInput: HTMLInputElement | null = null;
+  let doneButton: HTMLButtonElement | null = null;
+  let handoffField: Element | null = null; // the unlocked page field (selector case), by identity
+
   const insideOverlay = (t: EventTarget | null): boolean =>
     host !== null && (t === host || (t instanceof Node && host.contains(t)));
+
+  // During handoff the unlocked field (and its subtree) is allowed in addition
+  // to the overlay; everything else stays blocked. `isConnected` re-check guards
+  // against a field that was removed from the DOM after we captured it.
+  const inAllowSet = (t: EventTarget | null): boolean => {
+    if (insideOverlay(t)) return true; // host/card/Stop/Done
+    if (phase === 'handoff' && handoffField?.isConnected && t instanceof Node) {
+      return t === handoffField || handoffField.contains(t);
+    }
+    return false;
+  };
 
   const block = (e: Event): void => {
     e.preventDefault();
@@ -110,18 +192,22 @@ export function createShieldView(deps: ShieldViewDeps): ShieldView {
     if (phase === 'down' || !e.isTrusted) return; // peek's synthetic events pass
     if (e.type === 'keydown') {
       const ke = e as KeyboardEvent;
-      if (ke.key === 'Escape') {
+      // Esc is a Stop shortcut ONLY in plain lockout. During handoff the user is
+      // typing into the unlocked field/card, so Esc must reach it (native cancel).
+      if (ke.key === 'Escape' && phase === 'up') {
         block(e);
         deps.sendToSw({ type: 'shield.stop' });
         return;
       }
-      if (ke.key === 'Tab') {
+      // The lockout focus-trap pins focus to Stop. During handoff the field/card
+      // are legitimately focusable, so don't trap there.
+      if (ke.key === 'Tab' && phase === 'up') {
         block(e);
         stopButton?.focus(); // focus trap: keep focus on the only allowed control
         return;
       }
     }
-    if (insideOverlay(e.target)) return; // allow Stop activation (click/Enter/Space)
+    if (inAllowSet(e.target)) return; // allow Stop/Done + the unlocked field
     block(e);
   };
 
@@ -132,6 +218,7 @@ export function createShieldView(deps: ShieldViewDeps): ShieldView {
     el.setAttribute('aria-hidden', 'false');
     el.style.setProperty('display', 'contents');
     const root = el.attachShadow({ mode: 'closed' });
+    shadow = root;
 
     const style = doc.createElement('style');
     style.textContent = SHIELD_CSS;
@@ -171,17 +258,94 @@ export function createShieldView(deps: ShieldViewDeps): ShieldView {
     observer.observe(doc.documentElement, { childList: true });
   };
 
+  const teardownHandoffCard = (): void => {
+    cardEl?.remove();
+    cardEl = null;
+    cardInput = null;
+    doneButton = null;
+    handoffField = null;
+  };
+
   const teardownHost = (): void => {
+    teardownHandoffCard();
     observer?.disconnect();
     observer = null;
     host?.remove();
     host = null;
+    shadow = null;
     stopButton = null;
     labelEl = null;
   };
 
   const setLabel = (label: string | null): void => {
     if (labelEl) labelEl.textContent = `🟣 ${label ?? 'peek is controlling this page'}`;
+  };
+
+  const setHostPhase = (p: 'down' | 'up' | 'handoff'): void => {
+    host?.setAttribute('data-peek-shield-phase', p);
+  };
+
+  const buildHandoffCard = (prompt: string, framing: string, selector?: string): void => {
+    if (!shadow) return;
+    const card = doc.createElement('div');
+    card.className = 'peek-shield-card';
+    card.setAttribute('role', 'dialog');
+    card.setAttribute('aria-modal', 'true');
+
+    // peek-authored framing line is dominant; the AI's prompt is set via
+    // textContent (never innerHTML) so it can never inject markup.
+    const framingEl = doc.createElement('p');
+    framingEl.className = 'peek-card-framing';
+    framingEl.textContent = framing;
+    const promptEl = doc.createElement('p');
+    promptEl.className = 'peek-card-prompt';
+    promptEl.textContent = prompt;
+    card.append(framingEl, promptEl);
+
+    if (selector) {
+      // Selector case: unlock the page field by identity, scroll + focus it.
+      let el: Element | null = null;
+      try {
+        el = doc.querySelector(selector);
+      } catch {
+        el = null;
+      }
+      handoffField = el;
+      if (el instanceof HTMLElement) {
+        el.scrollIntoView?.({ block: 'center' });
+        el.focus();
+      }
+    } else {
+      // Free-text case: a card-local input.
+      const input = doc.createElement('input');
+      input.className = 'peek-card-input';
+      input.type = 'text';
+      cardInput = input;
+      card.append(input);
+    }
+
+    const done = doc.createElement('button');
+    done.type = 'button';
+    done.className = 'peek-card-done';
+    done.textContent = 'Done';
+    done.addEventListener('click', (ev) => {
+      ev.preventDefault();
+      // Free-text card OR the unlocked field's value (selector case). The
+      // controller drops it unless readBack (and never for password/OTP/cc).
+      const value =
+        cardInput?.value ??
+        (handoffField instanceof HTMLInputElement || handoffField instanceof HTMLTextAreaElement
+          ? handoffField.value
+          : undefined);
+      deps.sendToSw({ type: 'shield.resume', ...(value !== undefined ? { value } : {}) });
+    });
+    doneButton = done;
+    card.append(done);
+
+    shadow.append(card);
+    cardEl = card;
+    if (cardInput) cardInput.focus();
+    else if (!handoffField) done.focus();
   };
 
   const apply = (cmd: ViewCommand): void => {
@@ -196,6 +360,7 @@ export function createShieldView(deps: ShieldViewDeps): ShieldView {
         phase = 'up';
         buildHost();
         setLabel(cmd.label);
+        setHostPhase('up');
         break;
       case 'LABEL':
         if (phase === 'up') setLabel(cmd.label);
@@ -204,9 +369,19 @@ export function createShieldView(deps: ShieldViewDeps): ShieldView {
         phase = 'down';
         teardownHost();
         break;
-      // Plan B handoff cases — wired in Task 5; no-ops here to keep typecheck exhaustive.
       case 'ENTER_HANDOFF':
+        if (phase === 'up') {
+          phase = 'handoff';
+          buildHandoffCard(cmd.prompt, cmd.framing, cmd.selector);
+          setHostPhase('handoff');
+        }
+        break;
       case 'EXIT_HANDOFF':
+        if (phase === 'handoff') {
+          teardownHandoffCard();
+          phase = 'up';
+          setHostPhase('up');
+        }
         break;
     }
   };
@@ -214,7 +389,7 @@ export function createShieldView(deps: ShieldViewDeps): ShieldView {
   for (const type of CAPTURED_EVENTS) win.addEventListener(type, onCapture, { capture: true });
   deps.sendToSw({ type: 'shield.ready', generation: lastGen });
 
-  return {
+  const view: ShieldView = {
     apply,
     dispose(): void {
       for (const type of CAPTURED_EVENTS)
@@ -223,4 +398,18 @@ export function createShieldView(deps: ShieldViewDeps): ShieldView {
       phase = 'down';
     },
   };
+
+  if (deps.exposeTestSeam) {
+    view.__test = {
+      handoffCard: () => cardEl,
+      clickDone: (value) => {
+        if (cardInput && value !== undefined) cardInput.value = value;
+        doneButton?.click();
+      },
+      field: () => handoffField,
+      phase: () => phase,
+    };
+  }
+
+  return view;
 }

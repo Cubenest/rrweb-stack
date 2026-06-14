@@ -144,3 +144,138 @@ describe('shield view', () => {
     expect(SHIELD_CSS.indexOf('animation:')).toBeGreaterThan(gateIdx);
   });
 });
+
+describe('shield view — handoff (Plan B)', () => {
+  let hv: ReturnType<typeof createShieldView>;
+
+  // The card lives in a CLOSED shadow root the test cannot query. We assert via
+  // (1) the light-DOM host's `data-peek-shield-phase` attribute, (2) the guarded
+  // `__test` seam (only present when deps.exposeTestSeam === true), and
+  // (3) behavior (shield.resume emitted; the capture allow-set predicate).
+  beforeEach(() => {
+    sent = [];
+    hv = createShieldView({
+      doc: document,
+      win: window,
+      sendToSw: (m) => sent.push(m),
+      exposeTestSeam: true,
+    });
+  });
+  afterEach(() => {
+    hv.dispose();
+  });
+
+  function phaseAttr(): string | null {
+    return hostEl()?.getAttribute('data-peek-shield-phase') ?? null;
+  }
+
+  it('ENTER_HANDOFF (no selector) shows a card with framing + prompt + free-text input; Done emits shield.resume with value', () => {
+    hv.apply({ kind: 'RAISE', generation: 1, label: null });
+    hv.apply({
+      kind: 'ENTER_HANDOFF',
+      generation: 2,
+      prompt: 'Enter the code',
+      framing: 'The AI asked you to fill this — peek did not write it.',
+    });
+    expect(phaseAttr()).toBe('handoff');
+    const card = hv.__test?.handoffCard();
+    expect(card).not.toBeNull();
+    expect(card?.textContent).toContain('Enter the code');
+    expect(card?.textContent).toContain('peek did not write');
+    hv.__test?.clickDone('1234');
+    expect(
+      sent.some((m) => m.type === 'shield.resume' && (m as { value?: string }).value === '1234'),
+    ).toBe(true);
+  });
+
+  it('during handoff, a real (trusted) edit of the unlocked field is ALLOWED', () => {
+    document.body.insertAdjacentHTML('beforeend', '<input id="f">');
+    hv.apply({ kind: 'RAISE', generation: 1, label: null });
+    hv.apply({
+      kind: 'ENTER_HANDOFF',
+      generation: 2,
+      prompt: 'fill',
+      framing: 'x',
+      selector: '#f',
+    });
+    const f = document.getElementById('f') as HTMLInputElement;
+    const keydown = markTrusted(
+      new KeyboardEvent('keydown', { key: 'a', bubbles: true, cancelable: true }),
+    );
+    f.dispatchEvent(keydown);
+    expect(keydown.defaultPrevented).toBe(false); // unlocked field passes
+  });
+
+  it('during handoff, a real edit of a NON-allowed page element is still blocked', () => {
+    document.body.insertAdjacentHTML('beforeend', '<input id="other">');
+    hv.apply({ kind: 'RAISE', generation: 1, label: null });
+    document.body.insertAdjacentHTML('beforeend', '<input id="f2">'); // the handoff target
+    hv.apply({
+      kind: 'ENTER_HANDOFF',
+      generation: 2,
+      prompt: 'fill',
+      framing: 'x',
+      selector: '#f2',
+    });
+    const other = document.getElementById('other') as HTMLInputElement;
+    const k = markTrusted(
+      new KeyboardEvent('keydown', { key: 'a', bubbles: true, cancelable: true }),
+    );
+    other.dispatchEvent(k);
+    expect(k.defaultPrevented).toBe(true);
+  });
+
+  it('Done in the selector case emits shield.resume with the unlocked field value', () => {
+    document.body.insertAdjacentHTML('beforeend', '<input id="sf">');
+    hv.apply({ kind: 'RAISE', generation: 1, label: null });
+    hv.apply({
+      kind: 'ENTER_HANDOFF',
+      generation: 2,
+      prompt: 'fill',
+      framing: 'x',
+      selector: '#sf',
+    });
+    const sf = document.getElementById('sf') as HTMLInputElement;
+    sf.value = 'typed-by-human';
+    hv.__test?.clickDone();
+    expect(
+      sent.some(
+        (m) => m.type === 'shield.resume' && (m as { value?: string }).value === 'typed-by-human',
+      ),
+    ).toBe(true);
+  });
+
+  it('Esc during handoff reaches the field (does NOT fire Stop)', () => {
+    document.body.insertAdjacentHTML('beforeend', '<input id="ef">');
+    hv.apply({ kind: 'RAISE', generation: 1, label: null });
+    hv.apply({ kind: 'ENTER_HANDOFF', generation: 2, prompt: 'p', framing: 'f', selector: '#ef' });
+    const ef = document.getElementById('ef') as HTMLInputElement;
+    const esc = markTrusted(
+      new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }),
+    );
+    ef.dispatchEvent(esc);
+    expect(esc.defaultPrevented).toBe(false); // native cancel reaches the field
+    expect(sent.some((m) => m.type === 'shield.stop')).toBe(false);
+  });
+
+  it('EXIT_HANDOFF removes the card and re-locks to up (phase=up, Stop-only)', () => {
+    hv.apply({ kind: 'RAISE', generation: 1, label: null });
+    hv.apply({ kind: 'ENTER_HANDOFF', generation: 2, prompt: 'p', framing: 'f' });
+    hv.apply({ kind: 'EXIT_HANDOFF', generation: 3 });
+    expect(hv.__test?.handoffCard()).toBeNull();
+    expect(phaseAttr()).toBe('up');
+    // back in lockout: a real page click is blocked again
+    const page = document.getElementById('page') as HTMLButtonElement | null;
+    if (page) {
+      const real = markTrusted(new MouseEvent('click', { bubbles: true, cancelable: true }));
+      page.dispatchEvent(real);
+      expect(real.defaultPrevented).toBe(true);
+    }
+  });
+
+  it('does not expose the __test seam when exposeTestSeam is unset', () => {
+    const plain = createShieldView({ doc: document, win: window, sendToSw: () => {} });
+    expect((plain as { __test?: unknown }).__test).toBeUndefined();
+    plain.dispose();
+  });
+});
