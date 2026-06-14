@@ -66,6 +66,18 @@ export class ShieldController {
   }
 
   #raise(tabId: number, origin: string, s: TabState): void {
+    // Settle any pending handoff as `stopped` FIRST (resolve-once), then raise.
+    // Symmetric with #lower: any re-issue of an up-state while phase==='handoff'
+    // (reconcile / onViewReady re-handshake / onHostConnectionChanged(true) /
+    // onLevelChanged shouldBeUp && phase!=='up') reaches here. Without this the
+    // record + scheduled timer survive, EXIT_HANDOFF never fires, and the
+    // awaiting enterHandoff() promise stays blocked until the orphaned timer.
+    if (s.handoff) {
+      const rec = s.handoff;
+      s.handoff = undefined;
+      this.#deps.clearTimer(rec.timer);
+      rec.resolve({ resumed: false, reason: 'stopped' });
+    }
     s.phase = 'up';
     s.origin = origin;
     this.#deps.commandView(tabId, {

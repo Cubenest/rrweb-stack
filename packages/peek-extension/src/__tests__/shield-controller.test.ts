@@ -183,4 +183,33 @@ describe('ShieldController — handoff (Plan B)', () => {
     expect(h.c.isHandoff(1)).toBe(true);
     expect(h.c.isShieldActive(1)).toBe(true); // up OR handoff
   });
+  it('re-raise (onViewReady) during a pending handoff settles it once as stopped + no orphan timer', async () => {
+    const h = harness();
+    h.c.onLevelChanged(1, 'https://a.test', 4);
+    const p = h.c.enterHandoff(1, { prompt: 'x', framing: 'f', readBack: false, timeoutMs: 1000 });
+    h.commands.length = 0;
+    // Live-SW view re-handshake re-issues an up-state via reconcile() → #raise.
+    await h.c.onViewReady(1, 'https://a.test', 0);
+    await expect(p).resolves.toMatchObject({ resumed: false, reason: 'stopped' });
+    // Re-raise must not strand the handoff: no EXIT_HANDOFF, view re-raises, phase up.
+    expect(h.commands.some((x) => x.cmd.kind === 'RAISE')).toBe(true);
+    expect(h.c.isHandoff(1)).toBe(false);
+    expect(h.c.isShieldActive(1)).toBe(true);
+    // Timer was cleared on settle: firing it afterward is a no-op (no double-resolve).
+    h.commands.length = 0;
+    h.fireTimer();
+    expect(h.commands.filter((x) => x.cmd.kind === 'EXIT_HANDOFF')).toHaveLength(0);
+  });
+  it('reconcile via onHostConnectionChanged(true) during a pending handoff settles it once as stopped', async () => {
+    const h = harness();
+    h.c.onLevelChanged(1, 'https://a.test', 4);
+    const p = h.c.enterHandoff(1, { prompt: 'x', framing: 'f', readBack: false, timeoutMs: 1000 });
+    // Wake reconcile path re-derives up and re-issues via #raise.
+    h.c.onHostConnectionChanged(true);
+    await expect(p).resolves.toMatchObject({ resumed: false, reason: 'stopped' });
+    // Late timer fire is a no-op (record + timer already cleared).
+    h.fireTimer();
+    h.c.onUserResume(1);
+    expect(h.commands.filter((x) => x.cmd.kind === 'EXIT_HANDOFF')).toHaveLength(0);
+  });
 });
