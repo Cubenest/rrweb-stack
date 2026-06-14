@@ -44,8 +44,11 @@ import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { type BrowserContext, chromium, expect, test } from '@playwright/test';
+import { type BrowserContext, expect, test } from '@playwright/test';
 import Database from 'better-sqlite3';
+// Shared persistent-context launch + SW resolution (factored into _harness.ts
+// in Task 9 so the smoke and the shield spec share one launch code path).
+import { getServiceWorker, launchExtension, peekMcpDist } from './_harness';
 
 /**
  * Frame a value as a Chrome native-messaging message: little-endian uint32
@@ -62,52 +65,34 @@ function frame(value: unknown): Buffer {
 }
 
 const here = dirname(fileURLToPath(import.meta.url));
-const extensionDir = resolve(here, '..', '.output', 'chrome-mv3');
 const fixturePath = resolve(here, 'fixtures', 'sample.html');
 const fixtureUrl = `file://${fixturePath}`;
 
-// peek-mcp binary location. Resolved via the workspace-relative path because
-// re-exporting the framing helper from @peekdev/mcp/native-host would widen
-// the package's public surface for one test (peek-mcp is workspace-private).
-const peekMcpDist = resolve(here, '..', '..', 'peek-mcp', 'dist', 'index.js');
+// `peekMcpDist` (the peek-mcp entry — resolved workspace-relative so we don't
+// widen @peekdev/mcp's public surface for a test) comes from ./_harness so the
+// smoke and shield specs agree on paths. The extension dir + launch flags also
+// live there (used via `launchExtension`).
 
 let context: BrowserContext | undefined;
 let userDataDir = '';
 let peekHome = '';
 
 test.beforeAll(async () => {
-  if (!existsSync(extensionDir)) {
-    throw new Error(
-      `peek smoke: extension not built — run \`pnpm --filter @peekdev/extension build\` first. (looked at ${extensionDir})`,
-    );
-  }
   if (!existsSync(peekMcpDist)) {
     throw new Error(
       `peek smoke: peek-mcp not built — run \`pnpm --filter @peekdev/mcp build\` first. (looked at ${peekMcpDist})`,
     );
   }
-
-  userDataDir = mkdtempSync(join(tmpdir(), 'peek-smoke-userdata-'));
   peekHome = mkdtempSync(join(tmpdir(), 'peek-smoke-home-'));
 
-  // Playwright 1.50+ defaults to `chromium_headless_shell` which DOES NOT
-  // load extensions (Playwright Issue #35395). The full chromium build is
-  // required to load an unpacked MV3 extension. Switch via `channel: 'chromium'`
-  // and pass `--headless=new` (the modern headless mode that supports
-  // extensions). The deprecated `--headless` mode disables extensions.
-  context = await chromium.launchPersistentContext(userDataDir, {
-    channel: 'chromium',
-    headless: true,
-    args: [
-      `--disable-extensions-except=${extensionDir}`,
-      `--load-extension=${extensionDir}`,
-      // headless=new is the modern headless mode that supports extensions.
-      '--headless=new',
-      // Required on CI runners (no /dev/shm) and matches the e2e-wdio job.
-      '--no-sandbox',
-      '--disable-dev-shm-usage',
-    ],
-  });
+  // Shared launch: asserts the extension is built, makes a fresh userDataDir,
+  // and launches the full `channel: 'chromium'` build with `--headless=new`
+  // (Playwright 1.50+ defaults to `chromium_headless_shell`, which DOES NOT load
+  // extensions — Issue #35395; the deprecated `--headless` mode also disables
+  // them). See e2e/_harness.ts for the launch flags.
+  const launched = await launchExtension();
+  context = launched.context;
+  userDataDir = launched.userDataDir;
 });
 
 test.afterAll(async () => {
@@ -218,10 +203,7 @@ test('layer 1: side-panel "Enable on this site" state can be persisted via stora
   // surface. The capture-side path is then proven independently in Layer 2.
   expect(context).toBeDefined();
   if (context === undefined) throw new Error('context not initialized');
-  const workers = context.serviceWorkers();
-  expect(workers.length, 'SW available for storage write').toBeGreaterThan(0);
-  const sw = workers[0];
-  if (sw === undefined) throw new Error('unreachable: no service worker');
+  const sw = await getServiceWorker(context);
 
   // The activation store is keyed under `peek:enabledOrigins` (per
   // src/constants.ts -> ENABLED_ORIGINS_KEY). We write directly, then read

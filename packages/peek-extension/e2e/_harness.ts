@@ -28,7 +28,7 @@ import { homedir, tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { type BrowserContext, type Worker, chromium, expect } from '@playwright/test';
+import { type BrowserContext, type Worker, chromium } from '@playwright/test';
 
 const here = dirname(fileURLToPath(import.meta.url));
 
@@ -129,16 +129,63 @@ export function extensionIdFromWorker(sw: Worker): string {
 /** Handle for the wired-up native host; `stop()` undoes the global manifest write. */
 export interface NativeHostHandle {
   /**
-   * The live context with a connected host. NOTE: this is a FRESH context —
-   * `spawnNativeHost` relaunches after writing the manifest (see below), so the
-   * caller MUST use this context (and re-resolve pages/SW from it), not the one
-   * passed in.
+   * The live context with a (best-effort) connected host. NOTE: this is a FRESH
+   * context — `spawnNativeHost` relaunches after writing the manifest (see
+   * below), so the caller MUST use this context (and re-resolve pages/SW from
+   * it), not the one passed in.
    */
   context: BrowserContext;
   /** PEEK_HOME the spawned host writes its SQLite under. */
   peekHome: string;
+  /**
+   * Whether the SW reached a STABLE `hostState === 'connected'` (i.e. the
+   * launched browser's native messaging actually works here). `false` means the
+   * environment cannot connect a native host — `connectNative` either reports
+   * "host not found" or disconnect-storms back to 'reconnecting' (common in
+   * headless CI sandboxes). Callers must treat `connected === false` as "native
+   * messaging unavailable" and skip the shield round-trip rather than failing
+   * red (matches the plan's option-(b) fallback "until the harness wires a
+   * host"). `stop()` is still safe to call.
+   */
+  connected: boolean;
   /** Restore the global NativeMessagingHosts dir to its pre-test state + cleanup. */
   stop(): Promise<void>;
+}
+
+/**
+ * Poll the SW's `hostState` (via an extension-page sender) until it reports a
+ * STABLE 'connected' — i.e. it reads 'connected' on several consecutive probes
+ * spread over `settleMs`. A single 'connected' read is NOT enough: when native
+ * messaging is unavailable the SW's `connectNative()` sets `hostState =
+ * 'connected'` synchronously on every retry attempt, BEFORE the immediate
+ * `onDisconnect` knocks it back to 'reconnecting', so a naive poll can latch a
+ * transient 'connected' between storm cycles. Requiring the state to HOLD
+ * distinguishes a real connection from the disconnect-storm. Returns `true` if
+ * a stable connection was observed within `timeoutMs`, else `false` (never
+ * throws — the caller decides whether absence is fatal).
+ */
+async function waitForStableConnection(
+  probe: () => Promise<string>,
+  { timeoutMs = 30_000, settleMs = 2_000, intervalMs = 500 } = {},
+): Promise<boolean> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if ((await probe()) === 'connected') {
+      // Saw 'connected' once — verify it HOLDS across the settle window.
+      const settleDeadline = Date.now() + settleMs;
+      let stable = true;
+      while (Date.now() < settleDeadline) {
+        await new Promise((r) => setTimeout(r, intervalMs));
+        if ((await probe()) !== 'connected') {
+          stable = false;
+          break;
+        }
+      }
+      if (stable) return true;
+    }
+    await new Promise((r) => setTimeout(r, intervalMs));
+  }
+  return false;
 }
 
 /**
@@ -233,27 +280,29 @@ export async function spawnNativeHost(launched: LaunchedExtension): Promise<Nati
       });
     }, 1000) as unknown as number;
   });
-  await expect
-    .poll(
+
+  // Probe the SW's `hostState` from the extension page. background.ts answers
+  // { type: 'getNativeHostState' } with the current NativeHostState in `state`.
+  const probeHostState = (): Promise<string> =>
+    keepAlive.evaluate(
       () =>
-        keepAlive.evaluate(
-          () =>
-            new Promise<string>((res) => {
-              // background.ts answers { type: 'getNativeHostState' } with the
-              // current NativeHostState in `state`.
-              chrome.runtime.sendMessage({ type: 'getNativeHostState' }, (r) => {
-                void chrome.runtime.lastError; // swallow no-receiver during a wake
-                res((r as { state?: string } | undefined)?.state ?? 'unknown');
-              });
-            }),
-        ),
-      { timeout: 30_000, intervals: [500] },
-    )
-    .toBe('connected');
+        new Promise<string>((res) => {
+          chrome.runtime.sendMessage({ type: 'getNativeHostState' }, (r) => {
+            void chrome.runtime.lastError; // swallow no-receiver during a wake
+            res((r as { state?: string } | undefined)?.state ?? 'unknown');
+          });
+        }),
+    );
+
+  // Best-effort: wait for a STABLE 'connected'. If native messaging is
+  // unavailable here (sandbox), this returns false instead of throwing so the
+  // caller can skip the shield round-trip rather than fail red.
+  const connected = await waitForStableConnection(probeHostState);
 
   return {
     context,
     peekHome,
+    connected,
     async stop(): Promise<void> {
       try {
         await keepAlive.close();

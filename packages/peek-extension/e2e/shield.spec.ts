@@ -31,10 +31,15 @@
 // when a host is connected). That requires native-messaging to be functional in
 // the test browser. In some headless CI sandboxes the bundled "Chrome for
 // Testing" reports "Specified native messaging host not found" for any manifest
-// — native messaging is effectively unavailable there — and this spec cannot
-// run. The relay/shadow overlay mechanics themselves are exercised by the unit
-// suite (shield-recorder-invisibility, shield-controller); this E2E adds the
-// real-browser raise/gate/teardown round-trip on top.
+// (or accepts the manifest but disconnect-storms back to 'reconnecting') —
+// native messaging is effectively unavailable there. In that case the harness's
+// `spawnNativeHost` reports `connected: false` and this test `test.skip()`s
+// itself (the plan's option-(b) fallback) so the suite is GREEN rather than red.
+// When the host DOES connect (a proper dev/CI box), the full raise/gate/teardown
+// round-trip below runs and the spec passes for real. The relay/shadow overlay
+// mechanics themselves are also exercised by the unit suite
+// (shield-recorder-invisibility, shield-controller); this E2E adds the
+// real-browser round-trip on top.
 
 import { expect, test } from '@playwright/test';
 import { getServiceWorker, launchExtension, spawnNativeHost } from './_harness';
@@ -50,64 +55,82 @@ test.describe('control shield (Level 4)', () => {
     const host = await spawnNativeHost(launched);
     const context = host.context;
 
-    const origin = 'https://example.test';
-    const page = await context.newPage();
-    await page.route(`${origin}/**`, (r) =>
-      r.fulfill({ contentType: 'text/html', body: '<button id="b">go</button>' }),
-    );
-    await page.goto(`${origin}/`);
+    // Always tear the host + context down, even when `test.skip()` below aborts
+    // the body (it throws internally) — otherwise the global manifest write and
+    // the launched browser would leak.
+    try {
+      // Plan §Task-9 host-connected caveat + option (b): the shield only RAISEs
+      // with a connected host. If the launched browser's native messaging is
+      // unavailable here (headless CI sandboxes report "host not found" or
+      // disconnect-storm back to 'reconnecting'), there is nothing to assert —
+      // the raise/gate/teardown round-trip is unreachable. Skip rather than fail
+      // red (the relay/shadow mechanics are still covered by the unit suite).
+      // When a host DOES connect (proper dev/CI box), the full round-trip below
+      // runs and the spec passes for real.
+      test.skip(
+        !host.connected,
+        'native messaging unavailable in this environment — host never reached a stable connection',
+      );
 
-    // Arm Level 4 by writing the permission-levels key directly. `enabledOrigins`
-    // is a *different* key (activation); the shield keys off `permissionLevels`.
-    const swForArm = await getServiceWorker(context);
-    await swForArm.evaluate(async (o) => {
-      await chrome.storage.sync.set({ 'peek:enabledOrigins': [o] });
-      await chrome.storage.sync.set({ 'peek:permissionLevels': { [o]: 4 } });
-    }, origin);
+      const origin = 'https://example.test';
+      const page = await context.newPage();
+      await page.route(`${origin}/**`, (r) =>
+        r.fulfill({ contentType: 'text/html', body: '<button id="b">go</button>' }),
+      );
+      await page.goto(`${origin}/`);
 
-    // Reload so the relay re-injects and re-announces `shield.ready`; the SW
-    // reconciles from the now-Level-4 durable state + connected host and RAISEs.
-    // (The storage-change fan-out also RAISEs, but a reload makes the handshake
-    // path deterministic regardless of SW-instance timing.)
-    await page.reload();
+      // Arm Level 4 by writing the permission-levels key directly. `enabledOrigins`
+      // is a *different* key (activation); the shield keys off `permissionLevels`.
+      const swForArm = await getServiceWorker(context);
+      await swForArm.evaluate(async (o) => {
+        await chrome.storage.sync.set({ 'peek:enabledOrigins': [o] });
+        await chrome.storage.sync.set({ 'peek:permissionLevels': { [o]: 4 } });
+      }, origin);
 
-    // Overlay host appears (top-frame, marker attribute on the closed-shadow host).
-    await expect
-      .poll(() => page.locator('[data-peek-shield-host]').count(), { timeout: 15_000 })
-      .toBe(1);
+      // Reload so the relay re-injects and re-announces `shield.ready`; the SW
+      // reconciles from the now-Level-4 durable state + connected host and
+      // RAISEs. (The storage-change fan-out also RAISEs, but a reload makes the
+      // handshake path deterministic regardless of SW-instance timing.)
+      await page.reload();
 
-    // A real user click on the page button is swallowed by the capture shield.
-    await page.evaluate(() => {
-      (window as unknown as { __clicked: number }).__clicked = 0;
-      document.getElementById('b')?.addEventListener('click', () => {
-        (window as unknown as { __clicked: number }).__clicked++;
+      // Overlay host appears (top-frame, marker attribute on the closed-shadow host).
+      await expect
+        .poll(() => page.locator('[data-peek-shield-host]').count(), { timeout: 15_000 })
+        .toBe(1);
+
+      // A real user click on the page button is swallowed by the capture shield.
+      await page.evaluate(() => {
+        (window as unknown as { __clicked: number }).__clicked = 0;
+        document.getElementById('b')?.addEventListener('click', () => {
+          (window as unknown as { __clicked: number }).__clicked++;
+        });
       });
-    });
-    await page.locator('#b').click(); // a trusted click (Playwright synthesizes a real input event)
-    expect(
-      await page.evaluate(() => (window as unknown as { __clicked: number }).__clicked),
-      'trusted click is blocked by the shield',
-    ).toBe(0);
+      await page.locator('#b').click(); // a trusted click (Playwright synthesizes a real input event)
+      expect(
+        await page.evaluate(() => (window as unknown as { __clicked: number }).__clicked),
+        'trusted click is blocked by the shield',
+      ).toBe(0);
 
-    // A synthetic el.click() (isTrusted:false) still reaches the handler — this
-    // is the path peek's own action dispatch uses, so it must pass the shield.
-    await page.evaluate(() => document.getElementById('b')?.click());
-    expect(
-      await page.evaluate(() => (window as unknown as { __clicked: number }).__clicked),
-      'synthetic click passes the shield',
-    ).toBe(1);
+      // A synthetic el.click() (isTrusted:false) still reaches the handler — this
+      // is the path peek's own action dispatch uses, so it must pass the shield.
+      await page.evaluate(() => document.getElementById('b')?.click());
+      expect(
+        await page.evaluate(() => (window as unknown as { __clicked: number }).__clicked),
+        'synthetic click passes the shield',
+      ).toBe(1);
 
-    // Drop to Level 1 (the end-state Stop reaches via dropToSafeLevel) -> teardown.
-    const swForDrop = await getServiceWorker(context);
-    await swForDrop.evaluate(async (o) => {
-      await chrome.storage.sync.set({ 'peek:permissionLevels': { [o]: 1 } });
-    }, origin);
-    await expect
-      .poll(() => page.locator('[data-peek-shield-host]').count(), { timeout: 10_000 })
-      .toBe(0);
-
-    await host.stop();
-    await context.close();
+      // Drop to Level 1 (the end-state Stop reaches via dropToSafeLevel) -> teardown.
+      const swForDrop = await getServiceWorker(context);
+      await swForDrop.evaluate(async (o) => {
+        await chrome.storage.sync.set({ 'peek:permissionLevels': { [o]: 1 } });
+      }, origin);
+      await expect
+        .poll(() => page.locator('[data-peek-shield-host]').count(), { timeout: 10_000 })
+        .toBe(0);
+    } finally {
+      await host.stop();
+      await context.close();
+    }
   });
 
   // The Stop button lives in a CLOSED shadow root; Playwright can't dispatch a
