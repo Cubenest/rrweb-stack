@@ -317,3 +317,64 @@ export function resolveTarget(selector: string, nth?: number): ResolvedTarget {
     nearbyHeading,
   };
 }
+
+/** Eligibility + sensitivity metadata for a handoff target (Plan B). */
+export interface HandoffEligibility {
+  editable: boolean;
+  tagName: string | null;
+  inputType: string | null;
+  autocomplete: string | null;
+  destructiveSignals: {
+    text?: string | null;
+    ariaLabel?: string | null;
+    nearbyHeading?: string | null;
+  };
+  isConnected: boolean;
+}
+
+/**
+ * MAIN-world: resolve whether `selector` points at a single editable, inspectable
+ * element + the signals the SW needs to gate a handoff. Self-contained (inline
+ * helpers) because it is serialized via executeScript({world:'MAIN'}). Never throws.
+ */
+export function resolveHandoffEligibility(selector: string): HandoffEligibility {
+  const empty: HandoffEligibility = {
+    editable: false,
+    tagName: null,
+    inputType: null,
+    autocomplete: null,
+    destructiveSignals: {},
+    isConnected: false,
+  };
+  if (typeof selector !== 'string' || selector.length === 0) return empty;
+  let el: Element | null;
+  try {
+    el = document.querySelector(selector);
+  } catch {
+    return empty;
+  }
+  if (!el) return empty;
+  const tag = el.tagName;
+  const inputType = el instanceof HTMLInputElement ? el.type : null;
+  const autocomplete = el.getAttribute('autocomplete');
+  // `isContentEditable` is the real-browser signal; jsdom does not implement it,
+  // so fall back to the HTML-spec `contenteditable` attribute ('' / 'true' /
+  // 'plaintext-only' mean editable) for the same semantics under test.
+  const ceAttr = el.getAttribute('contenteditable');
+  const contentEditable =
+    (el as HTMLElement).isContentEditable === true ||
+    ceAttr === '' ||
+    ceAttr === 'true' ||
+    ceAttr === 'plaintext-only';
+  const editable = tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || contentEditable;
+  const text = (el.textContent ?? '').trim().slice(0, 200) || null;
+  const ariaLabel = el.getAttribute('aria-label');
+  return {
+    editable,
+    tagName: tag,
+    inputType,
+    autocomplete,
+    destructiveSignals: { text, ariaLabel, nearbyHeading: null },
+    isConnected: el.isConnected,
+  };
+}
