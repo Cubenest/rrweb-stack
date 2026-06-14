@@ -18,6 +18,8 @@ import {
 import { EventBatcher } from '../src/relay/batch';
 import { extractConsoleEvent, isConsolePluginEvent } from '../src/relay/console-extract';
 import { collectShadowReports, getOpenOrClosedShadowRoot } from '../src/relay/shadow';
+import { isViewCommand } from '../src/shield/protocol';
+import { createShieldView } from '../src/shield/view';
 
 /**
  * ISOLATED-world relay (Tasks 3.20 + 3.21, P2 PRD §A.2 / §A.3).
@@ -281,6 +283,23 @@ export default defineContentScript({
         chrome.runtime.onMessage.removeListener(onRecordingMessage);
         chrome.storage.onChanged.removeListener(onBorderSettingChanged);
         frame.dispose();
+      });
+
+      // ---- Control shield (Plan A) -------------------------------------
+      const shield = createShieldView({
+        sendToSw: (msg) => {
+          // fire-and-forget; SW may be asleep — swallow no-receiver errors.
+          void chrome.runtime.sendMessage(msg).catch(() => {});
+        },
+      });
+      const onShieldCommand = (msg: unknown): undefined => {
+        if (isViewCommand(msg)) shield.apply(msg);
+        return undefined;
+      };
+      chrome.runtime.onMessage.addListener(onShieldCommand);
+      ctx.onInvalidated(() => {
+        chrome.runtime.onMessage.removeListener(onShieldCommand);
+        shield.dispose();
       });
     }
 
