@@ -17,7 +17,7 @@ import {
 } from '../src/recorder/messages';
 import { EventBatcher } from '../src/relay/batch';
 import { extractConsoleEvent, isConsolePluginEvent } from '../src/relay/console-extract';
-import { shouldDropRrwebDuringHandoff } from '../src/relay/handoff-suspend';
+import { nextHandoffFlag, shouldDropRrwebDuringHandoff } from '../src/relay/handoff-suspend';
 import { collectShadowReports, getOpenOrClosedShadowRoot } from '../src/relay/shadow';
 import { isViewCommand } from '../src/shield/protocol';
 import { createShieldView } from '../src/shield/view';
@@ -72,7 +72,7 @@ export default defineContentScript({
 
     // Plan B recording-suspension (production-time drop, design §6/§9/§10). The
     // shield view (top frame only) flips this on ENTER_HANDOFF and off on
-    // EXIT_HANDOFF/LOWER. While true, rrweb events the user types are DROPPED at
+    // EXIT_HANDOFF/LOWER/RAISE (any return to `up`). While true, rrweb events the user types are DROPPED at
     // intake — never added to the batch — so they aren't flushed on resume (the
     // post-resume leak the SW-side `!shield.isHandoff` gate alone couldn't close,
     // because batched events straddle the phase flip). Console events stay
@@ -313,10 +313,12 @@ export default defineContentScript({
       const onShieldCommand = (msg: unknown): undefined => {
         if (isViewCommand(msg)) {
           // Track the handoff window for the production-time rrweb drop (§6/§9).
-          // ENTER_HANDOFF suspends; EXIT_HANDOFF and LOWER (the terminal teardown
-          // for a generation) both resume. RAISE/LABEL don't change the flag.
-          if (msg.kind === 'ENTER_HANDOFF') shieldInHandoff = true;
-          else if (msg.kind === 'EXIT_HANDOFF' || msg.kind === 'LOWER') shieldInHandoff = false;
+          // ENTER_HANDOFF suspends; EXIT_HANDOFF, LOWER, AND RAISE all resume
+          // (RAISE is how the controller returns to `up` when it re-raises during
+          // a pending handoff — reconcile after SW eviction / host reconnect; if
+          // it didn't clear, recording would stay silently suspended). LABEL is
+          // unchanged. See nextHandoffFlag.
+          shieldInHandoff = nextHandoffFlag(shieldInHandoff, msg.kind);
           shield.apply(msg);
         }
         return undefined;
