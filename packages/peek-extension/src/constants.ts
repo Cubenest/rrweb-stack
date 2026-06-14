@@ -28,3 +28,11 @@ export const RECORDER_FILE = 'rrweb-recorder.js';
  * indicator. Pure string — safe to bundle into the MAIN-world recorder IIFE.
  */
 export const RECORDING_FRAME_HOST_ATTR = 'data-peek-rec-frame';
+
+/**
+ * Marker attribute on the in-page shield-overlay closed-shadow host. Used to
+ * exclude the host from rrweb capture (recorder `blockSelector`) and from
+ * peek's own closed-shadow-root sweep, so the lockout overlay never lands in a
+ * recording. Pure string — safe to bundle into the MAIN-world recorder IIFE.
+ */
+export const SHIELD_HOST_ATTR = 'data-peek-shield-host';
