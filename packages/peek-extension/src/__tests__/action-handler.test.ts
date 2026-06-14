@@ -715,6 +715,39 @@ describe('handleActionRequest — request_user_input handoff (Plan B)', () => {
     expect((res.details as { reason?: string }).reason).toBe('ineligible');
   });
 
+  it('request_user_input on an EDITABLE field with a destructive label → ineligible', async () => {
+    // Isolates the `destructive.matched` override: the field IS editable (so the
+    // `!elig.editable` clause does NOT short-circuit), but its label contains a
+    // base destructive term (`delete`), so the destructive override alone must
+    // make it ineligible and enterHandoff must NOT be called.
+    await enableOriginAtLevel('https://example.com', 4);
+    const ctx = makeDeps();
+    ctx.deps.isShieldActive = () => true;
+    ctx.deps.resolveHandoffEligibility = async () => ({
+      editable: true,
+      tagName: 'INPUT',
+      inputType: 'text',
+      autocomplete: null,
+      destructiveSignals: { text: 'Delete account' },
+      isConnected: true,
+    });
+    let handoffCalls = 0;
+    ctx.deps.enterHandoff = async () => {
+      handoffCalls += 1;
+      return { resumed: true };
+    };
+    const res = await handleActionRequest(
+      makeRequest({
+        action: { type: 'request_user_input', prompt: 'x', selector: '#confirm' },
+      }),
+      ctx.deps,
+    );
+    expect(res.verdict).toBe('allow');
+    expect(res.result).toBe('ok');
+    expect((res.details as { reason?: string }).reason).toBe('ineligible');
+    expect(handoffCalls).toBe(0); // destructive override beats an otherwise-eligible target
+  });
+
   it('request_user_input with an editable field → calls enterHandoff, returns its details', async () => {
     await enableOriginAtLevel('https://example.com', 4);
     const ctx = makeDeps();
@@ -736,6 +769,90 @@ describe('handleActionRequest — request_user_input handoff (Plan B)', () => {
     );
     expect(res.approver).toBe('user');
     expect(res.details).toMatchObject({ resumed: true, value: 'hi' });
+  });
+
+  it('non-sensitive editable field with readBack → readBack survives as true', async () => {
+    // Mirror image of the password/OTP/cc tests: a plain text input must NOT
+    // have readBack forced off — a regression that always disables readBack
+    // would be caught here.
+    await enableOriginAtLevel('https://example.com', 4);
+    const ctx = makeDeps();
+    ctx.deps.isShieldActive = () => true;
+    ctx.deps.resolveHandoffEligibility = async () => ({
+      editable: true,
+      tagName: 'TEXTAREA',
+      inputType: null,
+      autocomplete: null,
+      destructiveSignals: {},
+      isConnected: true,
+    });
+    let calledReadBack: boolean | undefined;
+    ctx.deps.enterHandoff = async (i) => {
+      calledReadBack = i.readBack;
+      return { resumed: true };
+    };
+    await handleActionRequest(
+      makeRequest({
+        action: { type: 'request_user_input', prompt: 'x', selector: '#notes', readBack: true },
+      }),
+      ctx.deps,
+    );
+    expect(calledReadBack).toBe(true); // non-sensitive ⇒ readBack honored
+  });
+
+  it('handoff timeoutMs above the bridge ceiling is clamped before enterHandoff', async () => {
+    // The MCP schema permits timeoutMs up to 600000, but the host-bridge default
+    // (5 min) cuts the request off first. The handler must clamp to 240000 (the
+    // same ceiling waitFor uses) so the SW timer settles the handoff in time.
+    await enableOriginAtLevel('https://example.com', 4);
+    const ctx = makeDeps();
+    ctx.deps.isShieldActive = () => true;
+    ctx.deps.resolveHandoffEligibility = async () => ({
+      editable: true,
+      tagName: 'INPUT',
+      inputType: 'text',
+      autocomplete: null,
+      destructiveSignals: {},
+      isConnected: true,
+    });
+    let calledTimeout: number | undefined;
+    ctx.deps.enterHandoff = async (i) => {
+      calledTimeout = i.timeoutMs;
+      return { resumed: true };
+    };
+    await handleActionRequest(
+      makeRequest({
+        action: { type: 'request_user_input', prompt: 'x', selector: '#f', timeoutMs: 600000 },
+      }),
+      ctx.deps,
+    );
+    expect(calledTimeout).toBe(240000); // clamped under the 5-min bridge timeout
+  });
+
+  it('handoff timeoutMs under the ceiling is forwarded unchanged', async () => {
+    await enableOriginAtLevel('https://example.com', 4);
+    const ctx = makeDeps();
+    ctx.deps.isShieldActive = () => true;
+    ctx.deps.resolveHandoffEligibility = async () => ({
+      editable: true,
+      tagName: 'INPUT',
+      inputType: 'text',
+      autocomplete: null,
+      destructiveSignals: {},
+      isConnected: true,
+    });
+    let calledTimeout: number | undefined;
+    ctx.deps.enterHandoff = async (i) => {
+      calledTimeout = i.timeoutMs;
+      return { resumed: true };
+    };
+    await handleActionRequest(
+      makeRequest({
+        action: { type: 'request_user_input', prompt: 'x', selector: '#f', timeoutMs: 90000 },
+      }),
+      ctx.deps,
+    );
+    expect(calledTimeout).toBe(90000); // below the ceiling ⇒ unchanged
   });
 
   it('password field with readBack → handoff proceeds but readBack is forced off', async () => {

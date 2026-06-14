@@ -32,6 +32,21 @@ const HANDOFF_FRAMING =
   'peek handed control back to you. The instructions below are written by the AI — not by peek.';
 
 /**
+ * Upper bound (ms) on the SW handoff timer, mirroring the `waitFor` dispatcher
+ * clamp (dispatcher.ts). The MCP `request_user_input` schema permits timeoutMs
+ * up to 600000, but `dispatchActTool` calls `bridge.request` WITHOUT a
+ * timeoutMs, so the host-bridge's DEFAULT_BRIDGE_TIMEOUT_MS (5 min) cuts the
+ * request off first — leaving the shield stuck in the `handoff` phase until the
+ * longer SW timer eventually fires. Clamping the SW timer here, under the 5-min
+ * bridge default, guarantees the handoff settles before the bridge gives up
+ * (defense-in-depth even once server.ts plumbs a margin-above timeout into
+ * bridge.request). 4 min = the same ceiling `waitFor` uses.
+ */
+const MAX_HANDOFF_TIMEOUT_MS = 240000;
+/** Default handoff timeout when the action omits `timeoutMs` (matches the schema default). */
+const DEFAULT_HANDOFF_TIMEOUT_MS = 120000;
+
+/**
  * The minimal `chrome.tabs.Tab` shape we need to resolve a request to a tab.
  * Injectable for tests — we don't want chrome global types in pure logic.
  *
@@ -402,10 +417,18 @@ export async function handleActionRequest(
   // user is the actor, so a rejected target returns a structured ineligible
   // result rather than dispatching anything.
   if (request.action.type === 'request_user_input') {
-    if (effectiveLevel < 4 || deps.isShieldActive?.(tab.id) !== true) {
+    // Distinguish the two failing conditions so the audit log + the AI see the
+    // real cause: an under-level origin vs. the right level but the shield down.
+    if (effectiveLevel < 4) {
       return result(request, 'deny', 'denied', {
         approver: 'user',
-        error: `handoff requires Level 4 with the shield active (level ${effectiveLevel})`,
+        error: `handoff requires Level 4 (level ${effectiveLevel})`,
+      });
+    }
+    if (deps.isShieldActive?.(tab.id) !== true) {
+      return result(request, 'deny', 'denied', {
+        approver: 'user',
+        error: 'handoff requires the control shield active',
       });
     }
     const a = request.action;
@@ -437,7 +460,9 @@ export async function handleActionRequest(
       framing: HANDOFF_FRAMING,
       ...(selector !== undefined ? { selector } : {}),
       readBack,
-      timeoutMs: a.timeoutMs ?? 120000,
+      // Clamp under the 5-min host-bridge timeout so the SW timer settles the
+      // handoff before the bridge gives up on the request (see the constant).
+      timeoutMs: Math.min(a.timeoutMs ?? DEFAULT_HANDOFF_TIMEOUT_MS, MAX_HANDOFF_TIMEOUT_MS),
     });
     return result(request, 'allow', 'ok', {
       approver: 'user',
