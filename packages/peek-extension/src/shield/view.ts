@@ -168,6 +168,7 @@ export function createShieldView(deps: ShieldViewDeps): ShieldView {
   let cardInput: HTMLInputElement | null = null;
   let doneButton: HTMLButtonElement | null = null;
   let handoffField: Element | null = null; // the unlocked page field (selector case), by identity
+  let doneClicked = false; // in-view double-submit guard for the Done button
 
   const insideOverlay = (t: EventTarget | null): boolean =>
     host !== null && (t === host || (t instanceof Node && host.contains(t)));
@@ -251,7 +252,11 @@ export function createShieldView(deps: ShieldViewDeps): ShieldView {
     stop.focus();
 
     observer = new MutationObserver(() => {
-      if (phase === 'up' && host && !host.isConnected) {
+      // `handoff` is semantically still "shield up" — the lockout scrim/border/
+      // banner AND the handoff card live in this host's shadow root, so a hostile
+      // or SPA page that detaches the host mid-handoff would otherwise drop the
+      // lockout and the card. Re-append in both phases to keep the page protected.
+      if ((phase === 'up' || phase === 'handoff') && host && !host.isConnected) {
         doc.documentElement.appendChild(host);
       }
     });
@@ -264,6 +269,7 @@ export function createShieldView(deps: ShieldViewDeps): ShieldView {
     cardInput = null;
     doneButton = null;
     handoffField = null;
+    doneClicked = false;
   };
 
   const teardownHost = (): void => {
@@ -330,6 +336,14 @@ export function createShieldView(deps: ShieldViewDeps): ShieldView {
     done.textContent = 'Done';
     done.addEventListener('click', (ev) => {
       ev.preventDefault();
+      // In-view double-submit guard: the card is torn down only when EXIT_HANDOFF
+      // round-trips from the controller, so a fast double-click could otherwise
+      // emit two shield.resume messages. (The controller's #settleHandoff is
+      // idempotent, so this is belt-and-suspenders, but it keeps the view
+      // self-consistent.) Disable the button + latch a flag on the first click.
+      if (doneClicked) return;
+      doneClicked = true;
+      done.disabled = true;
       // Free-text card OR the unlocked field's value (selector case). The
       // controller drops it unless readBack (and never for password/OTP/cc).
       const value =

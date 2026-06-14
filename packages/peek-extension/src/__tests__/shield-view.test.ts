@@ -273,6 +273,27 @@ describe('shield view — handoff (Plan B)', () => {
     }
   });
 
+  it('MutationObserver re-appends a removed host while in handoff (card survives)', async () => {
+    hv.apply({ kind: 'RAISE', generation: 1, label: null });
+    hv.apply({ kind: 'ENTER_HANDOFF', generation: 2, prompt: 'p', framing: 'f' });
+    expect(hv.__test?.handoffCard()).not.toBeNull();
+    hostEl()?.remove();
+    await new Promise((r) => setTimeout(r, 0)); // let the observer fire
+    expect(hostEl()).not.toBeNull(); // re-appended even in handoff
+    expect(phaseAttr()).toBe('handoff');
+    expect(hv.__test?.handoffCard()).not.toBeNull(); // card travels with the host
+  });
+
+  it('Done is a no-op on a second click (in-view double-submit guard)', () => {
+    hv.apply({ kind: 'RAISE', generation: 1, label: null });
+    hv.apply({ kind: 'ENTER_HANDOFF', generation: 2, prompt: 'p', framing: 'f' });
+    hv.__test?.clickDone('first');
+    hv.__test?.clickDone('second'); // card still mounted (no EXIT_HANDOFF yet)
+    const resumes = sent.filter((m) => m.type === 'shield.resume');
+    expect(resumes).toHaveLength(1);
+    expect((resumes[0] as { value?: string }).value).toBe('first');
+  });
+
   it('does not expose the __test seam when exposeTestSeam is unset', () => {
     const plain = createShieldView({ doc: document, win: window, sendToSw: () => {} });
     expect((plain as { __test?: unknown }).__test).toBeUndefined();
