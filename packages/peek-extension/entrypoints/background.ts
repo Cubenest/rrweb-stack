@@ -399,22 +399,35 @@ export default defineBackground({
             });
           },
           async resolveHandoffEligibility({ tabId, selector }) {
-            const [res] = await chrome.scripting.executeScript({
-              target: { tabId },
-              world: 'MAIN',
-              func: resolveHandoffEligibility,
-              args: [selector],
-            });
-            return (
-              (res?.result as HandoffEligibility | undefined) ?? {
-                editable: false,
-                tagName: null,
-                inputType: null,
-                autocomplete: null,
-                destructiveSignals: {},
-                isConnected: false,
-              }
-            );
+            // Fail-closed fallback: an ineligible (non-editable) element. The
+            // dispatcher's `if (!elig || !elig.editable …)` branch folds this
+            // into a structured `{ resumed:false, reason:'ineligible' }` reply.
+            const fallback: HandoffEligibility = {
+              editable: false,
+              tagName: null,
+              inputType: null,
+              autocomplete: null,
+              destructiveSignals: {},
+              isConnected: false,
+            };
+            // A REJECTED executeScript (tab navigated/closed/discarded, or a
+            // restricted URL where MAIN-world injection fails) must NOT escape:
+            // it would propagate out of handleActionRequest, skip
+            // forwardActionResult, and hang the awaiting MCP call until the
+            // 5-min bridge timeout. Mirror the sibling MAIN-world helpers
+            // (resolveTarget / dispatchInMainWorld) and return the fallback.
+            try {
+              const [res] = await chrome.scripting.executeScript({
+                target: { tabId },
+                world: 'MAIN',
+                func: resolveHandoffEligibility,
+                args: [selector],
+              });
+              return (res?.result as HandoffEligibility | undefined) ?? fallback;
+            } catch (err) {
+              console.debug('[peek] resolveHandoffEligibility MAIN-world script failed:', err);
+              return fallback;
+            }
           },
         })
           .then((reply) => forwardActionResult(reply))
