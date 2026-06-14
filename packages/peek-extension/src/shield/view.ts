@@ -176,6 +176,13 @@ export function createShieldView(deps: ShieldViewDeps): ShieldView {
   // During handoff the unlocked field (and its subtree) is allowed in addition
   // to the overlay; everything else stays blocked. `isConnected` re-check guards
   // against a field that was removed from the DOM after we captured it.
+  //
+  // ALPHA NARROWING (design §5): the spec's per-event re-validation is
+  // intentionally narrowed here to element identity (`t === handoffField`, held
+  // by reference) + `isConnected`. This is fail-safe — a reparented/replaced
+  // node detaches → `isConnected` is false → blocked — and the identity hold
+  // prevents a page swapping in a different element under the same selector. The
+  // fuller selector/anchored-position re-match the spec describes is deferred.
   const inAllowSet = (t: EventTarget | null): boolean => {
     if (insideOverlay(t)) return true; // host/card/Stop/Done
     if (phase === 'handoff' && handoffField?.isConnected && t instanceof Node) {

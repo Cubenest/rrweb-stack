@@ -108,12 +108,14 @@ export const RequestUserInputActionSchema = z.object({
   prompt: z.string().max(280),
   selector: z.string().optional(),
   readBack: z.boolean().default(false),
-  // NOTE for the SW-handoff implementer: this ceiling (10 min) is DOUBLE the
-  // bridge's DEFAULT_BRIDGE_TIMEOUT_MS (5 min, host-bridge.ts). dispatchActTool
-  // (server.ts) calls bridge.request WITHOUT a timeoutMs, so a handoff longer
-  // than 5 min is silently cut off by the bridge before the user can respond.
-  // When wiring the handoff you MUST plumb action.timeoutMs into
-  // bridge.request({ timeoutMs }) with margin ABOVE this action timeout.
+  // This ceiling (10 min) is DOUBLE the bridge's DEFAULT_BRIDGE_TIMEOUT_MS
+  // (5 min, host-bridge.ts). server.ts's dispatchActTool now threads
+  // timeoutMs = handoffTimeout + 30000 into bridge.request, so the bridge waits
+  // with margin above the handoff timer instead of cutting the request off at
+  // its 5-min default. The SW controller's timer (clamped to
+  // MAX_HANDOFF_TIMEOUT_MS = 240000, action-handler.ts) fires FIRST, so a slow
+  // human yields a structured { resumed:false, reason:'timeout' } rather than a
+  // transport error.
   timeoutMs: z.number().int().min(0).max(600000).default(120000),
 });
 export type RequestUserInputAction = z.infer<typeof RequestUserInputActionSchema>;

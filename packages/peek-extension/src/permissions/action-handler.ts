@@ -34,13 +34,13 @@ const HANDOFF_FRAMING =
 /**
  * Upper bound (ms) on the SW handoff timer, mirroring the `waitFor` dispatcher
  * clamp (dispatcher.ts). The MCP `request_user_input` schema permits timeoutMs
- * up to 600000, but `dispatchActTool` calls `bridge.request` WITHOUT a
- * timeoutMs, so the host-bridge's DEFAULT_BRIDGE_TIMEOUT_MS (5 min) cuts the
- * request off first — leaving the shield stuck in the `handoff` phase until the
- * longer SW timer eventually fires. Clamping the SW timer here, under the 5-min
- * bridge default, guarantees the handoff settles before the bridge gives up
- * (defense-in-depth even once server.ts plumbs a margin-above timeout into
- * bridge.request). 4 min = the same ceiling `waitFor` uses.
+ * up to 600000. `dispatchActTool` (server.ts) now plumbs a margin-above timeout
+ * (handoffTimeout + 30000) into `bridge.request`, so the bridge waits long
+ * enough for a slow human. This 240000ms clamp on the SW controller's timer is
+ * the AUTHORITATIVE settle: it fires under the bridge's wait so the handoff
+ * always resolves to a structured `{ resumed:false, reason:'timeout' }` (card
+ * torn down) rather than a transport error, even if the schema allowed a longer
+ * action timeout. 4 min = the same ceiling `waitFor` uses.
  */
 const MAX_HANDOFF_TIMEOUT_MS = 240000;
 /** Default handoff timeout when the action omits `timeoutMs` (matches the schema default). */
