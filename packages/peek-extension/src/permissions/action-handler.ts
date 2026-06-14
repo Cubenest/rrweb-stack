@@ -442,10 +442,15 @@ export async function handleActionRequest(
             remove: request.policy.remove,
           })
         : { matched: false };
+      // The HTML autocomplete attribute is space-separated and case-insensitive
+      // (e.g. `one-time-code webauthn`, `shipping cc-number`, `CC-Number`), so
+      // tokenize + lowercase before matching — an exact/whole-string check would
+      // miss real-world values and read an OTP/credit-card back to the AI.
+      const autocompleteTokens = (elig?.autocomplete ?? '').toLowerCase().split(/\s+/);
       const sensitive =
         elig?.inputType === 'password' ||
-        elig?.autocomplete === 'one-time-code' ||
-        (elig?.autocomplete ?? '').startsWith('cc-');
+        autocompleteTokens.includes('one-time-code') ||
+        autocompleteTokens.some((t) => t.startsWith('cc-'));
       if (!elig || !elig.editable || destructive.matched) {
         return result(request, 'allow', 'ok', {
           approver: 'user',

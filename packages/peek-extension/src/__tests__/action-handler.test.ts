@@ -933,6 +933,89 @@ describe('handleActionRequest — request_user_input handoff (Plan B)', () => {
     expect(calledReadBack).toBe(false);
   });
 
+  it('multi-token OTP autocomplete (one-time-code webauthn) with readBack → forced off', async () => {
+    // The HTML autocomplete attr is space-separated: a real OTP field can be
+    // `one-time-code webauthn`. An exact-match check would miss it and leak.
+    await enableOriginAtLevel('https://example.com', 4);
+    const ctx = makeDeps();
+    ctx.deps.isShieldActive = () => true;
+    ctx.deps.resolveHandoffEligibility = async () => ({
+      editable: true,
+      tagName: 'INPUT',
+      inputType: 'text',
+      autocomplete: 'one-time-code webauthn',
+      destructiveSignals: {},
+      isConnected: true,
+    });
+    let calledReadBack: boolean | undefined;
+    ctx.deps.enterHandoff = async (i) => {
+      calledReadBack = i.readBack;
+      return { resumed: true };
+    };
+    await handleActionRequest(
+      makeRequest({
+        action: { type: 'request_user_input', prompt: 'x', selector: '#otp', readBack: true },
+      }),
+      ctx.deps,
+    );
+    expect(calledReadBack).toBe(false);
+  });
+
+  it('multi-token cc autocomplete (shipping cc-number) with readBack → forced off', async () => {
+    // The autocomplete attr can carry a section/detail token before cc-*:
+    // `shipping cc-number`. A whole-string prefix check would miss it.
+    await enableOriginAtLevel('https://example.com', 4);
+    const ctx = makeDeps();
+    ctx.deps.isShieldActive = () => true;
+    ctx.deps.resolveHandoffEligibility = async () => ({
+      editable: true,
+      tagName: 'INPUT',
+      inputType: 'text',
+      autocomplete: 'shipping cc-number',
+      destructiveSignals: {},
+      isConnected: true,
+    });
+    let calledReadBack: boolean | undefined;
+    ctx.deps.enterHandoff = async (i) => {
+      calledReadBack = i.readBack;
+      return { resumed: true };
+    };
+    await handleActionRequest(
+      makeRequest({
+        action: { type: 'request_user_input', prompt: 'x', selector: '#cc', readBack: true },
+      }),
+      ctx.deps,
+    );
+    expect(calledReadBack).toBe(false);
+  });
+
+  it('mixed-case cc autocomplete (CC-Number) with readBack → forced off', async () => {
+    // The autocomplete attr is case-insensitive: `CC-Number` must be masked.
+    await enableOriginAtLevel('https://example.com', 4);
+    const ctx = makeDeps();
+    ctx.deps.isShieldActive = () => true;
+    ctx.deps.resolveHandoffEligibility = async () => ({
+      editable: true,
+      tagName: 'INPUT',
+      inputType: 'text',
+      autocomplete: 'CC-Number',
+      destructiveSignals: {},
+      isConnected: true,
+    });
+    let calledReadBack: boolean | undefined;
+    ctx.deps.enterHandoff = async (i) => {
+      calledReadBack = i.readBack;
+      return { resumed: true };
+    };
+    await handleActionRequest(
+      makeRequest({
+        action: { type: 'request_user_input', prompt: 'x', selector: '#cc', readBack: true },
+      }),
+      ctx.deps,
+    );
+    expect(calledReadBack).toBe(false);
+  });
+
   it('selector-less (free-text prompt) → skips eligibility, calls enterHandoff', async () => {
     await enableOriginAtLevel('https://example.com', 4);
     const ctx = makeDeps();
