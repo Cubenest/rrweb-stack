@@ -36,3 +36,14 @@ export const RECORDING_FRAME_HOST_ATTR = 'data-peek-rec-frame';
  * recording. Pure string — safe to bundle into the MAIN-world recorder IIFE.
  */
 export const SHIELD_HOST_ATTR = 'data-peek-shield-host';
+
+/**
+ * rrweb `blockSelector` for the MAIN-world recorder: a CSS attribute-selector
+ * list covering every peek-owned overlay host so neither the recording
+ * indicator nor the control shield can ever land in a capture. Both hosts live
+ * in CLOSED shadow roots (already invisible to rrweb); blocking the empty
+ * light-DOM host is defense-in-depth. Derived from the two marker constants so
+ * the recorder and the closed-shadow sweep stay in lockstep. Pure string —
+ * safe to bundle into the MAIN-world recorder IIFE.
+ */
+export const RECORDER_BLOCK_SELECTOR = `[${RECORDING_FRAME_HOST_ATTR}], [${SHIELD_HOST_ATTR}]`;

@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { RECORDING_FRAME_HOST_ATTR } from '../constants';
+import { RECORDING_FRAME_HOST_ATTR, SHIELD_HOST_ATTR } from '../constants';
 import {
   collectShadowReports,
   describeHost,
@@ -107,6 +107,17 @@ describe('collectShadowReports', () => {
   it("skips peek's own recording-indicator host", () => {
     const host = document.createElement('div');
     host.setAttribute(RECORDING_FRAME_HOST_ATTR, '');
+    const closedRoot = host.attachShadow({ mode: 'closed' });
+    document.body.appendChild(host);
+    const helper = (el: Element): ShadowRoot | null => (el === host ? closedRoot : null);
+
+    const reports = collectShadowReports(document, helper);
+    expect(reports).toHaveLength(0);
+  });
+
+  it("skips peek's own control-shield host", () => {
+    const host = document.createElement('div');
+    host.setAttribute(SHIELD_HOST_ATTR, '');
     const closedRoot = host.attachShadow({ mode: 'closed' });
     document.body.appendChild(host);
     const helper = (el: Element): ShadowRoot | null => (el === host ? closedRoot : null);

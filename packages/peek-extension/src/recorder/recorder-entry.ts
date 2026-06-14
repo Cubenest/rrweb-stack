@@ -36,7 +36,7 @@
  */
 
 import { getRecordConsolePlugin, getRecordNetworkPlugin, record } from '@cubenest/rrweb-core';
-import { RECORDING_FRAME_HOST_ATTR, SHIELD_HOST_ATTR } from '../constants.js';
+import { RECORDER_BLOCK_SELECTOR } from '../constants.js';
 import { PEEK_RRWEB_SOURCE } from './messages.js';
 
 // --- Recorder/relay handshake constants -------------------------------------
@@ -199,10 +199,10 @@ const GUARD = '__peekRecorderInstalled';
   try {
     record({
       emit: (event: unknown) => postRrweb(event),
-      // Never record peek's own in-page recording indicator. The glow lives in
-      // a CLOSED shadow root (already invisible to rrweb); this blocks even the
-      // empty light-DOM host as defense-in-depth.
-      blockSelector: `[${RECORDING_FRAME_HOST_ATTR}], [${SHIELD_HOST_ATTR}]`,
+      // Never record peek's own overlays (recording indicator + control
+      // shield). Both glows live in CLOSED shadow roots (already invisible to
+      // rrweb); this blocks even the empty light-DOM hosts as defense-in-depth.
+      blockSelector: RECORDER_BLOCK_SELECTOR,
       // Open-shadow-root recording is handled by the rrweb fork; closed roots
       // are picked up best-effort by the ISOLATED relay (Task 3.21).
       recordCanvas: false,
