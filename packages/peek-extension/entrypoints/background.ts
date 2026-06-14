@@ -266,6 +266,12 @@ export default defineBackground({
         const persistent = await getPermissionLevel(origin);
         return yolo.isActive(origin) ? 4 : persistent;
       },
+      // Handoff timeout scheduling (Plan B). The handler-facing handoff routing
+      // (shield.resume, recording suspension) is wired in a later task.
+      setTimer: (fn, ms) => setTimeout(fn, ms),
+      clearTimer: (handle) => {
+        if (typeof handle === 'number') clearTimeout(handle);
+      },
     });
 
     // Pending Level-3 confirm prompts (Phase 3e). Keyed by requestId; the

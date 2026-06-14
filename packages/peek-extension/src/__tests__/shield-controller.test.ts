@@ -7,6 +7,9 @@ function harness(opts: { connected?: boolean; level?: number } = {}) {
   const dropped: string[] = [];
   let connected = opts.connected ?? true;
   let level = opts.level ?? 4;
+  // Controllable fake timers: setTimer returns the slot index; fireTimer(i)
+  // runs the stored callback synchronously; clearTimer nulls the slot.
+  const timers: Array<{ fn: () => void; ms: number } | undefined> = [];
   const deps: ShieldControllerDeps = {
     commandView: (tabId, cmd) => commands.push({ tabId, cmd }),
     dropToSafeLevel: async (origin) => {
@@ -14,6 +17,13 @@ function harness(opts: { connected?: boolean; level?: number } = {}) {
     },
     isHostConnected: () => connected,
     getEffectiveLevel: async () => level,
+    setTimer: (fn, ms) => {
+      timers.push({ fn, ms });
+      return timers.length - 1;
+    },
+    clearTimer: (h) => {
+      if (typeof h === 'number') timers[h] = undefined;
+    },
   };
   const c = new ShieldController(deps);
   return {
@@ -26,6 +36,7 @@ function harness(opts: { connected?: boolean; level?: number } = {}) {
     setLevel: (v: number) => {
       level = v;
     },
+    fireTimer: (i = timers.length - 1) => timers[i]?.fn(),
   };
 }
 
@@ -113,5 +124,63 @@ describe('ShieldController', () => {
     expect(h.c.isUp(1)).toBe(true); // after RAISE
     h.c.onLevelChanged(1, 'https://a.test', 1);
     expect(h.c.isUp(1)).toBe(false); // after LOWER
+  });
+});
+
+describe('ShieldController — handoff (Plan B)', () => {
+  it('enterHandoff while up → pending; onUserResume(value) resolves {resumed:true,value} when readBack', async () => {
+    const h = harness();
+    h.c.onLevelChanged(1, 'https://a.test', 4);
+    const p = h.c.enterHandoff(1, { prompt: 'x', framing: 'f', readBack: true, timeoutMs: 1000 });
+    h.c.onUserResume(1, { value: 'typed' });
+    await expect(p).resolves.toMatchObject({ resumed: true, value: 'typed' });
+    expect(h.commands.some((x) => x.cmd.kind === 'ENTER_HANDOFF')).toBe(true);
+    expect(h.commands.some((x) => x.cmd.kind === 'EXIT_HANDOFF')).toBe(true);
+  });
+  it('readBack false → resume returns {resumed:true} with no value', async () => {
+    const h = harness();
+    h.c.onLevelChanged(1, 'https://a.test', 4);
+    const p = h.c.enterHandoff(1, { prompt: 'x', framing: 'f', readBack: false, timeoutMs: 1000 });
+    h.c.onUserResume(1, { value: 'typed' });
+    await expect(p).resolves.toEqual({ resumed: true });
+  });
+  it('enterHandoff while not up → {resumed:false,stopped}', async () => {
+    const h = harness();
+    await expect(
+      h.c.enterHandoff(1, { prompt: 'x', framing: 'f', readBack: false, timeoutMs: 1 }),
+    ).resolves.toMatchObject({ resumed: false, reason: 'stopped' });
+  });
+  it('second enterHandoff while pending → {resumed:false,busy}; first still pending', async () => {
+    const h = harness();
+    h.c.onLevelChanged(1, 'https://a.test', 4);
+    const p1 = h.c.enterHandoff(1, { prompt: 'a', framing: 'f', readBack: false, timeoutMs: 1000 });
+    await expect(
+      h.c.enterHandoff(1, { prompt: 'b', framing: 'f', readBack: false, timeoutMs: 1000 }),
+    ).resolves.toMatchObject({ resumed: false, reason: 'busy' });
+    h.c.onUserResume(1);
+    await expect(p1).resolves.toMatchObject({ resumed: true });
+  });
+  it('timeout → {resumed:false,timeout} + EXIT_HANDOFF, exactly once', async () => {
+    const h = harness();
+    h.c.onLevelChanged(1, 'https://a.test', 4);
+    const p = h.c.enterHandoff(1, { prompt: 'x', framing: 'f', readBack: false, timeoutMs: 1000 });
+    h.fireTimer();
+    await expect(p).resolves.toMatchObject({ resumed: false, reason: 'timeout' });
+    h.c.onUserResume(1); // late resume must NOT double-resolve / re-EXIT
+    expect(h.commands.filter((x) => x.cmd.kind === 'EXIT_HANDOFF')).toHaveLength(1);
+  });
+  it('level drop during handoff resolves {resumed:false,stopped} once', async () => {
+    const h = harness();
+    h.c.onLevelChanged(1, 'https://a.test', 4);
+    const p = h.c.enterHandoff(1, { prompt: 'x', framing: 'f', readBack: false, timeoutMs: 1000 });
+    h.c.onLevelChanged(1, 'https://a.test', 1);
+    await expect(p).resolves.toMatchObject({ resumed: false, reason: 'stopped' });
+  });
+  it('isHandoff + isShieldActive reflect the phase', () => {
+    const h = harness();
+    h.c.onLevelChanged(1, 'https://a.test', 4);
+    void h.c.enterHandoff(1, { prompt: 'x', framing: 'f', readBack: false, timeoutMs: 1000 });
+    expect(h.c.isHandoff(1)).toBe(true);
+    expect(h.c.isShieldActive(1)).toBe(true); // up OR handoff
   });
 });
