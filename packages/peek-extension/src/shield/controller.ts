@@ -65,19 +65,28 @@ export class ShieldController {
     return s;
   }
 
+  /**
+   * Take-and-clear a pending handoff and settle it `stopped` — resolve-once,
+   * no EXIT_HANDOFF and no phase change (the caller sets its own phase). The
+   * single home for the abort half of the resolve-once invariant, shared by
+   * every teardown that bypasses {@link #settleHandoff}: #raise, #lower, and
+   * onTabClosed. Without it the record + scheduled timer survive and the
+   * awaiting enterHandoff() promise stays blocked until the orphaned timer.
+   */
+  #abortHandoff(s: TabState): void {
+    if (!s.handoff) return;
+    const rec = s.handoff;
+    s.handoff = undefined; // take-and-clear BEFORE resolving
+    this.#deps.clearTimer(rec.timer);
+    rec.resolve({ resumed: false, reason: 'stopped' });
+  }
+
   #raise(tabId: number, origin: string, s: TabState): void {
     // Settle any pending handoff as `stopped` FIRST (resolve-once), then raise.
     // Symmetric with #lower: any re-issue of an up-state while phase==='handoff'
     // (reconcile / onViewReady re-handshake / onHostConnectionChanged(true) /
-    // onLevelChanged shouldBeUp && phase!=='up') reaches here. Without this the
-    // record + scheduled timer survive, EXIT_HANDOFF never fires, and the
-    // awaiting enterHandoff() promise stays blocked until the orphaned timer.
-    if (s.handoff) {
-      const rec = s.handoff;
-      s.handoff = undefined;
-      this.#deps.clearTimer(rec.timer);
-      rec.resolve({ resumed: false, reason: 'stopped' });
-    }
+    // onLevelChanged shouldBeUp && phase!=='up') reaches here.
+    this.#abortHandoff(s);
     s.phase = 'up';
     s.origin = origin;
     this.#deps.commandView(tabId, {
@@ -89,12 +98,7 @@ export class ShieldController {
 
   #lower(tabId: number, s: TabState): void {
     // Settle any pending handoff as `stopped` FIRST (resolve-once), then lower.
-    if (s.handoff) {
-      const rec = s.handoff;
-      s.handoff = undefined;
-      this.#deps.clearTimer(rec.timer);
-      rec.resolve({ resumed: false, reason: 'stopped' });
-    }
+    this.#abortHandoff(s);
     s.phase = 'down';
     s.label = null;
     this.#deps.commandView(tabId, { kind: 'LOWER', generation: ++this.#generation });
@@ -158,6 +162,12 @@ export class ShieldController {
 
   /** Forget a closed tab. */
   onTabClosed(tabId: number): void {
+    // Settle any pending handoff first (resolve-once) so the awaiting
+    // enterHandoff() promise isn't orphaned by the delete — the still-scheduled
+    // timeout callback would then hit #settleHandoff with the tab already gone
+    // and early-return without resolving. No EXIT_HANDOFF: the tab is closing.
+    const s = this.#tabs.get(tabId);
+    if (s) this.#abortHandoff(s);
     this.#tabs.delete(tabId);
   }
 

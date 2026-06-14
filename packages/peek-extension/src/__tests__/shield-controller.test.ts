@@ -212,4 +212,21 @@ describe('ShieldController — handoff (Plan B)', () => {
     h.c.onUserResume(1);
     expect(h.commands.filter((x) => x.cmd.kind === 'EXIT_HANDOFF')).toHaveLength(0);
   });
+  it('onTabClosed during a pending handoff resolves once as stopped; later timer fire is a no-op', async () => {
+    const h = harness();
+    h.c.onLevelChanged(1, 'https://a.test', 4);
+    const p = h.c.enterHandoff(1, { prompt: 'x', framing: 'f', readBack: false, timeoutMs: 1000 });
+    h.commands.length = 0;
+    // Tab closed mid-handoff (chrome.tabs.onRemoved → shield.onTabClosed): the
+    // awaiting enterHandoff() promise must settle, not orphan, and the tab is
+    // gone so no EXIT_HANDOFF view command is emitted.
+    h.c.onTabClosed(1);
+    await expect(p).resolves.toMatchObject({ resumed: false, reason: 'stopped' });
+    expect(h.commands.filter((x) => x.cmd.kind === 'EXIT_HANDOFF')).toHaveLength(0);
+    // The scheduled timeout callback is now a no-op (record + timer cleared,
+    // tab forgotten): firing it must not double-resolve or re-EXIT.
+    h.fireTimer();
+    h.c.onUserResume(1);
+    expect(h.commands.filter((x) => x.cmd.kind === 'EXIT_HANDOFF')).toHaveLength(0);
+  });
 });
