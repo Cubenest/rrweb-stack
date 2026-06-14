@@ -24,9 +24,12 @@ export type ShieldInbound = { type: 'shield.ready'; generation: number } | { typ
 /** Type guard for {@link ViewCommand} (view-side receive). */
 export function isViewCommand(msg: unknown): msg is ViewCommand {
   if (typeof msg !== 'object' || msg === null) return false;
-  const m = msg as { kind?: unknown; generation?: unknown };
+  const m = msg as { kind?: unknown; generation?: unknown; label?: unknown };
   if (typeof m.generation !== 'number') return false;
-  return m.kind === 'RAISE' || m.kind === 'LABEL' || m.kind === 'LOWER';
+  if (m.kind === 'RAISE' || m.kind === 'LABEL') {
+    return m.label === null || typeof m.label === 'string';
+  }
+  return m.kind === 'LOWER';
 }
 
 /** Type guard for {@link ShieldInbound} (SW-side receive). */
