@@ -649,6 +649,237 @@ describe('handleActionRequest — Plan A label hook + shield enter-guard', () =>
     );
     expect(out.verdict).not.toBe('deny'); // proceeds to dispatch
   });
+
+  it('rejects a selector-less enter when isShieldActive flips true during handoff', async () => {
+    // Task 8 wires isShieldActive to (isUp || isHandoff); the enter-guard must
+    // also fire during a handoff. Simulate the controller flipping true.
+    await enableOriginAtLevel('https://example.com', 4);
+    const ctx = makeDeps();
+    let inHandoff = false;
+    ctx.deps.isShieldActive = () => inHandoff;
+    // Shield down: selector-less enter proceeds.
+    const before = await handleActionRequest(makeRequest({ action: { type: 'enter' } }), ctx.deps);
+    expect(before.verdict).not.toBe('deny');
+    // Handoff begins → shield active → selector-less enter denied.
+    inHandoff = true;
+    const during = await handleActionRequest(makeRequest({ action: { type: 'enter' } }), ctx.deps);
+    expect(during.verdict).toBe('deny');
+    expect(String(during.error)).toContain('explicit selector');
+  });
+});
+
+describe('handleActionRequest — request_user_input handoff (Plan B)', () => {
+  it('request_user_input below Level 4 → denied (stopped)', async () => {
+    await enableOriginAtLevel('https://example.com', 3);
+    const ctx = makeDeps();
+    ctx.deps.isShieldActive = () => true; // shield up, but level too low
+    const res = await handleActionRequest(
+      makeRequest({ action: { type: 'request_user_input', prompt: 'x' } }),
+      ctx.deps,
+    );
+    expect(res.verdict).toBe('deny');
+  });
+
+  it('request_user_input at Level 4 but shield down → denied', async () => {
+    await enableOriginAtLevel('https://example.com', 4);
+    const ctx = makeDeps();
+    ctx.deps.isShieldActive = () => false;
+    const res = await handleActionRequest(
+      makeRequest({ action: { type: 'request_user_input', prompt: 'x' } }),
+      ctx.deps,
+    );
+    expect(res.verdict).toBe('deny');
+  });
+
+  it('request_user_input with a destructive button selector → ineligible', async () => {
+    await enableOriginAtLevel('https://example.com', 4);
+    const ctx = makeDeps();
+    ctx.deps.isShieldActive = () => true;
+    ctx.deps.resolveHandoffEligibility = async () => ({
+      editable: false,
+      tagName: 'BUTTON',
+      inputType: null,
+      autocomplete: null,
+      destructiveSignals: { text: 'Delete' },
+      isConnected: true,
+    });
+    const res = await handleActionRequest(
+      makeRequest({
+        action: { type: 'request_user_input', prompt: 'x', selector: '#del' },
+        policy: { add: ['delete'], remove: [] },
+      }),
+      ctx.deps,
+    );
+    expect(res.verdict).toBe('allow');
+    expect(res.result).toBe('ok'); // returns allow+ok with details.ineligible
+    expect((res.details as { reason?: string }).reason).toBe('ineligible');
+  });
+
+  it('request_user_input with an editable field → calls enterHandoff, returns its details', async () => {
+    await enableOriginAtLevel('https://example.com', 4);
+    const ctx = makeDeps();
+    ctx.deps.isShieldActive = () => true;
+    ctx.deps.resolveHandoffEligibility = async () => ({
+      editable: true,
+      tagName: 'INPUT',
+      inputType: 'text',
+      autocomplete: null,
+      destructiveSignals: {},
+      isConnected: true,
+    });
+    ctx.deps.enterHandoff = async () => ({ resumed: true, value: 'hi' });
+    const res = await handleActionRequest(
+      makeRequest({
+        action: { type: 'request_user_input', prompt: 'x', selector: '#f', readBack: true },
+      }),
+      ctx.deps,
+    );
+    expect(res.approver).toBe('user');
+    expect(res.details).toMatchObject({ resumed: true, value: 'hi' });
+  });
+
+  it('password field with readBack → handoff proceeds but readBack is forced off', async () => {
+    await enableOriginAtLevel('https://example.com', 4);
+    const ctx = makeDeps();
+    ctx.deps.isShieldActive = () => true;
+    ctx.deps.resolveHandoffEligibility = async () => ({
+      editable: true,
+      tagName: 'INPUT',
+      inputType: 'password',
+      autocomplete: null,
+      destructiveSignals: {},
+      isConnected: true,
+    });
+    let calledReadBack: boolean | undefined;
+    ctx.deps.enterHandoff = async (i) => {
+      calledReadBack = i.readBack;
+      return { resumed: true };
+    };
+    await handleActionRequest(
+      makeRequest({
+        action: { type: 'request_user_input', prompt: 'x', selector: '#pw', readBack: true },
+      }),
+      ctx.deps,
+    );
+    expect(calledReadBack).toBe(false); // password ⇒ never read back
+  });
+
+  it('OTP field (autocomplete one-time-code) with readBack → forced off', async () => {
+    await enableOriginAtLevel('https://example.com', 4);
+    const ctx = makeDeps();
+    ctx.deps.isShieldActive = () => true;
+    ctx.deps.resolveHandoffEligibility = async () => ({
+      editable: true,
+      tagName: 'INPUT',
+      inputType: 'text',
+      autocomplete: 'one-time-code',
+      destructiveSignals: {},
+      isConnected: true,
+    });
+    let calledReadBack: boolean | undefined;
+    ctx.deps.enterHandoff = async (i) => {
+      calledReadBack = i.readBack;
+      return { resumed: true };
+    };
+    await handleActionRequest(
+      makeRequest({
+        action: { type: 'request_user_input', prompt: 'x', selector: '#otp', readBack: true },
+      }),
+      ctx.deps,
+    );
+    expect(calledReadBack).toBe(false);
+  });
+
+  it('credit-card field (autocomplete cc-*) with readBack → forced off', async () => {
+    await enableOriginAtLevel('https://example.com', 4);
+    const ctx = makeDeps();
+    ctx.deps.isShieldActive = () => true;
+    ctx.deps.resolveHandoffEligibility = async () => ({
+      editable: true,
+      tagName: 'INPUT',
+      inputType: 'text',
+      autocomplete: 'cc-number',
+      destructiveSignals: {},
+      isConnected: true,
+    });
+    let calledReadBack: boolean | undefined;
+    ctx.deps.enterHandoff = async (i) => {
+      calledReadBack = i.readBack;
+      return { resumed: true };
+    };
+    await handleActionRequest(
+      makeRequest({
+        action: { type: 'request_user_input', prompt: 'x', selector: '#cc', readBack: true },
+      }),
+      ctx.deps,
+    );
+    expect(calledReadBack).toBe(false);
+  });
+
+  it('selector-less (free-text prompt) → skips eligibility, calls enterHandoff', async () => {
+    await enableOriginAtLevel('https://example.com', 4);
+    const ctx = makeDeps();
+    ctx.deps.isShieldActive = () => true;
+    let eligibilityCalls = 0;
+    ctx.deps.resolveHandoffEligibility = async () => {
+      eligibilityCalls += 1;
+      return {
+        editable: false,
+        tagName: null,
+        inputType: null,
+        autocomplete: null,
+        destructiveSignals: {},
+        isConnected: false,
+      };
+    };
+    let handoffPrompt: string | undefined;
+    let handoffSelector: string | undefined;
+    ctx.deps.enterHandoff = async (i) => {
+      handoffPrompt = i.prompt;
+      handoffSelector = i.selector;
+      return { resumed: true };
+    };
+    const res = await handleActionRequest(
+      makeRequest({ action: { type: 'request_user_input', prompt: 'Solve the captcha' } }),
+      ctx.deps,
+    );
+    expect(eligibilityCalls).toBe(0); // no selector → no MAIN-world probe
+    expect(handoffPrompt).toBe('Solve the captcha');
+    expect(handoffSelector).toBeUndefined();
+    expect(res.verdict).toBe('allow');
+    expect(res.details).toMatchObject({ resumed: true });
+  });
+
+  it('selector resolves to a disconnected/missing element (no eligibility) → ineligible', async () => {
+    await enableOriginAtLevel('https://example.com', 4);
+    const ctx = makeDeps();
+    ctx.deps.isShieldActive = () => true;
+    ctx.deps.resolveHandoffEligibility = async () => undefined as never;
+    let handoffCalls = 0;
+    ctx.deps.enterHandoff = async () => {
+      handoffCalls += 1;
+      return { resumed: true };
+    };
+    const res = await handleActionRequest(
+      makeRequest({ action: { type: 'request_user_input', prompt: 'x', selector: '#gone' } }),
+      ctx.deps,
+    );
+    expect((res.details as { reason?: string }).reason).toBe('ineligible');
+    expect(handoffCalls).toBe(0);
+  });
+
+  it('enterHandoff missing/returns nothing → details {resumed:false, stopped}', async () => {
+    await enableOriginAtLevel('https://example.com', 4);
+    const ctx = makeDeps();
+    ctx.deps.isShieldActive = () => true;
+    // enterHandoff is undefined (not wired).
+    const res = await handleActionRequest(
+      makeRequest({ action: { type: 'request_user_input', prompt: 'x' } }),
+      ctx.deps,
+    );
+    expect(res.verdict).toBe('allow');
+    expect(res.details).toMatchObject({ resumed: false, reason: 'stopped' });
+  });
 });
 
 describe('handleActionRequest — pre-conditions', () => {

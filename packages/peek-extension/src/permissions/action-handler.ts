@@ -18,12 +18,18 @@
  */
 
 import { isOriginEnabled } from '../activation/storage.js';
+import type { HandoffResult } from '../shield/controller.js';
 import { describeAction } from '../shield/describe-action.js';
 import type { Action, ActionRequestMessage, ActionResultMessage } from './action-protocol.js';
 import { isDestructive } from './destructive.js';
+import type { HandoffEligibility } from './dispatcher.js';
 import { gate } from './gate.js';
 import { getPermissionLevel } from './store.js';
 import type { YoloSessionStore } from './yolo.js';
+
+/** peek-authored framing shown ABOVE the AI prompt in the handoff card (§9). */
+const HANDOFF_FRAMING =
+  'peek handed control back to you. The instructions below are written by the AI — not by peek.';
 
 /**
  * The minimal `chrome.tabs.Tab` shape we need to resolve a request to a tab.
@@ -258,6 +264,20 @@ export interface ActionHandlerDeps {
    * otherwise dispatch to the Stop button. Optional; defaults to false.
    */
   isShieldActive?(tabId: number): boolean;
+  /** Plan B: run the handoff (blocks until resume/timeout/stop). */
+  enterHandoff?(input: {
+    tabId: number;
+    prompt: string;
+    framing: string;
+    selector?: string;
+    readBack: boolean;
+    timeoutMs: number;
+  }): Promise<HandoffResult>;
+  /** Plan B: MAIN-world eligibility probe for a handoff selector. */
+  resolveHandoffEligibility?(input: {
+    tabId: number;
+    selector: string;
+  }): Promise<HandoffEligibility>;
 }
 
 /** Default `originForTab` that uses the activation/origin module. */
@@ -371,6 +391,57 @@ export async function handleActionRequest(
     return result(request, 'allow', 'error', {
       approver: 'level-2-suggest',
       error: highlightRes.error,
+    });
+  }
+
+  // ---- Input handoff (Plan B) -------------------------------------------
+  // peek hands the keyboard back to the user for ONE editable, non-destructive
+  // field (or a free-text prompt). Requires effective Level 4 AND the control
+  // shield active (up OR already in a handoff — see isShieldActive wiring in
+  // background.ts). Routes around gate()/the destructive-confirm banner: the
+  // user is the actor, so a rejected target returns a structured ineligible
+  // result rather than dispatching anything.
+  if (request.action.type === 'request_user_input') {
+    if (effectiveLevel < 4 || deps.isShieldActive?.(tab.id) !== true) {
+      return result(request, 'deny', 'denied', {
+        approver: 'user',
+        error: `handoff requires Level 4 with the shield active (level ${effectiveLevel})`,
+      });
+    }
+    const a = request.action;
+    let readBack = a.readBack === true;
+    const selector: string | undefined = a.selector;
+    if (selector !== undefined) {
+      const elig = await deps.resolveHandoffEligibility?.({ tabId: tab.id, selector });
+      const destructive = elig
+        ? isDestructive(elig.destructiveSignals, {
+            add: request.policy.add,
+            remove: request.policy.remove,
+          })
+        : { matched: false };
+      const sensitive =
+        elig?.inputType === 'password' ||
+        elig?.autocomplete === 'one-time-code' ||
+        (elig?.autocomplete ?? '').startsWith('cc-');
+      if (!elig || !elig.editable || destructive.matched) {
+        return result(request, 'allow', 'ok', {
+          approver: 'user',
+          details: { resumed: false, reason: 'ineligible' },
+        });
+      }
+      if (sensitive) readBack = false; // never read back password/OTP/cc, even if asked
+    }
+    const handoff = await deps.enterHandoff?.({
+      tabId: tab.id,
+      prompt: a.prompt,
+      framing: HANDOFF_FRAMING,
+      ...(selector !== undefined ? { selector } : {}),
+      readBack,
+      timeoutMs: a.timeoutMs ?? 120000,
+    });
+    return result(request, 'allow', 'ok', {
+      approver: 'user',
+      details: handoff ?? { resumed: false, reason: 'stopped' },
     });
   }
 
