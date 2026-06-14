@@ -66,6 +66,14 @@ export interface HighlightAction {
 export interface ClearHighlightAction {
   type: 'clear_highlight';
 }
+/** Plan B — input handoff. selector optional; readBack/timeoutMs carried for the SW. */
+export interface RequestUserInputAction {
+  type: 'request_user_input';
+  prompt: string;
+  selector?: string;
+  readBack?: boolean;
+  timeoutMs?: number;
+}
 
 export type Action =
   | ClickAction
@@ -80,7 +88,8 @@ export type Action =
   | EnterAction
   | DblClickAction
   | HighlightAction
-  | ClearHighlightAction;
+  | ClearHighlightAction
+  | RequestUserInputAction;
 
 /** host → SW: please run / authorize this action. */
 export interface ActionRequestMessage {

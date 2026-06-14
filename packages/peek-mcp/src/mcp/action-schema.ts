@@ -102,6 +102,16 @@ export const ClearHighlightActionSchema = z.object({
 });
 export type ClearHighlightAction = z.infer<typeof ClearHighlightActionSchema>;
 
+/** Plan B — input handoff. Rides the execute_action rails (wire tool='execute_action'). */
+export const RequestUserInputActionSchema = z.object({
+  type: z.literal('request_user_input'),
+  prompt: z.string().max(280),
+  selector: z.string().optional(),
+  readBack: z.boolean().default(false),
+  timeoutMs: z.number().int().min(0).max(600000).default(120000),
+});
+export type RequestUserInputAction = z.infer<typeof RequestUserInputActionSchema>;
+
 /** The full Action discriminated union (P2 PRD §E.4). */
 export const ActionSchema = z.discriminatedUnion('type', [
   ClickActionSchema,
@@ -117,6 +127,7 @@ export const ActionSchema = z.discriminatedUnion('type', [
   DblClickActionSchema,
   HighlightActionSchema,
   ClearHighlightActionSchema,
+  RequestUserInputActionSchema,
 ]);
 export type Action = z.infer<typeof ActionSchema>;
 
@@ -144,6 +155,15 @@ export function redactActionForAudit(action: Action): Action {
         return action;
       }
     }
+    case 'request_user_input':
+      // Record ONLY what the AI asked (prompt + selector). NEVER the returned
+      // value — it lives in the result `details`, which the audit writer never
+      // receives (audit.ts buildAuditEntry takes only the action).
+      return {
+        type: 'request_user_input',
+        prompt: action.prompt,
+        selector: action.selector,
+      } as Action;
     default:
       return action;
   }
