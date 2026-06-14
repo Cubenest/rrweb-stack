@@ -915,29 +915,43 @@ export default defineBackground({
           return false;
         }
         // Control-shield (Plan A): view -> SW handshake / Stop. Hardened sender
-        // trust: must be our extension (checked above), a real tab, and the top
-        // frame. A subframe or tab-less context can't drive the shield. The
-        // router's static param type doesn't list ShieldInbound, so guard
-        // through `unknown` to narrow cleanly (the message arrives at runtime).
+        // trust to the confirmVerdict-grade standard (design §6/§9): must be our
+        // extension (checked above), a real tab, the top frame, AND the sender
+        // frame's origin must be at effective Level >= 4 — the same trust bar a
+        // shielded action clears. A subframe or tab-less context can't drive the
+        // shield, and a non-Level-4 origin (e.g. a stale view after the dial was
+        // lowered, or a same-extension page that isn't the shield) can't stop/
+        // resume/ready another origin's handoff. The router's static param type
+        // doesn't list ShieldInbound, so guard through `unknown` to narrow
+        // cleanly (the message arrives at runtime).
         if (isShieldInbound(message as unknown)) {
           const shieldMessage = message as unknown as ShieldInbound;
           const tabId = sender.tab?.id;
           if (tabId === undefined || sender.frameId !== 0) return false;
           const origin = originFromUrl(sender.tab?.url ?? null);
           if (!origin) return false;
-          if (shieldMessage.type === 'shield.stop') {
-            void shield.onStop(tabId);
-          } else if (shieldMessage.type === 'shield.ready') {
-            void shield.onViewReady(tabId, origin, shieldMessage.generation);
-          } else if (shieldMessage.type === 'shield.resume') {
-            // Plan B: the user finished the handoff in the view. Forward an
-            // optional value (readBack honored controller-side; never echoed for
-            // password/OTP/cc). No-op if no handoff is pending (SW-restart safe).
-            shield.onUserResume(
-              tabId,
-              shieldMessage.value !== undefined ? { value: shieldMessage.value } : undefined,
-            );
-          }
+          // Effective-level gate is async (storage.sync read), so structure it
+          // like the other async-gated branches: resolve the level, drop the
+          // message if it's below 4, otherwise route. Mirrors the controller's
+          // getEffectiveLevel dep (yolo overrides persistent at L4).
+          void (async () => {
+            const effectiveLevel = yolo.isActive(origin) ? 4 : await getPermissionLevel(origin);
+            if (effectiveLevel < 4) return;
+            if (shieldMessage.type === 'shield.stop') {
+              void shield.onStop(tabId);
+            } else if (shieldMessage.type === 'shield.ready') {
+              void shield.onViewReady(tabId, origin, shieldMessage.generation);
+            } else if (shieldMessage.type === 'shield.resume') {
+              // Plan B: the user finished the handoff in the view. Forward an
+              // optional value (readBack honored controller-side; never echoed
+              // for password/OTP/cc). No-op if no handoff is pending (SW-restart
+              // safe).
+              shield.onUserResume(
+                tabId,
+                shieldMessage.value !== undefined ? { value: shieldMessage.value } : undefined,
+              );
+            }
+          })();
           return false;
         }
         // Level-3 confirm verdict from the side panel (Phase 3e). Resolve the
