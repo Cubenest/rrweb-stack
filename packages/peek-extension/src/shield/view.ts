@@ -104,6 +104,14 @@ export const SHIELD_CSS = `
   color: #fff;
   font: 600 13px/1 system-ui, sans-serif;
 }
+/* Page-scope handoff (Part 2, design §4.2): a blanket takeover (e.g. solving a
+   CAPTCHA) where the user drives the live page. Pin the prompt+Resume card to
+   the top-center so it never occludes a centered iframe widget, and let
+   pointer events fall through everywhere except the card's own controls. */
+.peek-shield-card.peek-card-page-scope {
+  top: 56px;
+  transform: translate(-50%, 0);
+}
 @media print { .peek-shield-scrim, .peek-shield-border, .peek-shield-banner, .peek-shield-card { display: none !important; } }
 `;
 
@@ -146,6 +154,8 @@ export interface ShieldView {
   __test?: {
     handoffCard(): HTMLElement | null;
     clickDone(value?: string): void;
+    /** Part 2 page-scope: click the Resume button (no value, no read-back). */
+    clickResume(): void;
     field(): Element | null;
     phase(): 'down' | 'up' | 'handoff';
   };
@@ -169,6 +179,12 @@ export function createShieldView(deps: ShieldViewDeps): ShieldView {
   let doneButton: HTMLButtonElement | null = null;
   let handoffField: Element | null = null; // the unlocked page field (selector case), by identity
   let doneClicked = false; // in-view double-submit guard for the Done button
+
+  // Part 2 page-scope handoff state. In page-scope the shield suspends its
+  // capture-block entirely (full takeover) so real clicks reach the page; we
+  // also drop the scrim's pointer-events so it never intercepts those clicks.
+  let scrimEl: HTMLElement | null = null; // the lockout scrim, ref'd to toggle pointer-events
+  let handoffScope: 'field' | 'page' = 'field';
 
   const insideOverlay = (t: EventTarget | null): boolean =>
     host !== null && (t === host || (t instanceof Node && host.contains(t)));
@@ -198,6 +214,11 @@ export function createShieldView(deps: ShieldViewDeps): ShieldView {
 
   const onCapture = (e: Event): void => {
     if (phase === 'down' || !e.isTrusted) return; // peek's synthetic events pass
+    // Page-scope handoff is a full takeover: the user drives the whole page
+    // (e.g. solving a CAPTCHA), so allow every trusted event through. The
+    // up-phase Esc/Tab handling below is unreachable here because those guard
+    // on `phase === 'up'`.
+    if (phase === 'handoff' && handoffScope === 'page') return;
     if (e.type === 'keydown') {
       const ke = e as KeyboardEvent;
       // Esc is a Stop shortcut ONLY in plain lockout. During handoff the user is
@@ -233,6 +254,7 @@ export function createShieldView(deps: ShieldViewDeps): ShieldView {
 
     const scrim = doc.createElement('div');
     scrim.className = 'peek-shield-scrim';
+    scrimEl = scrim;
     const border = doc.createElement('div');
     border.className = 'peek-shield-border';
 
@@ -277,6 +299,10 @@ export function createShieldView(deps: ShieldViewDeps): ShieldView {
     doneButton = null;
     handoffField = null;
     doneClicked = false;
+    // Restore the lockout: re-arm the capture-block scope and let the scrim
+    // intercept clicks again. (EXIT_HANDOFF returns to plain `up` lockout.)
+    handoffScope = 'field';
+    scrimEl?.style.removeProperty('pointer-events');
   };
 
   const teardownHost = (): void => {
@@ -288,6 +314,7 @@ export function createShieldView(deps: ShieldViewDeps): ShieldView {
     shadow = null;
     stopButton = null;
     labelEl = null;
+    scrimEl = null;
   };
 
   const setLabel = (label: string | null): void => {
@@ -298,7 +325,12 @@ export function createShieldView(deps: ShieldViewDeps): ShieldView {
     host?.setAttribute('data-peek-shield-phase', p);
   };
 
-  const buildHandoffCard = (prompt: string, framing: string, selector?: string): void => {
+  const buildHandoffCard = (
+    prompt: string,
+    framing: string,
+    selector?: string,
+    scope: 'field' | 'page' = 'field',
+  ): void => {
     if (!shadow) return;
     const card = doc.createElement('div');
     card.className = 'peek-shield-card';
@@ -315,6 +347,41 @@ export function createShieldView(deps: ShieldViewDeps): ShieldView {
     promptEl.textContent = prompt;
     card.append(framingEl, promptEl);
 
+    if (scope === 'page') {
+      // Page-scope: a blanket takeover (e.g. CAPTCHA). No free-text input and
+      // no field unlock — the user drives the live page directly. Drop the
+      // scrim's pointer-events so real clicks reach the page, suspend the
+      // capture-block (onCapture early-returns on handoffScope === 'page'), and
+      // offer only a Resume button (no read-back). The card stays small and
+      // top-positioned (.peek-card-page-scope) so it never occludes a centered
+      // iframe (e.g. a CAPTCHA widget) — see design §4.2.
+      handoffScope = 'page';
+      handoffField = null;
+      card.classList.add('peek-card-page-scope');
+      scrimEl?.style.setProperty('pointer-events', 'none');
+
+      const resume = doc.createElement('button');
+      resume.type = 'button';
+      resume.className = 'peek-card-done';
+      resume.textContent = 'Resume';
+      resume.addEventListener('click', (ev) => {
+        ev.preventDefault();
+        if (doneClicked) return; // in-view double-submit guard (mirrors Done)
+        doneClicked = true;
+        resume.disabled = true;
+        deps.sendToSw({ type: 'shield.resume' }); // page-scope: never a value
+      });
+      doneButton = resume;
+      card.append(resume);
+
+      shadow.append(card);
+      cardEl = card;
+      resume.focus();
+      return;
+    }
+
+    // Field/free-text scope (default): unchanged lockout-with-one-field path.
+    handoffScope = 'field';
     if (selector) {
       // Selector case: unlock the page field by identity, scroll + focus it.
       let el: Element | null = null;
@@ -393,7 +460,7 @@ export function createShieldView(deps: ShieldViewDeps): ShieldView {
       case 'ENTER_HANDOFF':
         if (phase === 'up') {
           phase = 'handoff';
-          buildHandoffCard(cmd.prompt, cmd.framing, cmd.selector);
+          buildHandoffCard(cmd.prompt, cmd.framing, cmd.selector, cmd.scope);
           setHostPhase('handoff');
         }
         break;
@@ -427,6 +494,9 @@ export function createShieldView(deps: ShieldViewDeps): ShieldView {
         if (cardInput && value !== undefined) cardInput.value = value;
         doneButton?.click();
       },
+      // Page-scope shares the Done/Resume button ref (doneButton); clicking it
+      // sends shield.resume with no value.
+      clickResume: () => doneButton?.click(),
       field: () => handoffField,
       phase: () => phase,
     };

@@ -300,3 +300,65 @@ describe('shield view — handoff (Plan B)', () => {
     plain.dispose();
   });
 });
+
+describe('shield view — page-scope handoff (Part 2)', () => {
+  let hv: ReturnType<typeof createShieldView>;
+
+  beforeEach(() => {
+    sent = [];
+    hv = createShieldView({
+      doc: document,
+      win: window,
+      sendToSw: (m) => sent.push(m),
+      exposeTestSeam: true,
+    });
+  });
+  afterEach(() => {
+    hv.dispose();
+  });
+
+  it('page-scope: a real page click is NOT blocked (full takeover)', () => {
+    document.body.insertAdjacentHTML('beforeend', '<button id="pb">x</button>');
+    hv.apply({ kind: 'RAISE', generation: 1, label: null });
+    hv.apply({
+      kind: 'ENTER_HANDOFF',
+      generation: 2,
+      prompt: 'Solve CAPTCHA, then Resume',
+      framing: 'f',
+      scope: 'page',
+    });
+    const click = markTrusted(new MouseEvent('click', { bubbles: true, cancelable: true }));
+    (document.getElementById('pb') as HTMLButtonElement).dispatchEvent(click);
+    expect(click.defaultPrevented).toBe(false);
+  });
+
+  it('page-scope: no free-text input; Resume emits shield.resume with no value', () => {
+    hv.apply({ kind: 'RAISE', generation: 1, label: null });
+    hv.apply({ kind: 'ENTER_HANDOFF', generation: 2, prompt: 'p', framing: 'f', scope: 'page' });
+    hv.__test?.clickResume();
+    const resume = sent.find((m) => m.type === 'shield.resume');
+    expect(resume).toBeDefined();
+    expect((resume as { value?: string }).value).toBeUndefined();
+  });
+
+  it('field-scope still blocks non-allowed page input (regression)', () => {
+    document.body.insertAdjacentHTML('beforeend', '<input id="of"><input id="tf">');
+    hv.apply({ kind: 'RAISE', generation: 1, label: null });
+    hv.apply({ kind: 'ENTER_HANDOFF', generation: 2, prompt: 'p', framing: 'f', selector: '#tf' });
+    const k = markTrusted(
+      new KeyboardEvent('keydown', { key: 'a', bubbles: true, cancelable: true }),
+    );
+    (document.getElementById('of') as HTMLInputElement).dispatchEvent(k);
+    expect(k.defaultPrevented).toBe(true);
+  });
+
+  it('EXIT_HANDOFF after page-scope restores the lockout (real click blocked again)', () => {
+    document.body.insertAdjacentHTML('beforeend', '<button id="pb2">x</button>');
+    hv.apply({ kind: 'RAISE', generation: 1, label: null });
+    hv.apply({ kind: 'ENTER_HANDOFF', generation: 2, prompt: 'p', framing: 'f', scope: 'page' });
+    hv.apply({ kind: 'EXIT_HANDOFF', generation: 3 });
+    const click = markTrusted(new MouseEvent('click', { bubbles: true, cancelable: true }));
+    (document.getElementById('pb2') as HTMLButtonElement).dispatchEvent(click);
+    expect(click.defaultPrevented).toBe(true);
+  });
+});
