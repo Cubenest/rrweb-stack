@@ -72,18 +72,43 @@ import Layout from '../layouts/Layout.astro';
 `}</code></pre>
 
   <div class="callout">
-    <strong>Or let the CLI do it all.</strong> Install <code>@peekdev/cli</code> and run
-    <code>peek init</code> &mdash; it detects installed AI clients, writes the right
-    MCP config for each, <em>and</em> registers the native messaging host with your
-    browsers (macOS: <code>~/Library/Application Support/Google/Chrome/NativeMessagingHosts/</code>;
-    Linux: <code>~/.config/google-chrome/NativeMessagingHosts/</code>; Windows:
-    a registry key under <code>HKCU\\Software\\Google\\Chrome\\NativeMessagingHosts</code>).
-    Consent-prompted; you choose which browsers to register.
-    <pre style="margin-top: 0.5rem;"><code>npm install -g @peekdev/cli
-peek init</code></pre>
+    <strong>Or let the CLI do it all.</strong> <code>peek init</code> (step&nbsp;3)
+    writes the MCP config for every detected client <em>and</em> registers the native
+    messaging host in a single pass &mdash; so you can skip this manual config step
+    entirely if you plan to run it.
   </div>
 
-  <h2>3. Load the Chrome extension (alpha)</h2>
+  <h2>3. Register the native messaging host</h2>
+  <p>
+    The extension talks to peek&apos;s local bridge through a Chrome <em>native
+    messaging host</em> (<code>chrome.runtime.connectNative(&apos;com.cubenest.peek&apos;)</code>).
+    The browser only spawns that host if it&apos;s registered, so this step is
+    <strong>required</strong> &mdash; skip it and the extension loads but can&apos;t connect.
+  </p>
+  <p>
+    Install <code>@peekdev/cli</code> and run <code>peek init</code>; it registers
+    the host for the browsers you pick (and configures your AI client&apos;s MCP server
+    in the same pass, so you can skip step&nbsp;2 if you run it):
+  </p>
+  <pre><code>{`npm install -g @peekdev/cli
+peek init`}</code></pre>
+  <ul>
+    <li><strong>macOS</strong> &mdash; writes a manifest into
+      <code>~/Library/Application Support/Google/Chrome/NativeMessagingHosts/</code>
+      (and the Chromium/Edge equivalents).</li>
+    <li><strong>Linux</strong> &mdash; writes a manifest into
+      <code>~/.config/google-chrome/NativeMessagingHosts/</code>.</li>
+    <li><strong>Windows</strong> &mdash; writes the manifest under
+      <code>%LOCALAPPDATA%</code> and sets the registry key
+      <code>HKCU\\Software\\Google\\Chrome\\NativeMessagingHosts\\com.cubenest.peek</code>
+      (and the Edge equivalent under
+      <code>HKCU\\Software\\Microsoft\\Edge\\NativeMessagingHosts\\</code>).</li>
+  </ul>
+  <p>
+    Registration is consent-prompted &mdash; you choose which browsers to register.
+  </p>
+
+  <h2>4. Load the Chrome extension (alpha)</h2>
   <p>
     Until the Chrome Web Store listing is live (Phase 5), load the extension
     unpacked from a local build:
@@ -101,7 +126,7 @@ pnpm --filter @peekdev/extension build
     <li>Select <code>packages/peek-extension/.output/chrome-mv3/</code>.</li>
   </ol>
 
-  <h2>4. Enable peek on a site</h2>
+  <h2>5. Enable peek on a site</h2>
   <ul>
     <li>Open the side panel from the toolbar.</li>
     <li>Click <strong>Enable on this site</strong>. peek requests per-origin host permission from your user gesture and starts recording.</li>
@@ -110,7 +135,7 @@ pnpm --filter @peekdev/extension build
     <li>(Optional) Set the per-origin <strong>permission level</strong> in the side panel. Default is Level 1 (observe-only).</li>
   </ul>
 
-  <h2>5. Ask your agent</h2>
+  <h2>6. Ask your agent</h2>
   <p>
     With the MCP server connected, ask your AI client things like:
   </p>
