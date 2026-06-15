@@ -1,5 +1,26 @@
 # @peekdev/extension
 
+## 0.1.0-alpha.16
+
+### Patch Changes
+
+- 4d3f36d: Part 2 — assisted-apply: add set_intent (agent-set control-shield banner string)
+  and request_user_input scope:'page' (full-page takeover for CAPTCHAs / native
+  widgets / the final review-and-submit, atop the existing field-scope handoff),
+  plus a supervised assisted-apply recipe (draft). page-scope inherits the handoff
+  recording-suspension; the recipe states the LinkedIn-ToS + recording-residual
+  honesty plainly.
+- 42c948b: Add the Level-4 control shield: when an origin is in Auto (Level 4) and the
+  native host is connected, peek shows a closed-shadow overlay (border + banner +
+  scrim) that blocks the human's real input while peek's synthetic actions pass,
+  with a one-click Stop / Esc that hard-drops the origin to Level 1.
+- 877d35a: Add the input handoff (request_user_input): while the Level-4 control shield is
+  up, the agent can pause and hand the keyboard back to the user for one editable,
+  non-destructive field (or a free-text prompt), then resume. The returned value
+  is opt-in (readBack) and never for password/OTP/cc fields; rrweb forwarding is
+  suspended for the tab during the handoff (incremental channel; the FullSnapshot
+  residual is documented). Approver is `user`; audit records prompt + selector only.
+
 ## 0.1.0-alpha.15
 
 ### Patch Changes

@@ -1,5 +1,26 @@
 # @peekdev/mcp
 
+## 0.1.0-alpha.19
+
+### Patch Changes
+
+- 4d3f36d: Part 2 — assisted-apply: add set_intent (agent-set control-shield banner string)
+  and request_user_input scope:'page' (full-page takeover for CAPTCHAs / native
+  widgets / the final review-and-submit, atop the existing field-scope handoff),
+  plus a supervised assisted-apply recipe (draft). page-scope inherits the handoff
+  recording-suspension; the recipe states the LinkedIn-ToS + recording-residual
+  honesty plainly.
+- 3c4e042: Audit completeness: redactActionForAudit now records `scope` for request_user_input
+  entries, so a page-scope full-takeover is distinguishable from a field/free-text
+  card in ~/.peek/audit.log. Still never records the returned value (or readBack/
+  timeoutMs); scope is non-secret.
+- 877d35a: Add the input handoff (request_user_input): while the Level-4 control shield is
+  up, the agent can pause and hand the keyboard back to the user for one editable,
+  non-destructive field (or a free-text prompt), then resume. The returned value
+  is opt-in (readBack) and never for password/OTP/cc fields; rrweb forwarding is
+  suspended for the tab during the handoff (incremental channel; the FullSnapshot
+  residual is documented). Approver is `user`; audit records prompt + selector only.
+
 ## 0.1.0-alpha.18
 
 ### Patch Changes
