@@ -26,6 +26,24 @@ import type {
 import { type TraceLaneOptions, resolveOptions } from './options.js';
 
 /**
+ * Serialize a JSON-bridgeable option to a string for the env bridge, or
+ * `undefined` when there's nothing to bridge. `JSON.stringify` silently drops
+ * function-valued props (e.g. network `maskRequestFn` / `maskResponseFn`) —
+ * those cannot survive the worker-process env boundary, a documented
+ * limitation. Returns `undefined` if the result is empty (`{}`) or fails.
+ */
+function bridgeJson(value: unknown): string | undefined {
+  if (value === undefined || value === null) return undefined;
+  try {
+    const json = JSON.stringify(value);
+    // `{}` carries no information once functions are stripped — skip it.
+    return json === undefined || json === '{}' ? undefined : json;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
  * tracelane's Playwright reporter. Pair it with the fixture
  * (`import { test } from '@tracelane/playwright/fixture'`) — the fixture records
  * + writes reports; this reporter validates config at startup and bridges options
@@ -47,18 +65,53 @@ export class TraceLaneReporter implements Reporter {
       TRACELANE_MODE?: string;
       TRACELANE_OUT_DIR?: string;
       TRACELANE_CAPTURE_NETWORK?: string;
+      TRACELANE_CAPTURE_RRWEB?: string;
+      TRACELANE_CAPTURE_CONSOLE?: string;
+      TRACELANE_SECURITY?: string;
+      TRACELANE_FOOTER?: string;
+      TRACELANE_DRAIN_INTERVAL_MS?: string;
+      TRACELANE_COOLDOWN_MS?: string;
+      TRACELANE_NETWORK_OPTIONS?: string;
+      TRACELANE_CONSOLE_OPTIONS?: string;
     };
     const env = (globalThis as { process?: { env?: BridgeEnv } }).process?.env;
     if (env !== undefined) {
-      if (opts.mode !== undefined && env.TRACELANE_MODE === undefined) {
-        env.TRACELANE_MODE = opts.mode;
-      }
-      if (opts.outDir !== undefined && env.TRACELANE_OUT_DIR === undefined) {
-        env.TRACELANE_OUT_DIR = opts.outDir;
-      }
-      if (opts.captureNetwork !== undefined && env.TRACELANE_CAPTURE_NETWORK === undefined) {
-        env.TRACELANE_CAPTURE_NETWORK = String(opts.captureNetwork);
-      }
+      // Each option is bridged only when its env var is unset, so an explicit
+      // env var / CLI value always wins.
+      const set = (key: keyof BridgeEnv, value: string | undefined): void => {
+        if (value !== undefined && env[key] === undefined) env[key] = value;
+      };
+      set('TRACELANE_MODE', opts.mode);
+      set('TRACELANE_OUT_DIR', opts.outDir);
+      // capture.network (preferred) wins over the deprecated top-level captureNetwork.
+      const network = opts.capture?.network ?? opts.captureNetwork;
+      set('TRACELANE_CAPTURE_NETWORK', network !== undefined ? String(network) : undefined);
+      set(
+        'TRACELANE_CAPTURE_RRWEB',
+        opts.capture?.rrweb !== undefined ? String(opts.capture.rrweb) : undefined,
+      );
+      set(
+        'TRACELANE_CAPTURE_CONSOLE',
+        opts.capture?.console !== undefined ? String(opts.capture.console) : undefined,
+      );
+      set('TRACELANE_SECURITY', opts.security !== undefined ? String(opts.security) : undefined);
+      set(
+        'TRACELANE_FOOTER',
+        opts.report?.footer !== undefined ? String(opts.report.footer) : undefined,
+      );
+      set(
+        'TRACELANE_DRAIN_INTERVAL_MS',
+        opts.drainIntervalMs !== undefined ? String(opts.drainIntervalMs) : undefined,
+      );
+      set(
+        'TRACELANE_COOLDOWN_MS',
+        opts.cooldownMs !== undefined ? String(opts.cooldownMs) : undefined,
+      );
+      // JSON-serializable masking options. JSON.stringify naturally drops
+      // function-valued props (maskRequestFn / maskResponseFn) — they cannot
+      // cross the worker-process env bridge, a documented limitation.
+      set('TRACELANE_NETWORK_OPTIONS', bridgeJson(opts.capture?.networkOptions));
+      set('TRACELANE_CONSOLE_OPTIONS', bridgeJson(opts.consolePluginOptions));
     }
   }
 
