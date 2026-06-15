@@ -1,4 +1,4 @@
-import { mkdtempSync, readdirSync } from 'node:fs';
+import { mkdtempSync, readFileSync, readdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
@@ -411,6 +411,157 @@ describe('in-page network plugin (cross-browser)', () => {
     await runStart({ page: page as never, options, rrwebBundle: RRWEB_STUB });
     // capture.network off ⇒ no in-page plugin (and no CDP, covered above).
     expect(networkOptionsFromInit(page)).toBeUndefined();
+  });
+
+  it('forwards capture.networkOptions verbatim to the in-page plugin init arg', async () => {
+    const page = fakePage([{ type: 4, data: {}, timestamp: 1 }], { browserName: 'firefox' });
+    const networkOptions = { recordHeaders: true, payloadHostDenyList: ['x.test'] };
+    const options = {
+      mode: 'failed' as const,
+      outDir: mkdtempSync(join(tmpdir(), 'tl-pw-')),
+      captureNetwork: true,
+      networkOptions,
+    };
+    await runStart({ page: page as never, options, rrwebBundle: RRWEB_STUB });
+    expect(networkOptionsFromInit(page)).toEqual(networkOptions);
+  });
+});
+
+/**
+ * The `consolePluginOptions` the recorder's in-page init was called with (the
+ * 2nd packed init arg: `execute(initScript, cooldownMs, consoleOpts, networkOpts)`).
+ */
+function consoleOptionsFromInit(page: FakePage): unknown {
+  const calls = page.evaluate.mock.calls;
+  const initCall = calls.find((c) => {
+    const arg = c[1] as { body?: string } | undefined;
+    return typeof arg?.body === 'string' && arg.body.includes('__tracelane__inited');
+  });
+  const arg = initCall?.[1] as { args?: unknown[] } | undefined;
+  return arg?.args?.[1];
+}
+
+/** The `cooldownMs` the recorder's in-page init was called with (1st packed init arg). */
+function cooldownFromInit(page: FakePage): unknown {
+  const calls = page.evaluate.mock.calls;
+  const initCall = calls.find((c) => {
+    const arg = c[1] as { body?: string } | undefined;
+    return typeof arg?.body === 'string' && arg.body.includes('__tracelane__inited');
+  });
+  const arg = initCall?.[1] as { args?: unknown[] } | undefined;
+  return arg?.args?.[0];
+}
+
+function baseOptions(extra: Record<string, unknown> = {}) {
+  return {
+    mode: 'failed' as const,
+    outDir: mkdtempSync(join(tmpdir(), 'tl-pw-')),
+    captureNetwork: false,
+    captureRrweb: true,
+    captureConsole: true,
+    security: true,
+    footer: true,
+    ...extra,
+  };
+}
+
+describe('Gap 2 — capture channels (rrweb / console)', () => {
+  it('captureRrweb:false ⇒ no recorder started, no report written', async () => {
+    const outDir = mkdtempSync(join(tmpdir(), 'tl-pw-'));
+    const page = fakePage([{ type: 4, data: {}, timestamp: 1 }], { browserName: 'chromium' });
+    const options = baseOptions({ outDir, captureRrweb: false, captureNetwork: true });
+    const session = await runStart({ page: page as never, options, rrwebBundle: RRWEB_STUB });
+    // No recorder ⇒ no bundle injection / init, and no CDP opened.
+    expect(page._ctx.newCDPSession).not.toHaveBeenCalled();
+    expect(page.context().addInitScript).not.toHaveBeenCalled();
+    await runFinalize(session, {
+      page: page as never,
+      testInfo: failedTestInfo() as never,
+      options,
+      rrwebBundle: RRWEB_STUB,
+    });
+    expect(readdirSync(outDir).filter((f) => f.endsWith('.html')).length).toBe(0);
+  });
+
+  it('captureConsole:false ⇒ init receives consolePluginOptions { level: [] }', async () => {
+    const page = fakePage([{ type: 4, data: {}, timestamp: 1 }], { browserName: 'firefox' });
+    const options = baseOptions({ captureConsole: false });
+    await runStart({ page: page as never, options, rrwebBundle: RRWEB_STUB });
+    expect(consoleOptionsFromInit(page)).toEqual({ level: [] });
+  });
+
+  it('captureConsole:true forwards the user consolePluginOptions', async () => {
+    const page = fakePage([{ type: 4, data: {}, timestamp: 1 }], { browserName: 'firefox' });
+    const options = baseOptions({ consolePluginOptions: { level: ['error'] } });
+    await runStart({ page: page as never, options, rrwebBundle: RRWEB_STUB });
+    expect(consoleOptionsFromInit(page)).toEqual({ level: ['error'] });
+  });
+});
+
+describe('Gap 3 — drain / cooldown tuning', () => {
+  it('forwards drainIntervalMs / cooldownMs into the recorder', async () => {
+    const page = fakePage([{ type: 4, data: {}, timestamp: 1 }], { browserName: 'firefox' });
+    const options = baseOptions({ drainIntervalMs: 800, cooldownMs: 333 });
+    await runStart({ page: page as never, options, rrwebBundle: RRWEB_STUB });
+    // cooldownMs is packed as the 1st init arg.
+    expect(cooldownFromInit(page)).toBe(333);
+  });
+});
+
+describe('Gap 1 + Gap 3 — report-side options (security / footer)', () => {
+  // A page buffer that carries a tracelane.sec rrweb Custom event the analyzer
+  // turns into a finding (HTTPS main doc, no security headers ⇒ missing-CSP).
+  const SEC_EVENTS = [
+    { type: 4, data: { href: 'https://app.test', width: 800, height: 600 }, timestamp: 1 },
+    { type: 2, data: { node: {}, initialOffset: { left: 0, top: 0 } }, timestamp: 2 },
+    {
+      type: 5,
+      timestamp: 3,
+      data: {
+        tag: 'tracelane.sec',
+        payload: {
+          url: 'https://app.test/',
+          status: 200,
+          isMainDocument: true,
+          presentSecurityHeaders: [],
+          setCookies: [],
+        },
+      },
+    },
+  ];
+
+  async function renderReportHtml(extra: Record<string, unknown>): Promise<string> {
+    const outDir = mkdtempSync(join(tmpdir(), 'tl-pw-'));
+    const page = fakePage(SEC_EVENTS, { browserName: 'firefox' });
+    const options = baseOptions({ outDir, mode: 'all', ...extra });
+    await runTracelaneSession({
+      page: page as never,
+      testInfo: passedTestInfo() as never,
+      options,
+      rrwebBundle: RRWEB_STUB,
+    });
+    const file = readdirSync(outDir).find((f) => f.endsWith('.html')) as string;
+    return readFileSync(join(outDir, file), 'utf8');
+  }
+
+  it('security default (on): the report renders the advisory hygiene section', async () => {
+    const html = await renderReportHtml({ security: true });
+    expect(html).toContain('Security hygiene (advisory)');
+  });
+
+  it('security:false: the report omits the advisory hygiene section', async () => {
+    const html = await renderReportHtml({ security: false });
+    expect(html).not.toContain('Security hygiene (advisory)');
+  });
+
+  it('footer default (on): the report renders the "Generated by" footer', async () => {
+    const html = await renderReportHtml({ footer: true });
+    expect(html).toContain('Generated by');
+  });
+
+  it('footer:false: the report omits the footer', async () => {
+    const html = await renderReportHtml({ footer: false });
+    expect(html).not.toContain('Generated by');
   });
 });
 

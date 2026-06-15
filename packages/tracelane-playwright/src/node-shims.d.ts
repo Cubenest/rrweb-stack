@@ -42,3 +42,8 @@ declare module 'node:url' {
   /** Convert a `file:` URL (string or URL) to a platform path string. */
   export function fileURLToPath(url: string | URL): string;
 }
+
+declare module 'node:process' {
+  /** Return the process's current working directory. */
+  export function cwd(): string;
+}

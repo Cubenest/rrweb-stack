@@ -11,12 +11,19 @@
 // in the CURRENT document). The recorder then drains events Node-side on its
 // poll loop and at finalize (ADR-0006).
 
+import { cwd } from 'node:process';
 import type { CDPSession, Frame, Page, TestInfo } from '@playwright/test';
-import { type Recorder, attachNetworkCapture, createRecorder } from '@tracelane/core';
+import {
+  type ConsolePluginOptions,
+  type Recorder,
+  attachNetworkCapture,
+  createRecorder,
+} from '@tracelane/core';
 import { type ReportMeta, writeReport } from '@tracelane/report';
 import type { ResolvedOptions } from './options.js';
 import { createPlaywrightExecutor } from './playwright-executor.js';
 import { isPassed, mapStatus } from './result-status.js';
+import { loadSecuritySuppressions } from './security-suppress.js';
 
 /** Inputs to start a capture session. */
 export interface StartInput {
@@ -59,9 +66,31 @@ export interface FinalizeInput {
   rrwebBundle: string;
 }
 
+/**
+ * Resolve the console-plugin options: when `captureConsole` is false, pass
+ * `{ level: [] }` so the rrweb console plugin patches no `console.*` methods
+ * and installs no error/rejection listeners — i.e. console capture is off
+ * (mirrors @tracelane/wdio). Otherwise forward any user-supplied
+ * `consolePluginOptions` (the core recorder applies its defaults when none are
+ * given, so `undefined` is returned to keep that behavior).
+ */
+function resolveConsolePluginOptions(options: ResolvedOptions): ConsolePluginOptions | undefined {
+  if (options.captureConsole === false) return { level: [] };
+  return options.consolePluginOptions;
+}
+
 /** Inject the rrweb bundle on the context, build the executor, start the recorder. */
 export async function runStart(input: StartInput): Promise<StartedSession> {
   const { page, options, rrwebBundle } = input;
+
+  // rrweb opt-out: when capture.rrweb is false, no recorder starts and no
+  // report is written (mirrors @tracelane/wdio `capture.rrweb:false`). We skip
+  // the context injection + CDP entirely. The returned session is disabled, so
+  // runFinalize writes nothing. Default-on: only an explicit `false` disables.
+  if (options.captureRrweb === false) {
+    return { recorder: undefined as unknown as Recorder, disabled: true };
+  }
+
   const context = page.context();
   // Inject on the context so newly-created / navigated documents get rrweb
   // before any app script runs.
@@ -99,6 +128,20 @@ export async function runStart(input: StartInput): Promise<StartedSession> {
     rrwebBundle,
     mode: options.mode,
   };
+  // Drain/cooldown tuning (ADR-0006): forward only when set, else the core
+  // recorder applies its defaults.
+  if (options.drainIntervalMs !== undefined) {
+    recorderOptions.drainIntervalMs = options.drainIntervalMs;
+  }
+  if (options.cooldownMs !== undefined) {
+    recorderOptions.cooldownMs = options.cooldownMs;
+  }
+  // Console capture: `{ level: [] }` disables it; otherwise the user's options
+  // (or undefined → core defaults).
+  const consolePluginOptions = resolveConsolePluginOptions(options);
+  if (consolePluginOptions !== undefined) {
+    recorderOptions.consolePluginOptions = consolePluginOptions;
+  }
   // In-page rrweb network plugin (`rrweb/network@1`): the framework-agnostic
   // network channel that works on ALL browsers (Chromium/Firefox/WebKit) with
   // no CDP — it wraps fetch/XHR + reads PerformanceObserver from inside the
@@ -108,7 +151,8 @@ export async function runStart(input: StartInput): Promise<StartedSession> {
   // merges the two (real status wins). Mirrors @tracelane/wdio. Off entirely
   // when `captureNetwork` is false.
   if (options.captureNetwork) {
-    recorderOptions.networkPluginOptions = {};
+    recorderOptions.networkPluginOptions =
+      (options.networkOptions as Record<string, unknown> | undefined) ?? {};
   }
   const recorder = createRecorder(recorderOptions);
 
@@ -116,6 +160,7 @@ export async function runStart(input: StartInput): Promise<StartedSession> {
   if (cdp) {
     try {
       await attachNetworkCapture(executor, {
+        security: options.security,
         onSecurityMeta: (m) => recorder.addCustomEvent('tracelane.sec', m),
       });
     } catch {
@@ -191,6 +236,10 @@ export async function runFinalize(session: StartedSession, input: FinalizeInput)
       passed: isPassed(testInfo),
     });
     if (!shouldBuildReport) return;
+    // Load the optional suppression file at report-write time. The loader never
+    // throws and falls back to `[]`, so a missing/malformed file can't break the
+    // report. Skip the read entirely when security is off.
+    const securitySuppress = options.security ? loadSecuritySuppressions(cwd()) : [];
     writeReport({
       outDir: options.outDir,
       // project.name namespaces the filename so parallel projects/workers never
@@ -198,6 +247,9 @@ export async function runFinalize(session: StartedSession, input: FinalizeInput)
       cid: testInfo.project?.name,
       events,
       meta: buildMeta(testInfo, session),
+      footer: options.footer,
+      security: options.security,
+      securitySuppress,
     });
   } finally {
     // Always detach the CDP session so it doesn't leak past the test.

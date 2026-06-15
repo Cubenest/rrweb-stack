@@ -55,19 +55,49 @@ Run your suite. On a failing test you get one `.html` file at `./tracelane-repor
 
 - **The fixture** owns the recording — and keeps it going across navigations, so the replay is one continuous session, not a set of per-page snapshots. It is the only place with a live `page` + `testInfo`, so it injects the rrweb bundle via `context.addInitScript` AND hooks `page.on('framenavigated')` to call `recorder.reinject` on every main-frame navigation (each navigation emits a `tracelane.nav` boundary marker in the replay). It starts the recorder before your test body, and — after it — builds + writes the report. It reuses `@tracelane/core`'s recorder and `@tracelane/report`'s HTML builder.
 - **The reporter** owns config only: it validates options at startup and bridges them to the fixture via `TRACELANE_*` env vars. By design it never touches `page`, prints nothing, and produces no end-of-run summary (the fixture writes the per-test reports).
-- **Network capture** is captured **in-page** by the framework-agnostic `rrweb/network@1` plugin — it works on **every browser** (Chromium, Firefox, WebKit) with no CDP, because it wraps `fetch`/`XHR` and reads `PerformanceObserver` entries from inside the page. Privacy-first: only URL/method/status/timing (headers + bodies off). On **Chromium** tracelane *additionally* uses CDP to enrich the panel with authoritative HTTP status for failed responses (`4xx`/`5xx`) and true no-response failures (CORS/DNS/offline/abort); the report merges the CDP rows over the in-page rows for the same request (real status wins). Off entirely when `captureNetwork` is `false`.
+- **Network capture** is captured **in-page** by the framework-agnostic `rrweb/network@1` plugin — it works on **every browser** (Chromium, Firefox, WebKit) with no CDP, because it wraps `fetch`/`XHR` and reads `PerformanceObserver` entries from inside the page. Privacy-first: only URL/method/status/timing (headers + bodies off). On **Chromium** tracelane *additionally* uses CDP to enrich the panel with authoritative HTTP status for failed responses (`4xx`/`5xx`) and true no-response failures (CORS/DNS/offline/abort); the report merges the CDP rows over the in-page rows for the same request (real status wins). Off entirely when `capture.network` is `false`.
 - **Parallel-safe**: report filenames are namespaced by the Playwright **project name** and carry a millisecond timestamp. Different projects are isolated by name; parallel workers *within one project* share the project-name segment and rely on the timestamp (plus spec + title) to stay distinct.
 - **Coexists** with Playwright's own `trace` — keep `trace: 'on-first-retry'` if you like; tracelane writes a separate, self-contained artifact.
 
 ## Options
 
-| Option | Default | Notes |
-| --- | --- | --- |
-| `mode` | `'failed'` | `'failed'` writes a report only on failure; `'all'` writes one for every test. Overridable with `TRACELANE_MODE`. |
-| `outDir` | `'./tracelane-reports'` | Where reports are written. Overridable with `TRACELANE_OUT_DIR`. |
-| `captureNetwork` | `true` | Network capture: the in-page `rrweb/network@1` plugin on **all browsers**, plus CDP enrichment (authoritative status + no-response failures) on Chromium. Overridable with `TRACELANE_CAPTURE_NETWORK`. |
+| Option | Type | Default | Notes |
+| --- | --- | --- | --- |
+| `mode` | `'failed' \| 'all'` | `'failed'` | `'failed'` writes a report only on failure; `'all'` writes one for every test. Env: `TRACELANE_MODE`. |
+| `outDir` | `string` | `'./tracelane-reports'` | Where reports are written. Env: `TRACELANE_OUT_DIR`. |
+| `capture.rrweb` | `boolean` | `true` | Record the rrweb session. When `false`, no recorder starts and **no report is written** at all. Env: `TRACELANE_CAPTURE_RRWEB`. |
+| `capture.network` | `boolean` | `true` | Network capture: the in-page `rrweb/network@1` plugin on **all browsers**, plus CDP enrichment (authoritative status + no-response failures) on Chromium. Env: `TRACELANE_CAPTURE_NETWORK`. Supersedes the deprecated top-level `captureNetwork`. |
+| `capture.console` | `boolean` | `true` | Capture `console.*` via the rrweb console plugin. When `false` the console plugin patches nothing (`{ level: [] }`). Env: `TRACELANE_CAPTURE_CONSOLE`. |
+| `capture.networkOptions` | `NetworkRecordOptions` | plugin defaults | Forwarded to the in-page network plugin (`recordHeaders`, `recordBody`, `payloadHostDenyList`, …). Defaults are privacy-first (headers + bodies off). Ignored when `capture.network` is `false`. **Function-valued props (`maskRequestFn`, `maskResponseFn`) are NOT supported** via reporter config — see below. Env: `TRACELANE_NETWORK_OPTIONS` (JSON). |
+| `consolePluginOptions` | `ConsolePluginOptions` | plugin defaults | Forwarded to the in-page console plugin. Env: `TRACELANE_CONSOLE_OPTIONS` (JSON). |
+| `security` | `boolean` | `true` | Advisory security-hygiene signals in the report. `false` disables both the `[tracelane.sec]` capture and the report-side analysis (the report omits the "Security hygiene (advisory)" section). Env: `TRACELANE_SECURITY`. |
+| `report.footer` | `boolean` | `true` | Render the report's "Generated by tracelane" footer. `false` suppresses it. Env: `TRACELANE_FOOTER`. |
+| `drainIntervalMs` | `number` | `500` (core default) | Node-side drain poll interval. Env: `TRACELANE_DRAIN_INTERVAL_MS`. |
+| `cooldownMs` | `number` | `250` (core default) | Re-injection cooldown guard (suppresses double-init on hash/HMR navigation). Env: `TRACELANE_COOLDOWN_MS`. |
+| `captureNetwork` | `boolean` | `true` | **Deprecated** — use `capture.network`. Kept for back-compat; `capture.network` wins when both are set. Env: `TRACELANE_CAPTURE_NETWORK`. |
 
-> Reporter options (`mode`, `outDir`, `captureNetwork`) are honored by the fixture — the reporter bridges them to `TRACELANE_MODE` / `TRACELANE_OUT_DIR` / `TRACELANE_CAPTURE_NETWORK` at startup (only when those env vars are not already set). An explicit env var always wins over the reporter option.
+The options type is published — `import type { TraceLaneOptions } from '@tracelane/playwright'`.
+
+> **The options→env bridge.** The Playwright fixture runs in a **separate worker process** and reads its configuration **only** from `TRACELANE_*` env vars. The reporter bridges its constructor options to those env vars at startup — but only when the env var is not already set, so an explicit env var (or CLI value) always wins. Boolean/number options bridge as strings; `capture.networkOptions` and `consolePluginOptions` bridge as JSON strings.
+
+> **Mask functions are not supported via reporter config (worker-process limitation).** Because options cross to the fixture worker as env-var strings, the JSON bridge for `capture.networkOptions` cannot carry **function-valued** props — `maskRequestFn` / `maskResponseFn` are silently dropped (`JSON.stringify` strips them). Use only JSON-serializable masking options (`recordHeaders`, `recordBody`, `payloadHostDenyList`, …) when configuring through the reporter.
+
+## Security hygiene (advisory)
+
+By default the report includes an advisory security-hygiene section derived from privacy-safe main-document response metadata captured on Chromium (`[tracelane.sec]` — security-header **presence** + cookie-flag hygiene; never header or cookie **values**). Set `security: false` to disable both the capture and the report-side analysis.
+
+You can silence known-acceptable signals by committing a `tracelane.security.suppress.json` file in the project working directory; it's loaded at report-write time (a missing/malformed file never throws — it degrades to no suppressions):
+
+```json
+{
+  "suppressions": [
+    { "signal": "missing-csp", "evidence": "https://app.test" },
+    { "signal": "insecure-cookie" }
+  ]
+}
+```
+
+It carries only advisory `{ signal?, evidence? }` rules — no secrets — so reading it from the working directory is safe.
 
 ## What this is NOT
 

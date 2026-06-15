@@ -11,24 +11,33 @@ function fakeSuite(total: number) {
   return { allTests: () => Array.from({ length: total }, (_, i) => ({ id: String(i) })) };
 }
 
+const BRIDGE_KEYS = [
+  'TRACELANE_MODE',
+  'TRACELANE_OUT_DIR',
+  'TRACELANE_CAPTURE_NETWORK',
+  'TRACELANE_CAPTURE_RRWEB',
+  'TRACELANE_CAPTURE_CONSOLE',
+  'TRACELANE_SECURITY',
+  'TRACELANE_FOOTER',
+  'TRACELANE_DRAIN_INTERVAL_MS',
+  'TRACELANE_COOLDOWN_MS',
+  'TRACELANE_NETWORK_OPTIONS',
+  'TRACELANE_CONSOLE_OPTIONS',
+] as const;
+
 describe('TraceLaneReporter', () => {
-  const prevMode = process.env.TRACELANE_MODE;
-  const prevOut = process.env.TRACELANE_OUT_DIR;
-  const prevCap = process.env.TRACELANE_CAPTURE_NETWORK;
+  const prev = new Map<string, string | undefined>(BRIDGE_KEYS.map((k) => [k, process.env[k]]));
 
   beforeEach(() => {
-    Reflect.deleteProperty(process.env, 'TRACELANE_MODE');
-    Reflect.deleteProperty(process.env, 'TRACELANE_OUT_DIR');
-    Reflect.deleteProperty(process.env, 'TRACELANE_CAPTURE_NETWORK');
+    for (const k of BRIDGE_KEYS) Reflect.deleteProperty(process.env, k);
   });
 
   afterEach(() => {
-    if (prevMode === undefined) Reflect.deleteProperty(process.env, 'TRACELANE_MODE');
-    else process.env.TRACELANE_MODE = prevMode;
-    if (prevOut === undefined) Reflect.deleteProperty(process.env, 'TRACELANE_OUT_DIR');
-    else process.env.TRACELANE_OUT_DIR = prevOut;
-    if (prevCap === undefined) Reflect.deleteProperty(process.env, 'TRACELANE_CAPTURE_NETWORK');
-    else process.env.TRACELANE_CAPTURE_NETWORK = prevCap;
+    for (const k of BRIDGE_KEYS) {
+      const v = prev.get(k);
+      if (v === undefined) Reflect.deleteProperty(process.env, k);
+      else process.env[k] = v;
+    }
   });
 
   it('does not print to stdio (the fixture/Playwright owns the run output)', () => {
@@ -65,6 +74,67 @@ describe('TraceLaneReporter', () => {
     new TraceLaneReporter({ mode: 'all' });
     expect(process.env.TRACELANE_OUT_DIR).toBeUndefined();
     expect(process.env.TRACELANE_CAPTURE_NETWORK).toBeUndefined();
+    expect(process.env.TRACELANE_SECURITY).toBeUndefined();
+    expect(process.env.TRACELANE_FOOTER).toBeUndefined();
+    expect(process.env.TRACELANE_CAPTURE_RRWEB).toBeUndefined();
+    expect(process.env.TRACELANE_CAPTURE_CONSOLE).toBeUndefined();
+    expect(process.env.TRACELANE_DRAIN_INTERVAL_MS).toBeUndefined();
+    expect(process.env.TRACELANE_COOLDOWN_MS).toBeUndefined();
+    expect(process.env.TRACELANE_NETWORK_OPTIONS).toBeUndefined();
+    expect(process.env.TRACELANE_CONSOLE_OPTIONS).toBeUndefined();
+  });
+
+  it('bridges Gap 1/2/3 options into TRACELANE_* env', () => {
+    new TraceLaneReporter({
+      security: false,
+      capture: { rrweb: false, console: false, network: false },
+      report: { footer: false },
+      drainIntervalMs: 800,
+      cooldownMs: 300,
+    });
+    expect(process.env.TRACELANE_SECURITY).toBe('false');
+    expect(process.env.TRACELANE_CAPTURE_RRWEB).toBe('false');
+    expect(process.env.TRACELANE_CAPTURE_CONSOLE).toBe('false');
+    expect(process.env.TRACELANE_CAPTURE_NETWORK).toBe('false');
+    expect(process.env.TRACELANE_FOOTER).toBe('false');
+    expect(process.env.TRACELANE_DRAIN_INTERVAL_MS).toBe('800');
+    expect(process.env.TRACELANE_COOLDOWN_MS).toBe('300');
+  });
+
+  it('bridges capture.network (preferred) to TRACELANE_CAPTURE_NETWORK', () => {
+    new TraceLaneReporter({ capture: { network: false } });
+    expect(process.env.TRACELANE_CAPTURE_NETWORK).toBe('false');
+  });
+
+  it('JSON-bridges networkOptions / consolePluginOptions and round-trips via resolveOptions', () => {
+    new TraceLaneReporter({
+      capture: { networkOptions: { recordHeaders: true, payloadHostDenyList: ['x.test'] } },
+      consolePluginOptions: { level: ['error'] as never },
+    });
+    expect(JSON.parse(process.env.TRACELANE_NETWORK_OPTIONS as string)).toEqual({
+      recordHeaders: true,
+      payloadHostDenyList: ['x.test'],
+    });
+    expect(JSON.parse(process.env.TRACELANE_CONSOLE_OPTIONS as string)).toEqual({
+      level: ['error'],
+    });
+  });
+
+  it('drops function-valued mask props from the bridged networkOptions (worker-process limitation)', () => {
+    new TraceLaneReporter({
+      capture: {
+        networkOptions: {
+          recordBody: true,
+          // function-valued props cannot cross the env bridge
+          maskRequestFn: ((v: unknown) => v) as never,
+          maskResponseFn: ((v: unknown) => v) as never,
+        },
+      },
+    });
+    const bridged = JSON.parse(process.env.TRACELANE_NETWORK_OPTIONS as string);
+    expect(bridged).toEqual({ recordBody: true });
+    expect(bridged.maskRequestFn).toBeUndefined();
+    expect(bridged.maskResponseFn).toBeUndefined();
   });
 
   it('onEnd re-resolves options without logging (TRACELANE_MODE env honored)', () => {
