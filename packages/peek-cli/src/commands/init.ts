@@ -265,7 +265,9 @@ async function registerNativeHost(platform: SupportedPlatform, homeDir: string):
   // P-13 (2026-05-28 QA walk): on re-runs, read the existing manifest's
   // `allowed_origins` and offer to reuse any previously-captured dev ID
   // instead of re-prompting from scratch. Confirms B.4 idempotency.
-  const allTargets = resolveInstallTargets(platform, homeDir);
+  // Inject the real %LOCALAPPDATA% (Windows) so a redirected AppData\Local
+  // (OneDrive KFM / enterprise folder redirection) resolves correctly.
+  const allTargets = resolveInstallTargets(platform, homeDir, process.env.LOCALAPPDATA);
   const existingDevId = extractDevId(readExistingManifest(allTargets));
   let captured: string | undefined;
   if (existingDevId) {

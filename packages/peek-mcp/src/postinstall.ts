@@ -51,7 +51,14 @@ export function runPostinstall(): void {
   const home = process.env.HOME ?? process.env.USERPROFILE ?? '';
   const ids = loadExtensionIds();
   const manifest = buildManifest(hostBinaryPath(), ids);
-  const targets = resolveInstallTargets(platform as SupportedPlatform, home);
+  // Inject the real %LOCALAPPDATA% (Windows) so a redirected AppData\Local
+  // (OneDrive KFM / enterprise folder redirection) resolves correctly;
+  // undefined on macOS/Linux, where the win32 branch is never taken.
+  const targets = resolveInstallTargets(
+    platform as SupportedPlatform,
+    home,
+    process.env.LOCALAPPDATA,
+  );
 
   const consented = isTruthyEnv(process.env.PEEK_INSTALL_NATIVE_HOST);
   const dryRun = !consented;
