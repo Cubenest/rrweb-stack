@@ -25,7 +25,7 @@ peek init
 
 `peek init` is an interactive wizard. It:
 
-1. Installs the native messaging host for the **Peek** Chrome extension (writes `~/Library/Application Support/Google/Chrome/NativeMessagingHosts/com.peekdev.peek.json` on macOS, equivalent on Linux + Windows).
+1. Installs the native messaging host for the **Peek** Chrome extension (writes `~/Library/Application Support/Google/Chrome/NativeMessagingHosts/com.cubenest.peek.json` on macOS, equivalent on Linux + Windows).
 2. Detects your AI coding-agent client (Claude Code, Cursor, Cline, Windsurf, VS Code) and adds the `peek-mcp` server to its MCP configuration.
 3. Prints a one-line "install the extension" link.
 
