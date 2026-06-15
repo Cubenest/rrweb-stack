@@ -381,6 +381,76 @@ describe.skipIf(!bundleBuilt)('TraceLaneSession — security toggle (Task 13)', 
   });
 });
 
+describe.skipIf(!bundleBuilt)('TraceLaneSession — capture start failure (CSP)', () => {
+  let outDir: string;
+  let warnSpy: ReturnType<typeof vi.spyOn>;
+
+  beforeEach(() => {
+    outDir = join(tmpdir(), `tl-csp-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+    resetPageState();
+    warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+  });
+
+  afterEach(() => {
+    rmSync(outDir, { recursive: true, force: true });
+    warnSpy.mockRestore();
+  });
+
+  /**
+   * A page whose CSP blocks `'unsafe-eval'`: the recorder's bundle injection
+   * (`window.eval(bundle)` via `execute`) throws. Mirrors the real failure mode
+   * the Playwright adapter already guards (playwright-session.ts disabled path).
+   */
+  function cspBrowser(): MockBrowser {
+    const browser = mockBrowser();
+    (browser.execute as ReturnType<typeof vi.fn>).mockRejectedValue(
+      new Error('EvalError: call to eval() blocked by CSP directive "script-src \'self\'"'),
+    );
+    return browser;
+  }
+
+  it('does not throw out of onBeforeTest when in-page injection fails', async () => {
+    const session = new TraceLaneSession({ mode: 'failed', outDir }, 'mocha', '0-0');
+    const browser = cspBrowser();
+    await session.onBefore(browser);
+    // tracelane must NEVER fail the user's test: a start() throw is swallowed.
+    await expect(session.onBeforeTest('a test', 'test/x.spec.ts')).resolves.toBeUndefined();
+  });
+
+  it('writes no report and does not throw at onAfterTest when capture never started', async () => {
+    const session = new TraceLaneSession({ mode: 'failed', outDir }, 'mocha', '0-0');
+    const browser = cspBrowser();
+    await session.onBefore(browser);
+    await session.onBeforeTest('a failing test', 'test/fail.spec.ts');
+    // Even a failing test produces no report — the buffer never started — and
+    // afterTest must not re-throw the swallowed injection error.
+    const path = await session.onAfterTest({ passed: false, error: new Error('x') });
+    expect(path).toBeUndefined();
+    expect(existsSync(outDir)).toBe(false);
+  });
+
+  it('warns exactly once that capture is unavailable across many tests', async () => {
+    const session = new TraceLaneSession({ mode: 'failed', outDir }, 'mocha', '0-0');
+    const browser = cspBrowser();
+    await session.onBefore(browser);
+    await session.onBeforeTest('test 1', 'test/x.spec.ts');
+    await session.onAfterTest({ passed: false, error: new Error('x') });
+    await session.onBeforeTest('test 2', 'test/x.spec.ts');
+    await session.onAfterTest({ passed: false, error: new Error('x') });
+    expect(warnSpy).toHaveBeenCalledTimes(1);
+    expect(warnSpy.mock.calls[0]?.[0]).toContain('[tracelane/wdio] capture unavailable');
+  });
+
+  it('teardown after a failed start is a safe no-op', async () => {
+    const session = new TraceLaneSession({ mode: 'failed', outDir }, 'mocha', '0-0');
+    const browser = cspBrowser();
+    await session.onBefore(browser);
+    await session.onBeforeTest('a test', 'test/x.spec.ts');
+    // No recorder survived the failed start, so teardown must not re-drain.
+    await expect(session.onAfter()).resolves.toBeUndefined();
+  });
+});
+
 describe.skipIf(!bundleBuilt)('TraceLaneSession — no teardown drain (#5)', () => {
   let outDir: string;
   let warnSpy: ReturnType<typeof vi.spyOn>;
