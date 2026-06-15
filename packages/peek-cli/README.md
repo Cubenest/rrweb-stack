@@ -26,7 +26,7 @@ peek init
 `peek init` is an interactive wizard. It:
 
 1. Installs the native messaging host for the **Peek** Chrome extension (writes `~/Library/Application Support/Google/Chrome/NativeMessagingHosts/com.peekdev.peek.json` on macOS, equivalent on Linux + Windows).
-2. Detects your AI coding-agent client (Claude Code, Cursor, Cline, Windsurf, Continue, Zed) and adds the `peek-mcp` server to its MCP configuration.
+2. Detects your AI coding-agent client (Claude Code, Cursor, Cline, Windsurf, VS Code) and adds the `peek-mcp` server to its MCP configuration.
 3. Prints a one-line "install the extension" link.
 
 Then you install the [Peek Chrome extension](https://chromewebstore.google.com/) (CWS submission pending), open the side panel on the site you want to capture, and click **Enable on this site**. Your AI agent can now query the recording.
@@ -77,14 +77,26 @@ Full data-handling policy: [`docs/peek/PRIVACY_POLICY.md`](https://github.com/Cu
 
 | Client | Detection |
 |---|---|
-| Claude Code (CLI) | `~/.claude/` |
-| Cursor | `~/Library/Application Support/Cursor/User/` (macOS) |
-| Cline (VS Code) | VS Code workspace settings |
-| Continue (VS Code) | `~/.continue/` |
-| Windsurf | `~/.codeium/windsurf/` |
-| Zed | `~/.config/zed/` |
+| Claude Code (CLI) | `~/.claude.json` |
+| Cursor | `~/.cursor/mcp.json` |
+| VS Code | `.vscode/mcp.json` (project-scoped) |
+| Windsurf | `~/.codeium/windsurf/mcp_config.json` |
+| Cline (VS Code) | manual config (lives in VS Code's per-OS globalStorage) |
 
-If your client isn't auto-detected, `peek init` prints the JSON config you can paste manually. The MCP server speaks the standard stdio protocol (spec 2025-11-25 + 2025-03-26 back-compat).
+> **Windows path note.** The `~` in these paths is your home directory (e.g. `C:\Users\<username>`). The CLI resolves it automatically via Node's `os.homedir()` + `path.join`, so the same config locations work on Windows, macOS, and Linux.
+
+If your client isn't auto-detected (for example Continue or Zed, which `peek init` does not detect), paste the manual MCP JSON config shown below into that client's MCP settings. `peek init` also prints this block when it can't find a known client. The MCP server speaks the standard stdio protocol (spec 2025-11-25 + 2025-03-26 back-compat).
+
+```json
+{
+  "mcpServers": {
+    "peek": {
+      "command": "npx",
+      "args": ["-y", "@peekdev/mcp@latest"]
+    }
+  }
+}
+```
 
 ### Claude Code skill
 
