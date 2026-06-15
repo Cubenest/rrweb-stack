@@ -183,6 +183,12 @@ export default defineBackground({
     let nativePort: chrome.runtime.Port | null = null;
     let reconnectBackoff = INITIAL_BACKOFF_MS;
     let hostState: NativeHostState = 'disconnected';
+    // Consecutive failed reconnect attempts since the last successful connect.
+    // Reported to the side panel so a *persistently* failing reconnect (host
+    // never registered) can surface the "run `peek init`" setup hint instead of
+    // a perpetual "Reconnecting…" pill (Windows audit bug). Reset to 0 on a
+    // successful connectNative.
+    let reconnectAttempts = 0;
     // Single pending reconnect timer. Holding the handle lets us collapse all
     // disconnect/wake races into ONE pending reconnect (see scheduleReconnect).
     let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
@@ -708,6 +714,9 @@ export default defineBackground({
       hostState = 'connected';
       shield.onHostConnectionChanged(true);
       reconnectBackoff = INITIAL_BACKOFF_MS;
+      // A live port means the host IS registered; clear the stalled-reconnect
+      // signal so the side panel drops any "run `peek init`" hint.
+      reconnectAttempts = 0;
       const port = nativePort;
       port.onMessage.addListener(handleHostMessage);
       port.onDisconnect.addListener(() => {
@@ -725,6 +734,11 @@ export default defineBackground({
 
     function scheduleReconnect(): void {
       hostState = 'reconnecting';
+      // Count this failed attempt. A persistently-climbing count (host never
+      // registered) is what the side panel reads to surface the setup hint
+      // (see isReconnectStalled). Saturate well above the threshold so a host
+      // that's down for a very long time can't overflow the counter.
+      if (reconnectAttempts < Number.MAX_SAFE_INTEGER) reconnectAttempts += 1;
       // Collapse races: cancel any pending reconnect before arming a new one so
       // multiple disconnects can never queue a storm of independent timers.
       if (reconnectTimer !== null) clearTimeout(reconnectTimer);
@@ -986,6 +1000,7 @@ export default defineBackground({
           case 'getNativeHostState': {
             const response: CmdResponse<{ type: 'getNativeHostState' }> = {
               state: hostState,
+              reconnectAttempts,
             };
             sendResponse(response);
             return false;

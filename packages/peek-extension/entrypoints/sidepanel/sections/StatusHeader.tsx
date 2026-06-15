@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { isReconnectStalled } from '../../../src/background/backoff';
 import type { NativeHostState } from '../../../src/messaging/protocol';
 import { permissionLevelInfo } from '../../../src/permissions/levels';
 import { PERMISSION_LEVELS_KEY, getPermissionLevel } from '../../../src/permissions/store';
@@ -9,17 +10,36 @@ export type HostTone = 'ok' | 'warn' | 'idle';
 export interface HostStateView {
   tone: HostTone;
   label: string;
-  /** Show the "run `peek init`" hint (only when the host is unreachable). */
+  /**
+   * Show the "run `peek init`" hint. True when the host is unreachable
+   * ('disconnected') OR when a 'reconnecting' loop has been failing long enough
+   * that the host is almost certainly unregistered (Windows audit bug: without
+   * this, a perpetual 'reconnecting' state leaves the hint unreachable).
+   */
   showSetupHint: boolean;
 }
 
-/** Pure: map the native-host connection state → what the header shows. */
-export function describeHostState(state: NativeHostState): HostStateView {
+/**
+ * Pure: map the native-host connection state (+ consecutive reconnect attempts)
+ * → what the header shows.
+ *
+ * @param state the native-host connection state from the SW
+ * @param reconnectAttempts consecutive failed reconnects since the last connect
+ *   (default 0); a high value while 'reconnecting' surfaces the setup hint.
+ */
+export function describeHostState(state: NativeHostState, reconnectAttempts = 0): HostStateView {
   switch (state) {
     case 'connected':
       return { tone: 'ok', label: 'Connected to peek', showSetupHint: false };
     case 'reconnecting':
-      return { tone: 'warn', label: 'Reconnecting…', showSetupHint: false };
+      // A brief reconnect is a transient host restart → no hint. A persistent
+      // one almost always means the native host was never registered → surface
+      // the same "run `peek init`" guidance the disconnected state shows.
+      return {
+        tone: 'warn',
+        label: 'Reconnecting…',
+        showSetupHint: isReconnectStalled(reconnectAttempts),
+      };
     default:
       return { tone: 'idle', label: 'Not connected', showSetupHint: true };
   }
@@ -31,8 +51,8 @@ export function describeHostState(state: NativeHostState): HostStateView {
  * "last action" layer is deferred — no line is shown for it.
  */
 export function StatusHeader({ origin }: { origin: string | null }): React.JSX.Element {
-  const hostState = useNativeHostState();
-  const view = describeHostState(hostState);
+  const { state: hostState, reconnectAttempts } = useNativeHostState();
+  const view = describeHostState(hostState, reconnectAttempts);
   const [levelShort, setLevelShort] = useState<string | null>(null);
 
   // The pill mirrors the dial's `short` label so pill + dial share one

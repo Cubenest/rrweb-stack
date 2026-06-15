@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { type InstallSink, buildRealSink, installManifests } from '../src/native-host/installer.js';
+import {
+  type InstallSink,
+  buildRealSink,
+  formatRegExecError,
+  installManifests,
+} from '../src/native-host/installer.js';
 import {
   type ExtensionIds,
   buildManifest,
@@ -174,5 +179,73 @@ describe('buildRealSink.writeRegistryKey — reg.exe argv shape', () => {
     expect(() => sink.writeRegistryKey('HKCU\\Software\\X\\Y', 'C:\\x.json')).toThrow(
       /reg\.exe failed/,
     );
+  });
+});
+
+describe('formatRegExecError — reg.exe failure surfacing (Windows hardening)', () => {
+  it('includes the captured stderr text in the message', () => {
+    const err = Object.assign(new Error('Command failed: reg.exe add ...'), {
+      status: 1,
+      stderr: Buffer.from('ERROR: Access is denied.\r\n'),
+    });
+    const msg = formatRegExecError(err);
+    expect(msg).toMatch(/reg\.exe failed/);
+    expect(msg).toContain('Access is denied');
+  });
+
+  it('includes the exit status when present', () => {
+    const err = Object.assign(new Error('Command failed'), {
+      status: 5,
+      stderr: Buffer.from('ERROR: The system cannot find the file specified.'),
+    });
+    const msg = formatRegExecError(err);
+    expect(msg).toContain('exit 5');
+    expect(msg).toContain('cannot find the file');
+  });
+
+  it('falls back to the underlying message when there is no stderr', () => {
+    const err = new Error('spawn reg.exe ENOENT');
+    const msg = formatRegExecError(err);
+    expect(msg).toMatch(/reg\.exe failed/);
+    expect(msg).toContain('ENOENT');
+  });
+
+  it("the default execFn's wrapper is wired so a failing reg.exe surfaces useful detail", () => {
+    // Simulate execFileSync's throw shape (an Error carrying .status + .stderr)
+    // and prove the default sink rethrows a message that includes that stderr —
+    // i.e. the failure is no longer swallowed by stdio: 'ignore'.
+    const sink = buildRealSink({
+      platform: 'win32',
+      execFn: () => {
+        throw Object.assign(new Error('Command failed: reg.exe add'), {
+          status: 1,
+          stderr: Buffer.from('ERROR: Access is denied.'),
+        });
+      },
+      wrapExecError: formatRegExecError,
+    });
+    expect(() => sink.writeRegistryKey('HKCU\\Software\\X\\Y', 'C:\\x.json')).toThrow(
+      /reg\.exe failed.*Access is denied/s,
+    );
+  });
+});
+
+describe('installManifests — a failing registry write surfaces a useful error', () => {
+  it('records the reg.exe stderr in the per-target error message', () => {
+    const targets = resolveInstallTargets('win32', 'C:\\Users\\jane');
+    // Inject a sink whose registry write throws an Error carrying useful detail
+    // (the shape the hardened default execFn now produces). The installer must
+    // record that detail in result.error so the user can act on it.
+    const sink: InstallSink = {
+      writeManifestFile() {},
+      writeRegistryKey() {
+        throw new Error('reg.exe failed (exit 1): ERROR: Access is denied.');
+      },
+    };
+    const results = installManifests(targets, manifest, { sink });
+
+    expect(results.every((r) => r.written === false)).toBe(true);
+    expect(results[0]?.error).toMatch(/reg\.exe failed/);
+    expect(results[0]?.error).toContain('Access is denied');
   });
 });
