@@ -88,6 +88,21 @@ export function probeSocketAlive(path: string, timeoutMs = 500): Promise<boolean
   });
 }
 
+/**
+ * How long to wait before retrying `listen()` after unlinking a stale endpoint.
+ *
+ * A POSIX socket inode is gone the instant `unlink` returns, so an immediate
+ * rebind works (delay 0). A Windows named pipe (`\\.\pipe\…`) has no inode to
+ * unlink — it's released by the OS shortly after the prior owner's process
+ * exits, which can lag the EADDRINUSE we just observed. A brief beat gives that
+ * release time to land so the single retry actually succeeds instead of failing
+ * and degrading the action write-path. Pure (depends only on the path shape) so
+ * it unit-tests without timers.
+ */
+export function rebindRetryDelayMs(socketPath: string): number {
+  return socketPath.startsWith('\\\\.\\pipe\\') ? 150 : 0;
+}
+
 /** Minimal duplex surface a connection must provide — injectable for tests. */
 export interface ConnectionLike {
   write(data: string): void;
@@ -221,8 +236,21 @@ function toResponsePayload(
   if (details && typeof details.dataUrl === 'string') {
     const b64 = details.dataUrl.replace(/^data:image\/png;base64,/, '');
     const buf = Buffer.from(b64, 'base64');
-    const { path, bytes } = writeScreenshot(result.requestId, buf);
-    payload.details = { path, bytes, format: 'png' };
+    try {
+      const { path, bytes } = writeScreenshot(result.requestId, buf);
+      payload.details = { path, bytes, format: 'png' };
+    } catch (err) {
+      // Persisting the screenshot failed (EACCES on ~/.peek, disk full, a
+      // Windows lock, …). Do NOT rethrow: this runs synchronously inside the
+      // SW-message handler, and a throw here would skip writing the act.response
+      // entirely — the MCP tool call would hang until it times out with no
+      // useful error. Drop the multi-MB base64 (never inline it) and return a
+      // compact error pointer so the caller gets a clean, actionable result.
+      payload.details = {
+        format: 'png',
+        error: `failed to persist screenshot: ${err instanceof Error ? err.message : String(err)}`,
+      };
+    }
   }
   return payload;
 }
@@ -306,8 +334,11 @@ export class HostSocketServer {
     // Stale inode: unlink it and retry the bind exactly once.
     this.#retriedAfterUnlink = true;
     this.#deps.unlinkSocket(this.#deps.socketPath);
-    // A short beat so the unlink settles before rebind (mostly belt-and-braces).
-    await delay(0);
+    // A short beat so the rebind settles. On POSIX this is ~0 (the inode is gone
+    // after unlink); on a Windows named pipe it's a bit longer to let the OS
+    // finish releasing the pipe after the prior owner exited (see
+    // {@link rebindRetryDelayMs}).
+    await delay(rebindRetryDelayMs(this.#deps.socketPath));
     this.#server?.listen();
   }
 
