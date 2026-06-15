@@ -343,6 +343,77 @@ describe('CDP network capture (Chromium-only, opt-in)', () => {
   });
 });
 
+describe('in-page network plugin (cross-browser)', () => {
+  /**
+   * The `networkPluginOptions` the recorder's in-page init was called with, if
+   * any. The Playwright executor packs `execute(initScript, cooldownMs,
+   * consoleOpts, networkOpts)` into a single `page.evaluate` arg as
+   * `{ body, args: [cooldownMs, consoleOpts, networkOpts] }`, so the network
+   * options are the 3rd packed arg of the init call (body has `__tracelane__inited`).
+   */
+  function networkOptionsFromInit(page: FakePage): unknown {
+    const calls = page.evaluate.mock.calls;
+    const initCall = calls.find((c) => {
+      const arg = c[1] as { body?: string } | undefined;
+      return typeof arg?.body === 'string' && arg.body.includes('__tracelane__inited');
+    });
+    const arg = initCall?.[1] as { args?: unknown[] } | undefined;
+    return arg?.args?.[2];
+  }
+
+  it('registers the in-page network plugin on firefox (no CDP available)', async () => {
+    const page = fakePage([{ type: 4, data: {}, timestamp: 1 }], { browserName: 'firefox' });
+    const options = {
+      mode: 'failed' as const,
+      outDir: mkdtempSync(join(tmpdir(), 'tl-pw-')),
+      captureNetwork: true,
+    };
+    await runStart({ page: page as never, options, rrwebBundle: RRWEB_STUB });
+    // CDP never opens off-Chromium, but the in-page plugin still captures network
+    // (the whole point: cross-browser parity with @tracelane/wdio).
+    expect(page._ctx.newCDPSession).not.toHaveBeenCalled();
+    expect(networkOptionsFromInit(page)).toEqual({});
+  });
+
+  it('registers the in-page network plugin on webkit (no CDP available)', async () => {
+    const page = fakePage([{ type: 4, data: {}, timestamp: 1 }], { browserName: 'webkit' });
+    const options = {
+      mode: 'failed' as const,
+      outDir: mkdtempSync(join(tmpdir(), 'tl-pw-')),
+      captureNetwork: true,
+    };
+    await runStart({ page: page as never, options, rrwebBundle: RRWEB_STUB });
+    expect(page._ctx.newCDPSession).not.toHaveBeenCalled();
+    expect(networkOptionsFromInit(page)).toEqual({});
+  });
+
+  it('registers the in-page plugin on chromium alongside CDP enrichment', async () => {
+    const page = fakePage([{ type: 4, data: {}, timestamp: 1 }], { browserName: 'chromium' });
+    const options = {
+      mode: 'failed' as const,
+      outDir: mkdtempSync(join(tmpdir(), 'tl-pw-')),
+      captureNetwork: true,
+    };
+    await runStart({ page: page as never, options, rrwebBundle: RRWEB_STUB });
+    // Both channels run on Chromium: the in-page plugin AND CDP enrichment (the
+    // report merges them, authoritative CDP status wins). Mirrors @tracelane/wdio.
+    expect(networkOptionsFromInit(page)).toEqual({});
+    expect(page._ctx.newCDPSession).toHaveBeenCalledTimes(1);
+  });
+
+  it('does NOT register the in-page plugin when captureNetwork is false', async () => {
+    const page = fakePage([{ type: 4, data: {}, timestamp: 1 }], { browserName: 'firefox' });
+    const options = {
+      mode: 'failed' as const,
+      outDir: mkdtempSync(join(tmpdir(), 'tl-pw-')),
+      captureNetwork: false,
+    };
+    await runStart({ page: page as never, options, rrwebBundle: RRWEB_STUB });
+    // capture.network off ⇒ no in-page plugin (and no CDP, covered above).
+    expect(networkOptionsFromInit(page)).toBeUndefined();
+  });
+});
+
 describe('timedOut / interrupted / parallel-filename coverage', () => {
   it('builds a report for timedOut and interrupted statuses', async () => {
     for (const status of ['timedOut', 'interrupted'] as const) {
