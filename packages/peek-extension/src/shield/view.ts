@@ -445,6 +445,13 @@ export function createShieldView(deps: ShieldViewDeps): ShieldView {
     lastGen = cmd.generation;
     switch (cmd.kind) {
       case 'RAISE':
+        // A RAISE can arrive while a handoff card is up: the controller re-raises
+        // on reconcile (after SW eviction / host reconnect) by ABORTING the
+        // handoff and sending RAISE — not EXIT_HANDOFF. Tear the card down BEFORE
+        // flipping to `up` so the page-scope state is restored (scrim
+        // pointer-events re-armed, handoffScope reset to 'field', capture-block
+        // re-locked). teardownHandoffCard() is idempotent for the non-handoff case.
+        if (phase === 'handoff') teardownHandoffCard();
         phase = 'up';
         buildHost();
         setLabel(cmd.label);

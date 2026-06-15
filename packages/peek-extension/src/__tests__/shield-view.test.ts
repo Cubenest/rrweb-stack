@@ -361,4 +361,27 @@ describe('shield view — page-scope handoff (Part 2)', () => {
     (document.getElementById('pb2') as HTMLButtonElement).dispatchEvent(click);
     expect(click.defaultPrevented).toBe(true);
   });
+
+  // FIX 1 (Part 2): the controller re-raises during a pending handoff (reconcile
+  // after SW eviction / host reconnect) by ABORTING the handoff and sending
+  // RAISE — not EXIT_HANDOFF. A RAISE arriving while a page-scope card is up must
+  // tear down the card and restore the page-scope state (scrim pointer-events,
+  // handoffScope) so the page is re-locked, exactly as EXIT_HANDOFF does.
+  it('RAISE during a page-scope handoff tears down the card + restores the lockout', () => {
+    document.body.insertAdjacentHTML('beforeend', '<button id="pb3">x</button>');
+    hv.apply({ kind: 'RAISE', generation: 1, label: null });
+    hv.apply({ kind: 'ENTER_HANDOFF', generation: 2, prompt: 'p', framing: 'f', scope: 'page' });
+    expect(hv.__test?.handoffCard()).not.toBeNull();
+    // Re-raise (controller #raise aborts the handoff and sends RAISE).
+    hv.apply({ kind: 'RAISE', generation: 3, label: null });
+    // Card is gone, phase is back to plain up.
+    expect(hv.__test?.handoffCard()).toBeNull();
+    expect(hostEl()?.getAttribute('data-peek-shield-phase')).toBe('up');
+    // No page-scope card left in the (closed) shadow — observable via the seam.
+    expect(hv.__test?.phase()).toBe('up');
+    // Lockout restored: a real (trusted) page click is BLOCKED again.
+    const click = markTrusted(new MouseEvent('click', { bubbles: true, cancelable: true }));
+    (document.getElementById('pb3') as HTMLButtonElement).dispatchEvent(click);
+    expect(click.defaultPrevented).toBe(true);
+  });
 });
