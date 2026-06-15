@@ -3,8 +3,8 @@ title: "Let an AI agent assist a job application while you supervise"
 lede: "I want the agent to fill the boring parts of an application from my résumé — I review every step, I do the final submit myself, and I can stop it instantly."
 description: "Use peek's Level-4 control shield + input handoff so an MCP agent fills application forms from your résumé under a visible shield and hands you the rest."
 type: hero
-status: draft
-publishedAt: 2026-06-20
+status: published
+publishedAt: 2026-06-15
 integrations: [claude-code, cursor, security]
 relatedRecipes: [use-peek-with-per-action-approval, security-review-flow-with-ai-agent, generate-playwright-repro-from-real-browser-session]
 ---
