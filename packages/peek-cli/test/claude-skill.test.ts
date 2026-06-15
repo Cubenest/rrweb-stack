@@ -1,3 +1,4 @@
+import { dirname, join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { type SkillIO, claudeSkillTargetPath, installSkill } from '../src/lib/claude-skill.js';
 
@@ -52,11 +53,15 @@ function makeIO(
 
 describe('claudeSkillTargetPath', () => {
   it('resolves to ~/.claude/skills/peek/SKILL.md', () => {
-    expect(claudeSkillTargetPath('/home/dev')).toBe('/home/dev/.claude/skills/peek/SKILL.md');
+    expect(claudeSkillTargetPath('/home/dev')).toBe(
+      join('/home/dev', '.claude', 'skills', 'peek', 'SKILL.md'),
+    );
   });
 
   it('handles a custom home dir', () => {
-    expect(claudeSkillTargetPath('/Users/alice')).toBe('/Users/alice/.claude/skills/peek/SKILL.md');
+    expect(claudeSkillTargetPath('/Users/alice')).toBe(
+      join('/Users/alice', '.claude', 'skills', 'peek', 'SKILL.md'),
+    );
   });
 });
 
@@ -69,7 +74,7 @@ describe('installSkill', () => {
       expect(result.target).toBe(claudeSkillTargetPath(HOME));
     }
     expect(files.get(claudeSkillTargetPath(HOME))).toBe(SKILL_CONTENT);
-    expect(dirs.has('/home/dev/.claude/skills/peek')).toBe(true);
+    expect(dirs.has(dirname(claudeSkillTargetPath(HOME)))).toBe(true);
   });
 
   it('returns unchanged when the on-disk skill matches the source byte-for-byte', () => {
