@@ -281,6 +281,27 @@ describe('ShieldController — intent + scope (Part 2)', () => {
     const enter = h.commands.find((x) => x.cmd.kind === 'ENTER_HANDOFF');
     expect((enter?.cmd as { scope?: string }).scope).toBe('page');
   });
+  it('refreshes the banner label on handoff exit (set_intent during handoff is not stale)', async () => {
+    // FIX 2 (Part 2): a set_intent issued DURING a handoff updates the
+    // controller's intentLabel, but the view drops LABEL while phase==='handoff'
+    // (its LABEL case only applies while up). On resume, EXIT_HANDOFF flips the
+    // view back to up but the banner still shows the pre-handoff intent unless
+    // the controller re-pushes the label. #settleHandoff must re-push it.
+    const h = harness();
+    h.c.onLevelChanged(1, 'https://a.test', 4);
+    const p = h.c.enterHandoff(1, { prompt: 'x', framing: 'f', readBack: false, timeoutMs: 1000 });
+    h.c.onSetIntent(1, 'Step 3/4'); // issued during the handoff
+    h.commands.length = 0;
+    h.c.onUserResume(1);
+    await expect(p).resolves.toMatchObject({ resumed: true });
+    const exitIdx = h.commands.findIndex((x) => x.cmd.kind === 'EXIT_HANDOFF');
+    expect(exitIdx).toBeGreaterThanOrEqual(0);
+    const labelsAfterExit = h.commands
+      .slice(exitIdx)
+      .filter((x) => x.cmd.kind === 'LABEL')
+      .map((x) => (x.cmd as { label: string | null }).label);
+    expect(labelsAfterExit.at(-1)).toBe('Step 3/4');
+  });
   it('intentLabel is cleared on LOWER', () => {
     const h = harness();
     h.c.onLevelChanged(1, 'https://a.test', 4);

@@ -269,6 +269,11 @@ export class ShieldController {
     if (s.phase === 'handoff') {
       s.phase = 'up';
       this.#deps.commandView(tabId, { kind: 'EXIT_HANDOFF', generation: ++this.#generation });
+      // A set_intent issued DURING the handoff updated `intentLabel`, but the view
+      // drops LABEL while in handoff (its LABEL case only applies while up). Now
+      // that we're back to `up`, re-push the effective label so the banner shows
+      // the current intent rather than the stale pre-handoff one.
+      this.#pushLabel(tabId, s);
     }
     rec.resolve(result);
   }
