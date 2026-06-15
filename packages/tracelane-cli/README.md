@@ -2,9 +2,9 @@
 
 # @tracelane/cli
 
-> The reporter for your WebdriverIO tests — Playwright and Cypress on the roadmap. Self-contained HTML for every run — replay failures, audit successes, attach to any bug tracker. No SaaS, no dashboard, no signup.
+> The reporter for your WebdriverIO and Playwright tests — Cypress on the roadmap. Self-contained HTML for every run — replay failures, audit successes, attach to any bug tracker. No SaaS, no dashboard, no signup.
 
-One command to wire tracelane into your WebdriverIO project. Detects your runner + package manager, installs `@tracelane/wdio`, edits `wdio.conf.ts`, creates `tracelane-reports/`, ignores it in git. Idempotent and dry-runnable.
+One command to wire tracelane into your WebdriverIO or Playwright project. Detects your runner + package manager, installs the right adapter (`@tracelane/wdio` / `@tracelane/playwright`), edits the runner config in place, creates `tracelane-reports/`, ignores it in git. Idempotent and dry-runnable.
 
 [![npm](https://img.shields.io/npm/v/@tracelane/cli.svg)](https://www.npmjs.com/package/@tracelane/cli)
 [![downloads](https://img.shields.io/npm/dw/@tracelane/cli.svg)](https://www.npmjs.com/package/@tracelane/cli)
@@ -23,14 +23,25 @@ npx @tracelane/cli init
 
 That's it. `npx @tracelane/cli init` does four things:
 
-1. Detects WebdriverIO from `wdio.conf.{ts,js,mjs,cjs}` and your package manager from your lockfile.
-2. Runs the package manager's dev-add for `@tracelane/wdio` (`pnpm add -D` / `yarn add -D` / `npm install --save-dev` / `bun add -d`).
-3. Edits `wdio.conf.ts` in place: adds the `TraceLaneService` import and inserts the service tuple into the `services:` array.
+1. Detects your runner — WebdriverIO from `wdio.conf.{ts,js,mjs,cjs}` or Playwright from `playwright.config.{ts,js,mjs,cjs}` — and your package manager from your lockfile.
+2. Runs the package manager's dev-add for the matching adapter — `@tracelane/wdio` or `@tracelane/playwright` (`pnpm add -D` / `yarn add -D` / `npm install --save-dev` / `bun add -d`).
+3. Edits the runner config in place:
+   - **WebdriverIO** — adds the `TraceLaneService` import and inserts the service tuple into the `services:` array.
+   - **Playwright** — registers the `['@tracelane/playwright', { mode: 'failed' }]` entry in the `reporter` array.
 4. Creates `./tracelane-reports/` and appends `tracelane-reports/` to `.gitignore`.
 
-Run your tests. On a failing Chrome test you get `./tracelane-reports/<spec>--<title>.html` — open it in any browser, replay the run with [rrweb-player](https://www.rrweb.io), inspect console + failed-network panels, attach to any bug tracker.
+Run your tests. On a failing test you get a self-contained `./tracelane-reports/…html` — open it in any browser, replay the run with [rrweb](https://www.rrweb.io), inspect console + failed-network panels, attach to any bug tracker.
 
-See the [@tracelane/wdio README](https://github.com/Cubenest/rrweb-stack/tree/main/packages/tracelane-wdio) for the full options reference.
+> **Playwright one-time follow-up.** The Playwright recording is driven by tracelane's test **fixture**, and the CLI can't safely rewrite every spec file. After `init`, change your spec imports yourself (recording is then automatic — nothing per-test):
+>
+> ```diff
+> - import { test, expect } from '@playwright/test';
+> + import { test, expect } from '@tracelane/playwright/fixture';
+> ```
+>
+> `init` prints this reminder when it finishes.
+
+See the [@tracelane/wdio README](https://github.com/Cubenest/rrweb-stack/tree/main/packages/tracelane-wdio) and the [@tracelane/playwright README](https://github.com/Cubenest/rrweb-stack/tree/main/packages/tracelane-playwright) for the full options reference.
 
 ## Usage
 
@@ -43,7 +54,7 @@ Options:
   --dry-run            Print what would happen; change nothing.
   --yes, -y            Skip the "about to do X, Y, Z - continue?" prompt.
   --skip-install       Don't run the package-manager install command.
-                       Useful if you have @tracelane/wdio already.
+                       Useful if you already have the adapter installed.
   --help, -h           Show usage.
 ```
 
@@ -51,20 +62,21 @@ Options:
 
 ## What this is NOT
 
-- Not a test runner. tracelane wires itself **into** WebdriverIO; you keep using `npx wdio run wdio.conf.ts` (or whatever runner you have today).
+- Not a test runner. tracelane wires itself **into** WebdriverIO / Playwright; you keep using `npx wdio run wdio.conf.ts` or `npx playwright test`.
 - Not a SaaS or cloud uploader. The artifact is a single HTML file on your filesystem.
 - Not coupled to the GitHub repo. The CLI only reads + writes files in the directory you ran it from.
 
-## Playwright and Cypress
+## Cypress
 
-Detection works, but the v0.1 CLI exits 0 with a "coming Q3/Q4 2026" message for these. The integration packages (`@tracelane/playwright`, `@tracelane/cypress`) aren't published yet — when they are, a future bump to `@tracelane/cli` will add the wiring. Progress is [tracked on the issues board](https://github.com/Cubenest/rrweb-stack/issues):
+Cypress detection works, but the CLI exits 0 with a "not yet supported" message — the `@tracelane/cypress` adapter hasn't been published. When it is, a future bump to `@tracelane/cli` will add the wiring. Progress is [tracked on the issues board](https://github.com/Cubenest/rrweb-stack/issues).
 
-- Playwright — target Q3 2026
-- Cypress — target Q4 2026
+If you have a `wdio.conf.*` and a `playwright.config.*` (and/or a `cypress.config.*`) side by side, detection picks the most-mature match in priority order WDIO > Playwright > Cypress — pass `--runner playwright` (etc.) to override.
 
-If you have a `wdio.conf.*` alongside a Playwright/Cypress conf, the WDIO path wins by default — pass `--runner playwright` or `--runner cypress` to override (it'll still print the coming-soon message).
+## How the config edit works (and what to do if it fails)
 
-## How the conf edit works (and what to do if it fails)
+For **Playwright**, the editor registers `['@tracelane/playwright', { mode: 'failed' }]` in the `reporter` array of your `playwright.config.*` — creating the array if there isn't one, appending if there is, idempotent on re-run. It does **not** touch your spec files: the second half of the Playwright wiring (swapping the test import to `@tracelane/playwright/fixture`) is a one-time manual step `init` reminds you to do.
+
+For **WebdriverIO**, the editor uses string-based regex to:
 
 The editor uses string-based regex to:
 

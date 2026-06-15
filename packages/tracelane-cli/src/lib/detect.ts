@@ -6,13 +6,13 @@
 //
 // Runner detection looks ONLY at the project root, not recursively — a
 // wdio.conf inside node_modules is not the user's project. Priority order
-// when multiple match is WDIO > Playwright > Cypress (WDIO is the only path
-// the v0.1 CLI fully wires).
+// when multiple match is WDIO > Playwright > Cypress (both WDIO and Playwright
+// are fully wired; Cypress isn't supported yet).
 
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 
-/** The test runners tracelane recognises. Only WDIO is fully wired in v0.1. */
+/** The test runners tracelane recognises. WDIO + Playwright are fully wired. */
 export type Runner = 'wdio' | 'playwright' | 'cypress';
 
 /** The package managers tracelane recognises (lockfile-driven detection). */
@@ -23,10 +23,10 @@ interface RunnerSpec {
   readonly configFiles: readonly string[];
 }
 
-// Priority order: WDIO first because it's the only runner the CLI can wire
-// end-to-end today. Playwright + Cypress detection drives a no-op "support
-// coming Q3/Q4 2026" branch — they're listed so a user with both a Playwright
-// and a Cypress config still gets routed to the more-mature path.
+// Priority order: WDIO first, then Playwright (both are fully wired by the
+// CLI), then Cypress (detected, but not yet supported — the init command
+// prints a clear "not yet supported" message). Listing all three means a user
+// with multiple configs is routed to the most-mature matching path.
 const RUNNER_SPECS: readonly RunnerSpec[] = [
   {
     runner: 'wdio',
@@ -163,15 +163,17 @@ export function detectPackageManager(
 }
 
 /**
- * Build the package-manager install command for adding `@tracelane/wdio` as
- * a devDependency. Returned as `[program, ...args]` for `spawnSync`, NOT a
- * single shell string — `sh -c` is avoided to dodge injection on Windows and
- * paths-with-spaces. Each manager has its own dev-flag spelling:
+ * Build the package-manager install command for adding a tracelane adapter as
+ * a devDependency. `pkg` defaults to `@tracelane/wdio` but callers pass the
+ * runner-specific package (e.g. `@tracelane/playwright`). Returned as
+ * `[program, ...args]` for `spawnSync`, NOT a single shell string — `sh -c` is
+ * avoided to dodge injection on Windows and paths-with-spaces. Each manager
+ * has its own dev-flag spelling:
  *
- *   pnpm add -D @tracelane/wdio
- *   yarn add -D @tracelane/wdio
- *   npm install --save-dev @tracelane/wdio
- *   bun add -d @tracelane/wdio
+ *   pnpm add -D <pkg>
+ *   yarn add -D <pkg>
+ *   npm install --save-dev <pkg>
+ *   bun add -d <pkg>
  */
 export function installCommand(
   manager: PackageManager,

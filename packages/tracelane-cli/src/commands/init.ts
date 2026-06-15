@@ -6,8 +6,12 @@
 //   2. Detect package manager from lockfile presence.
 //   3. For WDIO: ask, then install @tracelane/wdio + edit conf + mkdir
 //      ./tracelane-reports/ + append to .gitignore.
-//   4. For Playwright/Cypress: print "support coming Q3/Q4 2026" + a tracking
-//      issue link, install nothing, exit 0.
+//   4. For Playwright: ask, then install @tracelane/playwright + register the
+//      reporter in playwright.config + mkdir ./tracelane-reports/ + append to
+//      .gitignore + print the fixture-import follow-up the user must apply by
+//      hand (the CLI can't safely rewrite every spec file).
+//   5. For Cypress: print "not yet supported" + a tracking issue link, install
+//      nothing, exit 0 (the @tracelane/cypress adapter isn't published yet).
 //
 // Side effects (mkdirSync, writeFileSync, the package-manager spawn) are
 // gated behind --dry-run and an interactive confirm prompt (suppressed by
@@ -35,8 +39,19 @@ import {
   installCommand,
 } from '../lib/detect.js';
 import { hasTracelaneEntry, mergeGitignore } from '../lib/gitignore.js';
+import {
+  FIXTURE_IMPORT_FOLLOWUP,
+  MANUAL_SNIPPET as PLAYWRIGHT_MANUAL_SNIPPET,
+  applyPlaywrightEdit,
+} from '../lib/playwright-editor.js';
 import { confirm } from '../lib/prompt.js';
 import { MANUAL_SNIPPET, applyWdioEdit } from '../lib/wdio-editor.js';
+
+/** The npm package that provides each runner's tracelane adapter. */
+const RUNNER_PACKAGE: Record<'wdio' | 'playwright', string> = {
+  wdio: '@tracelane/wdio',
+  playwright: '@tracelane/playwright',
+};
 
 /** Issues board for tracking the not-yet-shipped Playwright/Cypress paths. */
 const ISSUES_BOARD = 'https://github.com/Cubenest/rrweb-stack/issues';
@@ -95,19 +110,22 @@ interface PlannedStep {
 function describeSteps(
   detected: DetectedRunner,
   pm: DetectedPackageManager,
-  options: { skipInstall: boolean; gitignoreExists: boolean },
+  options: { skipInstall: boolean; gitignoreExists: boolean; pkg: string },
 ): PlannedStep[] {
   const steps: PlannedStep[] = [];
   let i = 1;
   if (!options.skipInstall) {
     steps.push({
       index: i++,
-      description: commandString(installCommand(pm.manager)),
+      description: commandString(installCommand(pm.manager, options.pkg)),
     });
   }
   steps.push({
     index: i++,
-    description: `Edit ${basename(detected.configPath)} to register the Service`,
+    description:
+      detected.runner === 'playwright'
+        ? `Edit ${basename(detected.configPath)} to register the tracelane reporter`
+        : `Edit ${basename(detected.configPath)} to register the Service`,
   });
   steps.push({ index: i++, description: 'Create ./tracelane-reports/' });
   steps.push({
@@ -125,25 +143,25 @@ function basename(p: string): string {
 }
 
 /**
- * Print the not-yet-supported message for Playwright / Cypress. Exits 0
- * (no error — the user has a valid project, we just don't have wiring yet).
+ * Print the not-yet-supported message for Cypress. Exits 0 (no error — the
+ * user has a valid project, the @tracelane/cypress adapter just isn't published
+ * yet, so there's nothing to wire).
  */
-function printComingSoon(
+function printCypressUnsupported(
   detected: DetectedRunner,
   stdout: NodeJS.WritableStream | undefined,
 ): number {
-  const runnerLabel = detected.runner === 'playwright' ? 'Playwright' : 'Cypress';
-  const target = detected.runner === 'playwright' ? 'Q3 2026' : 'Q4 2026';
   write(
     stdout,
     [
-      `tracelane init - detected ${runnerLabel} project (${basename(detected.configPath)}).`,
+      `tracelane init - detected Cypress project (${basename(detected.configPath)}).`,
       '',
-      `tracelane ${runnerLabel} support is in development; target ship ${target}.`,
+      'Cypress is not yet supported: the @tracelane/cypress adapter has not been',
+      'published. WebdriverIO and Playwright are wired today.',
       `Track progress: ${ISSUES_BOARD}`,
       '',
-      'To use tracelane today, add a WebdriverIO suite, or pass --runner wdio',
-      'if your project already has a wdio.conf.*.',
+      'To use tracelane now, run it against a WebdriverIO or Playwright suite',
+      '(pass --runner wdio / --runner playwright if your project has both).',
       '',
     ].join('\n'),
   );
@@ -172,9 +190,9 @@ export async function runInitProgrammatic(opts: InitOptions): Promise<number> {
     // editor has something to point at.
     const configPath = findRunnerConfig(cwd, opts.runner);
     if (configPath === undefined) {
-      // For WDIO we need a config file. For Playwright/Cypress the no-op
-      // print doesn't strictly need one — but the user asked us to pretend,
-      // so be explicit.
+      // WDIO + Playwright need a config file to edit; Cypress needs one to
+      // confirm the project shape before printing the not-yet-supported note.
+      // Either way, a missing config for the forced runner is a hard error.
       writeErr(
         stderr,
         `tracelane init: --runner ${opts.runner} was passed, but no matching config file found in ${cwd}.\n`,
@@ -195,11 +213,17 @@ export async function runInitProgrammatic(opts: InitOptions): Promise<number> {
 
   // ---- Runner-specific routing ------------------------------------------
 
-  if (detected.runner !== 'wdio') {
-    return printComingSoon(detected, stdout);
+  // Cypress is detected but not yet wired (adapter unpublished).
+  if (detected.runner === 'cypress') {
+    return printCypressUnsupported(detected, stdout);
   }
 
-  // ---- WDIO happy path --------------------------------------------------
+  // WDIO + Playwright share the same scaffold flow; the per-runner details
+  // (install package, config editor, success CTA, fixture follow-up) are
+  // captured below.
+  const runner = detected.runner;
+  const pkg = RUNNER_PACKAGE[runner];
+  const runnerLabel = runner === 'playwright' ? 'Playwright' : 'WebdriverIO';
 
   const pm = detectPackageManager(cwd);
   const gitignorePath = join(cwd, '.gitignore');
@@ -208,7 +232,7 @@ export async function runInitProgrammatic(opts: InitOptions): Promise<number> {
 
   write(
     stdout,
-    `tracelane init - detected WebdriverIO project (${basename(detected.configPath)}) using ${pm.manager}.\n\n`,
+    `tracelane init - detected ${runnerLabel} project (${basename(detected.configPath)}) using ${pm.manager}.\n\n`,
   );
 
   if (pm.multipleLockfiles) {
@@ -221,7 +245,7 @@ export async function runInitProgrammatic(opts: InitOptions): Promise<number> {
     write(stdout, 'Note: no lockfile detected; defaulting to npm.\n\n');
   }
 
-  const steps = describeSteps(detected, pm, { skipInstall, gitignoreExists });
+  const steps = describeSteps(detected, pm, { skipInstall, gitignoreExists, pkg });
   write(stdout, opts.dryRun ? 'DRY RUN — would do:\n' : 'About to:\n');
   for (const s of steps) {
     write(stdout, `  ${s.index}. ${opts.dryRun ? 'WOULD: ' : ''}${s.description}\n`);
@@ -230,8 +254,14 @@ export async function runInitProgrammatic(opts: InitOptions): Promise<number> {
 
   if (opts.dryRun) {
     // Show the conf-edit preview without writing.
-    const preview = previewConfEdit(detected.configPath);
+    const preview =
+      runner === 'playwright'
+        ? previewPlaywrightEdit(detected.configPath)
+        : previewConfEdit(detected.configPath);
     if (preview !== undefined) write(stdout, preview);
+    if (runner === 'playwright') {
+      write(stdout, `Manual follow-up after init:\n${FIXTURE_IMPORT_FOLLOWUP}\n\n`);
+    }
     write(stdout, 'Dry run complete; no files changed.\n');
     return 0;
   }
@@ -247,7 +277,7 @@ export async function runInitProgrammatic(opts: InitOptions): Promise<number> {
   // ---- Execute the steps ------------------------------------------------
 
   if (!skipInstall) {
-    const cmd = installCommand(pm.manager);
+    const cmd = installCommand(pm.manager, pkg);
     const [program, ...args] = cmd;
     if (program === undefined) {
       writeErr(stderr, 'tracelane init: empty install command (internal error).\n');
@@ -262,17 +292,20 @@ export async function runInitProgrammatic(opts: InitOptions): Promise<number> {
     if (result.status !== 0) {
       writeErr(
         stderr,
-        `tracelane init: install exited with code ${result.status}. Re-run with --skip-install once you've added @tracelane/wdio manually.\n`,
+        `tracelane init: install exited with code ${result.status}. Re-run with --skip-install once you've added ${pkg} manually.\n`,
       );
       return 1;
     }
     write(stdout, '\n');
   }
 
-  // Edit the wdio.conf.* in place. Back-out path keeps a one-shot .backup
-  // next to the conf so the user can restore on their own if anything
+  // Edit the runner config in place. Back-out path keeps a one-shot .backup
+  // next to the config so the user can restore on their own if anything
   // looks wrong after the run.
-  const editOutcome = editWdioConfOnDisk(detected.configPath);
+  const editOutcome =
+    runner === 'playwright'
+      ? editPlaywrightConfigOnDisk(detected.configPath)
+      : editWdioConfOnDisk(detected.configPath);
   if (editOutcome.kind === 'manual') {
     write(
       stdout,
@@ -301,7 +334,9 @@ export async function runInitProgrammatic(opts: InitOptions): Promise<number> {
   } else if (editOutcome.kind === 'alreadyConfigured') {
     write(
       stdout,
-      `* ${basename(detected.configPath)} already wires TraceLaneService; left it alone.\n`,
+      runner === 'playwright'
+        ? `* ${basename(detected.configPath)} already registers the @tracelane/playwright reporter; left it alone.\n`
+        : `* ${basename(detected.configPath)} already wires TraceLaneService; left it alone.\n`,
     );
   } else {
     write(stdout, `+ Edited ${basename(detected.configPath)}.\n`);
@@ -334,19 +369,44 @@ export async function runInitProgrammatic(opts: InitOptions): Promise<number> {
   // copy-paste-ready command so the user knows exactly what to run, with
   // the conf filename matching what we detected (handles .js/.mjs/.cjs).
   const ok = process.stdout.isTTY ? '✔' : 'OK';
-  write(
-    stdout,
-    [
-      '',
-      `${ok} done.`,
-      `Run: npx wdio run ${basename(detected.configPath)}`,
-      'On a failing Chrome test you get',
-      './tracelane-reports/<spec>--<title>.html — open it in any browser.',
-      '',
-      'Docs: https://github.com/Cubenest/rrweb-stack/tree/main/packages/tracelane-wdio',
-      '',
-    ].join('\n'),
-  );
+  if (runner === 'playwright') {
+    // Playwright needs a SECOND, manual edit the CLI can't do safely: every
+    // spec must import tracelane's fixture instead of @playwright/test. Print
+    // it prominently so the user doesn't miss it.
+    write(
+      stdout,
+      [
+        '',
+        `${ok} reporter registered.`,
+        '',
+        "ONE MANUAL STEP LEFT — the recording is driven by tracelane's test fixture,",
+        "which the CLI can't safely add to your spec files for you:",
+        '',
+        ...FIXTURE_IMPORT_FOLLOWUP.split('\n').map((l) => `  ${l}`),
+        '',
+        'Then run your suite: npx playwright test',
+        'On a failing test you get',
+        './tracelane-reports/<spec>--<title>--<project>-<ts>.html — open it in any browser.',
+        '',
+        'Docs: https://github.com/Cubenest/rrweb-stack/tree/main/packages/tracelane-playwright',
+        '',
+      ].join('\n'),
+    );
+  } else {
+    write(
+      stdout,
+      [
+        '',
+        `${ok} done.`,
+        `Run: npx wdio run ${basename(detected.configPath)}`,
+        'On a failing Chrome test you get',
+        './tracelane-reports/<spec>--<title>.html — open it in any browser.',
+        '',
+        'Docs: https://github.com/Cubenest/rrweb-stack/tree/main/packages/tracelane-wdio',
+        '',
+      ].join('\n'),
+    );
+  }
 
   return 0;
 }
@@ -436,8 +496,65 @@ function previewConfEdit(configPath: string): string | undefined {
   return `Conf edit preview (${basename(configPath)}):\n${importLine}${entryLine}\n`;
 }
 
+/**
+ * Playwright analogue of `editWdioConfOnDisk`. Reads the playwright.config,
+ * registers the tracelane reporter, and on success writes the new content
+ * back with the same backup/sanity-check/restore discipline. On a clean
+ * back-out (unrecognised config shape) the file on disk is untouched.
+ */
+function editPlaywrightConfigOnDisk(configPath: string): EditOutcomeOnDisk {
+  const original = readFileSync(configPath, 'utf8');
+  const result = applyPlaywrightEdit(original);
+  if (!result.ok) {
+    return { kind: 'manual', reason: result.reason, snippet: result.manualSnippet };
+  }
+  if (result.alreadyConfigured) {
+    return { kind: 'alreadyConfigured' };
+  }
+  const backupPath = `${configPath}.tracelane-init.backup`;
+  writeFileSync(backupPath, original, 'utf8');
+  writeFileSync(configPath, result.source, 'utf8');
+  const verifyContent = readFileSync(configPath, 'utf8');
+  if (verifyContent !== result.source) {
+    renameSync(backupPath, configPath);
+    return {
+      kind: 'restored',
+      reason: 'post-write read-back did not match expected content',
+      snippet: PLAYWRIGHT_MANUAL_SNIPPET,
+      backupPath,
+    };
+  }
+  try {
+    unlinkSync(backupPath);
+  } catch {
+    // Non-fatal; the leftover .backup is harmless.
+  }
+  return { kind: 'edited' };
+}
+
+/** Build the WOULD-BE preview shown by --dry-run for a Playwright config. */
+function previewPlaywrightEdit(configPath: string): string | undefined {
+  let original: string;
+  try {
+    original = readFileSync(configPath, 'utf8');
+  } catch {
+    return undefined;
+  }
+  const result = applyPlaywrightEdit(original);
+  if (!result.ok) {
+    return `Would back out of config edit: ${result.reason}\n  Manual snippet:\n${result.manualSnippet
+      .split('\n')
+      .map((l) => `    ${l}`)
+      .join('\n')}\n\n`;
+  }
+  if (result.alreadyConfigured) {
+    return `Would leave ${basename(configPath)} alone (already registers the @tracelane/playwright reporter).\n\n`;
+  }
+  return `Config edit preview (${basename(configPath)}):\n+ reporter: [..., ['@tracelane/playwright', { mode: 'failed' }]]\n\n`;
+}
+
 /** Help text for `tracelane init --help`. */
-export const INIT_HELP = `tracelane init - wire @tracelane/wdio into the project in this directory.
+export const INIT_HELP = `tracelane init - wire tracelane into the test project in this directory.
 
 Usage: npx @tracelane/cli init [options]   (one-off; recommended)
        tracelane init [options]            (after 'npm i -D @tracelane/cli')
@@ -448,18 +565,30 @@ Options:
   --dry-run            Print what would happen; change nothing.
   --yes, -y            Skip the "about to do X, Y, Z - continue?" prompt.
   --skip-install       Don't run the package-manager install command.
-                       Useful if you have @tracelane/wdio already.
+                       Useful if you already have the adapter installed.
   --help, -h           Show this help.
 
-The CLI scans the current working directory for a wdio.conf.{ts,js,mjs,cjs},
-adds @tracelane/wdio as a devDependency via the detected package manager
-(pnpm/yarn/npm/bun), inserts the import + service tuple into the conf, creates
-./tracelane-reports/, and appends to .gitignore. Idempotent: re-running on an
-already-wired project is a no-op.
+The CLI scans the current working directory for a runner config:
 
-Auto-edit limitation: the conf editor uses string regex to insert into the
-services array. If it can't recognise the array shape it BACKS OUT cleanly
-and prints the snippet to paste manually - it will NEVER corrupt your conf.
+  WebdriverIO   wdio.conf.{ts,js,mjs,cjs}        adds @tracelane/wdio,
+                                                 inserts the service tuple
+  Playwright    playwright.config.{ts,js,mjs,cjs}  adds @tracelane/playwright,
+                                                 registers the reporter
+  Cypress       cypress.config.*                 detected, not yet supported
+
+It adds the adapter as a devDependency via the detected package manager
+(pnpm/yarn/npm/bun), edits the config, creates ./tracelane-reports/, and
+appends to .gitignore. Idempotent: re-running on an already-wired project is a
+no-op.
+
+Playwright also needs a one-time manual step the CLI can't do for you: change
+your spec imports to tracelane's fixture --
+  import { test, expect } from '@tracelane/playwright/fixture';
+init prints this reminder after it finishes.
+
+Auto-edit limitation: the editors use string regex to insert into the
+services / reporter array. If they can't recognise the shape they BACK OUT
+cleanly and print the snippet to paste manually - they NEVER corrupt your config.
 `;
 
 /**
