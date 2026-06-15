@@ -71,7 +71,7 @@ On the next failed run, open the run's **Artifacts** → download `tracelane-rep
 
 ## Why this works
 
-The fixture records the run with rrweb (DOM + console + failed-network via CDP on Chromium) and, on failure, writes one self-contained HTML file per test into `outDir`. `actions/upload-artifact` ships those files as-is — no replay server, no cloud bucket, no `npx playwright show-trace`.
+The fixture records the run with rrweb (DOM + console + failed-network captured in-page on every browser, enriched by CDP on Chromium) and, on failure, writes one self-contained HTML file per test into `outDir`. `actions/upload-artifact` ships those files as-is — no replay server, no cloud bucket, no `npx playwright show-trace`.
 
 ## Next steps
 
