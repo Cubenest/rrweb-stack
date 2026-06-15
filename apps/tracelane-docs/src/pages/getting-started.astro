@@ -100,8 +100,8 @@ export const config: Options.Testrunner = {
   <h3>Browser &amp; framework support</h3>
   <ul>
     <li><strong>Mocha</strong>, <strong>Jasmine</strong>, <strong>Cucumber</strong> (via <code>beforeScenario</code>/<code>afterScenario</code>) &mdash; supported.</li>
-    <li><strong>Chrome / Chromium &ge; 116</strong>, <strong>Edge</strong> &mdash; rrweb + console + network (with a CDP-capable session).</li>
-    <li><strong>Firefox</strong>, <strong>Safari</strong> &mdash; rrweb + console. CDP is Chromium-only; tracelane degrades gracefully and still writes a report.</li>
+    <li><strong>Chrome / Chromium &ge; 116</strong>, <strong>Edge</strong> &mdash; rrweb + console + network. Network is captured in-page on every browser; on Chromium a CDP-capable session additionally enriches it with authoritative status + no-response failures.</li>
+    <li><strong>Firefox</strong>, <strong>Safari</strong>, cloud Selenium &mdash; rrweb + console + in-page network (the <code>rrweb/network@1</code> plugin needs no CDP). The CDP enrichment is the only Chromium-only extra; tracelane degrades gracefully and still writes a full report.</li>
   </ul>
 
   <h3>Verified install path</h3>
@@ -120,7 +120,14 @@ export const config: Options.Testrunner = {
 
   <h3>1. Install</h3>
   <p>In an existing Playwright project (<code>@playwright/test &ge; 1.40</code>):</p>
-  <pre><code>npm i -D @tracelane/playwright@0.1.0-alpha.2</code></pre>
+  <pre><code>npm i -D @tracelane/playwright</code></pre>
+  <div class="callout">
+    <strong>Shortcut:</strong> <code>npx @tracelane/cli init</code> detects your
+    Playwright project, installs <code>@tracelane/playwright</code>, and registers
+    the reporter in <code>playwright.config.*</code> for you. You still do step 3
+    (swap the spec import to the fixture) by hand &mdash; the CLI prints the exact
+    line to change. The manual steps below are the same thing done yourself.
+  </div>
 
   <h3>2. Register the reporter</h3>
   <p>Add the tracelane reporter to the <code>reporter</code> array in <code>playwright.config.ts</code>:</p>
@@ -150,9 +157,12 @@ export default defineConfig({
     Open it in any browser, fully offline &mdash; rrweb replay, console panel, and
     failed-network panel, no server required.
     <br /><br />
-    <strong>Notes:</strong> failed-network capture uses CDP and is Chromium-only
-    (degrades gracefully to rrweb + console on Firefox / WebKit); recording
-    continues across <code>page.goto</code> navigations; tracelane coexists with
+    <strong>Notes:</strong> network is captured in-page by the
+    <code>rrweb/network@1</code> plugin on <strong>every browser</strong>
+    (Chromium / Firefox / WebKit) &mdash; no CDP required; on Chromium tracelane
+    <em>additionally</em> uses CDP to enrich the panel with authoritative status
+    and true no-response failures. Recording continues across
+    <code>page.goto</code> navigations; tracelane coexists with
     Playwright&apos;s own <code>trace</code> option.
   </div>
 
