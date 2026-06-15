@@ -2,9 +2,9 @@
 // which normalizes them into the fully-resolved shape the session consumes.
 //
 // The option names mirror @tracelane/wdio (mode, outDir) and the env contract
-// mirrors @tracelane/core (TRACELANE_MODE) plus TRACELANE_OUT_DIR. MVP capture
-// surface is rrweb + console (always on) + failed-network (captureNetwork,
-// default on; Chromium-only at runtime — see playwright-session.ts).
+// mirrors @tracelane/core (TRACELANE_MODE) plus TRACELANE_OUT_DIR. Capture
+// surface is rrweb + console (always on) + network (captureNetwork, default on;
+// in-page on all browsers, plus Chromium CDP enrichment — see playwright-session.ts).
 
 import type { Mode } from '@tracelane/core';
 
@@ -62,10 +62,11 @@ function defaultEnv(): EnvLike {
  * overrides (env wins over config, matching @tracelane/core's resolveMode). An
  * invalid `TRACELANE_MODE` is ignored. `env` is injectable for testing.
  *
- * `TRACELANE_CAPTURE_NETWORK=false` (case-insensitive) disables CDP network
- * capture in the fixture. The reporter bridges the `captureNetwork` option to
- * this env var at startup (when not already set), so the fixture receives it.
- * An explicit env var always wins over the reporter option.
+ * `TRACELANE_CAPTURE_NETWORK=false` (case-insensitive) disables network capture
+ * in the fixture (both the in-page rrweb/network plugin and the Chromium CDP
+ * enrichment). The reporter bridges the `captureNetwork` option to this env var
+ * at startup (when not already set), so the fixture receives it. An explicit
+ * env var always wins over the reporter option.
  */
 export function resolveOptions(
   opts: TraceLaneOptions = {},

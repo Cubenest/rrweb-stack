@@ -85,7 +85,7 @@ export async function runStart(input: StartInput): Promise<StartedSession> {
     } catch {
       cdp = undefined; // no CDP; rrweb+console still work
       console.warn(
-        '[tracelane] could not open a CDP session; network capture unavailable, degrading to rrweb+console only.',
+        '[tracelane] could not open a CDP session; CDP network enrichment unavailable, continuing with in-page rrweb network capture.',
       );
     }
   }
@@ -122,7 +122,7 @@ export async function runStart(input: StartInput): Promise<StartedSession> {
       await cdp.detach().catch(() => {});
       cdp = undefined;
       console.warn(
-        '[tracelane] network capture unavailable (CDP); degrading to rrweb+console only.',
+        '[tracelane] CDP network enrichment unavailable; continuing with in-page rrweb network capture.',
       );
     }
   }
