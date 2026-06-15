@@ -16,6 +16,18 @@ export const INITIAL_BACKOFF_MS = 1_000;
 export const MAX_BACKOFF_MS = 60_000;
 
 /**
+ * How long a freshly-opened native port must stay connected before we trust it
+ * and clear the failed-reconnect counter. An unregistered host on Chrome
+ * returns a port that immediately fires `onDisconnect` ("host not found") — a
+ * disconnect-storm, not a synchronous throw. Resetting the counter the instant
+ * a port handle appears would zero it every storm cycle and the stall hint
+ * would never surface; so the reset is gated behind this short "did the
+ * connection hold?" window. Kept below {@link INITIAL_BACKOFF_MS} so a healthy
+ * host clears the counter well before the next scheduled reconnect.
+ */
+export const CONNECTION_HELD_MS = 750;
+
+/**
  * Consecutive failed reconnect attempts after which we treat the native host as
  * "stalled" — i.e. almost certainly never registered — rather than briefly
  * blipping. At 4 attempts the 1s→2s→4s schedule has elapsed ~7s, long past a
