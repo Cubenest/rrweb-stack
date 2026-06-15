@@ -16,7 +16,13 @@ export type ViewCommand = { generation: number } & (
   | { kind: 'RAISE'; label: string | null }
   | { kind: 'LABEL'; label: string | null }
   | { kind: 'LOWER' }
-  | { kind: 'ENTER_HANDOFF'; prompt: string; framing: string; selector?: string }
+  | {
+      kind: 'ENTER_HANDOFF';
+      prompt: string;
+      framing: string;
+      selector?: string;
+      scope?: 'field' | 'page';
+    }
   | { kind: 'EXIT_HANDOFF' }
 );
 
@@ -36,6 +42,7 @@ export function isViewCommand(msg: unknown): msg is ViewCommand {
     prompt?: unknown;
     framing?: unknown;
     selector?: unknown;
+    scope?: unknown;
   };
   if (typeof m.generation !== 'number') return false;
   if (m.kind === 'RAISE' || m.kind === 'LABEL') {
@@ -44,7 +51,9 @@ export function isViewCommand(msg: unknown): msg is ViewCommand {
   if (m.kind === 'LOWER' || m.kind === 'EXIT_HANDOFF') return true;
   if (m.kind === 'ENTER_HANDOFF') {
     if (typeof m.prompt !== 'string' || typeof m.framing !== 'string') return false;
-    return m.selector === undefined || typeof m.selector === 'string';
+    if (m.selector !== undefined && typeof m.selector !== 'string') return false;
+    if (m.scope !== undefined && m.scope !== 'field' && m.scope !== 'page') return false;
+    return true;
   }
   return false;
 }

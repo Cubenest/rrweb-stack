@@ -75,6 +75,36 @@ describe('isViewCommand — handoff commands (Plan B)', () => {
   });
 });
 
+describe('ENTER_HANDOFF scope (Part 2)', () => {
+  it('accepts ENTER_HANDOFF with scope page', () => {
+    expect(
+      isViewCommand({
+        kind: 'ENTER_HANDOFF',
+        generation: 1,
+        prompt: 'p',
+        framing: 'f',
+        scope: 'page',
+      }),
+    ).toBe(true);
+  });
+  it('accepts ENTER_HANDOFF without scope (defaults handled downstream)', () => {
+    expect(isViewCommand({ kind: 'ENTER_HANDOFF', generation: 1, prompt: 'p', framing: 'f' })).toBe(
+      true,
+    );
+  });
+  it('rejects an invalid scope', () => {
+    expect(
+      isViewCommand({
+        kind: 'ENTER_HANDOFF',
+        generation: 1,
+        prompt: 'p',
+        framing: 'f',
+        scope: 'x',
+      }),
+    ).toBe(false);
+  });
+});
+
 describe('isShieldInbound — shield.resume (Plan B)', () => {
   it('accepts shield.resume with and without a value', () => {
     expect(isShieldInbound({ type: 'shield.resume' })).toBe(true);
