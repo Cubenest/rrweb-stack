@@ -279,12 +279,15 @@ export interface ActionHandlerDeps {
    * otherwise dispatch to the Stop button. Optional; defaults to false.
    */
   isShieldActive?(tabId: number): boolean;
+  /** Part 2: set the agent's banner string (Level ≥4; fire-and-forget). */
+  onSetIntent?(tabId: number, text: string): void;
   /** Plan B: run the handoff (blocks until resume/timeout/stop). */
   enterHandoff?(input: {
     tabId: number;
     prompt: string;
     framing: string;
     selector?: string;
+    scope: 'field' | 'page';
     readBack: boolean;
     timeoutMs: number;
   }): Promise<HandoffResult>;
@@ -409,6 +412,23 @@ export async function handleActionRequest(
     });
   }
 
+  // ---- Intent banner (Part 2) -------------------------------------------
+  // A pure status update: the agent narrates what it's doing into the shield
+  // banner so the user can follow along. Auto-allowed at effective Level 4
+  // (fire-and-forget); no shield-active guard (unlike a handoff, no focus is
+  // taken). Routes around gate()/the destructive matcher entirely — it mutates
+  // nothing on the page.
+  if (request.action.type === 'set_intent') {
+    if (effectiveLevel < 4) {
+      return result(request, 'deny', 'denied', {
+        approver: 'user',
+        error: `set_intent requires Level 4 (level ${effectiveLevel})`,
+      });
+    }
+    deps.onSetIntent?.(tab.id, request.action.text);
+    return result(request, 'allow', 'ok', { approver: 'level-4-auto' });
+  }
+
   // ---- Input handoff (Plan B) -------------------------------------------
   // peek hands the keyboard back to the user for ONE editable, non-destructive
   // field (or a free-text prompt). Requires effective Level 4 AND the control
@@ -432,9 +452,15 @@ export async function handleActionRequest(
       });
     }
     const a = request.action;
+    const scope: 'field' | 'page' = a.scope ?? 'field';
     let readBack = a.readBack === true;
-    const selector: string | undefined = a.selector;
-    if (selector !== undefined) {
+    let selector: string | undefined = a.selector;
+    if (scope === 'page') {
+      // Page-scope is a blanket page takeover (CAPTCHAs, native widgets, final
+      // review) — no field, no read-back, no eligibility probe (design §4.2).
+      selector = undefined;
+      readBack = false;
+    } else if (selector !== undefined) {
       const elig = await deps.resolveHandoffEligibility?.({ tabId: tab.id, selector });
       const destructive = elig
         ? isDestructive(elig.destructiveSignals, {
@@ -463,6 +489,7 @@ export async function handleActionRequest(
       tabId: tab.id,
       prompt: a.prompt,
       framing: HANDOFF_FRAMING,
+      scope,
       ...(selector !== undefined ? { selector } : {}),
       readBack,
       // Clamp under the 5-min host-bridge timeout so the SW timer settles the

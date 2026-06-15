@@ -1080,6 +1080,106 @@ describe('handleActionRequest — request_user_input handoff (Plan B)', () => {
     expect(res.verdict).toBe('allow');
     expect(res.details).toMatchObject({ resumed: false, reason: 'stopped' });
   });
+
+  it('request_user_input passes scope through to enterHandoff (page-scope skips eligibility)', async () => {
+    // Part 2: page-scope is a blanket page takeover — no field, no selector, no
+    // read-back, no MAIN-world eligibility probe (design §4.2). The handler must
+    // forward scope:'page' to enterHandoff and skip resolveHandoffEligibility.
+    await enableOriginAtLevel('https://example.com', 4);
+    const ctx = makeDeps();
+    ctx.deps.isShieldActive = () => true;
+    let eligibilityCalls = 0;
+    ctx.deps.resolveHandoffEligibility = async () => {
+      eligibilityCalls += 1;
+      return undefined as never;
+    };
+    let gotScope: 'field' | 'page' | undefined;
+    let gotSelector: string | undefined;
+    let gotReadBack: boolean | undefined;
+    ctx.deps.enterHandoff = async (i) => {
+      gotScope = i.scope;
+      gotSelector = i.selector;
+      gotReadBack = i.readBack;
+      return { resumed: true };
+    };
+    // selector present, but page-scope must drop it + skip the eligibility probe.
+    const res = await handleActionRequest(
+      makeRequest({
+        action: {
+          type: 'request_user_input',
+          prompt: 'p',
+          scope: 'page',
+          selector: '#ignored',
+          readBack: true,
+        },
+      }),
+      ctx.deps,
+    );
+    expect(gotScope).toBe('page');
+    expect(gotSelector).toBeUndefined(); // page-scope: no field
+    expect(gotReadBack).toBe(false); // page-scope: no read-back
+    expect(eligibilityCalls).toBe(0); // page-scope skips eligibility
+    expect(res.verdict).toBe('allow');
+  });
+
+  it('request_user_input defaults to field scope when scope omitted', async () => {
+    await enableOriginAtLevel('https://example.com', 4);
+    const ctx = makeDeps();
+    ctx.deps.isShieldActive = () => true;
+    let gotScope: 'field' | 'page' | undefined;
+    ctx.deps.enterHandoff = async (i) => {
+      gotScope = i.scope;
+      return { resumed: true };
+    };
+    await handleActionRequest(
+      makeRequest({ action: { type: 'request_user_input', prompt: 'p' } }),
+      ctx.deps,
+    );
+    expect(gotScope).toBe('field');
+  });
+});
+
+describe('handleActionRequest — set_intent banner (Part 2)', () => {
+  it('set_intent at Level 4 → allow + fires onSetIntent; below 4 → deny', async () => {
+    await enableOriginAtLevel('https://example.com', 4);
+    const calls: Array<{ tabId: number; text: string }> = [];
+    const ctx = makeDeps();
+    ctx.deps.onSetIntent = (t, x) => calls.push({ tabId: t, text: x });
+    const ok = await handleActionRequest(
+      makeRequest({ action: { type: 'set_intent', text: 'Applying' } }),
+      ctx.deps,
+    );
+    expect(ok.verdict).toBe('allow');
+    expect(ok.approver).toBe('level-4-auto');
+    expect(calls).toEqual([{ tabId: 42, text: 'Applying' }]);
+
+    await enableOriginAtLevel('https://example.com', 3);
+    const ctx3 = makeDeps();
+    ctx3.deps.onSetIntent = () => {
+      throw new Error('should not fire below Level 4');
+    };
+    const denied = await handleActionRequest(
+      makeRequest({ action: { type: 'set_intent', text: 'x' } }),
+      ctx3.deps,
+    );
+    expect(denied.verdict).toBe('deny');
+  });
+
+  it('set_intent does not require the shield to be active', async () => {
+    // Unlike request_user_input, the intent banner is a pure status update — the
+    // shield-active guard does not apply. Level 4 alone allows it.
+    await enableOriginAtLevel('https://example.com', 4);
+    const calls: Array<{ tabId: number; text: string }> = [];
+    const ctx = makeDeps();
+    ctx.deps.isShieldActive = () => false;
+    ctx.deps.onSetIntent = (t, x) => calls.push({ tabId: t, text: x });
+    const res = await handleActionRequest(
+      makeRequest({ action: { type: 'set_intent', text: 'step 2/4' } }),
+      ctx.deps,
+    );
+    expect(res.verdict).toBe('allow');
+    expect(calls).toEqual([{ tabId: 42, text: 'step 2/4' }]);
+  });
 });
 
 describe('handleActionRequest — pre-conditions', () => {
