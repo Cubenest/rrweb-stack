@@ -341,6 +341,29 @@ describe('shield view — page-scope handoff (Part 2)', () => {
     expect((resume as { value?: string }).value).toBeUndefined();
   });
 
+  // FIX 3 (Part 2): Esc must remain a kill-switch even during a page-scope
+  // takeover — the recipe/Step-1 copy promises Esc stops the run, and
+  // Esc-as-abort is a strong safety affordance. Other trusted keys still pass
+  // through (full takeover).
+  it('page-scope: a trusted Esc emits shield.stop; a non-Esc key still passes', () => {
+    document.body.insertAdjacentHTML('beforeend', '<input id="pe">');
+    hv.apply({ kind: 'RAISE', generation: 1, label: null });
+    hv.apply({ kind: 'ENTER_HANDOFF', generation: 2, prompt: 'p', framing: 'f', scope: 'page' });
+    const pe = document.getElementById('pe') as HTMLInputElement;
+    const esc = markTrusted(
+      new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }),
+    );
+    pe.dispatchEvent(esc);
+    expect(sent.some((m) => m.type === 'shield.stop')).toBe(true);
+    expect(esc.defaultPrevented).toBe(true); // Esc is blocked (consumed as Stop)
+    // A non-Esc trusted key still falls through to the page (takeover preserved).
+    const a = markTrusted(
+      new KeyboardEvent('keydown', { key: 'a', bubbles: true, cancelable: true }),
+    );
+    pe.dispatchEvent(a);
+    expect(a.defaultPrevented).toBe(false);
+  });
+
   it('field-scope still blocks non-allowed page input (regression)', () => {
     document.body.insertAdjacentHTML('beforeend', '<input id="of"><input id="tf">');
     hv.apply({ kind: 'RAISE', generation: 1, label: null });

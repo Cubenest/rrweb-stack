@@ -214,20 +214,28 @@ export function createShieldView(deps: ShieldViewDeps): ShieldView {
 
   const onCapture = (e: Event): void => {
     if (phase === 'down' || !e.isTrusted) return; // peek's synthetic events pass
+    // Esc is a kill-switch in plain lockout AND during a page-scope takeover (the
+    // recipe/Step-1 copy promises Esc stops the run, and Esc-as-abort is a strong
+    // safety affordance). This carve-out runs BEFORE the page-scope full-takeover
+    // early-return below so Esc is consumed as Stop instead of falling through to
+    // the page. FIELD-scope handoff is excluded: there the user is typing into the
+    // unlocked field/card, so Esc must reach it as a native cancel (design §5).
+    if (
+      e.type === 'keydown' &&
+      (e as KeyboardEvent).key === 'Escape' &&
+      (phase === 'up' || (phase === 'handoff' && handoffScope === 'page'))
+    ) {
+      block(e);
+      deps.sendToSw({ type: 'shield.stop' });
+      return;
+    }
     // Page-scope handoff is a full takeover: the user drives the whole page
-    // (e.g. solving a CAPTCHA), so allow every trusted event through. The
-    // up-phase Esc/Tab handling below is unreachable here because those guard
-    // on `phase === 'up'`.
+    // (e.g. solving a CAPTCHA), so allow every OTHER trusted event through. (Esc
+    // is handled above; the up-phase Tab focus-trap below guards on
+    // `phase === 'up'` and so is unreachable here.)
     if (phase === 'handoff' && handoffScope === 'page') return;
     if (e.type === 'keydown') {
       const ke = e as KeyboardEvent;
-      // Esc is a Stop shortcut ONLY in plain lockout. During handoff the user is
-      // typing into the unlocked field/card, so Esc must reach it (native cancel).
-      if (ke.key === 'Escape' && phase === 'up') {
-        block(e);
-        deps.sendToSw({ type: 'shield.stop' });
-        return;
-      }
       // The lockout focus-trap pins focus to Stop. During handoff the field/card
       // are legitimately focusable, so don't trap there.
       if (ke.key === 'Tab' && phase === 'up') {
