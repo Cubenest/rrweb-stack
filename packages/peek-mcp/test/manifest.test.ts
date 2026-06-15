@@ -120,6 +120,33 @@ describe('resolveInstallTargets — P2 PRD §A7 path table', () => {
     );
   });
 
+  it('Windows: honors an explicit %LOCALAPPDATA% (OneDrive KFM / enterprise redirection)', () => {
+    // When AppData\Local is redirected (OneDrive Known-Folder-Move, ADMX folder
+    // redirection, a roaming/UNC profile), %LOCALAPPDATA% is NOT homeDir\AppData\
+    // Local. Chrome/Edge read the manifest from the registry value, which must
+    // point at the REAL location — so the caller injects process.env.LOCALAPPDATA.
+    const targets = resolveInstallTargets(
+      'win32',
+      'C:\\Users\\jane',
+      'D:\\OneDrive\\AppData\\Local',
+    );
+    const byBrowser = Object.fromEntries(targets.map((t) => [t.browser, t.manifestPath]));
+    expect(byBrowser['Windows Chrome']).toBe(
+      'D:\\OneDrive\\AppData\\Local\\Google\\Chrome\\NativeMessagingHosts\\com.cubenest.peek.json',
+    );
+    expect(byBrowser['Windows Edge']).toBe(
+      'D:\\OneDrive\\AppData\\Local\\Microsoft\\Edge\\NativeMessagingHosts\\com.cubenest.peek.json',
+    );
+  });
+
+  it('Windows: falls back to homeDir\\AppData\\Local when %LOCALAPPDATA% is unset', () => {
+    const targets = resolveInstallTargets('win32', 'C:\\Users\\jane', undefined);
+    const byBrowser = Object.fromEntries(targets.map((t) => [t.browser, t.manifestPath]));
+    expect(byBrowser['Windows Chrome']).toBe(
+      'C:\\Users\\jane\\AppData\\Local\\Google\\Chrome\\NativeMessagingHosts\\com.cubenest.peek.json',
+    );
+  });
+
   it('covers all documented install locations across the three OSes', () => {
     // The plan prose rounds to "six paths", but its own enumeration lists seven
     // distinct targets — macOS {Chrome, Chromium, Edge} + Linux {Chrome,

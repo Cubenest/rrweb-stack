@@ -101,11 +101,17 @@ export interface InstallTarget {
  * - Windows: HKCU registry keys for Chrome + Edge (the default value of each
  *   key is the on-disk manifest path).
  *
- * `homeDir` is injected for testability.
+ * `homeDir` is injected for testability. `localAppData` (Windows only) is the
+ * real `%LOCALAPPDATA%` — injected by the caller from `process.env.LOCALAPPDATA`
+ * so the function stays pure — and is REQUIRED to be correct on machines where
+ * `AppData\Local` is redirected away from `homeDir` (OneDrive Known-Folder-Move,
+ * ADMX folder redirection, roaming/UNC profiles). When absent it falls back to
+ * the conventional `homeDir\AppData\Local`.
  */
 export function resolveInstallTargets(
   platform: SupportedPlatform,
   homeDir: string,
+  localAppData?: string,
 ): InstallTarget[] {
   switch (platform) {
     case 'darwin': {
@@ -165,14 +171,19 @@ export function resolveInstallTargets(
       //     a file path), and
       //   - the registry key whose default value points at that path.
       // The conventional location is %LOCALAPPDATA%\<vendor>\<browser>\
-      // NativeMessagingHosts\<host>.json. We derive %LOCALAPPDATA% from the
-      // injected `homeDir` (`C:\Users\<user>`) so tests don't depend on env.
-      const localAppData = win32.join(homeDir, 'AppData', 'Local');
+      // NativeMessagingHosts\<host>.json. Prefer the REAL %LOCALAPPDATA% the
+      // caller injected (correct under OneDrive KFM / enterprise redirection,
+      // where AppData\Local is NOT under homeDir); fall back to the conventional
+      // homeDir\AppData\Local when it's unset.
+      const base =
+        localAppData && localAppData.length > 0
+          ? localAppData
+          : win32.join(homeDir, 'AppData', 'Local');
       return [
         {
           browser: 'Windows Chrome',
           manifestPath: win32.join(
-            localAppData,
+            base,
             'Google',
             'Chrome',
             'NativeMessagingHosts',
@@ -183,7 +194,7 @@ export function resolveInstallTargets(
         {
           browser: 'Windows Edge',
           manifestPath: win32.join(
-            localAppData,
+            base,
             'Microsoft',
             'Edge',
             'NativeMessagingHosts',
