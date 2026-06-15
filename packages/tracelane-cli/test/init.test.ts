@@ -280,9 +280,13 @@ describe('runInitProgrammatic — WDIO happy path', () => {
   });
 });
 
-describe('runInitProgrammatic — Playwright / Cypress no-op', () => {
-  it('prints "coming Q3 2026" for Playwright and exits 0 without modifying anything', async () => {
+describe('runInitProgrammatic — Playwright happy path', () => {
+  it('detects Playwright + pnpm, installs @tracelane/playwright, edits config, mkdir, .gitignore', async () => {
+    writeFileSync(join(dir, 'package.json'), '{ "name": "fixture", "version": "0.0.0" }\n');
     writeFileSync(join(dir, 'playwright.config.ts'), PLAYWRIGHT_CONF);
+    writeFileSync(join(dir, 'pnpm-lock.yaml'), '');
+    writeFileSync(join(dir, '.gitignore'), 'node_modules/\n');
+
     const rec = recordingSpawn();
     const s = streams();
     const code = await runInitProgrammatic({
@@ -292,17 +296,96 @@ describe('runInitProgrammatic — Playwright / Cypress no-op', () => {
       stderr: s.stderr,
       spawn: rec.spawn,
     });
+
     expect(code).toBe(0);
-    expect(rec.calls).toHaveLength(0);
+    // install command targeted @tracelane/playwright (not @tracelane/wdio)
+    expect(rec.calls).toHaveLength(1);
+    expect(rec.calls[0]?.program).toBe('pnpm');
+    expect(rec.calls[0]?.args).toEqual(['add', '-D', '@tracelane/playwright']);
+
+    // playwright.config.ts had the reporter registered
+    const edited = readFileSync(join(dir, 'playwright.config.ts'), 'utf8');
+    expect(edited).toContain("['@tracelane/playwright', { mode: 'failed' }]");
+
+    // tracelane-reports/ created
+    expect(existsSync(join(dir, 'tracelane-reports'))).toBe(true);
+
+    // .gitignore appended
+    const gi = readFileSync(join(dir, '.gitignore'), 'utf8');
+    expect(gi).toContain('node_modules/');
+    expect(gi).toContain('tracelane-reports/');
+
+    // No backup leftover on success
+    expect(existsSync(join(dir, 'playwright.config.ts.tracelane-init.backup'))).toBe(false);
+
+    // The fixture-import follow-up is surfaced to the user.
+    expect(s.out()).toMatch(/@tracelane\/playwright\/fixture/);
     expect(s.out()).toMatch(/Playwright/);
-    expect(s.out()).toMatch(/Q3 2026/);
-    expect(s.out()).toMatch(/github\.com\/Cubenest\/rrweb-stack\/issues/);
-    // Nothing changed.
-    expect(readFileSync(join(dir, 'playwright.config.ts'), 'utf8')).toBe(PLAYWRIGHT_CONF);
-    expect(existsSync(join(dir, 'tracelane-reports'))).toBe(false);
   });
 
-  it('prints "coming Q4 2026" for Cypress and exits 0 without modifying anything', async () => {
+  it('appends the reporter to an existing reporter array (idempotent re-run)', async () => {
+    const confWithReporter = `import { defineConfig } from '@playwright/test';
+
+export default defineConfig({
+  reporter: [['list']],
+});
+`;
+    writeFileSync(join(dir, 'playwright.config.ts'), confWithReporter);
+    const rec = recordingSpawn();
+    const s1 = streams();
+    await runInitProgrammatic({
+      cwd: dir,
+      yes: true,
+      skipInstall: true,
+      stdout: s1.stdout,
+      stderr: s1.stderr,
+      spawn: rec.spawn,
+    });
+    const afterFirst = readFileSync(join(dir, 'playwright.config.ts'), 'utf8');
+    expect(afterFirst).toContain("['list']");
+    expect(afterFirst).toContain("['@tracelane/playwright', { mode: 'failed' }]");
+
+    // Re-run is a no-op (no duplicate entry).
+    const s2 = streams();
+    const code = await runInitProgrammatic({
+      cwd: dir,
+      yes: true,
+      skipInstall: true,
+      stdout: s2.stdout,
+      stderr: s2.stderr,
+      spawn: rec.spawn,
+    });
+    expect(code).toBe(0);
+    const afterSecond = readFileSync(join(dir, 'playwright.config.ts'), 'utf8');
+    expect(afterSecond).toBe(afterFirst);
+    const matches = afterSecond.match(/@tracelane\/playwright'/g);
+    expect(matches?.length).toBe(1);
+    expect(s2.out()).toMatch(/already registers the @tracelane\/playwright reporter/);
+  });
+
+  it('--dry-run for Playwright modifies nothing', async () => {
+    writeFileSync(join(dir, 'playwright.config.ts'), PLAYWRIGHT_CONF);
+    writeFileSync(join(dir, 'pnpm-lock.yaml'), '');
+    const rec = recordingSpawn();
+    const s = streams();
+    const code = await runInitProgrammatic({
+      cwd: dir,
+      yes: true,
+      dryRun: true,
+      stdout: s.stdout,
+      stderr: s.stderr,
+      spawn: rec.spawn,
+    });
+    expect(code).toBe(0);
+    expect(rec.calls).toHaveLength(0);
+    expect(readFileSync(join(dir, 'playwright.config.ts'), 'utf8')).toBe(PLAYWRIGHT_CONF);
+    expect(existsSync(join(dir, 'tracelane-reports'))).toBe(false);
+    expect(s.out()).toMatch(/DRY RUN/);
+  });
+});
+
+describe('runInitProgrammatic — Cypress not-yet-supported', () => {
+  it('prints a not-yet-supported message for Cypress and exits 0 without modifying anything', async () => {
     writeFileSync(join(dir, 'cypress.config.ts'), CYPRESS_CONF);
     const rec = recordingSpawn();
     const s = streams();
@@ -316,7 +399,7 @@ describe('runInitProgrammatic — Playwright / Cypress no-op', () => {
     expect(code).toBe(0);
     expect(rec.calls).toHaveLength(0);
     expect(s.out()).toMatch(/Cypress/);
-    expect(s.out()).toMatch(/Q4 2026/);
+    expect(s.out()).toMatch(/not yet supported/i);
     expect(s.out()).toMatch(/github\.com\/Cubenest\/rrweb-stack\/issues/);
     expect(readFileSync(join(dir, 'cypress.config.ts'), 'utf8')).toBe(CYPRESS_CONF);
   });
@@ -368,11 +451,13 @@ describe('runInitProgrammatic — multiple-runner priority', () => {
       spawn: rec.spawn,
     });
     expect(code).toBe(0);
-    expect(rec.calls).toHaveLength(1); // we wired WDIO, didn't print Playwright
+    expect(rec.calls).toHaveLength(1); // we wired WDIO, didn't touch Playwright
     expect(s.out()).toMatch(/WebdriverIO/);
+    // No lockfile in this fixture → npm fallback; assert the package, not the flags.
+    expect(rec.calls[0]?.args.at(-1)).toBe('@tracelane/wdio');
   });
 
-  it('with --runner playwright override, takes the Playwright path even when WDIO is present', async () => {
+  it('with --runner playwright override, wires Playwright even when WDIO is present', async () => {
     writeFileSync(join(dir, 'wdio.conf.ts'), WDIO_CONF);
     writeFileSync(join(dir, 'playwright.config.ts'), PLAYWRIGHT_CONF);
     const rec = recordingSpawn();
@@ -386,10 +471,14 @@ describe('runInitProgrammatic — multiple-runner priority', () => {
       spawn: rec.spawn,
     });
     expect(code).toBe(0);
-    expect(rec.calls).toHaveLength(0);
+    expect(rec.calls).toHaveLength(1);
+    // No lockfile in this fixture → npm fallback; assert the package, not the flags.
+    expect(rec.calls[0]?.args.at(-1)).toBe('@tracelane/playwright');
     expect(s.out()).toMatch(/Playwright/);
-    expect(s.out()).toMatch(/Q3 2026/);
-    // WDIO conf untouched.
+    // Playwright config was edited; WDIO conf untouched.
+    expect(readFileSync(join(dir, 'playwright.config.ts'), 'utf8')).toContain(
+      '@tracelane/playwright',
+    );
     expect(readFileSync(join(dir, 'wdio.conf.ts'), 'utf8')).toBe(WDIO_CONF);
   });
 });
