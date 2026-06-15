@@ -101,7 +101,7 @@ function textOf(result: { content: Array<{ type: string; text?: string }> }): st
 }
 
 describe('peek MCP server: tools/list', () => {
-  it('lists exactly the documented tool surface (8 read + 2 write + 2 suggest + 1 handoff)', async () => {
+  it('lists exactly the documented tool surface (8 read + 2 write + 2 suggest + 1 handoff + set_intent)', async () => {
     const { dbPath, eventsDir } = seedStore(dir, [loginSession()]);
     const { client, close } = await connectClient({ dbPath, eventsDir });
     try {
@@ -114,6 +114,7 @@ describe('peek MCP server: tools/list', () => {
       expect(names).toContain('suggest_element');
       expect(names).toContain('clear_highlight');
       expect(names).toContain('request_user_input');
+      expect(names).toContain('set_intent');
     } finally {
       await close();
     }
@@ -272,9 +273,9 @@ describe('peek MCP server: graceful no-DB', () => {
       eventsDir: join(dir, 'rrweb-events'),
     });
     try {
-      // tools/list still works (8 read + 2 write + 2 suggest + 1 handoff).
+      // tools/list still works (8 read + 2 write + 2 suggest + 1 handoff + set_intent).
       const { tools } = await client.listTools();
-      expect(tools).toHaveLength(13);
+      expect(tools).toHaveLength(14);
       // and a call returns the friendly message rather than erroring.
       const res = await client.callTool({ name: 'list_recent_sessions', arguments: {} });
       expect(textOf(res as never)).toContain('No sessions recorded yet');
@@ -693,6 +694,32 @@ describe('peek MCP server: suggest_element + clear_highlight dispatch', () => {
   });
 });
 
+describe('peek MCP server: set_intent dispatch (control-shield banner)', () => {
+  it('set_intent rides the execute_action path with {type:set_intent,text}', async () => {
+    const { dbPath, eventsDir } = seedStore(dir, [loginSession()]);
+    const bridge = new RegistryBackedHostBridge();
+    const { client, close } = await connectClient({ dbPath, eventsDir, hostBridge: bridge });
+    try {
+      const callP = client.callTool({
+        name: 'set_intent',
+        arguments: { sessionId: 's_login', text: 'Applying to Senior Frontend · step 2/4' },
+      });
+      for (let i = 0; i < 20 && bridge.pending.length === 0; i++) {
+        await new Promise((r) => setTimeout(r, 5));
+      }
+      expect(bridge.pending[0]?.req.tool).toBe('execute_action');
+      expect(bridge.pending[0]?.req.action).toEqual({
+        type: 'set_intent',
+        text: 'Applying to Senior Frontend · step 2/4',
+      });
+      bridge.resolveNext({ verdict: 'allow', result: 'ok', approver: 'level-4-auto' });
+      await callP;
+    } finally {
+      await close();
+    }
+  });
+});
+
 describe('peek MCP server: request_user_input (Plan B input handoff)', () => {
   /**
    * A fake HostBridge that records every request (so we can assert the action
@@ -808,6 +835,56 @@ describe('peek MCP server: request_user_input (Plan B input handoff)', () => {
       const action = bridge.calls[0]?.action as Record<string, unknown>;
       expect('selector' in action).toBe(false);
       expect(action.readBack).toBe(false);
+    } finally {
+      await close();
+    }
+  });
+
+  it("defaults scope to 'field' when the param is omitted", async () => {
+    const { dbPath, eventsDir } = seedStore(dir, [loginSession()]);
+    const bridge = new RecordingHostBridge({
+      verdict: 'allow',
+      result: 'ok',
+      approver: 'user',
+      details: { resumed: true },
+    });
+    const { client, close } = await connectClient({
+      dbPath,
+      eventsDir,
+      hostBridge: bridge as never,
+    });
+    try {
+      await client.callTool({
+        name: 'request_user_input',
+        arguments: { sessionId: 's_login', prompt: 'Fill it' },
+      });
+      const action = bridge.calls[0]?.action as Record<string, unknown>;
+      expect(action.scope).toBe('field');
+    } finally {
+      await close();
+    }
+  });
+
+  it("forwards scope:'page' for a full-page takeover", async () => {
+    const { dbPath, eventsDir } = seedStore(dir, [loginSession()]);
+    const bridge = new RecordingHostBridge({
+      verdict: 'allow',
+      result: 'ok',
+      approver: 'user',
+      details: { resumed: true },
+    });
+    const { client, close } = await connectClient({
+      dbPath,
+      eventsDir,
+      hostBridge: bridge as never,
+    });
+    try {
+      await client.callTool({
+        name: 'request_user_input',
+        arguments: { sessionId: 's_login', prompt: 'Solve the CAPTCHA', scope: 'page' },
+      });
+      const action = bridge.calls[0]?.action as Record<string, unknown>;
+      expect(action.scope).toBe('page');
     } finally {
       await close();
     }

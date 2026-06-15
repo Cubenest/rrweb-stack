@@ -670,7 +670,46 @@ export function createPeekMcpServer(options: CreatePeekMcpServerOptions = {}): P
       },
     );
 
-    // 13. request_user_input (Plan B — input handoff) ------------------------
+    // 13. set_intent (Part 2 — control-shield banner) ------------------------
+    // Set the agent's status banner shown on the Level-4 control shield so the
+    // user can follow what the agent is doing. Rides the execute_action audit
+    // path on the wire; auto-allowed at Level 4 with the shield up.
+    server.registerTool(
+      'set_intent',
+      {
+        title: 'Set the control-shield banner text',
+        description:
+          "Set the agent's status banner shown on the control shield (e.g. 'Applying to Senior Frontend · step 2/4'), so the user can follow what you're doing. Up to 80 chars, plain text. Requires the origin at Level 4 with the shield up; auto-allowed. Recorded to ~/.peek/audit.log.",
+        inputSchema: {
+          sessionId: z
+            .string()
+            .describe(
+              'Session id (origin context) from list_recent_sessions; determines the per-origin permission level.',
+            ),
+          text: z
+            .string()
+            .max(80)
+            .describe(
+              'Status text shown in the shield banner (<=80 chars). Pass an empty string to clear it.',
+            ),
+        },
+        annotations: {
+          readOnlyHint: false,
+          destructiveHint: false,
+          idempotentHint: true,
+          openWorldHint: true,
+        },
+      },
+      async ({ sessionId, text }) => {
+        return await dispatchActTool({
+          tool: 'execute_action',
+          sessionId,
+          action: { type: 'set_intent', text },
+        });
+      },
+    );
+
+    // 14. request_user_input (Plan B — input handoff) ------------------------
     // Pause the agent + hand the keyboard back to the user for ONE editable,
     // non-destructive field (or a free-text prompt), then resume. Rides the
     // execute_action audit path on the wire; the SW gates it at per-origin
@@ -714,6 +753,12 @@ export function createPeekMcpServer(options: CreatePeekMcpServerOptions = {}): P
             .max(600000)
             .optional()
             .describe('How long to wait for the user (default 120000, max 600000).'),
+          scope: z
+            .enum(['field', 'page'])
+            .default('field')
+            .describe(
+              "'field' (default) unlocks one editable field; 'page' hands full page control back (CAPTCHAs, native widgets, final review) until Resume. Inherits the handoff recording-suspension.",
+            ),
         },
         annotations: {
           readOnlyHint: false,
@@ -722,7 +767,7 @@ export function createPeekMcpServer(options: CreatePeekMcpServerOptions = {}): P
           openWorldHint: true,
         },
       },
-      async ({ sessionId, prompt, selector, readBack, timeoutMs }) => {
+      async ({ sessionId, prompt, selector, readBack, timeoutMs, scope }) => {
         const handoffTimeout = Math.min(Math.max(timeoutMs ?? 120000, 0), 600000);
         return await dispatchActTool({
           tool: 'execute_action',
@@ -731,8 +776,7 @@ export function createPeekMcpServer(options: CreatePeekMcpServerOptions = {}): P
             type: 'request_user_input',
             prompt,
             ...(selector !== undefined ? { selector } : {}),
-            // Schema-default field scope; Task 7 threads a real `scope` param here.
-            scope: 'field',
+            scope,
             readBack: readBack ?? false,
             timeoutMs: handoffTimeout,
           },
@@ -867,4 +911,6 @@ export const PEEK_MCP_TOOLS = [
   'clear_highlight',
   // Input handoff (Plan B — Level 4 with the control shield up).
   'request_user_input',
+  // Control-shield banner (Part 2 — Level 4 auto-allowed).
+  'set_intent',
 ] as const;
