@@ -32,6 +32,7 @@ This recipe is documented primarily as a **general assisted-apply pattern for yo
 ## Prerequisites
 
 - **peek installed and wired into your agent** — the extension loaded in Chrome and the native host running. (`peek init` writes the MCP entry to your client config.)
+- **A build with the shield + handoff** — `@peekdev/extension` ≥ `0.1.0-alpha.16` and `@peekdev/mcp` ≥ `0.1.0-alpha.19`. Earlier builds expose `execute_action`, `suggest_element`, `request_authorization`, and `clear_highlight`, but **not** `set_intent` (banner narration) or the `request_user_input` handoff. On an earlier build the flow still works — the agent narrates each phase in chat instead of scripting the banner, and instead of a field/page handoff it stops and asks you to do the out-of-page / judgment step (file picker, essay, CAPTCHA, final submit) directly, then continues on your confirm.
 - **You are already logged in** to the target site in your own browser. peek never asks for or stores credentials.
 - **Your résumé is available to the agent** — pasted into the conversation or shared as a file the agent can read.
 - **You understand the target site's terms** (see the LinkedIn warning above).
