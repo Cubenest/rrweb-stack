@@ -57,6 +57,8 @@ export class TraceLaneSession {
   private networkAttached = false;
   /** Set once CDP attach has failed, to stop the per-test retry storm (#2). */
   private networkUnavailable = false;
+  /** Set once a capture start has failed (e.g. CSP), to warn exactly once. */
+  private captureStartWarned = false;
 
   constructor(options: TraceLaneOptions = {}, framework?: string, cid?: string) {
     this.options = options;
@@ -140,9 +142,40 @@ export class TraceLaneSession {
     // Create + start a fresh recorder for this test (#5). A passing test in
     // `failed` mode discards its buffer at finalize; no recorder survives the
     // test, so teardown never re-drains.
-    this.recorder = this.createRecorderForCurrentTest(this.browser);
-    await this.recorder.start();
+    const recorder = this.createRecorderForCurrentTest(this.browser);
+    try {
+      await recorder.start();
+    } catch (err) {
+      // Capture start is best-effort: a CSP / injection failure (rrweb needs
+      // `'unsafe-eval'`) must NEVER fail the user's test. Degrade to no capture
+      // for this test, leaving `this.recorder` undefined so `onAfterTest`
+      // writes nothing and teardown has nothing to drain. Keep trying on later
+      // tests — the CSP may be page-specific — but warn only once. (Mirrors the
+      // Playwright adapter's `disabled` session.)
+      this.recorder = undefined;
+      this.warnCaptureUnavailableOnce(err);
+      return;
+    }
+    // Assign only after a clean start so a half-initialized recorder never
+    // reaches `onAfterTest`/`onAfter` (where `finalize`/`stop` would re-throw).
+    this.recorder = recorder;
     await this.maybeAttachNetworkCapture();
+  }
+
+  /**
+   * Warn exactly once that capture failed to start on a page (almost always a
+   * Content-Security-Policy blocking script evaluation). The test still runs;
+   * only the replay is lost for the affected page(s).
+   */
+  private warnCaptureUnavailableOnce(err: unknown): void {
+    if (this.captureStartWarned) return;
+    this.captureStartWarned = true;
+    console.warn(
+      '[tracelane/wdio] capture unavailable on this page (likely a Content-Security-Policy ' +
+        "blocking script evaluation; rrweb needs 'unsafe-eval'). The test runs normally; " +
+        'no replay was recorded.',
+      err,
+    );
   }
 
   /**

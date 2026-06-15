@@ -90,6 +90,8 @@ export const config: Options.Testrunner = {
 - The Node side drains that buffer on a poll (default every 500 ms) and on every `afterTest`, re-injecting after each navigation.
 - In `failed` mode (default) a passing test discards its buffer; a failing test's buffer is handed to [`@tracelane/report`](https://github.com/Cubenest/rrweb-stack/tree/main/packages/tracelane-report), which builds the single offline HTML (≤ 25 MB).
 
+**Content-Security-Policy**: rrweb capture requires in-page script evaluation. If a page's CSP blocks `'unsafe-eval'`, capture degrades gracefully — the test still runs and completes normally, a warning is logged once, but no replay is recorded for the affected page.
+
 ## Options
 
 | Option | Type | Default | Notes |
