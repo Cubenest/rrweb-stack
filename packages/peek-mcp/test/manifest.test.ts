@@ -107,13 +107,16 @@ describe('resolveInstallTargets — P2 PRD §A7 path table', () => {
   it('Windows: ALSO carries a manifestPath under %LOCALAPPDATA% so the registry value can point at it', () => {
     const targets = resolveInstallTargets('win32', 'C:\\Users\\jane');
     const byBrowser = Object.fromEntries(targets.map((t) => [t.browser, t.manifestPath]));
-    // join() uses the host's path separator; we accept either form because the
-    // unit tests may run on darwin/linux CI but install on Windows.
-    expect(byBrowser['Windows Chrome']).toMatch(
-      /AppData[\\/]+Local[\\/]+Google[\\/]+Chrome[\\/]+NativeMessagingHosts[\\/]+com\.cubenest\.peek\.json$/,
+    // Windows paths use backslash separators on EVERY host: resolveInstallTargets
+    // is platform-PARAMETERIZED, so a win32 target must read as a real Windows
+    // path even when the unit suite runs on darwin/linux CI (or the new
+    // windows-latest job). The function uses path.win32.join, not the host's
+    // ambient join, to guarantee this.
+    expect(byBrowser['Windows Chrome']).toBe(
+      'C:\\Users\\jane\\AppData\\Local\\Google\\Chrome\\NativeMessagingHosts\\com.cubenest.peek.json',
     );
-    expect(byBrowser['Windows Edge']).toMatch(
-      /AppData[\\/]+Local[\\/]+Microsoft[\\/]+Edge[\\/]+NativeMessagingHosts[\\/]+com\.cubenest\.peek\.json$/,
+    expect(byBrowser['Windows Edge']).toBe(
+      'C:\\Users\\jane\\AppData\\Local\\Microsoft\\Edge\\NativeMessagingHosts\\com.cubenest.peek.json',
     );
   });
 
