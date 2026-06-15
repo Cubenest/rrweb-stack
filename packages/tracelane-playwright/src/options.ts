@@ -23,8 +23,13 @@ export interface TraceLaneOptions {
   /** Directory to write reports into. Default `'./tracelane-reports'`. `TRACELANE_OUT_DIR` overrides. */
   outDir?: string;
   /**
-   * Capture failed network requests via CDP (Chromium-only). Default `true`.
-   * Routed into the report's network panel through the rrweb console plugin.
+   * Capture network requests. Default `true`.
+   *
+   * Captured in-page by the framework-agnostic `rrweb/network@1` plugin, which
+   * works on ALL browsers (Chromium/Firefox/WebKit) with no CDP. On Chromium,
+   * CDP additionally enriches the report with authoritative status for failed
+   * responses and true no-response failures (the report merges the two). Set
+   * `false` to disable network capture entirely (both channels).
    *
    * The reporter bridges this option to `TRACELANE_CAPTURE_NETWORK` at startup
    * (only when that env var is not already set), so the fixture honors it. An

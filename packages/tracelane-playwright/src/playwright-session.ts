@@ -94,13 +94,23 @@ export async function runStart(input: StartInput): Promise<StartedSession> {
   // execute(); cdp/on are used solely by attachNetworkCapture).
   const executor = createPlaywrightExecutor(page, cdp);
 
-  const recorder = createRecorder({
+  const recorderOptions: Parameters<typeof createRecorder>[0] = {
     executor,
     rrwebBundle,
     mode: options.mode,
-    // MVP: in-page network plugin off; the CDP path above is the network
-    // channel. The recorder still captures rrweb + console on all browsers.
-  });
+  };
+  // In-page rrweb network plugin (`rrweb/network@1`): the framework-agnostic
+  // network channel that works on ALL browsers (Chromium/Firefox/WebKit) with
+  // no CDP — it wraps fetch/XHR + reads PerformanceObserver from inside the
+  // page. Privacy-first defaults (`{}`): URL/method/status/timing only, headers
+  // + bodies off. On Chromium the CDP path above ALSO runs and enriches these
+  // rows with authoritative status + true no-response failures; the report
+  // merges the two (real status wins). Mirrors @tracelane/wdio. Off entirely
+  // when `captureNetwork` is false.
+  if (options.captureNetwork) {
+    recorderOptions.networkPluginOptions = {};
+  }
+  const recorder = createRecorder(recorderOptions);
 
   // Network capture is best-effort: if it fails, detach CDP and continue.
   if (cdp) {
