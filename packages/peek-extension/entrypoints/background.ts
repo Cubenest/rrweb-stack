@@ -384,6 +384,11 @@ export default defineBackground({
           onActionLabel(tabId, label) {
             shield.onActionLabel(tabId, label);
           },
+          // Part 2: agent-set control-shield banner string (Level ≥4;
+          // fire-and-forget, pre-gate auto-allow).
+          onSetIntent(tabId, text) {
+            shield.onSetIntent(tabId, text);
+          },
           // Plan B: shield active means up OR already in a handoff — a
           // selector-less `enter` must reject in BOTH (don't dispatch to Stop).
           isShieldActive(tabId) {
@@ -394,6 +399,10 @@ export default defineBackground({
               prompt: input.prompt,
               framing: input.framing,
               ...(input.selector !== undefined ? { selector: input.selector } : {}),
+              // Part 2: forward the handler-resolved scope so a page-scope
+              // takeover (CAPTCHA / native widget / final review) isn't
+              // silently downgraded to field-scope at the SW boundary.
+              scope: input.scope ?? 'field',
               readBack: input.readBack,
               timeoutMs: input.timeoutMs,
             });
