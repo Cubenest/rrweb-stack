@@ -71,8 +71,14 @@ export interface RequestUserInputAction {
   type: 'request_user_input';
   prompt: string;
   selector?: string;
+  scope?: 'field' | 'page';
   readBack?: boolean;
   timeoutMs?: number;
+}
+/** Part 2 — sets the operator-facing intent banner text for the session. */
+export interface SetIntentAction {
+  type: 'set_intent';
+  text: string;
 }
 
 export type Action =
@@ -89,7 +95,8 @@ export type Action =
   | DblClickAction
   | HighlightAction
   | ClearHighlightAction
-  | RequestUserInputAction;
+  | RequestUserInputAction
+  | SetIntentAction;
 
 /** host → SW: please run / authorize this action. */
 export interface ActionRequestMessage {
