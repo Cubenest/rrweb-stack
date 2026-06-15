@@ -130,15 +130,24 @@ describe('RequestUserInputAction (Plan B)', () => {
       ActionSchema.parse({ type: 'request_user_input', prompt: 'p'.repeat(281) }),
     ).toThrow();
   });
-  it('redactActionForAudit records only {type,prompt,selector} — never a value', () => {
+  it('redactActionForAudit records {type,prompt,selector,scope} — never readBack/timeoutMs/value', () => {
     const redacted = redactActionForAudit({
       type: 'request_user_input',
       prompt: 'Salary?',
       selector: '#sal',
+      scope: 'page',
       readBack: true,
       timeoutMs: 120000,
     } as never);
-    expect(redacted).toEqual({ type: 'request_user_input', prompt: 'Salary?', selector: '#sal' });
+    // scope is non-secret + audit-relevant: it distinguishes a page-scope
+    // full-takeover from a field/free-text card in the trail. readBack/timeoutMs
+    // and any returned value are still dropped.
+    expect(redacted).toEqual({
+      type: 'request_user_input',
+      prompt: 'Salary?',
+      selector: '#sal',
+      scope: 'page',
+    });
   });
 });
 

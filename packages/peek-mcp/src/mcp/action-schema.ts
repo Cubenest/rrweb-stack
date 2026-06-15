@@ -173,9 +173,11 @@ export function redactActionForAudit(action: Action): Action {
       }
     }
     case 'request_user_input':
-      // Record ONLY what the AI asked (prompt + selector). NEVER the returned
-      // value — it lives in the result `details`, which the audit writer never
-      // receives (audit.ts buildAuditEntry takes only the action).
+      // Record what the AI asked: prompt + selector + scope. `scope` is non-
+      // secret and audit-relevant — it distinguishes a page-scope FULL takeover
+      // (broader surface) from a field/free-text card in the trail. NEVER the
+      // returned value — it lives in the result `details`, which the audit writer
+      // never receives (audit.ts buildAuditEntry takes only the action).
       //
       // This intentionally returns a PARTIAL object (drops readBack/timeoutMs),
       // which is why the `as Action` cast is needed — the result is audit-only
@@ -185,6 +187,7 @@ export function redactActionForAudit(action: Action): Action {
         type: 'request_user_input',
         prompt: action.prompt,
         selector: action.selector,
+        scope: action.scope,
       } as Action;
     case 'set_intent':
       // AI-authored status string (not secret); clipped defensively (schema also caps 80).
