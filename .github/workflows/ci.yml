@@ -123,3 +123,47 @@ jobs:
       # channel: 'chromium' to use the full build).
       - run: pnpm --filter @peekdev/extension exec playwright install --with-deps chromium
       - run: pnpm --filter @peekdev/extension test:e2e
+
+  # peek Windows runtime validation (2026-06-15 Windows-compat audit). Until
+  # now every CI job ran on ubuntu-latest, so the peek win32 code paths — the
+  # `\\.\pipe\peek-host` named-pipe bind, the better-sqlite3 Windows prebuild
+  # (.node dlopen), the backslash-path bin entry guard (pathToFileURL), and the
+  # %LOCALAPPDATA%/registry-target resolution — were exercised ONLY by unit
+  # tests that mock process.platform, never on a real Windows kernel. This job
+  # runs the peek-mcp + peek-cli unit suites on a real Windows runner so those
+  # branches are validated for real. Scoped to the two peek packages (and their
+  # workspace deps) to stay fast and avoid unrelated cross-package Windows noise.
+  #
+  # Not yet a required check — branch protection still requires only `ci` + `dco`
+  # (see CLAUDE.md). Promote `ci-windows` to a required context once it has a few
+  # green runs. continue-on-error is false so its status reflects reality.
+  ci-windows:
+    runs-on: windows-latest
+    # Hard cap: a hung named-pipe bind or a stuck better-sqlite3 install can't
+    # sit on a (pricier) Windows runner indefinitely. The unit suites finish in
+    # ~1 min when healthy.
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4
+        # No git credentials are needed after checkout (install/build/test only),
+        # so don't persist the token in .git/config — reduces token exposure in a
+        # job that runs repository-controlled code.
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@f40ffcd9367d9f12939873eb1018b921a783ffaa  # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020  # v4
+        with:
+          # Node 24 matches the `ci` job and is >= the better-sqlite3 prebuild
+          # floor (Node 22+); installing here proves the Windows prebuild loads.
+          node-version: '24'
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      # Build peek-mcp + peek-cli and their workspace deps: peek-cli's tests
+      # resolve `@peekdev/mcp/db` + `@peekdev/mcp/native-host` via the built
+      # dist exports, and peek-mcp's stdio smoke test spawns the built bin.
+      - run: pnpm --filter "@peekdev/mcp..." --filter "@peekdev/cli..." build
+      - run: pnpm --filter @peekdev/mcp --filter @peekdev/cli typecheck
+      # The actual point of the job: run on Windows so better-sqlite3's .node
+      # dlopen, the named-pipe socket-path/host-socket logic, and the
+      # pathToFileURL entry guard execute on the real platform.
+      - run: pnpm --filter @peekdev/mcp --filter @peekdev/cli test

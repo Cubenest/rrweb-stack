@@ -1,3 +1,4 @@
+import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
   CLIENTS,
@@ -20,11 +21,13 @@ describe('clientConfigPath', () => {
     const byId = new Map(CLIENTS.map((c) => [c.id, c] as const));
     const path = (id: ClientId) =>
       clientConfigPath(byId.get(id) as (typeof CLIENTS)[number], HOME, CWD);
-    expect(path('claude-code')).toBe('/home/dev/.claude.json');
-    expect(path('cursor')).toBe('/home/dev/.cursor/mcp.json');
-    expect(path('vscode')).toBe('/work/project/.vscode/mcp.json');
-    expect(path('windsurf')).toBe('/home/dev/.codeium/windsurf/mcp_config.json');
-    expect(path('cline')).toBe('/home/dev/cline_mcp_settings.json');
+    // Derive expectations via join() so the assertions hold on Windows (\) too;
+    // clientConfigPath joins with the host separator (correct on each OS).
+    expect(path('claude-code')).toBe(join(HOME, '.claude.json'));
+    expect(path('cursor')).toBe(join(HOME, '.cursor', 'mcp.json'));
+    expect(path('vscode')).toBe(join(CWD, '.vscode', 'mcp.json'));
+    expect(path('windsurf')).toBe(join(HOME, '.codeium', 'windsurf', 'mcp_config.json'));
+    expect(path('cline')).toBe(join(HOME, 'cline_mcp_settings.json'));
   });
 
   it('resolves VS Code relative to cwd (project scope), others to home', () => {
@@ -40,7 +43,7 @@ describe('clientConfigPath', () => {
 
 describe('detectClients', () => {
   it('reports exists per the injected fileExists probe', () => {
-    const present = new Set(['/home/dev/.claude.json', '/work/project/.vscode/mcp.json']);
+    const present = new Set([join(HOME, '.claude.json'), join(CWD, '.vscode', 'mcp.json')]);
     const detected = detectClients(HOME, CWD, (p) => present.has(p));
     const byId = new Map(detected.map((d) => [d.id, d] as const));
     expect(byId.get('claude-code')?.exists).toBe(true);
