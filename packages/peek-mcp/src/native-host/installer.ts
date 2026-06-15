@@ -39,6 +39,50 @@ export interface InstallResult {
  */
 export type RegExecFn = (file: string, args: readonly string[]) => void;
 
+/**
+ * Decode the `stderr` `execFileSync` attaches to a thrown error. `execFileSync`
+ * populates `err.stderr` as a Buffer (or string, depending on `encoding`) when
+ * the child writes to stderr before a non-zero exit.
+ */
+function decodeStderr(value: unknown): string {
+  if (value == null) return '';
+  if (typeof value === 'string') return value;
+  if (Buffer.isBuffer(value)) return value.toString('utf8');
+  // Some shapes hand back a Uint8Array / array-like; coerce defensively.
+  try {
+    return Buffer.from(value as Uint8Array).toString('utf8');
+  } catch {
+    return String(value);
+  }
+}
+
+/**
+ * Turn the error `execFileSync` throws when `reg.exe` exits non-zero into a
+ * message that actually says *why* it failed.
+ *
+ * Windows-hardening fix: previously the default `execFn` ran `reg.exe` with
+ * `stdio: 'ignore'`, so on failure (EACCES on a redirected/locked HKCU hive,
+ * the host running under a restricted token, etc.) the child's stderr was
+ * discarded and `installManifests` recorded a useless bare "Command failed".
+ * Capturing stderr and folding it (plus the exit status) into the thrown
+ * Error's message means the per-target `result.error` is now actionable.
+ *
+ * Accepts the raw caught value (typed `unknown`) so callers don't have to
+ * pre-narrow; reads `.stderr` / `.status` off `execFileSync`'s error shape.
+ */
+export function formatRegExecError(err: unknown): string {
+  const e = (err ?? {}) as { stderr?: unknown; status?: unknown; message?: unknown };
+  const stderr = decodeStderr(e.stderr).trim();
+  const status = typeof e.status === 'number' ? e.status : undefined;
+  const baseMessage = typeof e.message === 'string' ? e.message : String(err);
+  // Prefer the child's own stderr (the OS-level reason); fall back to the
+  // thrown error's message (e.g. `spawn reg.exe ENOENT` when reg.exe is
+  // missing from PATH) so we never produce an empty detail.
+  const detail = stderr.length > 0 ? stderr : baseMessage;
+  const exitPart = status !== undefined ? ` (exit ${status})` : '';
+  return `reg.exe failed${exitPart}: ${detail}`;
+}
+
 /** Injectable side-effect surface (defaults to real fs + registry). */
 export interface InstallSink {
   /** Write a manifest JSON file at an absolute path (creating parent dirs). */
@@ -60,12 +104,25 @@ export function buildRealSink(
   deps: {
     execFn?: RegExecFn;
     platform?: NodeJS.Platform;
+    /**
+     * Map a thrown `execFn` error → the message to rethrow. Injectable so the
+     * stderr-surfacing wrapper is unit-testable; defaults to
+     * {@link formatRegExecError}.
+     */
+    wrapExecError?: (err: unknown) => string;
   } = {},
 ): InstallSink {
+  // Default execFn: run reg.exe with stderr PIPED (not 'ignore') so a non-zero
+  // exit throws an error carrying `.stderr` (and `.status`). That detail is
+  // folded into the rethrown message at the writeRegistryKey call site (below),
+  // so installManifests records a useful per-target error instead of a bare
+  // "Command failed". `stdout` stays ignored (reg.exe's success chatter is
+  // noise); only stderr is captured.
+  const wrapExecError = deps.wrapExecError ?? formatRegExecError;
   const execFn: RegExecFn =
     deps.execFn ??
     ((file, args) => {
-      execFileSync(file, [...args], { stdio: 'ignore' });
+      execFileSync(file, [...args], { stdio: ['ignore', 'ignore', 'pipe'] });
     });
   const platform = deps.platform ?? process.platform;
 
@@ -93,7 +150,15 @@ export function buildRealSink(
       //   /ve  → set the (Default) value (the one Chrome/Edge read)
       //   /d   → data to write
       //   /f   → force, no Y/N prompt
-      execFn('reg.exe', ['add', key, '/ve', '/d', manifestPath, '/f']);
+      // Wrap any execFn throw so the rethrown message carries reg.exe's stderr
+      // + exit status (the default execFn pipes stderr precisely so this detail
+      // is available). installManifests catches per-target and records the
+      // message, so the user finally sees *why* the registry write failed.
+      try {
+        execFn('reg.exe', ['add', key, '/ve', '/d', manifestPath, '/f']);
+      } catch (err) {
+        throw new Error(wrapExecError(err));
+      }
     },
   };
 }

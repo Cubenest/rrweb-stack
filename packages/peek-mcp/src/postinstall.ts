@@ -12,6 +12,7 @@
 // Either way the script logs what it wrote / would write and where, so the
 // install side-effects are always visible to the user (Task 3.4 requirement).
 
+import { homedir } from 'node:os';
 import { isDirectInvocation } from './entrypoint.js';
 import { hostBinaryPath, loadExtensionIds } from './native-host/config.js';
 import { type InstallResult, installManifests } from './native-host/installer.js';
@@ -48,7 +49,12 @@ export function runPostinstall(): void {
     return;
   }
 
-  const home = process.env.HOME ?? process.env.USERPROFILE ?? '';
+  // Resolve home via os.homedir() to match peek-cli (init.ts / status.ts) and
+  // to fix the Git-Bash-on-Windows divergence: Git Bash sets $HOME to a POSIX
+  // path (/c/Users/jane), whereas homedir() returns the native %USERPROFILE%
+  // (C:\Users\jane) — which is where Chrome/Edge actually read the host
+  // manifest. This also drops the empty-string fallback.
+  const home = homedir();
   const ids = loadExtensionIds();
   const manifest = buildManifest(hostBinaryPath(), ids);
   // Inject the real %LOCALAPPDATA% (Windows) so a redirected AppData\Local

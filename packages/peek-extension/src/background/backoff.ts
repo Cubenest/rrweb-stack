@@ -16,6 +16,34 @@ export const INITIAL_BACKOFF_MS = 1_000;
 export const MAX_BACKOFF_MS = 60_000;
 
 /**
+ * Consecutive failed reconnect attempts after which we treat the native host as
+ * "stalled" — i.e. almost certainly never registered — rather than briefly
+ * blipping. At 4 attempts the 1s→2s→4s schedule has elapsed ~7s, long past a
+ * normal host restart, so the side panel can confidently surface the
+ * "run `peek init`" setup hint instead of a perpetual "Reconnecting…" pill
+ * (the Windows audit bug: connectNative throws when the host isn't registered,
+ * the state machine parks in 'reconnecting', and the disconnected-only hint is
+ * unreachable).
+ */
+export const RECONNECT_STALLED_AFTER_ATTEMPTS = 4;
+
+/**
+ * Has the native-host reconnect loop been failing long enough that the host is
+ * almost certainly unregistered (vs. a transient restart)? Pure + side-effect
+ * free so the side panel and SW share one definition of "stalled".
+ *
+ * @param attempts consecutive failed reconnect attempts since the last connect
+ */
+export function isReconnectStalled(attempts: number): boolean {
+  if (!Number.isFinite(attempts)) {
+    // A non-finite count is only "stalled" if it's +Infinity (unboundedly many
+    // failures); NaN / -Infinity are treated as not-stalled (defensive).
+    return attempts === Number.POSITIVE_INFINITY;
+  }
+  return attempts >= RECONNECT_STALLED_AFTER_ATTEMPTS;
+}
+
+/**
  * Double the current delay, capped at {@link MAX_BACKOFF_MS}.
  *
  * @param currentMs the delay just used for a reconnect attempt
