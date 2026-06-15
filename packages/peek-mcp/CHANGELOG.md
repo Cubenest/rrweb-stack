@@ -1,5 +1,52 @@
 # @peekdev/mcp
 
+## 0.1.0-alpha.20
+
+### Patch Changes
+
+- a52931a: Windows-hardening (Phase B): three fixes for installing and connecting the peek native host on Windows.
+  - **Surface `reg.exe` failures instead of swallowing them** (`@peekdev/mcp`). The default registry-write sink ran `reg.exe add … /f` with `stdio: 'ignore'`, so when the HKCU write failed (locked/redirected hive, restricted token, EACCES) its stderr was discarded and the postinstall log showed a useless bare "Command failed". It now pipes stderr and rethrows a message that folds in `reg.exe`'s own stderr plus the exit status, so the per-target error the user sees is actionable.
+  - **Resolve the home directory via `os.homedir()` in postinstall** (`@peekdev/mcp`). The postinstall path derived `home` from `process.env.HOME ?? process.env.USERPROFILE`, which on Git Bash for Windows picks up a POSIX `$HOME` (`/c/Users/jane`) that diverges from where Chrome/Edge actually read the host manifest. It now uses `os.homedir()` (which returns `%USERPROFILE%` on Windows), matching the `peek` CLI, and drops the empty-string fallback.
+  - **Make the "run `peek init`" setup hint reachable from a stuck reconnect** (`@peekdev/extension`). When `connectNative` threw because the native host was never registered, the background state machine parked in `reconnecting` and never returned to `disconnected`, so the side panel showed a perpetual "Reconnecting…" pill and the setup hint (previously gated on `disconnected` only) was unreachable. The service worker now tracks consecutive failed reconnect attempts and the side panel surfaces the same "run `peek init`" guidance once the reconnect has been stalling long enough that the host is almost certainly unregistered.
+
+- e8d0ca5: Honor `%LOCALAPPDATA%` when registering the Windows native-messaging host.
+
+  `resolveInstallTargets` derived the Windows manifest location as
+  `homeDir\AppData\Local`, ignoring the real `%LOCALAPPDATA%`. On machines where
+  `AppData\Local` is redirected away from the user profile — OneDrive
+  Known-Folder-Move, ADMX folder redirection, roaming/UNC profiles — the manifest
+  was written to the wrong directory while the HKCU registry value pointed there
+  too, so Chrome/Edge silently failed to find the native host (the extension
+  could never connect).
+
+  `resolveInstallTargets` now takes an optional `localAppData`, and both callers
+  (`peek init` and the postinstall registrar) inject `process.env.LOCALAPPDATA`,
+  falling back to `homeDir\AppData\Local` when it is unset.
+
+- 1a45ef5: Fix two Windows-only failures found in the 2026-06-15 Windows-compatibility audit.
+
+  **`peek` CLI was a silent no-op on Windows (critical).** The bin entry guard
+  compared `import.meta.url` against the string-concatenated `` `file://${process.argv[1]}` ``.
+  On Windows `process.argv[1]` is a backslash path (`C:\…\index.js`), so the
+  concat produced the invalid url `file://C:\…\index.js`, which never equals
+  `import.meta.url`'s RFC-8089 form (`file:///C:/…/index.js`). `invokedDirectly`
+  was therefore always `false` and `main()` never ran — so `peek init`, `peek
+status`, every command did nothing on Windows (and, with the native host never
+  registered, the extension could never connect). The guard now uses
+  `pathToFileURL` (new `isDirectInvocation` helper), which also fixes the same
+  mismatch for paths containing spaces/unicode on POSIX. The identical guard in
+  `@peekdev/mcp`'s `postinstall.ts` is fixed the same way.
+
+  **better-sqlite3 load failure crashed the native host with no message (high).**
+  `db/open.ts` imported `better-sqlite3` at top-level module scope, so its native
+  `.node` binding loaded at module-evaluation time. A missing / ABI-mismatched
+  (Node < 22) / antivirus-locked prebuild threw before `main()` could catch it —
+  and stock Windows has no compile-from-source fallback — so the host process died
+  and the browser saw a silently-closed stdio pipe. The import is now type-only
+  and the constructor is loaded lazily (`loadBetterSqlite3`), deferring the load
+  into `openDb()` and wrapping failures in an actionable error that names the
+  Node 22+ requirement, the platform/arch, and the likely cause.
+
 ## 0.1.0-alpha.19
 
 ### Patch Changes

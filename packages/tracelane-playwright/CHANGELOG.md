@@ -1,5 +1,50 @@
 # @tracelane/playwright
 
+## 0.1.0-alpha.7
+
+### Minor Changes
+
+- 33dbf43: Capture network on every browser, not just Chromium.
+
+  The Playwright adapter previously captured network only via CDP, so on
+  Firefox/WebKit the network panel was always empty — even though the shared
+  `@tracelane/core` recorder already supports the framework-agnostic in-page
+  `rrweb/network@1` plugin (which `@tracelane/wdio` uses as its primary channel).
+
+  `runStart` now wires that in-page plugin (privacy-first defaults: URL/method/
+  status/timing, headers + bodies off) whenever `captureNetwork` is enabled, so
+  network capture works on Chromium, Firefox, and WebKit alike. On Chromium the
+  existing CDP path still runs and enriches the in-page rows with authoritative
+  status + true no-response failures (the report merges them, real status wins).
+  `captureNetwork: false` now disables both channels.
+
+- c818aab: Close three option-parity gaps with `@tracelane/wdio`:
+  - **Security opt-out + suppression file.** New `security` option (default `true`,
+    env `TRACELANE_SECURITY`) disables both the `[tracelane.sec]` capture and the
+    report-side analysis. A `tracelane.security.suppress.json` file in the working
+    directory is loaded at report-write time to silence known-acceptable signals
+    (missing/malformed file never throws).
+  - **Capture-channel toggles + network/console masking.** New nested
+    `capture: { rrweb, network, console, networkOptions }` plus top-level
+    `consolePluginOptions`. `capture.rrweb: false` records nothing and writes no
+    report; `capture.console: false` patches no `console.*`. The legacy top-level
+    `captureNetwork` still works but is deprecated in favor of `capture.network`.
+    Masking options (`capture.networkOptions`, `consolePluginOptions`) bridge to
+    the fixture worker as JSON. Env: `TRACELANE_CAPTURE_RRWEB`,
+    `TRACELANE_CAPTURE_CONSOLE`, `TRACELANE_NETWORK_OPTIONS`,
+    `TRACELANE_CONSOLE_OPTIONS`. Note: function-valued mask props (`maskRequestFn`,
+    `maskResponseFn`) cannot cross the worker-process env bridge and are not
+    supported via reporter config.
+  - **Report footer opt-out + drain/cooldown tuning.** New `report: { footer }`
+    (env `TRACELANE_FOOTER`), `drainIntervalMs` (env `TRACELANE_DRAIN_INTERVAL_MS`),
+    and `cooldownMs` (env `TRACELANE_COOLDOWN_MS`).
+
+### Patch Changes
+
+- Updated dependencies [759a39b]
+  - @tracelane/core@0.1.0-alpha.16
+  - @tracelane/report@0.1.0-alpha.19
+
 ## 0.1.0-alpha.6
 
 ### Patch Changes
