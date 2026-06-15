@@ -499,12 +499,41 @@ describe('Gap 2 — capture channels (rrweb / console)', () => {
 });
 
 describe('Gap 3 — drain / cooldown tuning', () => {
-  it('forwards drainIntervalMs / cooldownMs into the recorder', async () => {
+  /** Count drain-script evaluations (body reads the buffer but is NOT the init routine). */
+  function drainCallCount(page: FakePage): number {
+    return page.evaluate.mock.calls.filter((c) => {
+      const body = (c[1] as { body?: string } | undefined)?.body;
+      return (
+        typeof body === 'string' &&
+        body.includes('__tracelane__events') &&
+        !body.includes('__tracelane__inited')
+      );
+    }).length;
+  }
+
+  it('forwards cooldownMs into the recorder (packed as the 1st init arg)', async () => {
     const page = fakePage([{ type: 4, data: {}, timestamp: 1 }], { browserName: 'firefox' });
-    const options = baseOptions({ drainIntervalMs: 800, cooldownMs: 333 });
+    const options = baseOptions({ cooldownMs: 333 });
     await runStart({ page: page as never, options, rrwebBundle: RRWEB_STUB });
-    // cooldownMs is packed as the 1st init arg.
     expect(cooldownFromInit(page)).toBe(333);
+  });
+
+  it('forwards drainIntervalMs into the recorder poll cadence', async () => {
+    vi.useFakeTimers();
+    try {
+      const page = fakePage([{ type: 4, data: {}, timestamp: 1 }], { browserName: 'firefox' });
+      const options = baseOptions({ drainIntervalMs: 800 });
+      await runStart({ page: page as never, options, rrwebBundle: RRWEB_STUB });
+      // drainIntervalMs is a Node-side poll interval (setInterval), not a page arg —
+      // verify it behaviorally: the first poll-drain fires at exactly 800ms.
+      const before = drainCallCount(page);
+      await vi.advanceTimersByTimeAsync(799);
+      expect(drainCallCount(page)).toBe(before); // not yet
+      await vi.advanceTimersByTimeAsync(1);
+      expect(drainCallCount(page)).toBeGreaterThan(before); // polled at 800ms
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
 
