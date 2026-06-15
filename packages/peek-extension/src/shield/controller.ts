@@ -26,6 +26,7 @@ export type HandoffResult =
 
 interface HandoffRecord {
   readBack: boolean;
+  scope: 'field' | 'page';
   resolve: (r: HandoffResult) => void;
   timer: unknown;
 }
@@ -34,6 +35,9 @@ interface TabState {
   phase: ShieldPhase;
   origin: string | null;
   label: string | null;
+  // Agent-set banner string (Part 2). When non-null it wins over `label` in the
+  // banner; cleared on #lower and by onSetIntent('').
+  intentLabel: string | null;
   // `| undefined` (not bare `?`) so the take-and-clear `= undefined` slot reset
   // is legal under exactOptionalPropertyTypes.
   handoff?: HandoffRecord | undefined;
@@ -59,7 +63,7 @@ export class ShieldController {
   #state(tabId: number): TabState {
     let s = this.#tabs.get(tabId);
     if (!s) {
-      s = { phase: 'down', origin: null, label: null };
+      s = { phase: 'down', origin: null, label: null, intentLabel: null };
       this.#tabs.set(tabId, s);
     }
     return s;
@@ -81,6 +85,21 @@ export class ShieldController {
     rec.resolve({ resumed: false, reason: 'stopped' });
   }
 
+  /** Intent (agent-set) wins over the per-action label in the banner. */
+  #effectiveLabel(s: TabState): string | null {
+    return s.intentLabel ?? s.label;
+  }
+
+  /** Push a LABEL with the effective banner string (no-op while down). */
+  #pushLabel(tabId: number, s: TabState): void {
+    if (s.phase === 'down') return;
+    this.#deps.commandView(tabId, {
+      kind: 'LABEL',
+      generation: ++this.#generation,
+      label: this.#effectiveLabel(s),
+    });
+  }
+
   #raise(tabId: number, origin: string, s: TabState): void {
     // Settle any pending handoff as `stopped` FIRST (resolve-once), then raise.
     // Symmetric with #lower: any re-issue of an up-state while phase==='handoff'
@@ -92,7 +111,7 @@ export class ShieldController {
     this.#deps.commandView(tabId, {
       kind: 'RAISE',
       generation: ++this.#generation,
-      label: s.label,
+      label: this.#effectiveLabel(s),
     });
   }
 
@@ -101,6 +120,7 @@ export class ShieldController {
     this.#abortHandoff(s);
     s.phase = 'down';
     s.label = null;
+    s.intentLabel = null;
     this.#deps.commandView(tabId, { kind: 'LOWER', generation: ++this.#generation });
   }
 
@@ -131,7 +151,16 @@ export class ShieldController {
     const s = this.#state(tabId);
     if (s.phase !== 'up') return;
     s.label = label;
-    this.#deps.commandView(tabId, { kind: 'LABEL', generation: ++this.#generation, label });
+    // Route through #pushLabel so a set intent automatically wins over the
+    // per-action label.
+    this.#pushLabel(tabId, s);
+  }
+
+  /** Agent-set banner string (Part 2). Empty string clears it. Level-gated upstream. */
+  onSetIntent(tabId: number, text: string): void {
+    const s = this.#state(tabId);
+    s.intentLabel = text.length > 0 ? text : null;
+    this.#pushLabel(tabId, s);
   }
 
   /**
@@ -188,6 +217,7 @@ export class ShieldController {
       prompt: string;
       framing: string;
       selector?: string;
+      scope?: 'field' | 'page';
       readBack: boolean;
       timeoutMs: number;
     },
@@ -202,7 +232,7 @@ export class ShieldController {
         () => this.#settleHandoff(tabId, { resumed: false, reason: 'timeout' }),
         input.timeoutMs,
       );
-      s.handoff = { readBack: input.readBack, resolve, timer };
+      s.handoff = { readBack: input.readBack, scope: input.scope ?? 'field', resolve, timer };
       s.phase = 'handoff';
       this.#deps.commandView(tabId, {
         kind: 'ENTER_HANDOFF',
@@ -210,6 +240,9 @@ export class ShieldController {
         prompt: input.prompt,
         framing: input.framing,
         ...(input.selector !== undefined ? { selector: input.selector } : {}),
+        // Default — if input.scope is undefined, omit it; the view treats absent
+        // as 'field'.
+        ...(input.scope !== undefined ? { scope: input.scope } : {}),
       });
     });
   }

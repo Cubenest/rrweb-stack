@@ -230,3 +230,69 @@ describe('ShieldController — handoff (Plan B)', () => {
     expect(h.commands.filter((x) => x.cmd.kind === 'EXIT_HANDOFF')).toHaveLength(0);
   });
 });
+
+describe('ShieldController — intent + scope (Part 2)', () => {
+  it('onSetIntent sends a LABEL with the intent text (overrides per-action label)', () => {
+    const h = harness();
+    h.c.onLevelChanged(1, 'https://a.test', 4);
+    h.c.onActionLabel(1, "Clicking 'Apply'");
+    h.c.onSetIntent(1, 'Applying · step 2/4');
+    const labels = h.commands
+      .filter((x) => x.cmd.kind === 'LABEL')
+      .map((x) => (x.cmd as { label: string | null }).label);
+    expect(labels.at(-1)).toBe('Applying · step 2/4');
+    // a later per-action label does NOT override the intent
+    h.c.onActionLabel(1, 'Typing into Email');
+    expect(
+      h.commands
+        .filter((x) => x.cmd.kind === 'LABEL')
+        .map((x) => (x.cmd as { label: string | null }).label)
+        .at(-1),
+    ).toBe('Applying · step 2/4');
+  });
+  it("onSetIntent('') clears the intent (per-action label resumes)", () => {
+    const h = harness();
+    h.c.onLevelChanged(1, 'https://a.test', 4);
+    h.c.onSetIntent(1, 'X');
+    h.c.onSetIntent(1, '');
+    h.c.onActionLabel(1, 'Clicking Y');
+    expect(
+      h.commands
+        .filter((x) => x.cmd.kind === 'LABEL')
+        .map((x) => (x.cmd as { label: string | null }).label)
+        .at(-1),
+    ).toBe('Clicking Y');
+  });
+  it('onSetIntent below up → no command', () => {
+    const h = harness();
+    h.c.onSetIntent(1, 'X');
+    expect(h.commands.filter((x) => x.cmd.kind === 'LABEL')).toHaveLength(0);
+  });
+  it('enterHandoff threads scope into ENTER_HANDOFF', async () => {
+    const h = harness();
+    h.c.onLevelChanged(1, 'https://a.test', 4);
+    void h.c.enterHandoff(1, {
+      prompt: 'p',
+      framing: 'f',
+      scope: 'page',
+      readBack: false,
+      timeoutMs: 1000,
+    });
+    const enter = h.commands.find((x) => x.cmd.kind === 'ENTER_HANDOFF');
+    expect((enter?.cmd as { scope?: string }).scope).toBe('page');
+  });
+  it('intentLabel is cleared on LOWER', () => {
+    const h = harness();
+    h.c.onLevelChanged(1, 'https://a.test', 4);
+    h.c.onSetIntent(1, 'X');
+    h.c.onLevelChanged(1, 'https://a.test', 1);
+    h.c.onLevelChanged(1, 'https://a.test', 4);
+    h.c.onActionLabel(1, 'Z');
+    expect(
+      h.commands
+        .filter((x) => x.cmd.kind === 'LABEL')
+        .map((x) => (x.cmd as { label: string | null }).label)
+        .at(-1),
+    ).toBe('Z');
+  });
+});
