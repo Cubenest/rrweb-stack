@@ -88,6 +88,13 @@ export const DblClickActionSchema = z.object({
 });
 export type DblClickAction = z.infer<typeof DblClickActionSchema>;
 
+/** Agent-set banner string (Part 2). Rides execute_action rails; no DOM target. */
+export const SetIntentActionSchema = z.object({
+  type: z.literal('set_intent'),
+  text: z.string().max(80),
+});
+export type SetIntentAction = z.infer<typeof SetIntentActionSchema>;
+
 /** Draw a non-destructive highlight overlay on a target, with an optional label. */
 export const HighlightActionSchema = z.object({
   type: z.literal('highlight'),
@@ -107,6 +114,7 @@ export const RequestUserInputActionSchema = z.object({
   type: z.literal('request_user_input'),
   prompt: z.string().max(280),
   selector: z.string().optional(),
+  scope: z.enum(['field', 'page']).default('field'),
   readBack: z.boolean().default(false),
   // This ceiling (10 min) is DOUBLE the bridge's DEFAULT_BRIDGE_TIMEOUT_MS
   // (5 min, host-bridge.ts). server.ts's dispatchActTool now threads
@@ -135,6 +143,7 @@ export const ActionSchema = z.discriminatedUnion('type', [
   DblClickActionSchema,
   HighlightActionSchema,
   ClearHighlightActionSchema,
+  SetIntentActionSchema,
   RequestUserInputActionSchema,
 ]);
 export type Action = z.infer<typeof ActionSchema>;
@@ -177,6 +186,9 @@ export function redactActionForAudit(action: Action): Action {
         prompt: action.prompt,
         selector: action.selector,
       } as Action;
+    case 'set_intent':
+      // AI-authored status string (not secret); clipped defensively (schema also caps 80).
+      return { type: 'set_intent', text: action.text.slice(0, 80) } as Action;
     default:
       return action;
   }

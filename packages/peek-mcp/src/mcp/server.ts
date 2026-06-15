@@ -731,6 +731,8 @@ export function createPeekMcpServer(options: CreatePeekMcpServerOptions = {}): P
             type: 'request_user_input',
             prompt,
             ...(selector !== undefined ? { selector } : {}),
+            // Schema-default field scope; Task 7 threads a real `scope` param here.
+            scope: 'field',
             readBack: readBack ?? false,
             timeoutMs: handoffTimeout,
           },

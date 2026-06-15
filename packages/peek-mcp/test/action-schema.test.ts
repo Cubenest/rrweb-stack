@@ -141,3 +141,32 @@ describe('RequestUserInputAction (Plan B)', () => {
     expect(redacted).toEqual({ type: 'request_user_input', prompt: 'Salary?', selector: '#sal' });
   });
 });
+
+describe('SetIntentAction + request_user_input scope (Part 2)', () => {
+  it('parses set_intent with text', () => {
+    expect(ActionSchema.parse({ type: 'set_intent', text: 'Applying · step 2/4' })).toEqual({
+      type: 'set_intent',
+      text: 'Applying · step 2/4',
+    });
+  });
+  it('rejects set_intent text over 80 chars', () => {
+    expect(() => ActionSchema.parse({ type: 'set_intent', text: 'x'.repeat(81) })).toThrow();
+  });
+  it('request_user_input scope defaults to field and accepts page', () => {
+    expect(ActionSchema.parse({ type: 'request_user_input', prompt: 'p' }).scope).toBe('field');
+    expect(
+      ActionSchema.parse({ type: 'request_user_input', prompt: 'p', scope: 'page' }).scope,
+    ).toBe('page');
+  });
+  it('rejects an unknown scope', () => {
+    expect(() =>
+      ActionSchema.parse({ type: 'request_user_input', prompt: 'p', scope: 'whole' }),
+    ).toThrow();
+  });
+  it('redactActionForAudit keeps set_intent {type,text} (clipped)', () => {
+    expect(redactActionForAudit({ type: 'set_intent', text: 'hi' } as never)).toEqual({
+      type: 'set_intent',
+      text: 'hi',
+    });
+  });
+});
