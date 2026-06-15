@@ -81,9 +81,17 @@ test('setup hint is reachable from a stuck reconnect (native host never register
     .toBeGreaterThanOrEqual(RECONNECT_STALLED_AFTER_ATTEMPTS);
 
   // It must be the 'reconnecting' state (not 'disconnected') that exposes the
-  // hint — that is precisely the previously-unreachable path.
-  const observed = await probe();
-  expect(observed.state, 'host is stuck reconnecting, not disconnected').toBe('reconnecting');
+  // hint — that is precisely the previously-unreachable path. Poll rather than
+  // read once: each storm cycle briefly sets 'connected' (connectNative returns
+  // a port before its immediate onDisconnect), so a single-shot read could land
+  // on that transient blip. It settles in 'reconnecting' between backoff retries.
+  await expect
+    .poll(async () => (await probe()).state, {
+      message: 'host settles in reconnecting state during the unregistered-host storm',
+      timeout: 10_000,
+      intervals: [250],
+    })
+    .toBe('reconnecting');
 
   // The rendered side panel now shows the setup hint. The header polls on a 2s
   // interval, so give it a beat past the threshold crossing to repaint.
