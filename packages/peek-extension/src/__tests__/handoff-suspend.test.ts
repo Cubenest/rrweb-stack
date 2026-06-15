@@ -44,4 +44,16 @@ describe('nextHandoffFlag', () => {
     expect(nextHandoffFlag(true, 'LABEL')).toBe(true);
     expect(nextHandoffFlag(false, 'LABEL')).toBe(false);
   });
+
+  // FIX 4(a) (Part 2): page-scope handoff suspension coverage. `nextHandoffFlag`
+  // keys purely on the ViewCommand KIND (`ENTER_HANDOFF`), not on its scope, so a
+  // page-scope ENTER suspends rrweb on the exact same code path as a field-scope
+  // ENTER — the assertion below already covers page-scope because the relay sends
+  // `ENTER_HANDOFF` for both. NOTE: the FullSnapshot residual (a page-scope
+  // takeover can mutate the DOM such that the next FullSnapshot reflects
+  // post-takeover state) is a documented limitation of this drop-at-production
+  // approach, NOT claimed closed here.
+  it('page-scope ENTER keeps the suspend flag true (scope-agnostic; see comment)', () => {
+    expect(nextHandoffFlag(false, 'ENTER_HANDOFF')).toBe(true);
+  });
 });

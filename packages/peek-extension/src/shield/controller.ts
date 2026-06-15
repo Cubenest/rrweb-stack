@@ -159,7 +159,10 @@ export class ShieldController {
   /** Agent-set banner string (Part 2). Empty string clears it. Level-gated upstream. */
   onSetIntent(tabId: number, text: string): void {
     const s = this.#state(tabId);
-    s.intentLabel = text.length > 0 ? text : null;
+    // Defensive clip to 80 chars at the SW boundary. The MCP zod already enforces
+    // max(80), but a direct/forged set_intent SW message could exceed it. The
+    // banner renders via textContent (no XSS), so this is purely for tidiness.
+    s.intentLabel = text.length > 0 ? text.slice(0, 80) : null;
     this.#pushLabel(tabId, s);
   }
 

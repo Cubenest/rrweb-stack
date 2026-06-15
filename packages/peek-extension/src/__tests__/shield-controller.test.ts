@@ -250,6 +250,20 @@ describe('ShieldController — intent + scope (Part 2)', () => {
         .at(-1),
     ).toBe('Applying · step 2/4');
   });
+  it('onSetIntent defensively clips text to 80 chars (forged SW message)', () => {
+    // FIX 4(b) (Part 2): the MCP zod enforces max(80), but a direct/forged
+    // set_intent SW message could exceed it. The banner renders via textContent
+    // (no XSS), but clip at the SW boundary for tidiness.
+    const h = harness();
+    h.c.onLevelChanged(1, 'https://a.test', 4);
+    h.c.onSetIntent(1, 'x'.repeat(200));
+    const last = h.commands
+      .filter((x) => x.cmd.kind === 'LABEL')
+      .map((x) => (x.cmd as { label: string | null }).label)
+      .at(-1);
+    expect(last).not.toBeNull();
+    expect((last as string).length).toBeLessThanOrEqual(80);
+  });
   it("onSetIntent('') clears the intent (per-action label resumes)", () => {
     const h = harness();
     h.c.onLevelChanged(1, 'https://a.test', 4);
