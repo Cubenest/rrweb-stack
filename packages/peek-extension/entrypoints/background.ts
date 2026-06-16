@@ -36,8 +36,11 @@ import { denyReason, isFromSidePanel } from '../src/messaging/protocol';
 import {
   type ElementFeedbackArgs,
   FEEDBACK_CSS,
+  type PageToastArgs,
   elementFeedbackFor,
+  pageToastFor,
   showElementFeedback,
+  showPageToast,
 } from '../src/permissions/action-feedback';
 import {
   type ActionHandlerDeps,
@@ -521,6 +524,51 @@ export default defineBackground({
     };
 
     /**
+     * A page-level verb (navigate/reload/back/forward) replaces the document, so
+     * the toast must render on the DESTINATION page — wait for the tab to finish
+     * loading, then inject once. A timeout removes the listener if the load never
+     * completes (download, abort). Fire-and-forget; failures are swallowed.
+     * `onUpdated` is a hoisted function declaration so addListener/removeListener
+     * share one stable reference.
+     */
+    const scheduleActionToast = (
+      tabId: number,
+      toast: NonNullable<ReturnType<typeof pageToastFor>>,
+    ): void => {
+      let done = false;
+      function onUpdated(updatedTabId: number, info: chrome.tabs.OnUpdatedInfo): void {
+        if (updatedTabId !== tabId || info.status !== 'complete' || done) return;
+        done = true;
+        chrome.tabs.onUpdated.removeListener(onUpdated);
+        const toastArgs: PageToastArgs = {
+          verb: toast.verb,
+          ...(toast.detail !== undefined ? { detail: toast.detail } : {}),
+          hostAttr: ACTION_FEEDBACK_HOST_ATTR,
+          css: FEEDBACK_CSS,
+        };
+        void chrome.scripting
+          .executeScript({
+            target: { tabId },
+            world: 'MAIN',
+            func: showPageToast,
+            args: [toastArgs],
+          })
+          .catch(() => {});
+      }
+      // Best-effort matching: tabId + the first `complete` within the window.
+      // A user-initiated navigation of the SAME tab inside the 8s window could
+      // surface the toast on a page peek didn't navigate to (rare in an
+      // agent-driven session). We intentionally do NOT gate navigate on a
+      // `tab.url` host === detail match, since that would suppress the toast on
+      // legitimate redirects (http→https, apex→www). Cosmetic false-positive
+      // only; it never affects the action result.
+      chrome.tabs.onUpdated.addListener(onUpdated);
+      setTimeout(() => {
+        if (!done) chrome.tabs.onUpdated.removeListener(onUpdated);
+      }, 8000);
+    };
+
+    /**
      * Best-effort, fire-and-forget in-page action feedback. Called AFTER a
      * successful dispatch with the result already returned to the agent, so it
      * never blocks the act and its own failure is swallowed. (Task 7 handles
@@ -534,7 +582,12 @@ export default defineBackground({
         // dispatchInMainWorld casts `action` for dispatchAction below).
         const a = action as unknown as { type: string; [k: string]: unknown };
         const plan = elementFeedbackFor(a);
-        if (!plan) return; // page verbs are added in Task 8
+        if (!plan) {
+          // Page-level verbs replace the document — toast on the destination page.
+          const toast = pageToastFor(a);
+          if (toast) scheduleActionToast(tabId, toast);
+          return;
+        }
         const feedbackArgs: ElementFeedbackArgs = {
           verb: plan.verb,
           selector: plan.selector,
