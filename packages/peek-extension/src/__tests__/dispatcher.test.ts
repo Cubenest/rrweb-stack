@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { dispatchAction, resolveTarget } from '../permissions/dispatcher';
 
 beforeEach(() => {
+  Element.prototype.scrollIntoView = function scrollIntoView(): void {};
   document.body.innerHTML = `
     <h2>Account settings</h2>
     <button id="b" aria-label="Save">Save now</button>
@@ -451,5 +452,49 @@ describe('resolveTarget', () => {
   it('item B (nth): an out-of-range nth resolves to an empty target (never throws)', () => {
     document.body.innerHTML = '<button class="only">One</button>';
     expect(resolveTarget('.only', 5)).toEqual({});
+  });
+});
+
+describe('dispatchAction — scroll-in before mutation', () => {
+  function rect(top: number): DOMRect {
+    return {
+      top,
+      left: 0,
+      bottom: top + 50,
+      right: 50,
+      width: 50,
+      height: 50,
+      x: 0,
+      y: top,
+      toJSON() {},
+    } as DOMRect;
+  }
+
+  it('click: scrolls an OFF-screen target into view (centered) before clicking', async () => {
+    const el = document.getElementById('b') as HTMLElement;
+    el.getBoundingClientRect = () => rect(-300); // above the viewport
+    const spy = vi.fn();
+    el.scrollIntoView = spy as unknown as typeof el.scrollIntoView;
+    await dispatchAction({ type: 'click', selector: '#b', button: 'left' });
+    expect(spy).toHaveBeenCalledWith({ block: 'center', inline: 'nearest' });
+  });
+
+  it('click: does NOT scroll a target already fully in view', async () => {
+    const el = document.getElementById('b') as HTMLElement;
+    el.getBoundingClientRect = () => rect(20); // well within the default 768px jsdom viewport
+    const spy = vi.fn();
+    el.scrollIntoView = spy as unknown as typeof el.scrollIntoView;
+    await dispatchAction({ type: 'click', selector: '#b', button: 'left' });
+    expect(spy).not.toHaveBeenCalled();
+  });
+
+  it('type: scrolls an off-screen field into view before typing', async () => {
+    const el = document.getElementById('i') as HTMLInputElement;
+    el.getBoundingClientRect = () => rect(2000); // below the viewport
+    const spy = vi.fn();
+    el.scrollIntoView = spy as unknown as typeof el.scrollIntoView;
+    await dispatchAction({ type: 'type', selector: '#i', text: 'hi' });
+    expect(spy).toHaveBeenCalledWith({ block: 'center', inline: 'nearest' });
+    expect(el.value).toBe('hi');
   });
 });

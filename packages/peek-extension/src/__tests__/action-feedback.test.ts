@@ -1,0 +1,276 @@
+// @vitest-environment jsdom
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import {
+  FEEDBACK_CSS,
+  elementFeedbackFor,
+  pageToastFor,
+  showElementFeedback,
+  showPageToast,
+} from '../permissions/action-feedback';
+
+const HOST = 'data-peek-fx';
+
+beforeEach(() => {
+  document.body.innerHTML = `<button id="b">Save</button><input id="i">`;
+  vi.useFakeTimers();
+});
+afterEach(() => {
+  vi.useRealTimers();
+  for (const n of document.documentElement.querySelectorAll(`[${HOST}]`)) {
+    n.remove();
+  }
+});
+
+describe('showElementFeedback', () => {
+  it('appends a display:contents host carrying the feedback marker', () => {
+    showElementFeedback({ verb: 'click', selector: '#b', hostAttr: HOST, css: FEEDBACK_CSS });
+    const host = document.documentElement.querySelector(`[${HOST}]`) as HTMLElement;
+    expect(host).not.toBeNull();
+    expect(host.style.display).toBe('contents');
+    expect(host.getAttribute('aria-hidden')).toBe('true');
+  });
+
+  it('uses a CLOSED shadow root in production (default mode)', () => {
+    showElementFeedback({ verb: 'click', selector: '#b', hostAttr: HOST, css: FEEDBACK_CSS });
+    const host = document.documentElement.querySelector(`[${HOST}]`) as HTMLElement;
+    expect(host.shadowRoot).toBeNull(); // closed → inaccessible → rrweb can't serialize
+  });
+
+  it('click → a ripple node inside the shadow (inspected via test-only open mode)', () => {
+    showElementFeedback({
+      verb: 'click',
+      selector: '#b',
+      hostAttr: HOST,
+      css: FEEDBACK_CSS,
+      mode: 'open',
+    });
+    const host = document.documentElement.querySelector(`[${HOST}]`) as HTMLElement;
+    const ripple = host.shadowRoot?.querySelector('.peek-fx-ripple.peek-fx-ripple--click');
+    expect(ripple).not.toBeNull();
+  });
+
+  it('type → a ring node sized from the element rect, with no typed text rendered', () => {
+    showElementFeedback({
+      verb: 'type',
+      selector: '#i',
+      hostAttr: HOST,
+      css: FEEDBACK_CSS,
+      mode: 'open',
+    });
+    const host = document.documentElement.querySelector(`[${HOST}]`) as HTMLElement;
+    const ring = host.shadowRoot?.querySelector('.peek-fx-ring.peek-fx-ring--type') as HTMLElement;
+    expect(ring).not.toBeNull();
+    // egress discipline: the cue is geometry only — it never echoes a value.
+    // Exclude the <style> element (CSS constants) — only check non-CSS child text.
+    const nonStyleText = [...(host.shadowRoot?.childNodes ?? [])]
+      .filter((n) => n.nodeName !== 'STYLE')
+      .map((n) => n.textContent ?? '')
+      .join('');
+    expect(nonStyleText).toBe('');
+  });
+
+  it('dblclick → two ripples, the second delayed', () => {
+    showElementFeedback({
+      verb: 'dblclick',
+      selector: '#b',
+      hostAttr: HOST,
+      css: FEEDBACK_CSS,
+      mode: 'open',
+    });
+    const host = document.documentElement.querySelector(`[${HOST}]`) as HTMLElement;
+    const ripples = host.shadowRoot?.querySelectorAll('.peek-fx-ripple') ?? [];
+    expect(ripples.length).toBe(2);
+    expect((ripples[1] as HTMLElement).style.animationDelay).toBe('120ms');
+  });
+
+  it('enter → an amber ripple', () => {
+    showElementFeedback({
+      verb: 'enter',
+      selector: '#b',
+      hostAttr: HOST,
+      css: FEEDBACK_CSS,
+      mode: 'open',
+    });
+    const host = document.documentElement.querySelector(`[${HOST}]`) as HTMLElement;
+    expect(host.shadowRoot?.querySelector('.peek-fx-ripple--enter')).not.toBeNull();
+  });
+
+  it('scroll → an indigo ring', () => {
+    showElementFeedback({
+      verb: 'scroll',
+      selector: '#b',
+      hostAttr: HOST,
+      css: FEEDBACK_CSS,
+      mode: 'open',
+    });
+    const host = document.documentElement.querySelector(`[${HOST}]`) as HTMLElement;
+    expect(host.shadowRoot?.querySelector('.peek-fx-ring--scroll')).not.toBeNull();
+  });
+
+  it('removes the host after the effect duration (not before)', () => {
+    showElementFeedback({ verb: 'click', selector: '#b', hostAttr: HOST, css: FEEDBACK_CSS });
+    expect(document.documentElement.querySelector(`[${HOST}]`)).not.toBeNull();
+    vi.advanceTimersByTime(899);
+    expect(document.documentElement.querySelector(`[${HOST}]`)).not.toBeNull();
+    vi.advanceTimersByTime(2);
+    expect(document.documentElement.querySelector(`[${HOST}]`)).toBeNull();
+  });
+
+  it('is a best-effort no-op for a missing selector (never an error, never a node)', () => {
+    expect(
+      showElementFeedback({ verb: 'click', selector: '#nope', hostAttr: HOST, css: FEEDBACK_CSS }),
+    ).toEqual({ ok: true });
+    expect(document.documentElement.querySelector(`[${HOST}]`)).toBeNull();
+  });
+});
+
+describe('FEEDBACK_CSS', () => {
+  it('gates motion behind prefers-reduced-motion and hides on print', () => {
+    expect(FEEDBACK_CSS).toContain('@media (prefers-reduced-motion: no-preference)');
+    expect(FEEDBACK_CSS).toContain('@media print');
+    expect(FEEDBACK_CSS).toContain('@keyframes peek-fx-ripple');
+    expect(FEEDBACK_CSS).toContain('@keyframes peek-fx-ring');
+  });
+});
+
+// Mirrors highlight.test.ts: reconstruct the fn from .toString() in a scope with
+// NO module-scope helpers, proving it survives executeScript serialization.
+describe('MAIN-world serialization (no module-scope helpers in the page)', () => {
+  function reconstructInPageScope<T extends (...args: never[]) => unknown>(fn: T): T {
+    return new Function(`return (${fn.toString()})`)() as T;
+  }
+  it('showElementFeedback runs after serialization (no out-of-scope refs)', () => {
+    const injected = reconstructInPageScope(showElementFeedback);
+    let res: unknown;
+    expect(() => {
+      res = injected({
+        verb: 'click',
+        selector: '#b',
+        hostAttr: HOST,
+        css: FEEDBACK_CSS,
+        mode: 'open',
+      });
+    }).not.toThrow();
+    expect(res).toEqual({ ok: true });
+    expect(document.documentElement.querySelector(`[${HOST}]`)).not.toBeNull();
+  });
+
+  it('showPageToast runs after serialization (no out-of-scope refs)', () => {
+    const injected = reconstructInPageScope(showPageToast);
+    expect(() => {
+      injected({ verb: 'reload', hostAttr: HOST, css: FEEDBACK_CSS, mode: 'open' });
+    }).not.toThrow();
+    expect(document.documentElement.querySelector(`[${HOST}]`)).not.toBeNull();
+  });
+});
+
+describe('showPageToast', () => {
+  it('renders a navigate pill with the destination host via textContent', () => {
+    showPageToast({
+      verb: 'navigate',
+      detail: 'example.com',
+      hostAttr: HOST,
+      css: FEEDBACK_CSS,
+      mode: 'open',
+    });
+    const host = document.documentElement.querySelector(`[${HOST}]`) as HTMLElement;
+    const pill = host.shadowRoot?.querySelector('.peek-fx-toast');
+    expect(pill?.textContent).toBe('peek navigated to example.com');
+  });
+
+  it('navigate without detail → generic navigated copy', () => {
+    showPageToast({ verb: 'navigate', hostAttr: HOST, css: FEEDBACK_CSS, mode: 'open' });
+    const host = document.documentElement.querySelector(`[${HOST}]`) as HTMLElement;
+    expect(host.shadowRoot?.querySelector('.peek-fx-toast')?.textContent).toBe('peek navigated');
+  });
+
+  it('reload → reloaded copy', () => {
+    showPageToast({ verb: 'reload', hostAttr: HOST, css: FEEDBACK_CSS, mode: 'open' });
+    const host = document.documentElement.querySelector(`[${HOST}]`) as HTMLElement;
+    expect(host.shadowRoot?.querySelector('.peek-fx-toast')?.textContent).toBe(
+      'peek reloaded the page',
+    );
+  });
+
+  it('back → went-back copy', () => {
+    showPageToast({ verb: 'back', hostAttr: HOST, css: FEEDBACK_CSS, mode: 'open' });
+    const host = document.documentElement.querySelector(`[${HOST}]`) as HTMLElement;
+    expect(host.shadowRoot?.querySelector('.peek-fx-toast')?.textContent).toBe('peek went back');
+  });
+
+  it('forward → went-forward copy', () => {
+    showPageToast({ verb: 'forward', hostAttr: HOST, css: FEEDBACK_CSS, mode: 'open' });
+    const host = document.documentElement.querySelector(`[${HOST}]`) as HTMLElement;
+    expect(host.shadowRoot?.querySelector('.peek-fx-toast')?.textContent).toBe('peek went forward');
+  });
+
+  it('uses a closed shadow root in production and self-removes', () => {
+    showPageToast({ verb: 'reload', hostAttr: HOST, css: FEEDBACK_CSS });
+    const host = document.documentElement.querySelector(`[${HOST}]`) as HTMLElement;
+    expect(host.shadowRoot).toBeNull();
+    vi.advanceTimersByTime(2300);
+    expect(document.documentElement.querySelector(`[${HOST}]`)).toBeNull();
+  });
+});
+
+describe('FEEDBACK_CSS toast rules', () => {
+  it('includes the toast class and its keyframes', () => {
+    expect(FEEDBACK_CSS).toContain('.peek-fx-toast');
+    expect(FEEDBACK_CSS).toContain('@keyframes peek-fx-toast');
+  });
+});
+
+describe('elementFeedbackFor', () => {
+  it('maps click/type/enter/dblclick/scroll-with-selector to a plan', () => {
+    expect(elementFeedbackFor({ type: 'click', selector: '#a', nth: 2 })).toEqual({
+      verb: 'click',
+      selector: '#a',
+      nth: 2,
+    });
+    expect(elementFeedbackFor({ type: 'type', selector: '#a' })).toEqual({
+      verb: 'type',
+      selector: '#a',
+    });
+    expect(elementFeedbackFor({ type: 'enter', selector: '#a' })).toEqual({
+      verb: 'enter',
+      selector: '#a',
+    });
+    expect(elementFeedbackFor({ type: 'dblclick', selector: '#a' })).toStrictEqual({
+      verb: 'dblclick',
+      selector: '#a',
+    });
+    expect(elementFeedbackFor({ type: 'scroll', selector: '#a' })).toEqual({
+      verb: 'scroll',
+      selector: '#a',
+    });
+  });
+
+  it('returns null for selector-less verbs and non-element verbs', () => {
+    expect(elementFeedbackFor({ type: 'enter' })).toBeNull(); // activeElement case — skip
+    expect(elementFeedbackFor({ type: 'scroll', x: 0, y: 500 })).toBeNull(); // coordinate scroll
+    expect(elementFeedbackFor({ type: 'navigate', url: 'https://x.test' })).toBeNull();
+    expect(elementFeedbackFor({ type: 'waitFor', selector: '#a' })).toBeNull();
+  });
+});
+
+describe('pageToastFor', () => {
+  it('maps navigate to a host detail', () => {
+    expect(pageToastFor({ type: 'navigate', url: 'https://example.com/x?y=1' })).toEqual({
+      verb: 'navigate',
+      detail: 'example.com',
+    });
+  });
+  it('navigate with an unparseable URL yields no detail', () => {
+    expect(pageToastFor({ type: 'navigate', url: 'not a url' })).toStrictEqual({
+      verb: 'navigate',
+    });
+  });
+  it('maps reload/back/forward', () => {
+    expect(pageToastFor({ type: 'reload' })).toEqual({ verb: 'reload' });
+    expect(pageToastFor({ type: 'back' })).toEqual({ verb: 'back' });
+    expect(pageToastFor({ type: 'forward' })).toEqual({ verb: 'forward' });
+  });
+  it('returns null for element verbs', () => {
+    expect(pageToastFor({ type: 'click', selector: '#a' })).toBeNull();
+  });
+});

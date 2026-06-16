@@ -1,9 +1,12 @@
 import { fakeBrowser } from '@webext-core/fake-browser';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
+  SHOW_ACTION_FEEDBACK_KEY,
   SHOW_RECORDING_BORDER_KEY,
   type StorageAreaLike,
+  getShowActionFeedback,
   getShowRecordingBorder,
+  setShowActionFeedback,
   setShowRecordingBorder,
 } from '../indicators/storage';
 
@@ -38,5 +41,29 @@ describe('recording-border setting', () => {
 
     await area.set({ [SHOW_RECORDING_BORDER_KEY]: 1 });
     expect(await getShowRecordingBorder(area)).toBe(true);
+  });
+});
+
+describe('action-feedback setting', () => {
+  it('defaults to true when unset', async () => {
+    expect(await getShowActionFeedback(area)).toBe(true);
+  });
+
+  it('round-trips false then true', async () => {
+    await setShowActionFeedback(false, area);
+    expect(await getShowActionFeedback(area)).toBe(false);
+    await setShowActionFeedback(true, area);
+    expect(await getShowActionFeedback(area)).toBe(true);
+  });
+
+  it('treats a null / non-boolean stored value as true', async () => {
+    await area.set({ [SHOW_ACTION_FEEDBACK_KEY]: null });
+    expect(await getShowActionFeedback(area)).toBe(true);
+    await area.set({ [SHOW_ACTION_FEEDBACK_KEY]: 1 });
+    expect(await getShowActionFeedback(area)).toBe(true);
+  });
+
+  it('is stored under a key distinct from the recording border', () => {
+    expect(SHOW_ACTION_FEEDBACK_KEY).not.toBe(SHOW_RECORDING_BORDER_KEY);
   });
 });
