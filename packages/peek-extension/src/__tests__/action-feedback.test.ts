@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { FEEDBACK_CSS, showElementFeedback } from '../permissions/action-feedback';
+import { FEEDBACK_CSS, showElementFeedback, showPageToast } from '../permissions/action-feedback';
 
 const HOST = 'data-peek-fx';
 
@@ -147,5 +147,69 @@ describe('MAIN-world serialization (no module-scope helpers in the page)', () =>
     }).not.toThrow();
     expect(res).toEqual({ ok: true });
     expect(document.documentElement.querySelector(`[${HOST}]`)).not.toBeNull();
+  });
+
+  it('showPageToast runs after serialization (no out-of-scope refs)', () => {
+    const injected = reconstructInPageScope(showPageToast);
+    expect(() => {
+      injected({ verb: 'reload', hostAttr: HOST, css: FEEDBACK_CSS, mode: 'open' });
+    }).not.toThrow();
+    expect(document.documentElement.querySelector(`[${HOST}]`)).not.toBeNull();
+  });
+});
+
+describe('showPageToast', () => {
+  it('renders a navigate pill with the destination host via textContent', () => {
+    showPageToast({
+      verb: 'navigate',
+      detail: 'example.com',
+      hostAttr: HOST,
+      css: FEEDBACK_CSS,
+      mode: 'open',
+    });
+    const host = document.documentElement.querySelector(`[${HOST}]`) as HTMLElement;
+    const pill = host.shadowRoot?.querySelector('.peek-fx-toast');
+    expect(pill?.textContent).toBe('peek navigated to example.com');
+  });
+
+  it('navigate without detail → generic navigated copy', () => {
+    showPageToast({ verb: 'navigate', hostAttr: HOST, css: FEEDBACK_CSS, mode: 'open' });
+    const host = document.documentElement.querySelector(`[${HOST}]`) as HTMLElement;
+    expect(host.shadowRoot?.querySelector('.peek-fx-toast')?.textContent).toBe('peek navigated');
+  });
+
+  it('reload → reloaded copy', () => {
+    showPageToast({ verb: 'reload', hostAttr: HOST, css: FEEDBACK_CSS, mode: 'open' });
+    const host = document.documentElement.querySelector(`[${HOST}]`) as HTMLElement;
+    expect(host.shadowRoot?.querySelector('.peek-fx-toast')?.textContent).toBe(
+      'peek reloaded the page',
+    );
+  });
+
+  it('back → went-back copy', () => {
+    showPageToast({ verb: 'back', hostAttr: HOST, css: FEEDBACK_CSS, mode: 'open' });
+    const host = document.documentElement.querySelector(`[${HOST}]`) as HTMLElement;
+    expect(host.shadowRoot?.querySelector('.peek-fx-toast')?.textContent).toBe('peek went back');
+  });
+
+  it('forward → went-forward copy', () => {
+    showPageToast({ verb: 'forward', hostAttr: HOST, css: FEEDBACK_CSS, mode: 'open' });
+    const host = document.documentElement.querySelector(`[${HOST}]`) as HTMLElement;
+    expect(host.shadowRoot?.querySelector('.peek-fx-toast')?.textContent).toBe('peek went forward');
+  });
+
+  it('uses a closed shadow root in production and self-removes', () => {
+    showPageToast({ verb: 'reload', hostAttr: HOST, css: FEEDBACK_CSS });
+    const host = document.documentElement.querySelector(`[${HOST}]`) as HTMLElement;
+    expect(host.shadowRoot).toBeNull();
+    vi.advanceTimersByTime(2300);
+    expect(document.documentElement.querySelector(`[${HOST}]`)).toBeNull();
+  });
+});
+
+describe('FEEDBACK_CSS toast rules', () => {
+  it('includes the toast class and its keyframes', () => {
+    expect(FEEDBACK_CSS).toContain('.peek-fx-toast');
+    expect(FEEDBACK_CSS).toContain('@keyframes peek-fx-toast');
   });
 });

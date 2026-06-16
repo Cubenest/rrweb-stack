@@ -2,7 +2,7 @@
  * MAIN-world in-page action feedback (the "peek just acted here" cue).
  *
  * SECURITY / SERIALIZATION BOUNDARY — read before editing:
- *   • `showElementFeedback` executes in the PAGE's MAIN world,
+ *   • `showElementFeedback` / `showPageToast` execute in the PAGE's MAIN world,
  *     injected via `chrome.scripting.executeScript({ world: 'MAIN', func })`.
  *     Chrome serializes ONLY each function's own source — so they must be
  *     SELF-CONTAINED: every helper (resolveElement, makeRing, makeRipple) is
@@ -13,6 +13,8 @@
  *     `display:contents` (no layout box of its own).
  *   • `selector` is an untrusted CSS string — passed ONLY to querySelector. No
  *     value/text is ever rendered (egress discipline): cues are geometry only.
+ *   • The page-toast message is built from a fixed verb→string map + a host string;
+ *     assigned via `textContent`, never innerHTML.
  *
  * Motion is CSS-driven and gated behind `@media (prefers-reduced-motion:
  * no-preference)`; reduced-motion users get a brief STATIC cue. Mirrors the
@@ -47,10 +49,28 @@ export const FEEDBACK_CSS = `
 }
 .peek-fx-ripple--click { background: rgba(99, 102, 241, 0.30); border: 2px solid #6366f1; }
 .peek-fx-ripple--enter { background: rgba(245, 158, 11, 0.30); border: 2px solid #f59e0b; }
+.peek-fx-toast {
+  all: initial;
+  position: fixed;
+  top: 16px;
+  right: 16px;
+  z-index: 2147483647;
+  box-sizing: border-box;
+  max-width: 320px;
+  padding: 8px 14px;
+  border-radius: 8px;
+  background: #1e1b4b;
+  color: #fff;
+  font: 13px/1.4 system-ui, sans-serif;
+  pointer-events: none;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.4);
+  opacity: 1;
+}
 @media (prefers-reduced-motion: no-preference) {
   .peek-fx-ring { animation: peek-fx-ring 700ms ease-out forwards; }
   .peek-fx-ring--scroll { animation: peek-fx-pulse 500ms ease-out forwards; }
   .peek-fx-ripple { animation: peek-fx-ripple 500ms ease-out forwards; }
+  .peek-fx-toast { animation: peek-fx-toast 2200ms ease-out forwards; }
   @keyframes peek-fx-ring {
     0% { opacity: 0; transform: scale(0.98); }
     25% { opacity: 1; transform: scale(1); }
@@ -66,9 +86,15 @@ export const FEEDBACK_CSS = `
     0% { opacity: 1; transform: scale(0.4); }
     100% { opacity: 0; transform: scale(2.2); }
   }
+  @keyframes peek-fx-toast {
+    0% { opacity: 0; transform: translateY(-8px); }
+    10% { opacity: 1; transform: translateY(0); }
+    85% { opacity: 1; transform: translateY(0); }
+    100% { opacity: 0; transform: translateY(-8px); }
+  }
 }
 @media print {
-  .peek-fx-ring, .peek-fx-ripple { display: none !important; }
+  .peek-fx-ring, .peek-fx-ripple, .peek-fx-toast { display: none !important; }
 }
 `;
 
@@ -160,5 +186,55 @@ export function showElementFeedback(args: ElementFeedbackArgs): FeedbackResult {
 
   document.documentElement.appendChild(host);
   setTimeout(() => host.remove(), 900);
+  return { ok: true };
+}
+
+/** Args for the injected page-toast function. */
+export interface PageToastArgs {
+  verb: 'navigate' | 'reload' | 'back' | 'forward';
+  /** Host portion of the destination URL (e.g. "example.com"). Host-only — never a full URL (egress discipline). */
+  detail?: string;
+  hostAttr: string;
+  css: string;
+  mode?: 'open' | 'closed';
+}
+
+/**
+ * Draw a corner toast naming a page-level action on the DESTINATION document.
+ * Self-contained for MAIN-world injection. Message is a fixed verb→string map;
+ * `detail` (a host string) is rendered via textContent only.
+ */
+export function showPageToast(args: PageToastArgs): FeedbackResult {
+  let message: string;
+  switch (args.verb) {
+    case 'navigate':
+      message = args.detail ? `peek navigated to ${args.detail}` : 'peek navigated';
+      break;
+    case 'reload':
+      message = 'peek reloaded the page';
+      break;
+    case 'back':
+      message = 'peek went back';
+      break;
+    case 'forward':
+      message = 'peek went forward';
+      break;
+  }
+
+  const host = document.createElement('div');
+  host.setAttribute(args.hostAttr, '');
+  host.setAttribute('aria-hidden', 'true');
+  host.style.setProperty('display', 'contents');
+  const shadow = host.attachShadow({ mode: args.mode ?? 'closed' });
+
+  const style = document.createElement('style');
+  style.textContent = args.css;
+  const pill = document.createElement('div');
+  pill.className = 'peek-fx-toast';
+  pill.textContent = message; // textContent, NEVER innerHTML
+  shadow.append(style, pill);
+
+  document.documentElement.appendChild(host);
+  setTimeout(() => host.remove(), 2200);
   return { ok: true };
 }
