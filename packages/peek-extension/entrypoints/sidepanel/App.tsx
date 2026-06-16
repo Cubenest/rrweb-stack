@@ -6,6 +6,7 @@ import {
   sendConfirmVerdict,
 } from '../../src/messaging/protocol';
 import { ConfirmResolutionTracker, isShowConfirmFromBackground } from './confirm-flow';
+import { ActionFeedbackToggle } from './sections/ActionFeedbackToggle';
 import { AgentControlSection } from './sections/AgentControlSection';
 import { CaptureSection } from './sections/CaptureSection';
 import { ConfirmBanner, closedVerdict } from './sections/ConfirmBanner';
@@ -92,6 +93,7 @@ export function App(): React.JSX.Element {
       <CaptureSection origin={origin} title={title} tabId={tabId} url={url} />
       <AgentControlSection origin={origin} />
       <RecordingBorderToggle />
+      <ActionFeedbackToggle />
 
       <footer className="peek-footer">
         <span>v0.1.0-alpha · local-only · no telemetry</span>
