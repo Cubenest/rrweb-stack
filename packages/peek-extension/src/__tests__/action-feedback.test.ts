@@ -1,6 +1,12 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { FEEDBACK_CSS, showElementFeedback, showPageToast } from '../permissions/action-feedback';
+import {
+  FEEDBACK_CSS,
+  elementFeedbackFor,
+  pageToastFor,
+  showElementFeedback,
+  showPageToast,
+} from '../permissions/action-feedback';
 
 const HOST = 'data-peek-fx';
 
@@ -211,5 +217,60 @@ describe('FEEDBACK_CSS toast rules', () => {
   it('includes the toast class and its keyframes', () => {
     expect(FEEDBACK_CSS).toContain('.peek-fx-toast');
     expect(FEEDBACK_CSS).toContain('@keyframes peek-fx-toast');
+  });
+});
+
+describe('elementFeedbackFor', () => {
+  it('maps click/type/enter/dblclick/scroll-with-selector to a plan', () => {
+    expect(elementFeedbackFor({ type: 'click', selector: '#a', nth: 2 })).toEqual({
+      verb: 'click',
+      selector: '#a',
+      nth: 2,
+    });
+    expect(elementFeedbackFor({ type: 'type', selector: '#a' })).toEqual({
+      verb: 'type',
+      selector: '#a',
+    });
+    expect(elementFeedbackFor({ type: 'enter', selector: '#a' })).toEqual({
+      verb: 'enter',
+      selector: '#a',
+    });
+    expect(elementFeedbackFor({ type: 'dblclick', selector: '#a' })).toStrictEqual({
+      verb: 'dblclick',
+      selector: '#a',
+    });
+    expect(elementFeedbackFor({ type: 'scroll', selector: '#a' })).toEqual({
+      verb: 'scroll',
+      selector: '#a',
+    });
+  });
+
+  it('returns null for selector-less verbs and non-element verbs', () => {
+    expect(elementFeedbackFor({ type: 'enter' })).toBeNull(); // activeElement case — skip
+    expect(elementFeedbackFor({ type: 'scroll', x: 0, y: 500 })).toBeNull(); // coordinate scroll
+    expect(elementFeedbackFor({ type: 'navigate', url: 'https://x.test' })).toBeNull();
+    expect(elementFeedbackFor({ type: 'waitFor', selector: '#a' })).toBeNull();
+  });
+});
+
+describe('pageToastFor', () => {
+  it('maps navigate to a host detail', () => {
+    expect(pageToastFor({ type: 'navigate', url: 'https://example.com/x?y=1' })).toEqual({
+      verb: 'navigate',
+      detail: 'example.com',
+    });
+  });
+  it('navigate with an unparseable URL yields no detail', () => {
+    expect(pageToastFor({ type: 'navigate', url: 'not a url' })).toStrictEqual({
+      verb: 'navigate',
+    });
+  });
+  it('maps reload/back/forward', () => {
+    expect(pageToastFor({ type: 'reload' })).toEqual({ verb: 'reload' });
+    expect(pageToastFor({ type: 'back' })).toEqual({ verb: 'back' });
+    expect(pageToastFor({ type: 'forward' })).toEqual({ verb: 'forward' });
+  });
+  it('returns null for element verbs', () => {
+    expect(pageToastFor({ type: 'click', selector: '#a' })).toBeNull();
   });
 });

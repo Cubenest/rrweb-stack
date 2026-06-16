@@ -238,3 +238,67 @@ export function showPageToast(args: PageToastArgs): FeedbackResult {
   setTimeout(() => host.remove(), 2200);
   return { ok: true };
 }
+
+/** A resolved element-cue plan (which verb + how to find the element). */
+export interface ElementFeedbackPlan {
+  verb: 'click' | 'type' | 'enter' | 'dblclick' | 'scroll';
+  selector: string;
+  nth?: number;
+}
+
+/** A resolved page-toast plan. */
+export interface PageToastPlan {
+  verb: 'navigate' | 'reload' | 'back' | 'forward';
+  detail?: string;
+}
+
+/** Permissive action shape (the SW's protocol Action is assignable to this). */
+type ActionLike = { readonly type: string; readonly [k: string]: unknown };
+
+/**
+ * Decide the on-element cue for an action, or null if it gets none. Selector-
+ * less `enter` (activeElement) and coordinate `scroll` are skipped — there's no
+ * stable element to ring after the fact.
+ */
+export function elementFeedbackFor(action: ActionLike): ElementFeedbackPlan | null {
+  const sel = typeof action.selector === 'string' ? action.selector : '';
+  if (sel.length === 0) return null;
+  switch (action.type) {
+    case 'click':
+    case 'dblclick': {
+      const plan: ElementFeedbackPlan = { verb: action.type, selector: sel };
+      if (typeof action.nth === 'number') plan.nth = action.nth;
+      return plan;
+    }
+    case 'type':
+    case 'enter':
+    case 'scroll':
+      return { verb: action.type, selector: sel };
+    default:
+      return null;
+  }
+}
+
+/** Decide the page-level toast for an action, or null if it gets none. */
+export function pageToastFor(action: ActionLike): PageToastPlan | null {
+  switch (action.type) {
+    case 'navigate': {
+      const url = typeof action.url === 'string' ? action.url : '';
+      const plan: PageToastPlan = { verb: 'navigate' };
+      try {
+        plan.detail = new URL(url).host;
+      } catch {
+        // unparseable URL — leave detail absent
+      }
+      return plan;
+    }
+    case 'reload':
+      return { verb: 'reload' };
+    case 'back':
+      return { verb: 'back' };
+    case 'forward':
+      return { verb: 'forward' };
+    default:
+      return null;
+  }
+}
