@@ -30,3 +30,24 @@ export async function setShowRecordingBorder(
 ): Promise<void> {
   await area.set({ [SHOW_RECORDING_BORDER_KEY]: value });
 }
+
+/** `chrome.storage.sync` key for the in-page action-feedback toggle. */
+export const SHOW_ACTION_FEEDBACK_KEY = 'peek:showActionFeedback';
+
+/**
+ * Read the action-feedback toggle. Defaults to TRUE: the cue is on by default,
+ * and an unreadable/missing value fails toward showing it.
+ */
+export async function getShowActionFeedback(area: StorageAreaLike = syncArea()): Promise<boolean> {
+  const rec = await area.get(SHOW_ACTION_FEEDBACK_KEY);
+  const v = rec[SHOW_ACTION_FEEDBACK_KEY];
+  return v !== false;
+}
+
+/** Persist the action-feedback toggle. */
+export async function setShowActionFeedback(
+  value: boolean,
+  area: StorageAreaLike = syncArea(),
+): Promise<void> {
+  await area.set({ [SHOW_ACTION_FEEDBACK_KEY]: value });
+}
