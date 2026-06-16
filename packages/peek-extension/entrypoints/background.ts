@@ -1,7 +1,12 @@
 import { defineBackground } from 'wxt/utils/define-background';
 import { originFromUrl } from '../src/activation/origin';
 import { diffAddedOrigins } from '../src/activation/storage';
-import { INITIAL_BACKOFF_MS, jitter, nextBackoffMs } from '../src/background/backoff';
+import {
+  CONNECTION_HELD_MS,
+  INITIAL_BACKOFF_MS,
+  jitter,
+  nextBackoffMs,
+} from '../src/background/backoff';
 import { type ActionSurface, applyBadge } from '../src/background/badge';
 import {
   type NativeOutbound,
@@ -193,9 +198,25 @@ export default defineBackground({
     let nativePort: chrome.runtime.Port | null = null;
     let reconnectBackoff = INITIAL_BACKOFF_MS;
     let hostState: NativeHostState = 'disconnected';
+    // Consecutive failed reconnect attempts since the last successful connect.
+    // Reported to the side panel so a *persistently* failing reconnect (host
+    // never registered) can surface the "run `peek init`" setup hint instead of
+    // a perpetual "Reconnecting…" pill (Windows audit bug). Reset to 0 on a
+    // successful connectNative.
+    let reconnectAttempts = 0;
     // Single pending reconnect timer. Holding the handle lets us collapse all
     // disconnect/wake races into ONE pending reconnect (see scheduleReconnect).
     let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+    // "Connection held" timer: connectNative sets hostState='connected'
+    // synchronously, but an unregistered host on Chrome returns a port that
+    // immediately fires onDisconnect ("host not found") — a disconnect-storm,
+    // not a synchronous throw. So we DON'T clear reconnectAttempts the instant a
+    // port handle appears (that transient 'connected' would reset the counter
+    // every storm cycle and the stall hint would never surface). Instead we arm
+    // this timer on connect; only if the port survives CONNECTION_HELD_MS
+    // without disconnecting do we treat the connection as real and reset the
+    // counter. onDisconnect cancels it.
+    let connectionHeldTimer: ReturnType<typeof setTimeout> | null = null;
 
     // Per-tab capture state (3d-2). Lives only in this SW instance; if the SW is
     // torn down the counts reset — acceptable, the side panel re-polls and the
@@ -808,6 +829,16 @@ export default defineBackground({
       reconnectBackoff = INITIAL_BACKOFF_MS;
       const port = nativePort;
       port.onMessage.addListener(handleHostMessage);
+      // Don't reset reconnectAttempts yet (an unregistered host disconnect-
+      // storms: connect → immediate onDisconnect). Only clear the stalled-
+      // reconnect signal once the port has HELD for CONNECTION_HELD_MS — proof
+      // the host is really there and not knocking us straight back to
+      // 'reconnecting'. onDisconnect (below) cancels this if it fires first.
+      if (connectionHeldTimer !== null) clearTimeout(connectionHeldTimer);
+      connectionHeldTimer = setTimeout(() => {
+        connectionHeldTimer = null;
+        if (nativePort === port) reconnectAttempts = 0;
+      }, CONNECTION_HELD_MS);
       port.onDisconnect.addListener(() => {
         // Per Chrome docs: reconnect from the onDisconnect handler, else the
         // SW terminates once timers complete and persistence is lost. Only act
@@ -816,6 +847,12 @@ export default defineBackground({
         if (nativePort !== port) return;
         console.warn('[peek] native host disconnected:', chrome.runtime.lastError);
         nativePort = null;
+        // Cancel the pending "held" reset — this connection did NOT hold, so the
+        // failed-attempt count must keep climbing (storm/unregistered host).
+        if (connectionHeldTimer !== null) {
+          clearTimeout(connectionHeldTimer);
+          connectionHeldTimer = null;
+        }
         shield.onHostConnectionChanged(false);
         scheduleReconnect();
       });
@@ -823,6 +860,11 @@ export default defineBackground({
 
     function scheduleReconnect(): void {
       hostState = 'reconnecting';
+      // Count this failed attempt. A persistently-climbing count (host never
+      // registered) is what the side panel reads to surface the setup hint
+      // (see isReconnectStalled). Saturate well above the threshold so a host
+      // that's down for a very long time can't overflow the counter.
+      if (reconnectAttempts < Number.MAX_SAFE_INTEGER) reconnectAttempts += 1;
       // Collapse races: cancel any pending reconnect before arming a new one so
       // multiple disconnects can never queue a storm of independent timers.
       if (reconnectTimer !== null) clearTimeout(reconnectTimer);
@@ -1084,6 +1126,7 @@ export default defineBackground({
           case 'getNativeHostState': {
             const response: CmdResponse<{ type: 'getNativeHostState' }> = {
               state: hostState,
+              reconnectAttempts,
             };
             sendResponse(response);
             return false;

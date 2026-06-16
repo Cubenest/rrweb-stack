@@ -12,7 +12,8 @@
 // Either way the script logs what it wrote / would write and where, so the
 // install side-effects are always visible to the user (Task 3.4 requirement).
 
-import { realpathSync } from 'node:fs';
+import { homedir } from 'node:os';
+import { isDirectInvocation } from './entrypoint.js';
 import { hostBinaryPath, loadExtensionIds } from './native-host/config.js';
 import { type InstallResult, installManifests } from './native-host/installer.js';
 import {
@@ -48,10 +49,22 @@ export function runPostinstall(): void {
     return;
   }
 
-  const home = process.env.HOME ?? process.env.USERPROFILE ?? '';
+  // Resolve home via os.homedir() to match peek-cli (init.ts / status.ts) and
+  // to fix the Git-Bash-on-Windows divergence: Git Bash sets $HOME to a POSIX
+  // path (/c/Users/jane), whereas homedir() returns the native %USERPROFILE%
+  // (C:\Users\jane) — which is where Chrome/Edge actually read the host
+  // manifest. This also drops the empty-string fallback.
+  const home = homedir();
   const ids = loadExtensionIds();
   const manifest = buildManifest(hostBinaryPath(), ids);
-  const targets = resolveInstallTargets(platform as SupportedPlatform, home);
+  // Inject the real %LOCALAPPDATA% (Windows) so a redirected AppData\Local
+  // (OneDrive KFM / enterprise folder redirection) resolves correctly;
+  // undefined on macOS/Linux, where the win32 branch is never taken.
+  const targets = resolveInstallTargets(
+    platform as SupportedPlatform,
+    home,
+    process.env.LOCALAPPDATA,
+  );
 
   const consented = isTruthyEnv(process.env.PEEK_INSTALL_NATIVE_HOST);
   const dryRun = !consented;
@@ -76,18 +89,9 @@ export function runPostinstall(): void {
 }
 
 // Run when invoked directly (postinstall / manual). Guarded so importing this
-// module for tests does not trigger the side-effect path.
-const invokedDirectly =
-  process.argv[1] !== undefined &&
-  (import.meta.url === `file://${process.argv[1]}` ||
-    (() => {
-      try {
-        return import.meta.url === `file://${realpathSync(process.argv[1])}`;
-      } catch {
-        return false;
-      }
-    })());
-if (invokedDirectly) {
+// module for tests does not trigger the side-effect path. Uses pathToFileURL
+// (see entrypoint.ts) so the guard is correct on Windows backslash paths.
+if (isDirectInvocation(import.meta.url, process.argv[1])) {
   try {
     runPostinstall();
   } catch (err) {

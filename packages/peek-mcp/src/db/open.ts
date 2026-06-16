@@ -3,10 +3,42 @@
 // the migration state stay consistent across the three thin clients (ADR-0007).
 
 import { existsSync, mkdirSync } from 'node:fs';
+import { createRequire } from 'node:module';
 import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
-import Database from 'better-sqlite3';
+import type Database from 'better-sqlite3';
 import { runMigrations, schemaVersion } from './migrate.js';
+
+/** Constructor signature of better-sqlite3's default export (value-erased import above). */
+type BetterSqlite3Ctor = new (filename?: string, options?: Database.Options) => Database.Database;
+
+/**
+ * Lazily load better-sqlite3's native constructor, wrapping a native-module
+ * load failure in an actionable error.
+ *
+ * WHY (P-Windows): the import was previously `import Database from
+ * 'better-sqlite3'` at top-level module scope, so the `.node` binding loaded at
+ * module-EVALUATION time. A missing / ABI-mismatched (Node < 22) / AV-locked
+ * prebuilt binary therefore threw before `main()` ran — and on stock Windows
+ * there is no compile-from-source fallback — so the native host process simply
+ * died and the browser saw a silently-closed stdio pipe with no message. Making
+ * this a type-only import + a lazy `require` defers the load to the first
+ * {@link openDb} call (inside `main()`, where it is caught) and lets us emit a
+ * message the user can act on. Node's own require cache makes repeat calls cheap,
+ * so no module-level memo is needed. `requireFn` is injectable for tests.
+ */
+export function loadBetterSqlite3(
+  requireFn: (id: string) => unknown = createRequire(import.meta.url),
+): BetterSqlite3Ctor {
+  try {
+    return requireFn('better-sqlite3') as BetterSqlite3Ctor;
+  } catch (err) {
+    throw new Error(
+      `peek: the better-sqlite3 native module failed to load, so the session database cannot be opened. peek requires Node.js 22+ and a prebuilt binary for your platform (${process.platform}/${process.arch}); this usually means the prebuild is missing/incompatible (e.g. Node < 22) or an antivirus has locked the .node file. Original error: ${err instanceof Error ? err.message : String(err)}`,
+      { cause: err },
+    );
+  }
+}
 
 /**
  * The native host's data directory (ADR-0007). Defaults to `~/.peek`; the
@@ -59,6 +91,7 @@ export function openDb(options: OpenDbOptions = {}): Database.Database {
     mkdirSync(dirname(path), { recursive: true });
   }
 
+  const Database = loadBetterSqlite3();
   const db = new Database(path, readonly ? { readonly: true } : {});
   if (readonly) {
     // Read-only handles can't enable WAL (a DDL/pragma write); the writer (the

@@ -1,5 +1,53 @@
 # @peekdev/cli
 
+## 0.1.0-alpha.26
+
+### Patch Changes
+
+- 87e3093: docs(cli): correct the supported-clients list (remove Continue/Zed, which `peek init` does not detect), fix the Cursor config path to the cross-platform `~/.cursor/mcp.json`, and add a Windows `~`-home-directory note to the client table.
+- e8d0ca5: Honor `%LOCALAPPDATA%` when registering the Windows native-messaging host.
+
+  `resolveInstallTargets` derived the Windows manifest location as
+  `homeDir\AppData\Local`, ignoring the real `%LOCALAPPDATA%`. On machines where
+  `AppData\Local` is redirected away from the user profile — OneDrive
+  Known-Folder-Move, ADMX folder redirection, roaming/UNC profiles — the manifest
+  was written to the wrong directory while the HKCU registry value pointed there
+  too, so Chrome/Edge silently failed to find the native host (the extension
+  could never connect).
+
+  `resolveInstallTargets` now takes an optional `localAppData`, and both callers
+  (`peek init` and the postinstall registrar) inject `process.env.LOCALAPPDATA`,
+  falling back to `homeDir\AppData\Local` when it is unset.
+
+- 1a45ef5: Fix two Windows-only failures found in the 2026-06-15 Windows-compatibility audit.
+
+  **`peek` CLI was a silent no-op on Windows (critical).** The bin entry guard
+  compared `import.meta.url` against the string-concatenated `` `file://${process.argv[1]}` ``.
+  On Windows `process.argv[1]` is a backslash path (`C:\…\index.js`), so the
+  concat produced the invalid url `file://C:\…\index.js`, which never equals
+  `import.meta.url`'s RFC-8089 form (`file:///C:/…/index.js`). `invokedDirectly`
+  was therefore always `false` and `main()` never ran — so `peek init`, `peek
+status`, every command did nothing on Windows (and, with the native host never
+  registered, the extension could never connect). The guard now uses
+  `pathToFileURL` (new `isDirectInvocation` helper), which also fixes the same
+  mismatch for paths containing spaces/unicode on POSIX. The identical guard in
+  `@peekdev/mcp`'s `postinstall.ts` is fixed the same way.
+
+  **better-sqlite3 load failure crashed the native host with no message (high).**
+  `db/open.ts` imported `better-sqlite3` at top-level module scope, so its native
+  `.node` binding loaded at module-evaluation time. A missing / ABI-mismatched
+  (Node < 22) / antivirus-locked prebuild threw before `main()` could catch it —
+  and stock Windows has no compile-from-source fallback — so the host process died
+  and the browser saw a silently-closed stdio pipe. The import is now type-only
+  and the constructor is loaded lazily (`loadBetterSqlite3`), deferring the load
+  into `openDb()` and wrapping failures in an actionable error that names the
+  Node 22+ requirement, the platform/arch, and the likely cause.
+
+- Updated dependencies [a52931a]
+- Updated dependencies [e8d0ca5]
+- Updated dependencies [1a45ef5]
+  - @peekdev/mcp@0.1.0-alpha.20
+
 ## 0.1.0-alpha.25
 
 ### Patch Changes

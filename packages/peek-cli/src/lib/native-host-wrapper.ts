@@ -13,7 +13,7 @@
 // Pure helpers — `writeNativeHostWrapper` (in commands/init.ts) does the
 // filesystem write. Tests pin the path layout + content shape per platform.
 
-import { join } from 'node:path';
+import { posix, win32 } from 'node:path';
 import type { SupportedPlatform } from '@peekdev/mcp/native-host';
 
 /**
@@ -24,7 +24,10 @@ import type { SupportedPlatform } from '@peekdev/mcp/native-host';
  */
 export function wrapperPath(peekHomeDir: string, platform: SupportedPlatform): string {
   const filename = platform === 'win32' ? 'peek-mcp-host.cmd' : 'peek-mcp-host.sh';
-  return join(peekHomeDir, filename);
+  // Join with the TARGET platform's separator (win32 for .cmd, posix for .sh)
+  // so the path reads correctly regardless of the host running the unit tests
+  // — mirrors resolveInstallTargets. In production platform === the host.
+  return (platform === 'win32' ? win32 : posix).join(peekHomeDir, filename);
 }
 
 /**

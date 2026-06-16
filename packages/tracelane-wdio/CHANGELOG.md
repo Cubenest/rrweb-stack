@@ -1,5 +1,34 @@
 # @tracelane/wdio
 
+## 0.1.0-alpha.22
+
+### Patch Changes
+
+- 759a39b: docs: correct the package taglines now that Playwright has shipped.
+
+  The shared tagline still read "the reporter for your WebdriverIO tests —
+  Playwright and Cypress on the roadmap." Playwright is now a published, supported
+  adapter (reporter + fixture), so the npm-page taglines now read "the recorder
+  for your WebdriverIO and Playwright tests — Cypress on the roadmap." Docs-only;
+  no code change.
+
+- 0236751: Never fail the user's test when rrweb capture can't start (e.g. a CSP that
+  blocks `'unsafe-eval'`).
+
+  `TraceLaneSession.onBeforeTest` called `recorder.start()` without a guard, so a
+  page whose Content-Security-Policy blocks in-page script evaluation would throw
+  the injection error straight out of the WDIO `beforeTest` hook — tracelane
+  breaking the very test it was meant to observe. (The Playwright adapter already
+  degrades to a disabled session on the same failure.)
+
+  The start is now best-effort: on failure the recorder is dropped (so
+  `afterTest`/`after` write nothing and never re-throw), a single warning is
+  logged, and capture is retried on later tests in case the CSP is page-specific.
+
+- Updated dependencies [759a39b]
+  - @tracelane/core@0.1.0-alpha.16
+  - @tracelane/report@0.1.0-alpha.19
+
 ## 0.1.0-alpha.21
 
 ### Patch Changes

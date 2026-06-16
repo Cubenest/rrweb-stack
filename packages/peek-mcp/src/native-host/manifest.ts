@@ -4,7 +4,12 @@
 // side-effects (filesystem / registry writes) can be unit-tested without
 // touching the real OS.
 
-import { join } from 'node:path';
+// Use the TARGET platform's path flavour (posix for darwin/linux, win32 for
+// Windows) rather than the ambient `join`, so resolveInstallTargets stays a
+// pure function of (platform, homeDir) — a darwin target reads as a `/`-path
+// and a win32 target as a `\`-path even when this runs on the other OS (unit
+// tests on Linux CI, the windows-latest job, etc.).
+import { posix, win32 } from 'node:path';
 
 /** Reverse-DNS native-host id (ADR-0009 / NAMING.md). */
 export const NATIVE_HOST_NAME = 'com.cubenest.peek';
@@ -96,19 +101,25 @@ export interface InstallTarget {
  * - Windows: HKCU registry keys for Chrome + Edge (the default value of each
  *   key is the on-disk manifest path).
  *
- * `homeDir` is injected for testability.
+ * `homeDir` is injected for testability. `localAppData` (Windows only) is the
+ * real `%LOCALAPPDATA%` — injected by the caller from `process.env.LOCALAPPDATA`
+ * so the function stays pure — and is REQUIRED to be correct on machines where
+ * `AppData\Local` is redirected away from `homeDir` (OneDrive Known-Folder-Move,
+ * ADMX folder redirection, roaming/UNC profiles). When absent it falls back to
+ * the conventional `homeDir\AppData\Local`.
  */
 export function resolveInstallTargets(
   platform: SupportedPlatform,
   homeDir: string,
+  localAppData?: string,
 ): InstallTarget[] {
   switch (platform) {
     case 'darwin': {
-      const appSupport = join(homeDir, 'Library', 'Application Support');
+      const appSupport = posix.join(homeDir, 'Library', 'Application Support');
       return [
         {
           browser: 'macOS Chrome',
-          manifestPath: join(
+          manifestPath: posix.join(
             appSupport,
             'Google',
             'Chrome',
@@ -118,11 +129,16 @@ export function resolveInstallTargets(
         },
         {
           browser: 'macOS Chromium',
-          manifestPath: join(appSupport, 'Chromium', 'NativeMessagingHosts', MANIFEST_FILENAME),
+          manifestPath: posix.join(
+            appSupport,
+            'Chromium',
+            'NativeMessagingHosts',
+            MANIFEST_FILENAME,
+          ),
         },
         {
           browser: 'macOS Edge',
-          manifestPath: join(
+          manifestPath: posix.join(
             appSupport,
             'Microsoft Edge',
             'NativeMessagingHosts',
@@ -132,15 +148,20 @@ export function resolveInstallTargets(
       ];
     }
     case 'linux': {
-      const config = join(homeDir, '.config');
+      const config = posix.join(homeDir, '.config');
       return [
         {
           browser: 'Linux Chrome',
-          manifestPath: join(config, 'google-chrome', 'NativeMessagingHosts', MANIFEST_FILENAME),
+          manifestPath: posix.join(
+            config,
+            'google-chrome',
+            'NativeMessagingHosts',
+            MANIFEST_FILENAME,
+          ),
         },
         {
           browser: 'Linux Chromium',
-          manifestPath: join(config, 'chromium', 'NativeMessagingHosts', MANIFEST_FILENAME),
+          manifestPath: posix.join(config, 'chromium', 'NativeMessagingHosts', MANIFEST_FILENAME),
         },
       ];
     }
@@ -150,14 +171,19 @@ export function resolveInstallTargets(
       //     a file path), and
       //   - the registry key whose default value points at that path.
       // The conventional location is %LOCALAPPDATA%\<vendor>\<browser>\
-      // NativeMessagingHosts\<host>.json. We derive %LOCALAPPDATA% from the
-      // injected `homeDir` (`C:\Users\<user>`) so tests don't depend on env.
-      const localAppData = join(homeDir, 'AppData', 'Local');
+      // NativeMessagingHosts\<host>.json. Prefer the REAL %LOCALAPPDATA% the
+      // caller injected (correct under OneDrive KFM / enterprise redirection,
+      // where AppData\Local is NOT under homeDir); fall back to the conventional
+      // homeDir\AppData\Local when it's unset.
+      const base =
+        localAppData && localAppData.length > 0
+          ? localAppData
+          : win32.join(homeDir, 'AppData', 'Local');
       return [
         {
           browser: 'Windows Chrome',
-          manifestPath: join(
-            localAppData,
+          manifestPath: win32.join(
+            base,
             'Google',
             'Chrome',
             'NativeMessagingHosts',
@@ -167,8 +193,8 @@ export function resolveInstallTargets(
         },
         {
           browser: 'Windows Edge',
-          manifestPath: join(
-            localAppData,
+          manifestPath: win32.join(
+            base,
             'Microsoft',
             'Edge',
             'NativeMessagingHosts',

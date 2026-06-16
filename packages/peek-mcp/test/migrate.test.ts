@@ -1,5 +1,5 @@
 import { mkdtempSync, rmSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { homedir, tmpdir } from 'node:os';
 import { join } from 'node:path';
 import Database from 'better-sqlite3';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -154,11 +154,13 @@ describe('peekHomeDir / defaultDbPath', () => {
   it('honors the PEEK_HOME override', () => {
     process.env.PEEK_HOME = '/tmp/peek-test-home';
     expect(peekHomeDir()).toBe('/tmp/peek-test-home');
-    expect(defaultDbPath()).toBe('/tmp/peek-test-home/sessions.db');
+    // defaultDbPath joins with the host separator; derive the expectation the
+    // same way so the assertion is correct on Windows (\) as well as POSIX (/).
+    expect(defaultDbPath()).toBe(join('/tmp/peek-test-home', 'sessions.db'));
   });
 
   it('defaults to ~/.peek when PEEK_HOME is unset', () => {
     process.env.PEEK_HOME = '';
-    expect(peekHomeDir().endsWith('/.peek')).toBe(true);
+    expect(peekHomeDir()).toBe(join(homedir(), '.peek'));
   });
 });

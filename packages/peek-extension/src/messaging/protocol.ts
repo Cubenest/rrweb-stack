@@ -126,9 +126,22 @@ export interface RelayAck {
   reason?: string;
 }
 
+/**
+ * Diagnostics the side panel reads alongside the native-host state.
+ * `reconnectAttempts` is the count of consecutive failed reconnects since the
+ * last successful connect (0 while connected). A persistently-high value while
+ * `state === 'reconnecting'` means the host is almost certainly unregistered,
+ * which drives the side-panel "run `peek init`" setup hint (see
+ * isReconnectStalled in background/backoff.ts).
+ */
+export interface NativeHostStateView {
+  state: NativeHostState;
+  reconnectAttempts: number;
+}
+
 /** Per-command response types. */
 export type CmdResponse<C extends Cmd> = C extends { type: 'getNativeHostState' }
-  ? { state: NativeHostState }
+  ? NativeHostStateView
   : C extends { type: 'getRecordingState' }
     ? { recording: boolean }
     : C extends { type: 'getRecorderStats' }

@@ -6,7 +6,7 @@ Two OSS products on one rrweb-based substrate. Both ship as `npm` packages today
 
 | Product | One line | Install |
 |---|---|---|
-| **[tracelane](packages/tracelane-wdio/)** | The reporter for your WebdriverIO tests — Playwright and Cypress on the roadmap. Self-contained HTML for every run — replay failures, audit successes, attach to any bug tracker. No SaaS, no dashboard, no signup. | `npx @tracelane/cli init` |
+| **[tracelane](packages/tracelane-wdio/)** | The recorder for your WebdriverIO and Playwright tests — Cypress on the roadmap. Self-contained HTML for every run — replay failures, audit successes, attach to any bug tracker. No SaaS, no dashboard, no signup. | `npx @tracelane/cli init` |
 | **[peek](packages/peek-cli/)** | Your real browser, exposed to your AI coding agent over MCP — capture once, query forever, never leaves your machine. | `npm install -g @peekdev/cli && npx peek init` |
 
 ![tracelane install — one command](https://raw.githubusercontent.com/Cubenest/rrweb-stack/main/assets/tracelane-hero.gif)
@@ -28,7 +28,7 @@ Two OSS products on one rrweb-based substrate. Both ship as `npm` packages today
 | Package | Status | What it does |
 |---|---|---|
 | [`@tracelane/wdio`](packages/tracelane-wdio/) | alpha | WebdriverIO Service — capture + write HTML report |
-| [`@tracelane/playwright`](https://github.com/Cubenest/rrweb-stack/issues) | planned (Q3 2026) | Playwright Reporter implementing `onTestEnd` + `onAttachment` |
+| [`@tracelane/playwright`](packages/tracelane-playwright/) | alpha | Playwright Reporter + auto-fixture — capture + write HTML report |
 | [`@tracelane/cypress`](https://github.com/Cubenest/rrweb-stack/issues) | planned (Q4 2026) | JSON-output adapter (no Test Replay overlap) |
 | [`@tracelane/core`](packages/tracelane-core/) | alpha | Framework-agnostic capture engine — depended on by the adapters |
 | [`@tracelane/report`](packages/tracelane-report/) | alpha | Self-contained HTML report builder |

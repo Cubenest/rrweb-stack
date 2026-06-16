@@ -79,7 +79,7 @@ import Layout from '../layouts/Layout.astro';
       </tr>
       <tr>
         <td><strong>Network capture</strong></td>
-        <td>Failed/notable responses (<code>status &ge; 400</code>) via CDP, in-timeline alongside DOM events.</td>
+        <td>Failed/notable responses (<code>status &ge; 400</code>) captured in-page on every browser, in-timeline alongside DOM events; on Chromium CDP additionally supplies authoritative status + no-response failures.</td>
         <td>Full HAR (all requests), tightly tied to the step timeline.</td>
       </tr>
       <tr>

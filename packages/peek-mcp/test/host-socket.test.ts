@@ -8,6 +8,7 @@ import {
   HostSocketServer,
   cleanupStaleSocket,
   probeSocketAlive,
+  rebindRetryDelayMs,
 } from '../src/native-host/host-socket.js';
 import { EMPTY_POLICY, type LoadedPolicy } from '../src/native-host/policy.js';
 
@@ -384,6 +385,15 @@ describe('HostSocketServer', () => {
 // to ~/.peek/screenshots/<requestId>.png and REPLACED with a compact pointer so
 // a multi-MB base64 PNG never round-trips over the socket. STRICT GUARD: any
 // reply WITHOUT a dataUrl passes through byte-for-byte with ZERO fs calls.
+describe('rebindRetryDelayMs', () => {
+  it('waits a beat before retrying a Windows named-pipe rebind (it needs time to release)', () => {
+    expect(rebindRetryDelayMs('\\\\.\\pipe\\peek-host')).toBeGreaterThan(0);
+  });
+  it('rebinds a POSIX socket immediately after unlink (no extra delay)', () => {
+    expect(rebindRetryDelayMs('/home/u/.peek/host.sock')).toBe(0);
+  });
+});
+
 describe('HostSocketServer — screenshot spill-to-disk (toResponsePayload)', () => {
   it('writes the PNG + returns { path, bytes, format } and DROPS dataUrl when present', () => {
     const calls: Array<{ requestId: string; bytes: number }> = [];
@@ -423,6 +433,40 @@ describe('HostSocketServer — screenshot spill-to-disk (toResponsePayload)', ()
     });
     // The fat base64 dataUrl never makes it onto the wire.
     expect('dataUrl' in details).toBe(false);
+  });
+
+  it('writes a clean error act.response (no crash/timeout) when the screenshot write fails', () => {
+    // EACCES on ~/.peek/screenshots, disk full, etc. Must NOT throw out of
+    // onSwMessage — that skips the act.response and times the caller out.
+    const { server, net } = makeServer({
+      writeScreenshot: () => {
+        throw Object.assign(new Error('EACCES: permission denied'), { code: 'EACCES' });
+      },
+    });
+    const conn = net.connect();
+    feedScreenshotRequest(conn);
+
+    expect(() =>
+      server.onSwMessage({
+        type: 'action.result',
+        requestId: 'rid-1',
+        tool: 'execute_action',
+        verdict: 'allow',
+        result: 'ok',
+        approver: 'user',
+        details: { dataUrl: `data:image/png;base64,${PNG_1X1_B64}`, format: 'png' },
+      }),
+    ).not.toThrow();
+
+    const frames = conn.frames();
+    expect(frames).toHaveLength(1); // a response WAS written back
+    expect(frames[0]?.kind).toBe('act.response');
+    const payload = frames[0]?.payload as Record<string, unknown>;
+    expect(payload.verdict).toBe('allow'); // the action itself still succeeded
+    const details = payload.details as Record<string, unknown>;
+    expect('dataUrl' in details).toBe(false); // never inline the multi-MB base64
+    expect(details.format).toBe('png');
+    expect(String(details.error)).toMatch(/EACCES|screenshot/i);
   });
 
   it('STRICT GUARD: a non-screenshot reply passes through with ZERO fs calls', () => {

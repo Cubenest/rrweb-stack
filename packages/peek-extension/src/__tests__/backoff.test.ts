@@ -1,8 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import {
+  CONNECTION_HELD_MS,
   INITIAL_BACKOFF_MS,
   MAX_BACKOFF_MS,
+  RECONNECT_STALLED_AFTER_ATTEMPTS,
   backoffSequence,
+  isReconnectStalled,
   jitter,
   nextBackoffMs,
 } from '../background/backoff';
@@ -67,5 +70,44 @@ describe('jitter', () => {
     expect(jitter(0)).toBe(0);
     expect(jitter(-1)).toBe(0);
     expect(jitter(Number.NaN)).toBe(0);
+  });
+});
+
+describe('isReconnectStalled — surface the setup hint after persistent failure', () => {
+  it('is false below the threshold (transient host restart / brief blip)', () => {
+    expect(isReconnectStalled(0)).toBe(false);
+    expect(isReconnectStalled(1)).toBe(false);
+    expect(isReconnectStalled(RECONNECT_STALLED_AFTER_ATTEMPTS - 1)).toBe(false);
+  });
+
+  it('is true at and beyond the threshold (host almost certainly unregistered)', () => {
+    expect(isReconnectStalled(RECONNECT_STALLED_AFTER_ATTEMPTS)).toBe(true);
+    expect(isReconnectStalled(RECONNECT_STALLED_AFTER_ATTEMPTS + 5)).toBe(true);
+  });
+
+  it('treats negative / non-finite attempt counts as not-stalled (defensive)', () => {
+    expect(isReconnectStalled(-1)).toBe(false);
+    expect(isReconnectStalled(Number.NaN)).toBe(false);
+    expect(isReconnectStalled(Number.POSITIVE_INFINITY)).toBe(true);
+  });
+
+  it('the threshold is reached within a reasonable wait (≈ a few seconds of backoff)', () => {
+    // With the 1s→2s→4s schedule, the first few attempts elapse in seconds, so
+    // a stalled state is surfaced promptly rather than leaving the user staring
+    // at a perpetual "Reconnecting…" pill.
+    expect(RECONNECT_STALLED_AFTER_ATTEMPTS).toBeGreaterThanOrEqual(2);
+    expect(RECONNECT_STALLED_AFTER_ATTEMPTS).toBeLessThanOrEqual(6);
+  });
+});
+
+describe('CONNECTION_HELD_MS — the disconnect-storm guard window', () => {
+  it('is shorter than the initial backoff so a healthy host clears the counter before the next retry', () => {
+    // background.ts only resets reconnectAttempts after the port HOLDS for
+    // CONNECTION_HELD_MS. If that window were ≥ the retry delay, a genuinely
+    // connected host could be scheduled for another reconnect before the reset
+    // landed. Keeping it strictly below INITIAL_BACKOFF_MS guarantees a real
+    // connection clears the stalled signal first.
+    expect(CONNECTION_HELD_MS).toBeGreaterThan(0);
+    expect(CONNECTION_HELD_MS).toBeLessThan(INITIAL_BACKOFF_MS);
   });
 });

@@ -10,11 +10,11 @@
 // (no CLI framework dependency); this top-level dispatcher just routes on the
 // first positional so each subcommand owns its own option schema.
 
-import { realpathSync } from 'node:fs';
 import { runAudit } from './commands/audit.js';
 import { runInit } from './commands/init.js';
 import { runSessions } from './commands/sessions.js';
 import { runStatus } from './commands/status.js';
+import { isDirectInvocation } from './lib/entrypoint.js';
 import { CLI_VERSION } from './version.js';
 
 const HELP = `peek ${CLI_VERSION} — browser-session companion CLI
@@ -73,19 +73,11 @@ async function main(): Promise<void> {
 }
 
 // Run only when invoked directly as the `peek` bin (npx / shell), not when this
-// module is imported (tests, or another package consuming `run`). Guarded the
-// same way as @peekdev/mcp's entry so an ESM `import` has no side effects.
-const invokedDirectly =
-  process.argv[1] !== undefined &&
-  (import.meta.url === `file://${process.argv[1]}` ||
-    (() => {
-      try {
-        return import.meta.url === `file://${realpathSync(process.argv[1])}`;
-      } catch {
-        return false;
-      }
-    })());
-if (invokedDirectly) {
+// module is imported (tests, or another package consuming `run`), so an ESM
+// `import` has no side effects. Uses pathToFileURL (see lib/entrypoint.ts) so
+// the guard matches on Windows backslash paths — a plain `file://` + argv
+// concat was always false there, making every `peek` command a silent no-op.
+if (isDirectInvocation(import.meta.url, process.argv[1])) {
   main().catch((err) => {
     process.stderr.write(
       `peek: fatal — ${err instanceof Error ? (err.stack ?? err.message) : String(err)}\n`,
