@@ -14,7 +14,7 @@ import { synthesizeNetMessagesFromEvents } from '../src/background/network-plugi
 import { RecordingStateStore, isTabRecording } from '../src/background/recording-state';
 import { SessionRegistry } from '../src/background/session';
 import { RecorderStatsStore } from '../src/background/stats';
-import { ENABLED_ORIGINS_KEY, NATIVE_HOST_ID } from '../src/constants';
+import { ACTION_FEEDBACK_HOST_ATTR, ENABLED_ORIGINS_KEY, NATIVE_HOST_ID } from '../src/constants';
 import {
   DEEP_CAPTURE_ORIGINS_KEY,
   DeepCaptureManager,
@@ -22,6 +22,7 @@ import {
   diffRemovedOrigins,
   isDeepCaptureEnabled,
 } from '../src/deep-capture';
+import { getShowActionFeedback } from '../src/indicators/storage';
 import type {
   Cmd,
   CmdResponse,
@@ -32,6 +33,12 @@ import type {
   ShowConfirmMessage,
 } from '../src/messaging/protocol';
 import { denyReason, isFromSidePanel } from '../src/messaging/protocol';
+import {
+  type ElementFeedbackArgs,
+  FEEDBACK_CSS,
+  elementFeedbackFor,
+  showElementFeedback,
+} from '../src/permissions/action-feedback';
 import {
   type ActionHandlerDeps,
   InMemoryConfirmTokenStore,
@@ -514,6 +521,41 @@ export default defineBackground({
     };
 
     /**
+     * Best-effort, fire-and-forget in-page action feedback. Called AFTER a
+     * successful dispatch with the result already returned to the agent, so it
+     * never blocks the act and its own failure is swallowed. (Task 7 handles
+     * element verbs; Task 8 adds the page-level toast branch.)
+     */
+    const emitActionFeedback = async (tabId: number, action: Action): Promise<void> => {
+      try {
+        if (!(await getShowActionFeedback())) return;
+        // The protocol Action union has NO index signature; cast to the
+        // permissive shape the decision helpers accept (mirrors how
+        // dispatchInMainWorld casts `action` for dispatchAction below).
+        const a = action as unknown as { type: string; [k: string]: unknown };
+        const plan = elementFeedbackFor(a);
+        if (!plan) return; // page verbs are added in Task 8
+        const feedbackArgs: ElementFeedbackArgs = {
+          verb: plan.verb,
+          selector: plan.selector,
+          ...(plan.nth !== undefined ? { nth: plan.nth } : {}),
+          hostAttr: ACTION_FEEDBACK_HOST_ATTR,
+          css: FEEDBACK_CSS,
+        };
+        void chrome.scripting
+          .executeScript({
+            target: { tabId },
+            world: 'MAIN',
+            func: showElementFeedback,
+            args: [feedbackArgs],
+          })
+          .catch(() => {});
+      } catch {
+        /* feedback is best-effort — never affects the action */
+      }
+    };
+
+    /**
      * Dispatch the allowed action in the tab's MAIN world via the pure
      * {@link dispatchAction}. Returns the first frame's serializable result; a
      * scripting error surfaces as `{ ok:false, error }` (the action-handler
@@ -581,7 +623,10 @@ export default defineBackground({
           | { ok: true; details?: unknown }
           | { ok: false; error: string }
           | undefined;
-        return result ?? { ok: false, error: 'no result from MAIN-world dispatch' };
+        const finalResult = result ?? { ok: false, error: 'no result from MAIN-world dispatch' };
+        // Fire-and-forget the in-page cue AFTER computing the result; do not await.
+        if (finalResult.ok) void emitActionFeedback(tabId, action);
+        return finalResult;
       } catch (err) {
         return { ok: false, error: err instanceof Error ? err.message : String(err) };
       }
