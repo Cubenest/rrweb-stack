@@ -90,12 +90,28 @@ export async function dispatchAction(action: DispatchableAction): Promise<Dispat
       return null;
     }
   }
+  // INLINED for MAIN-world injection: scroll the target into view ONLY when it
+  // isn't already fully visible, so a human can see where peek is acting without
+  // gratuitously re-centering on every action. Never throws (scrollIntoView /
+  // getBoundingClientRect may be unavailable, e.g. jsdom without a stub).
+  function bringIntoView(el: Element): void {
+    try {
+      const r = el.getBoundingClientRect();
+      const vh = window.innerHeight || document.documentElement.clientHeight;
+      const vw = window.innerWidth || document.documentElement.clientWidth;
+      const fullyVisible = r.top >= 0 && r.left >= 0 && r.bottom <= vh && r.right <= vw;
+      if (!fullyVisible) (el as HTMLElement).scrollIntoView({ block: 'center', inline: 'nearest' });
+    } catch {
+      /* non-fatal: the action still proceeds without the scroll */
+    }
+  }
   switch (action.type) {
     case 'click': {
       const selector = typeof action.selector === 'string' ? action.selector : '';
       const nth = typeof action.nth === 'number' ? action.nth : undefined;
       const el = resolveElement(selector, nth);
       if (!el) return { ok: false, error: `element not found: ${selector}` };
+      bringIntoView(el);
       (el as HTMLElement).click();
       return { ok: true };
     }
@@ -103,6 +119,7 @@ export async function dispatchAction(action: DispatchableAction): Promise<Dispat
       const selector = typeof action.selector === 'string' ? action.selector : '';
       const el = resolveElement(selector);
       if (!el) return { ok: false, error: `element not found: ${selector}` };
+      bringIntoView(el);
       const text = typeof action.text === 'string' ? action.text : '';
       // Assign as a plain string value — NEVER innerHTML.
       (el as HTMLInputElement | HTMLTextAreaElement).value = text;
@@ -130,7 +147,7 @@ export async function dispatchAction(action: DispatchableAction): Promise<Dispat
       if (typeof sel === 'string' && sel.length > 0) {
         const el = resolveElement(sel);
         if (!el) return { ok: false, error: `element not found: ${sel}` };
-        (el as HTMLElement).scrollIntoView();
+        (el as HTMLElement).scrollIntoView({ block: 'center', inline: 'nearest' });
         return { ok: true };
       }
       const x = typeof action.x === 'number' ? action.x : 0;
@@ -222,6 +239,7 @@ export async function dispatchAction(action: DispatchableAction): Promise<Dispat
         target = resolveElement(selector);
         if (!target) return { ok: false, error: `element not found: ${selector}` };
         (target as HTMLElement).focus?.();
+        bringIntoView(target);
       } else {
         target = document.activeElement;
       }
@@ -244,6 +262,7 @@ export async function dispatchAction(action: DispatchableAction): Promise<Dispat
       const nth = typeof action.nth === 'number' ? action.nth : undefined;
       const el = resolveElement(selector, nth);
       if (!el) return { ok: false, error: `element not found: ${selector}` };
+      bringIntoView(el);
       (el as HTMLElement).dispatchEvent(
         new MouseEvent('dblclick', { bubbles: true, cancelable: true }),
       );
