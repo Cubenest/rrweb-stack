@@ -38,12 +38,22 @@ export const RECORDING_FRAME_HOST_ATTR = 'data-peek-rec-frame';
 export const SHIELD_HOST_ATTR = 'data-peek-shield-host';
 
 /**
+ * Marker attribute on the in-page action-feedback closed-shadow host. Used to
+ * exclude the host from rrweb capture (recorder `blockSelector`) so peek's own
+ * "I just acted here" cue never lands in a recording. The host is
+ * `display:contents` (no layout box), so blocking it leaves NO placeholder
+ * rectangle on replay. Pure string — safe to bundle into the MAIN-world
+ * recorder IIFE.
+ */
+export const ACTION_FEEDBACK_HOST_ATTR = 'data-peek-fx';
+
+/**
  * rrweb `blockSelector` for the MAIN-world recorder: a CSS attribute-selector
  * list covering every peek-owned overlay host so neither the recording
- * indicator nor the control shield can ever land in a capture. Both hosts live
+ * indicator nor the control shield can ever land in a capture. All hosts live
  * in CLOSED shadow roots (already invisible to rrweb); blocking the empty
- * light-DOM host is defense-in-depth. Derived from the two marker constants so
+ * light-DOM host is defense-in-depth. Derived from the marker constants so
  * the recorder and the closed-shadow sweep stay in lockstep. Pure string —
  * safe to bundle into the MAIN-world recorder IIFE.
  */
-export const RECORDER_BLOCK_SELECTOR = `[${RECORDING_FRAME_HOST_ATTR}], [${SHIELD_HOST_ATTR}]`;
+export const RECORDER_BLOCK_SELECTOR = `[${RECORDING_FRAME_HOST_ATTR}], [${SHIELD_HOST_ATTR}], [${ACTION_FEEDBACK_HOST_ATTR}]`;
