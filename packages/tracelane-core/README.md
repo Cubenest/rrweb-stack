@@ -2,7 +2,7 @@
 
 # @tracelane/core
 
-> The recorder for your WebdriverIO and Playwright tests — Cypress on the roadmap. Self-contained HTML for every run — replay failures, audit successes, attach to any bug tracker. No SaaS, no dashboard, no signup.
+> The framework-agnostic recording engine behind `tracelane`. Wraps any test runner's `browser` object behind one `BrowserExecutor` interface and drives the rrweb capture. Shared internals — not installed directly.
 
 [![npm](https://img.shields.io/npm/v/@tracelane/core.svg)](https://www.npmjs.com/package/@tracelane/core)
 [![downloads](https://img.shields.io/npm/dw/@tracelane/core.svg)](https://www.npmjs.com/package/@tracelane/core)
@@ -34,6 +34,33 @@ See the [`@tracelane/wdio` README](https://github.com/Cubenest/rrweb-stack/tree/
 
 Built on [`@cubenest/rrweb-core`](https://github.com/Cubenest/rrweb-stack/tree/main/packages/rrweb-core).
 
+> Exact internal values (cooldown ms, report-size cap) are the calibrated defaults at the time of writing; see [`src/recorder.ts`](https://github.com/Cubenest/rrweb-stack/blob/main/packages/tracelane-core/src/recorder.ts) and [`src/size-guard.ts`](https://github.com/Cubenest/rrweb-stack/blob/main/packages/tracelane-core/src/size-guard.ts) for the source of truth.
+
+## API
+
+The public surface is re-exported from [`src/index.ts`](https://github.com/Cubenest/rrweb-stack/blob/main/packages/tracelane-core/src/index.ts). The load-bearing contract is the `BrowserExecutor` interface that every adapter implements — `@tracelane/core` only ever talks to it, never to a concrete framework driver:
+
+```ts
+export interface BrowserExecutor {
+  execute<T>(fn: (...args: unknown[]) => T, ...args: unknown[]): Promise<T>;
+  executeAsync<T>(fn: (...args: unknown[]) => void, ...args: unknown[]): Promise<T>;
+  cdp(domain: string, command: string, params?: Record<string, unknown>): Promise<unknown>;
+  on(event: string, handler: (params: unknown) => void): void;
+}
+```
+
+Also exported: `createRecorder` (the recorder controller), `attachNetworkCapture` (CDP network capture), `loadRrwebBundle`, the `resolveMode` mode switch, and the `pruneToSizeBudget` report-size guard. See [`src/browser-executor.ts`](https://github.com/Cubenest/rrweb-stack/blob/main/packages/tracelane-core/src/browser-executor.ts) for the full interface docs.
+
+## Related packages
+
+- [`@cubenest/rrweb-core`](https://github.com/Cubenest/rrweb-stack/tree/main/packages/rrweb-core) — the shared rrweb fork + network plugin this engine builds on.
+- [`@tracelane/wdio`](https://github.com/Cubenest/rrweb-stack/tree/main/packages/tracelane-wdio) — WebdriverIO adapter (implements `BrowserExecutor`).
+- [`@tracelane/playwright`](https://github.com/Cubenest/rrweb-stack/tree/main/packages/tracelane-playwright) — Playwright adapter (implements `BrowserExecutor`).
+- [`@tracelane/report`](https://github.com/Cubenest/rrweb-stack/tree/main/packages/tracelane-report) — builds the self-contained HTML report from the captured buffer.
+- [`@tracelane/cli`](https://github.com/Cubenest/rrweb-stack/tree/main/packages/tracelane-cli) — wires the adapters together for a project.
+
 ## License
 
 Apache-2.0. Contributions require a [DCO](https://developercertificate.org/) sign-off (`git commit -s`).
+
+See the [CHANGELOG](https://github.com/Cubenest/rrweb-stack/blob/main/packages/tracelane-core/CHANGELOG.md) for release history and [SECURITY-NOTES](https://github.com/Cubenest/rrweb-stack/blob/main/docs/SECURITY-NOTES.md) for the recording/redaction threat model.

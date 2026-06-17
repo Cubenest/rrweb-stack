@@ -136,6 +136,8 @@ These are the subpath exports the `@peekdev/cli` package uses. API surface is sm
 
 Semantic Versioning. Currently `0.1.0-alpha.x` — pre-release; tool schemas are stable in spirit but new tools may land in patch releases. See [SUPPORTED.md](https://github.com/Cubenest/rrweb-stack/blob/main/SUPPORTED.md) for the compatibility matrix (MCP protocol versions, Chrome stable channels, Node versions).
 
+Per-release changes are recorded in the [CHANGELOG](https://github.com/Cubenest/rrweb-stack/blob/main/packages/peek-mcp/CHANGELOG.md).
+
 ## Privacy
 
 Local-only. No network destinations. No telemetry. The MCP transport is stdio over a child-process pipe — your AI client launches `peek-mcp`, talks to it over stdin/stdout, and kills it when done. The binary holds no persistent state outside `~/.peek/`.
@@ -159,6 +161,11 @@ user-facing install guide.
 - [Claude Code skill standalone install](https://github.com/Cubenest/rrweb-stack/blob/main/docs/peek/distribution/claude-code-skill.md) — curl recipe for users who want the Claude Code skill without running `peek init`.
 
 Launch order is documented in [`docs/peek/distribution/README.md`](https://github.com/Cubenest/rrweb-stack/blob/main/docs/peek/distribution/README.md) (CWS first, then the MCP-registry fan-out).
+
+## Related packages
+
+- [`@peekdev/cli`](https://www.npmjs.com/package/@peekdev/cli) — the `peek init` wizard that wires this MCP server into your AI client and installs the native messaging host. **Start here.**
+- [`@peekdev/extension`](https://github.com/Cubenest/rrweb-stack/tree/main/packages/peek-extension) — the Chrome MV3 extension that records masked browser sessions and writes them to `~/.peek/sessions.db`. Loaded unpacked (not published to npm).
 
 ## License
 

@@ -23,7 +23,7 @@ Docs: <https://tracelane.cubenest.in>
 npm install --save-dev @tracelane/playwright
 ```
 
-`@playwright/test` (>= 1.40) is a peer dependency — you already have it.
+`@playwright/test` (>= 1.40) is a peer dependency — you already have it. Requires **Node >= 22**.
 
 ## Wire it (two edits)
 
@@ -116,4 +116,17 @@ It carries only advisory `{ signal?, evidence? }` rules — no secrets — so re
 
 ## License
 
-Apache-2.0. See [`NOTICE`](./NOTICE) for bundled third-party software (the rrweb fork + console plugin).
+Apache-2.0. See [`NOTICE`](https://github.com/Cubenest/rrweb-stack/blob/main/packages/tracelane-playwright/NOTICE) for bundled third-party software (the rrweb fork + console plugin).
+
+For the privacy/security posture of the capture (what is and isn't recorded, masking, and the advisory security-hygiene signals), see the [security notes](https://github.com/Cubenest/rrweb-stack/blob/main/docs/SECURITY-NOTES.md).
+
+Full version history: [CHANGELOG](https://github.com/Cubenest/rrweb-stack/blob/main/packages/tracelane-playwright/CHANGELOG.md).
+
+## Related packages
+
+Part of the [tracelane](https://github.com/Cubenest/rrweb-stack) stack:
+
+- [`@tracelane/wdio`](https://github.com/Cubenest/rrweb-stack/blob/main/packages/tracelane-wdio/README.md) — the same recorder as a WebdriverIO reporter.
+- [`@tracelane/cli`](https://github.com/Cubenest/rrweb-stack/blob/main/packages/tracelane-cli/README.md) — one command that wires the recorder into your WebdriverIO and Playwright suites.
+- [`@tracelane/core`](https://github.com/Cubenest/rrweb-stack/blob/main/packages/tracelane-core/README.md) — the shared recorder engine.
+- [`@tracelane/report`](https://github.com/Cubenest/rrweb-stack/blob/main/packages/tracelane-report/README.md) — the self-contained HTML report builder.

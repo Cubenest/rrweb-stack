@@ -80,8 +80,6 @@ For **Playwright**, the editor registers `['@tracelane/playwright', { mode: 'fai
 
 For **WebdriverIO**, the editor uses string-based regex to:
 
-The editor uses string-based regex to:
-
 1. Insert `import TraceLaneService from '@tracelane/wdio';` after the last existing `import` line.
 2. Append `[TraceLaneService, { mode: 'failed' }]` as the LAST element of the `services:` array. Three shapes are recognized:
    - `services: []` (empty)
@@ -119,8 +117,12 @@ Both routes produce the same setup. The CLI exists to remove the "edit wdio.conf
 
 Semantic Versioning. Currently `0.1.0-alpha.x` (pre-release; the API + flags may shift before `1.0.0`).
 
+**Requires Node.js >= 22.**
+
 **No telemetry.** The CLI inspects local files only (lockfile presence, conf shape) and spawns the package-manager process you'd have run by hand. Nothing is sent anywhere.
 
 ## License
 
 Apache 2.0. Contributions accepted under the [Developer Certificate of Origin (DCO)](https://developercertificate.org/) — sign commits with `git commit -s`. See [CONTRIBUTING.md](https://github.com/Cubenest/rrweb-stack/blob/main/CONTRIBUTING.md) + [SECURITY.md](https://github.com/Cubenest/rrweb-stack/blob/main/SECURITY.md).
+
+Full release history: [CHANGELOG.md](https://github.com/Cubenest/rrweb-stack/blob/main/packages/tracelane-cli/CHANGELOG.md).

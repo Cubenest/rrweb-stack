@@ -22,10 +22,12 @@ npm install -g @peekdev/cli && peek init
 1. Build: `pnpm --filter @peekdev/extension build`.
 2. Load `packages/peek-extension/.output/chrome-mv3/` via
    `chrome://extensions` → "Load unpacked".
-3. Install the native host: `pnpm --filter @peekdev/cli build && node
-   packages/peek-cli/dist/bin.js install` (writes the native-messaging
-   manifest under `~/Library/Application Support/Google/Chrome/NativeMessagingHosts/`
-   on macOS, or the equivalent on Linux / Windows).
+3. Install the native host with the wizard: `npm install -g @peekdev/cli
+   && peek init` (writes the native-messaging manifest under
+   `~/Library/Application Support/Google/Chrome/NativeMessagingHosts/` on
+   macOS, or the equivalent on Linux / Windows, and wires up your AI
+   client's MCP config). From a source checkout you can instead run `pnpm
+   --filter @peekdev/cli build && node packages/peek-cli/dist/index.js init`.
 
 ## Enable on a site
 
@@ -46,6 +48,13 @@ peek is local-first. Nothing leaves your machine. See
 full data-handling policy, and
 [`docs/peek/PERMISSION_JUSTIFICATION.md`](../../docs/peek/PERMISSION_JUSTIFICATION.md)
 for per-permission justifications (the Chrome Web Store submission text).
+
+## Related packages
+
+- [`@peekdev/cli`](https://github.com/Cubenest/rrweb-stack/blob/main/packages/peek-cli/README.md) — the `peek` command + native-messaging host installer; the user-facing install path for this extension.
+- [`@peekdev/mcp`](https://github.com/Cubenest/rrweb-stack/blob/main/packages/peek-mcp/README.md) — the MCP server that exposes captured sessions to your AI coding agent.
+
+See the [threat model](https://github.com/Cubenest/rrweb-stack/blob/main/docs/peek/THREATMODEL.md) for peek's security boundaries and the [CHANGELOG](https://github.com/Cubenest/rrweb-stack/blob/main/packages/peek-extension/CHANGELOG.md) for release notes.
 
 ## License
 

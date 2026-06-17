@@ -56,7 +56,7 @@ Docs: [peek.cubenest.in](https://peek.cubenest.in) (source under [`apps/peek-doc
 
 ## Shared substrate
 
-`@cubenest/rrweb-core` — vendored PostHog rrweb fork, PII masking primitives, large-DOM throttling, screenshot fallback, network/console capture abstractions, compression helpers. Used by both products. The fork is pinned by SHA + the substrate's NOTICE attributes both PostHog's plugin lineage and the upstream rrweb roots.
+[`@cubenest/rrweb-core`](https://github.com/Cubenest/rrweb-stack/blob/main/packages/rrweb-core/) — vendored PostHog rrweb fork, PII masking primitives, large-DOM throttling, screenshot fallback, network/console capture abstractions, compression helpers. Used by both products. The fork is pinned by SHA + the substrate's NOTICE attributes both PostHog's plugin lineage and the upstream rrweb roots.
 
 ## Why two products, one repo
 
@@ -69,7 +69,15 @@ Shared upstream means one fork to track, one masking surface to harden, one lice
 
 ## Pre-launch state
 
-Pre-1.0. Alpha packages live on npm. Branch protection is on `main` (PR + CI + DCO + linear history). All workflows use Trusted Publishing OIDC + SLSA provenance. Renovate runs with a 7-day cooldown (21 days for the `@posthog/rrweb` lineage) and `config:best-practices`. Public launch motion is in progress.
+Pre-1.0. Alpha packages live on npm. Branch protection is on `main` (PR + CI + DCO + linear history). All workflows use Trusted Publishing OIDC + SLSA provenance. Renovate runs with a 7-day cooldown (21 days for the `@posthog/rrweb` lineage) and `config:best-practices`. tracelane has publicly launched (npm alpha + a live demo report); peek is alpha on npm with its Chrome Web Store submission still pending.
+
+## Security
+
+Report a vulnerability via [SECURITY.md](https://github.com/Cubenest/rrweb-stack/blob/main/SECURITY.md). The shared threat model for both products lives in [docs/SECURITY-NOTES.md](https://github.com/Cubenest/rrweb-stack/blob/main/docs/SECURITY-NOTES.md).
+
+## License
+
+Apache-2.0. See [LICENSE](https://github.com/Cubenest/rrweb-stack/blob/main/LICENSE).
 
 ## Contributing
 
