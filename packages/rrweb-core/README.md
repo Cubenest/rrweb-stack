@@ -1,4 +1,5 @@
 # @cubenest/rrweb-core
+> The shared rrweb capture + masking engine behind tracelane and peek — vendored PostHog fork, PII masking, network/console capture, large-DOM throttling. Not a standalone product.
 
 [![npm](https://img.shields.io/npm/v/@cubenest/rrweb-core.svg)](https://www.npmjs.com/package/@cubenest/rrweb-core)
 [![downloads](https://img.shields.io/npm/dw/@cubenest/rrweb-core.svg)](https://www.npmjs.com/package/@cubenest/rrweb-core)
@@ -9,7 +10,9 @@
 [![node](https://img.shields.io/node/v/@cubenest/rrweb-core.svg)](https://www.npmjs.com/package/@cubenest/rrweb-core)
 ![status: alpha](https://img.shields.io/badge/status-alpha-orange.svg)
 
-Shared rrweb-based capture substrate. Used by [`tracelane`](https://github.com/Cubenest/rrweb-stack/tree/main/packages/tracelane-core) and [`peek`](https://github.com/Cubenest/rrweb-stack/tree/main/packages/peek-extension). Not generally intended for direct consumption — depend on a product package instead.
+Shared rrweb-based capture substrate. Used by [`tracelane`](https://github.com/Cubenest/rrweb-stack/tree/main/packages/tracelane-core) and [`peek`](https://github.com/Cubenest/rrweb-stack/tree/main/packages/peek-extension).
+
+**Not intended for direct consumption** — depend on a product package instead. It exists to share the masking and capture primitives (PII masking selectors + regex bank, body/header redaction, network/console capture, large-DOM throttling) between the two product families so the privacy and recording behaviour stay identical.
 
 ## What's in here
 
@@ -22,12 +25,18 @@ Shared rrweb-based capture substrate. Used by [`tracelane`](https://github.com/C
 - Console capture
 - Compression helpers (`fflate`)
 - IndexedDB persistence helper
-- Compatibility matrix
+- [Compatibility matrix](https://github.com/Cubenest/rrweb-stack/blob/main/packages/rrweb-core/COMPATIBILITY.md)
 
 ## Versioning
 
 Independent semver. Breaking changes are coordinated across `tracelane` and `peek` releases.
+## Related packages
+
+The two product families that consume this substrate:
+
+- **tracelane** — failed-test recorder for E2E suites. Start at [`@tracelane/wdio`](https://github.com/Cubenest/rrweb-stack/tree/main/packages/tracelane-wdio) (WebdriverIO) or [`@tracelane/playwright`](https://github.com/Cubenest/rrweb-stack/tree/main/packages/tracelane-playwright); engine is [`@tracelane/core`](https://github.com/Cubenest/rrweb-stack/tree/main/packages/tracelane-core).
+- **peek** — browser companion for AI coding agents. Install via [`@peekdev/cli`](https://github.com/Cubenest/rrweb-stack/tree/main/packages/peek-cli); the MCP server is [`@peekdev/mcp`](https://github.com/Cubenest/rrweb-stack/tree/main/packages/peek-mcp) and the recorder is [`@peekdev/extension`](https://github.com/Cubenest/rrweb-stack/tree/main/packages/peek-extension).
 
 ## License
 
-Apache 2.0. Vendored rrweb fork remains MIT-licensed; see NOTICE.
+Apache 2.0. Vendored rrweb fork remains MIT-licensed; see [NOTICE](https://github.com/Cubenest/rrweb-stack/blob/main/packages/rrweb-core/NOTICE).

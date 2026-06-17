@@ -2,7 +2,7 @@
 
 # @tracelane/wdio
 
-> The recorder for your WebdriverIO and Playwright tests — Cypress on the roadmap. Self-contained HTML for every run — replay failures, audit successes, attach to any bug tracker. No SaaS, no dashboard, no signup.
+> The recorder for your WebdriverIO tests. Self-contained HTML for every run — replay failures, audit successes, attach to any bug tracker. No SaaS, no dashboard, no signup. (Playwright is available via [`@tracelane/playwright`](https://github.com/Cubenest/rrweb-stack/tree/main/packages/tracelane-playwright); Cypress is on the roadmap.)
 
 [![npm](https://img.shields.io/npm/v/@tracelane/wdio.svg)](https://www.npmjs.com/package/@tracelane/wdio)
 [![downloads](https://img.shields.io/npm/dw/@tracelane/wdio.svg)](https://www.npmjs.com/package/@tracelane/wdio)
@@ -85,7 +85,7 @@ export const config: Options.Testrunner = {
 };
 ```
 
-`webdriverio` and `@wdio/types` are **peer dependencies** (`^9.0.0`); you already have them in a WDIO project.
+`webdriverio` and `@wdio/types` are **peer dependencies** (`^9.0.0`); you already have them in a WDIO project. Node **>= 22** is required (a common first-run failure on older runtimes).
 
 ## How it works
 
@@ -94,6 +94,8 @@ export const config: Options.Testrunner = {
 - In `failed` mode (default) a passing test discards its buffer; a failing test's buffer is handed to [`@tracelane/report`](https://github.com/Cubenest/rrweb-stack/tree/main/packages/tracelane-report), which builds the single offline HTML (≤ 25 MB).
 
 **Content-Security-Policy**: rrweb capture requires in-page script evaluation. If a page's CSP blocks `'unsafe-eval'`, capture degrades gracefully — the test still runs and completes normally, a warning is logged once, but no replay is recorded for the affected page.
+
+For what `tracelane` captures, masks, and never sends off your machine, see the [security notes](https://github.com/Cubenest/rrweb-stack/blob/main/docs/SECURITY-NOTES.md).
 
 ## Options
 
@@ -109,6 +111,7 @@ export const config: Options.Testrunner = {
 | `cooldownMs` | `number` | `250` | Re-injection cooldown guard (suppresses double-init on hash/HMR navigation). |
 | `allure` | `boolean` | `false` | Reserved for the v1.1 Allure shim. No-op in v1. |
 | `visualDiff` | `boolean` | `false` | Reserved for the post-MVP visual-diff add-on. No-op in v1. |
+| `report.footer` | `boolean` | `true` | Show the tool-credit footer in the generated HTML report. Set `false` to suppress it. |
 
 The options type is published — `import type { TraceLaneOptions } from '@tracelane/wdio'`.
 
@@ -148,7 +151,6 @@ Privacy-first by default: only **URL, method, status, and timing** are captured.
 
 When a CDP-capable session is present, `tracelane` *additionally* uses `browser.cdp(...)` to capture **authoritative HTTP status** for failed responses (`status >= 400`) and **true no-response failures** (CORS/DNS/offline/abort) that the page wrappers can't always see. These are routed into the report's console timeline (prefixed `[tracelane.net]`) and the report merges them over the in-page rows for the same request (real status wins). To enable it:
 
-- **WDIO 8:** add `['devtools', {}]` via `@wdio/devtools-service@8`.
 - **WDIO 9:** `@wdio/devtools-service` has no stable v9 line (it stabilized at v10); use the v10 service or a CDP-capable session.
 
 If CDP is unavailable (cloud Selenium, Firefox, Safari), nothing is lost beyond the CDP-only authoritative-status enhancement — the in-page plugin still populates the network panel and the report is still produced.
@@ -170,7 +172,7 @@ If CDP is unavailable (cloud Selenium, Firefox, Safari), nothing is lost beyond 
 
 ## Playwright + Cypress
 
-The tagline says Playwright and Cypress because the design is portable across runners — same `@tracelane/core` engine, different glue. Tracking issues:
+The design is portable across runners — same `@tracelane/core` engine, different glue. Tracking issues:
 
 - **`@tracelane/playwright`** — Playwright Reporter implementing `onTestEnd` + `onAttachment` for shareable HTML. Targeted for week 2-3 of the public launch.
 - **`@tracelane/cypress`** — JSON-output adapter only (no Cypress Test Replay overlap). Targeted for week 11.
@@ -179,7 +181,7 @@ Watch the [release notes](https://github.com/Cubenest/rrweb-stack/releases) on `
 
 ## Versioning & telemetry
 
-Semantic Versioning. Currently `0.1.0-alpha.x` (pre-release; the API may shift before `1.0.0`). See [SUPPORTED.md](https://github.com/Cubenest/rrweb-stack/blob/main/SUPPORTED.md) for the compatibility matrix.
+Semantic Versioning. Currently `0.1.0-alpha.x` (pre-release; the API may shift before `1.0.0`). See [SUPPORTED.md](https://github.com/Cubenest/rrweb-stack/blob/main/SUPPORTED.md) for the compatibility matrix and the [CHANGELOG](https://github.com/Cubenest/rrweb-stack/blob/main/packages/tracelane-wdio/CHANGELOG.md) for release history.
 
 **No telemetry.** `tracelane` collects and sends nothing; reports are written to your local `outDir` only. The generated HTML report includes a footer crediting the tool; you can suppress it with `report: { footer: false }`.
 

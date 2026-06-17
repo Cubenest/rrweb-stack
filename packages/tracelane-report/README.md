@@ -2,7 +2,7 @@
 
 # @tracelane/report
 
-> The recorder for your WebdriverIO and Playwright tests — Cypress on the roadmap. Self-contained HTML for every run — replay failures, audit successes, attach to any bug tracker. No SaaS, no dashboard, no signup.
+> The HTML report builder behind tracelane — turns a captured rrweb event stream into a single, self-contained `.html` file that replays offline. No SaaS, no dashboard, no signup.
 
 [![npm](https://img.shields.io/npm/v/@tracelane/report.svg)](https://www.npmjs.com/package/@tracelane/report)
 [![downloads](https://img.shields.io/npm/dw/@tracelane/report.svg)](https://www.npmjs.com/package/@tracelane/report)
@@ -21,6 +21,14 @@ The self-contained, offline HTML report builder for [`tracelane`](https://github
 - renders console + network panels, a metadata header, and a "Copy as Markdown for AI paste" button.
 
 **Not generally intended for direct consumption** — depend on a product package (`@tracelane/wdio`) instead. See the [`@tracelane/wdio` README](https://github.com/Cubenest/rrweb-stack/tree/main/packages/tracelane-wdio) for the integration guide.
+## Install
+
+```sh
+npm install @tracelane/report
+```
+
+- **ESM-only.** The package ships `"type": "module"` and a single `import` export — there is no CommonJS entry, so `require('@tracelane/report')` will not work. Use `import { buildReport } from '@tracelane/report'` (or a dynamic `import()` from CJS).
+- **Node >= 22** is required (`engines.node`).
 
 ## Usage
 
@@ -49,4 +57,13 @@ const html = buildReport(events, {
 
 ## License
 
-Apache 2.0. The inlined rrweb player and fflate remain MIT-licensed; see NOTICE.
+Apache 2.0. The inlined rrweb player and fflate remain MIT-licensed; see [NOTICE](https://github.com/Cubenest/rrweb-stack/blob/main/packages/tracelane-report/NOTICE).
+
+## Related packages
+
+- [`@tracelane/cli`](https://github.com/Cubenest/rrweb-stack/tree/main/packages/tracelane-cli) — wires the recorder into your test runners (WebdriverIO and Playwright; Cypress on the roadmap).
+- [`@tracelane/wdio`](https://github.com/Cubenest/rrweb-stack/tree/main/packages/tracelane-wdio) — the WebdriverIO integration that captures sessions and calls this builder on failure.
+- [`@tracelane/playwright`](https://github.com/Cubenest/rrweb-stack/tree/main/packages/tracelane-playwright) — the Playwright integration.
+- [`@tracelane/core`](https://github.com/Cubenest/rrweb-stack/tree/main/packages/tracelane-core) — the capture engine (rrweb event stream + `compress()`).
+
+See the [CHANGELOG](https://github.com/Cubenest/rrweb-stack/blob/main/packages/tracelane-report/CHANGELOG.md) for release history.

@@ -32,7 +32,7 @@ peek init
 2. Detects your AI coding-agent client (Claude Code, Cursor, Cline, Windsurf, VS Code) and adds the `peek-mcp` server to its MCP configuration.
 3. Prints a one-line "install the extension" link.
 
-Then you install the [Peek Chrome extension](https://chromewebstore.google.com/) (CWS submission pending), open the side panel on the site you want to capture, and click **Enable on this site**. Your AI agent can now query the recording.
+Then you install the **Peek Chrome extension** (CWS listing pending — Phase 5; for now it loads unpacked, see [`@peekdev/extension`](https://github.com/Cubenest/rrweb-stack/tree/main/packages/peek-extension)), open the side panel on the site you want to capture, and click **Enable on this site**. Your AI agent can now query the recording.
 
 ## What this is NOT
 
@@ -122,9 +122,9 @@ The skill is idempotent on re-run (no-op when the on-disk content matches the bu
 }
 ```
 
-Commit it or add it to `.gitignore` — Cursor reads either. Cursor's docs document the global file as "tools available everywhere" and the project file as "project-specific tools" (see [docs.cursor.com/context/mcp](https://cursor.com/docs/context/mcp) for current merge semantics).
+Commit it or add it to `.gitignore` — Cursor reads either. Cursor's docs document the global file as "tools available everywhere" and the project file as "project-specific tools" (see [cursor.com/docs/context/mcp](https://cursor.com/docs/context/mcp) for current merge semantics).
 
-This is the same block `peek init` writes to the global file, so the two configs are interchangeable. You still need the [Peek Chrome extension](https://chromewebstore.google.com/) installed and the native messaging host registered — run `peek init --skip-clients` if you want the host installed without touching any MCP config.
+This is the same block `peek init` writes to the global file, so the two configs are interchangeable. You still need the **Peek Chrome extension** installed (CWS listing pending — Phase 5; loads unpacked for now, see [`@peekdev/extension`](https://github.com/Cubenest/rrweb-stack/tree/main/packages/peek-extension)) and the native messaging host registered — run `peek init --skip-clients` if you want the host installed without touching any MCP config.
 
 ## Versioning & compatibility
 
@@ -132,8 +132,10 @@ Semantic Versioning. Currently `0.1.0-alpha.x` — pre-release; the CLI surface 
 
 `@peekdev/cli` depends on `@peekdev/mcp` as a workspace peer. Both are versioned and published together via Changesets + OIDC Trusted Publishing.
 
+Full release history: [CHANGELOG.md](https://github.com/Cubenest/rrweb-stack/blob/main/packages/peek-cli/CHANGELOG.md).
+
 ## License
 
-Apache 2.0. The bundled rrweb engine remains MIT-licensed; see `NOTICE`.
+Apache 2.0. The bundled rrweb engine remains MIT-licensed; see [`NOTICE`](https://github.com/Cubenest/rrweb-stack/blob/main/packages/peek-cli/NOTICE).
 
 Contributions are accepted under the [Developer Certificate of Origin (DCO)](https://developercertificate.org/) — sign your commits with `git commit -s`. See [CONTRIBUTING.md](https://github.com/Cubenest/rrweb-stack/blob/main/CONTRIBUTING.md) + [SECURITY.md](https://github.com/Cubenest/rrweb-stack/blob/main/SECURITY.md).
