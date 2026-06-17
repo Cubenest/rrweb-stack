@@ -204,6 +204,11 @@ export default defineBackground({
     // a perpetual "Reconnecting…" pill (Windows audit bug). Reset to 0 on a
     // successful connectNative.
     let reconnectAttempts = 0;
+    // Whether a native-host connection has ever HELD this SW session (set when
+    // the connection-held timer below fires). Drives the side panel's
+    // "Connecting…" vs "Reconnecting…" label — a 'reconnecting' state before any
+    // hold is really the FIRST connect, not a re-connect.
+    let hasEverConnected = false;
     // Single pending reconnect timer. Holding the handle lets us collapse all
     // disconnect/wake races into ONE pending reconnect (see scheduleReconnect).
     let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
@@ -837,7 +842,12 @@ export default defineBackground({
       if (connectionHeldTimer !== null) clearTimeout(connectionHeldTimer);
       connectionHeldTimer = setTimeout(() => {
         connectionHeldTimer = null;
-        if (nativePort === port) reconnectAttempts = 0;
+        if (nativePort === port) {
+          reconnectAttempts = 0;
+          // The connection held → this was a real connection. Any future
+          // 'reconnecting' is now genuinely a RE-connect.
+          hasEverConnected = true;
+        }
       }, CONNECTION_HELD_MS);
       port.onDisconnect.addListener(() => {
         // Per Chrome docs: reconnect from the onDisconnect handler, else the
@@ -1127,6 +1137,7 @@ export default defineBackground({
             const response: CmdResponse<{ type: 'getNativeHostState' }> = {
               state: hostState,
               reconnectAttempts,
+              hasEverConnected,
             };
             sendResponse(response);
             return false;

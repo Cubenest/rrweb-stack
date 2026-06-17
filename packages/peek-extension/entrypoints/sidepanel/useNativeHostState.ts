@@ -4,7 +4,11 @@ import { type NativeHostStateView, sendCmd } from '../../src/messaging/protocol'
 const POLL_INTERVAL_MS = 2000;
 
 /** What a dead/asleep SW degrades to: not connected, no failed attempts seen. */
-const DISCONNECTED_VIEW: NativeHostStateView = { state: 'disconnected', reconnectAttempts: 0 };
+const DISCONNECTED_VIEW: NativeHostStateView = {
+  state: 'disconnected',
+  reconnectAttempts: 0,
+  hasEverConnected: false,
+};
 
 /**
  * Read the native-host connection state + consecutive-reconnect count,
@@ -19,7 +23,11 @@ export async function readHostState(
 ): Promise<NativeHostStateView> {
   try {
     const res = await send({ type: 'getNativeHostState' });
-    return { state: res.state, reconnectAttempts: res.reconnectAttempts ?? 0 };
+    return {
+      state: res.state,
+      reconnectAttempts: res.reconnectAttempts ?? 0,
+      hasEverConnected: res.hasEverConnected ?? false,
+    };
   } catch {
     return DISCONNECTED_VIEW;
   }
