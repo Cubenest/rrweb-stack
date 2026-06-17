@@ -4,6 +4,11 @@
 
 > Your real browser, exposed to your AI coding agent over MCP — capture once, query forever, never leaves your machine.
 
+[![CI](https://github.com/Cubenest/rrweb-stack/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/Cubenest/rrweb-stack/actions/workflows/ci.yml)
+[![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/Cubenest/rrweb-stack/badge)](https://scorecard.dev/viewer/?uri=github.com/Cubenest/rrweb-stack)
+[![license](https://img.shields.io/github/license/Cubenest/rrweb-stack.svg)](https://github.com/Cubenest/rrweb-stack/blob/main/LICENSE)
+![status: alpha](https://img.shields.io/badge/status-alpha-orange.svg)
+
 peek's Chrome MV3 extension — side panel UI, per-site activation, MAIN-world rrweb recorder, and the native-messaging bridge to [`@peekdev/mcp`](https://github.com/Cubenest/rrweb-stack/tree/main/packages/peek-mcp). The extension package is **not published to npm** — it's loaded unpacked by alpha testers, with Chrome Web Store submission landing in Phase 5. The user-facing install path is [`@peekdev/cli`](https://www.npmjs.com/package/@peekdev/cli):
 
 ```sh

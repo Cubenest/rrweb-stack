@@ -20,6 +20,10 @@ Two OSS products on one rrweb-based substrate. Both ship as `npm` packages today
 [![CI](https://github.com/Cubenest/rrweb-stack/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/Cubenest/rrweb-stack/actions/workflows/ci.yml)
 [![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/Cubenest/rrweb-stack/badge)](https://scorecard.dev/viewer/?uri=github.com/Cubenest/rrweb-stack)
 [![License](https://img.shields.io/github/license/Cubenest/rrweb-stack.svg)](LICENSE)
+[![status: alpha](https://img.shields.io/badge/status-alpha-orange.svg)](https://github.com/Cubenest/rrweb-stack#pre-launch-state)
+[![PRs welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](https://github.com/Cubenest/rrweb-stack/blob/main/CONTRIBUTING.md)
+[![Changesets](https://img.shields.io/badge/versioning-changesets-2088FF.svg)](https://github.com/changesets/changesets)
+[![Biome](https://img.shields.io/badge/code_style-biome-60a5fa.svg)](https://biomejs.dev)
 
 ## What's where
 

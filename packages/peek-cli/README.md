@@ -8,6 +8,9 @@
 [![downloads](https://img.shields.io/npm/dw/@peekdev/cli.svg)](https://www.npmjs.com/package/@peekdev/cli)
 [![license](https://img.shields.io/npm/l/@peekdev/cli.svg)](https://github.com/Cubenest/rrweb-stack/blob/main/LICENSE)
 [![CI](https://github.com/Cubenest/rrweb-stack/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/Cubenest/rrweb-stack/actions/workflows/ci.yml)
+[![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/Cubenest/rrweb-stack/badge)](https://scorecard.dev/viewer/?uri=github.com/Cubenest/rrweb-stack)
+[![node](https://img.shields.io/node/v/@peekdev/cli.svg)](https://www.npmjs.com/package/@peekdev/cli)
+![status: alpha](https://img.shields.io/badge/status-alpha-orange.svg)
 
 ![peek sessions list and drill-down — three real sessions, console + network errors, markdown-formatted output for AI paste](https://raw.githubusercontent.com/Cubenest/rrweb-stack/main/assets/peek-hero.gif)
 
