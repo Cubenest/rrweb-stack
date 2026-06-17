@@ -11,6 +11,8 @@ One command to wire tracelane into your WebdriverIO or Playwright project. Detec
 [![license](https://img.shields.io/npm/l/@tracelane/cli.svg)](https://github.com/Cubenest/rrweb-stack/blob/main/LICENSE)
 [![CI](https://github.com/Cubenest/rrweb-stack/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/Cubenest/rrweb-stack/actions/workflows/ci.yml)
 [![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/Cubenest/rrweb-stack/badge)](https://scorecard.dev/viewer/?uri=github.com/Cubenest/rrweb-stack)
+[![node](https://img.shields.io/node/v/@tracelane/cli.svg)](https://www.npmjs.com/package/@tracelane/cli)
+![status: alpha](https://img.shields.io/badge/status-alpha-orange.svg)
 
 ![tracelane init — one command](https://raw.githubusercontent.com/Cubenest/rrweb-stack/main/assets/tracelane-hero.gif)
 

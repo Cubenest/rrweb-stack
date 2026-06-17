@@ -4,6 +4,15 @@
 
 > The recorder for your WebdriverIO and Playwright tests — Cypress on the roadmap. Self-contained HTML for every run — replay failures, audit successes, attach to any bug tracker. No SaaS, no dashboard, no signup.
 
+[![npm](https://img.shields.io/npm/v/@tracelane/report.svg)](https://www.npmjs.com/package/@tracelane/report)
+[![downloads](https://img.shields.io/npm/dw/@tracelane/report.svg)](https://www.npmjs.com/package/@tracelane/report)
+[![license](https://img.shields.io/npm/l/@tracelane/report.svg)](https://github.com/Cubenest/rrweb-stack/blob/main/LICENSE)
+[![CI](https://github.com/Cubenest/rrweb-stack/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/Cubenest/rrweb-stack/actions/workflows/ci.yml)
+[![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/Cubenest/rrweb-stack/badge)](https://scorecard.dev/viewer/?uri=github.com/Cubenest/rrweb-stack)
+[![types](https://img.shields.io/npm/types/@tracelane/report.svg)](https://www.npmjs.com/package/@tracelane/report)
+[![node](https://img.shields.io/node/v/@tracelane/report.svg)](https://www.npmjs.com/package/@tracelane/report)
+![status: alpha](https://img.shields.io/badge/status-alpha-orange.svg)
+
 The self-contained, offline HTML report builder for [`tracelane`](https://github.com/Cubenest/rrweb-stack). Given a captured rrweb event stream plus test metadata, it produces a **single `.html` file** that:
 
 - opens in any browser, fully offline (no network fetch at view time);

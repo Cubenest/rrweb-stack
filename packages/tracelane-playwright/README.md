@@ -10,6 +10,10 @@
 [![downloads](https://img.shields.io/npm/dw/@tracelane/playwright.svg)](https://www.npmjs.com/package/@tracelane/playwright)
 [![license](https://img.shields.io/npm/l/@tracelane/playwright.svg)](https://github.com/Cubenest/rrweb-stack/blob/main/LICENSE)
 [![CI](https://github.com/Cubenest/rrweb-stack/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/Cubenest/rrweb-stack/actions/workflows/ci.yml)
+[![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/Cubenest/rrweb-stack/badge)](https://scorecard.dev/viewer/?uri=github.com/Cubenest/rrweb-stack)
+[![types](https://img.shields.io/npm/types/@tracelane/playwright.svg)](https://www.npmjs.com/package/@tracelane/playwright)
+[![node](https://img.shields.io/node/v/@tracelane/playwright.svg)](https://www.npmjs.com/package/@tracelane/playwright)
+![status: alpha](https://img.shields.io/badge/status-alpha-orange.svg)
 
 Docs: <https://tracelane.cubenest.in>
 

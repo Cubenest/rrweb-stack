@@ -8,6 +8,10 @@
 [![downloads](https://img.shields.io/npm/dw/@peekdev/mcp.svg)](https://www.npmjs.com/package/@peekdev/mcp)
 [![license](https://img.shields.io/npm/l/@peekdev/mcp.svg)](https://github.com/Cubenest/rrweb-stack/blob/main/LICENSE)
 [![CI](https://github.com/Cubenest/rrweb-stack/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/Cubenest/rrweb-stack/actions/workflows/ci.yml)
+[![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/Cubenest/rrweb-stack/badge)](https://scorecard.dev/viewer/?uri=github.com/Cubenest/rrweb-stack)
+[![types](https://img.shields.io/npm/types/@peekdev/mcp.svg)](https://www.npmjs.com/package/@peekdev/mcp)
+[![node](https://img.shields.io/node/v/@peekdev/mcp.svg)](https://www.npmjs.com/package/@peekdev/mcp)
+![status: alpha](https://img.shields.io/badge/status-alpha-orange.svg)
 [![rrweb-stack MCP server](https://glama.ai/mcp/servers/Cubenest/rrweb-stack/badges/score.svg)](https://glama.ai/mcp/servers/Cubenest/rrweb-stack)
 
 Docs: <https://peek.cubenest.in>

@@ -4,6 +4,15 @@
 
 > The recorder for your WebdriverIO and Playwright tests — Cypress on the roadmap. Self-contained HTML for every run — replay failures, audit successes, attach to any bug tracker. No SaaS, no dashboard, no signup.
 
+[![npm](https://img.shields.io/npm/v/@tracelane/core.svg)](https://www.npmjs.com/package/@tracelane/core)
+[![downloads](https://img.shields.io/npm/dw/@tracelane/core.svg)](https://www.npmjs.com/package/@tracelane/core)
+[![license](https://img.shields.io/npm/l/@tracelane/core.svg)](https://github.com/Cubenest/rrweb-stack/blob/main/LICENSE)
+[![CI](https://github.com/Cubenest/rrweb-stack/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/Cubenest/rrweb-stack/actions/workflows/ci.yml)
+[![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/Cubenest/rrweb-stack/badge)](https://scorecard.dev/viewer/?uri=github.com/Cubenest/rrweb-stack)
+[![types](https://img.shields.io/npm/types/@tracelane/core.svg)](https://www.npmjs.com/package/@tracelane/core)
+[![node](https://img.shields.io/node/v/@tracelane/core.svg)](https://www.npmjs.com/package/@tracelane/core)
+![status: alpha](https://img.shields.io/badge/status-alpha-orange.svg)
+
 Framework-agnostic recording engine for `tracelane`. Wraps a per-framework `browser` object behind a common `BrowserExecutor` interface, injects the rrweb capture bundle, drains in-page events to Node, and builds the buffer that the report packages render.
 
 **Not intended for direct consumption** — depend on a product package instead:
