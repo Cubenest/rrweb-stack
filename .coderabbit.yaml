@@ -69,8 +69,9 @@ reviews:
     - "!**/*.webp"
     - "!**/*.zip"
 
-  # Encode the repo's hard rules so reviews enforce them. Sources: CLAUDE.md,
-  # CONTRIBUTING.md "Workflow security hard rules", renovate.json.
+  # Encode the repo's hard rules so reviews enforce them. Sources: AGENTS.md
+  # (canonical; CLAUDE.md imports it), CONTRIBUTING.md "Workflow security hard
+  # rules", renovate.json.
   path_instructions:
     - path: ".github/workflows/**"
       instructions: >-
@@ -120,6 +121,7 @@ knowledge_base:
   code_guidelines:
     enabled: true
     filePatterns:
+      - "AGENTS.md"
       - "CLAUDE.md"
       - "CONTRIBUTING.md"
       - "docs/SECURITY-NOTES.md"
