@@ -1,7 +1,10 @@
-// The peek MCP server (Tasks 3.11-3.14). Builds an `McpServer` with the Level-1
-// READ-ONLY tool surface (PRD §B3): seven session/query tools plus the
-// Playwright repro generator. Writes/action-execution (execute_action,
-// request_authorization) are Phase 3d — not registered here.
+// The peek MCP server. Builds an `McpServer` and registers the full 14-tool
+// surface: eight read-only session/query tools (incl. the Playwright repro
+// generator), the act tools (execute_action, request_authorization), the
+// Level-2 Suggest tools (suggest_element, clear_highlight), and the Level-4
+// control tools (set_intent, request_user_input). All write tools are gated at
+// dispatch by the per-origin permission model — see `registerTools` +
+// `dispatchActTool`.
 //
 // Design notes:
 //   • DB is opened read-only and lazily (openReadonlyDb) so a server can start
@@ -117,7 +120,8 @@ export interface CreatePeekMcpServerOptions {
 }
 
 /**
- * Build the peek MCP server with all Level-1 read tools registered. Call
+ * Build the peek MCP server with all tools registered (read, act, suggest, and
+ * control tiers). Call
  * `.server.connect(transport)` to start it. The DB is opened lazily on the
  * first tool call (and reused), so construction never fails on a missing store.
  */

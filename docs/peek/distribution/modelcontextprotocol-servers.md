@@ -57,7 +57,7 @@ Two constraints that bit the earlier draft (verified against the live schema,
 
 ### Tool list (informational — not part of `server.json`)
 
-For listings that surface tool counts, peek exposes 10 MCP tools:
+For listings that surface tool counts, peek exposes 14 MCP tools:
 
 - `list_recent_sessions`
 - `get_session_summary`
@@ -69,6 +69,10 @@ For listings that surface tool counts, peek exposes 10 MCP tools:
 - `query_dom_history`
 - `request_authorization`
 - `execute_action`
+- `suggest_element`
+- `clear_highlight`
+- `set_intent`
+- `request_user_input`
 
 ## Submission checklist
 

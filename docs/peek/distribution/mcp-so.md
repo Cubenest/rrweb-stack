@@ -45,7 +45,7 @@ through a Chrome MV3 extension. The extension ships events through a
 native-messaging stdio bridge to a local MCP server (`peek-mcp`), which
 persists them to a SQLite database at `~/.peek/sessions.db`. AI coding
 agents (Claude Code, Cursor, Cline, Windsurf) read sessions from the
-database via 10 MCP tools:
+database via 14 MCP tools:
 
 | Tool | What it does |
 |---|---|
@@ -59,6 +59,10 @@ database via 10 MCP tools:
 | `query_dom_history` | Timeline of attribute/text changes for a selector. |
 | `request_authorization` | Side-panel consent for write actions (Level 3). |
 | `execute_action` | Dispatch a UI action (gated by permission level + destructive blocklist). |
+| `suggest_element` | Highlight an element via a non-destructive overlay (Level 2+). |
+| `clear_highlight` | Remove the highlight overlay (Level 2+). |
+| `set_intent` | Set the control-shield status banner (Level 4). |
+| `request_user_input` | Pause and hand a field back to the user, then resume (Level 4). |
 
 ### Why local-first matters
 
