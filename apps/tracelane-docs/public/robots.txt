@@ -1,0 +1,6 @@
+# tracelane docs — allow all crawlers, including AI / answer-engine bots.
+# We want tracelane to be discoverable and citable (the opposite of blocking GPTBot/etc.).
+User-agent: *
+Allow: /
+
+Sitemap: https://tracelane.cubenest.in/sitemap-index.xml
