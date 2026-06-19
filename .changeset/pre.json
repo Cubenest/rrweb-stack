@@ -35,6 +35,7 @@
     "peek-act-mainworld-dispatch",
     "peek-assisted-apply",
     "peek-cli-windows-docs",
+    "peek-connecting-label",
     "peek-control-shield",
     "peek-execute-action-verbs",
     "peek-handoff-audit-scope",
@@ -45,8 +46,10 @@
     "peek-mcp-tool-definitions",
     "peek-reconnect-storm-hint",
     "peek-suggest-highlight",
+    "peek-tool-count-fixes",
     "peek-windows-entrypoint-and-sqlite-boundary",
     "peek-windows-node22-npx-pin",
+    "peek-windows-phase-d-hardening",
     "peek-write-path",
     "phase4c-alpha7-cleanup",
     "phase4c-alpha8-p18-counts",
@@ -76,6 +79,8 @@
     "playwright-options-parity",
     "playwright-readme-reframe",
     "playwright-select-option",
+    "readme-badge-parity",
+    "readme-nonbadge-fixes",
     "recorder-reinject-nav-race",
     "recording-active-indicator",
     "repro-engine-tier0",
@@ -89,6 +94,7 @@
     "tracelane-playwright-phase0",
     "tracelane-playwright",
     "tracelane-rrweb-node22-engines",
-    "tracelane-security-mvp"
+    "tracelane-security-mvp",
+    "wdio-tracelane-service-alias"
   ]
 }

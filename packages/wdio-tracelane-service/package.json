@@ -1,6 +1,6 @@
 {
   "name": "wdio-tracelane-service",
-  "version": "0.1.0-alpha.0",
+  "version": "0.1.0-alpha.1",
   "description": "WebdriverIO service alias for @tracelane/wdio — the wdio-convention name so `services: ['tracelane']` and the `wdio config` wizard resolve it. Records rrweb sessions and writes a self-contained HTML report on failed tests.",
   "keywords": [
     "tracelane",

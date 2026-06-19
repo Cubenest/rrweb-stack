@@ -1,5 +1,46 @@
 # @cubenest/rrweb-core
 
+## 0.1.0-alpha.7
+
+### Patch Changes
+
+- 69cd9c1: docs: normalize README badge rows across all published packages.
+
+  Two published packages (`@tracelane/core`, `@tracelane/report`) and the shared
+  `@cubenest/rrweb-core` had no badges at all; OpenSSF Scorecard was applied
+  unevenly (missing from playwright, peek-cli, peek-mcp); and no package carried
+  the accurate `types` / `node` engine badges despite all shipping `.d.ts` and
+  declaring `engines.node >=22`.
+
+  Every README now leads with a consistent, verified badge row — version,
+  downloads, license, CI, OpenSSF Scorecard, then `types` (libraries only — not
+  the bin-only CLIs), `node`, and a static `alpha` status badge. All badge
+  endpoints were verified to resolve against the published `latest` dist-tag.
+  Docs-only; no code change.
+
+- db8d39b: docs: non-badge README fixes from the public-doc audit.
+
+  Accuracy: rescope the `@tracelane/wdio` tagline to WebdriverIO only (Playwright
+  is the separate `@tracelane/playwright` package); replace the verbatim consumer
+  tagline copied onto `@tracelane/core` and `@tracelane/report` with
+  engine/builder-specific one-liners; drop the inapplicable "WDIO 8" CDP
+  instruction (peerDep is `webdriverio ^9`); de-duplicate a garbled sentence in
+  the `@tracelane/cli` config-edit section; fix a Cursor-docs link whose text and
+  href host diverged.
+
+  npm rendering: convert relative `NOTICE`/`COMPATIBILITY`/CWS links to absolute
+  GitHub URLs so they resolve on npmjs.com; replace placeholder Chrome-Web-Store
+  links with an honest "listing pending (Phase 5)" note.
+
+  Completeness: add per-package CHANGELOG links, threat-model (SECURITY-NOTES /
+  peek THREATMODEL) links, a `report.footer` Options row + Node ≥ 22 prose for
+  wdio, an Install section for `@tracelane/report`, "Related packages" cross-link
+  lists, a minimal API pointer for the engine packages, and a brand logo +
+  "What it detects" / distribution note for `@tracelane/security`.
+
+  Also tightens the `@tracelane/cli` and `@tracelane/playwright` package.json
+  descriptions (npm sidebar) for accuracy. Docs/metadata only; no code change.
+
 ## 0.1.0-alpha.6
 
 ### Patch Changes

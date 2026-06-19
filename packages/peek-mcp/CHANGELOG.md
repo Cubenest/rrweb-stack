@@ -1,5 +1,81 @@
 # @peekdev/mcp
 
+## 0.1.0-alpha.21
+
+### Patch Changes
+
+- e1747b2: docs: correct the peek MCP tool count + permission model (the surface grew from
+  10 to 14 tools).
+
+  The READMEs, the Claude Code skill (`peek-skill.md`), and the `server.ts` header
+  comment all still described the original Level-1 read surface ("10 tools",
+  "writes are Phase 3d — not registered here"). The server now registers 14 tools:
+  the 8 read tools, the act tools (`execute_action`, `request_authorization`), the
+  Level-2 Suggest tools (`suggest_element`, `clear_highlight`), and the Level-4
+  control tools (`set_intent`, `request_user_input`).
+
+  Also fixes the skill's permission model, which described a wrong 6-level (0–5)
+  scheme with the wrong default and the wrong storage location. It now matches
+  ADR-0010: five levels (0 Off · 1 Read-only default · 2 Suggest · 3
+  Act-with-confirm · 4 YOLO), stored in `chrome.storage.sync`, with the
+  destructive blocklist as a cross-level override (not a "Level 5"). Docs/comment
+  only; no code change.
+
+- d18e982: Windows robustness hardening (audit Phase D).
+  - `peek init`'s atomic config write now retries the final rename on Windows when
+    it hits a transient `EBUSY`/`EPERM`/`EACCES` (the target or temp briefly locked
+    by an editor or antivirus), with a short backoff, instead of failing the whole
+    init on the first lock. POSIX behaviour is unchanged (single attempt; non-lock
+    errors like `ENOSPC` still fail fast everywhere).
+  - The native host now returns a clean error result when persisting a screenshot
+    fails (`EACCES` on `~/.peek`, disk full, a Windows lock) instead of throwing —
+    which previously skipped the `act.response` and left the MCP tool call to hang
+    until it timed out. The multi-MB base64 is never inlined on the failure path.
+  - The stale-bind retry waits a brief beat before rebinding a Windows named pipe
+    (released by the OS a moment after the prior host exits), so the single retry
+    is more likely to succeed rather than degrading the action write-path.
+
+- 69cd9c1: docs: normalize README badge rows across all published packages.
+
+  Two published packages (`@tracelane/core`, `@tracelane/report`) and the shared
+  `@cubenest/rrweb-core` had no badges at all; OpenSSF Scorecard was applied
+  unevenly (missing from playwright, peek-cli, peek-mcp); and no package carried
+  the accurate `types` / `node` engine badges despite all shipping `.d.ts` and
+  declaring `engines.node >=22`.
+
+  Every README now leads with a consistent, verified badge row — version,
+  downloads, license, CI, OpenSSF Scorecard, then `types` (libraries only — not
+  the bin-only CLIs), `node`, and a static `alpha` status badge. All badge
+  endpoints were verified to resolve against the published `latest` dist-tag.
+  Docs-only; no code change.
+
+- db8d39b: docs: non-badge README fixes from the public-doc audit.
+
+  Accuracy: rescope the `@tracelane/wdio` tagline to WebdriverIO only (Playwright
+  is the separate `@tracelane/playwright` package); replace the verbatim consumer
+  tagline copied onto `@tracelane/core` and `@tracelane/report` with
+  engine/builder-specific one-liners; drop the inapplicable "WDIO 8" CDP
+  instruction (peerDep is `webdriverio ^9`); de-duplicate a garbled sentence in
+  the `@tracelane/cli` config-edit section; fix a Cursor-docs link whose text and
+  href host diverged.
+
+  npm rendering: convert relative `NOTICE`/`COMPATIBILITY`/CWS links to absolute
+  GitHub URLs so they resolve on npmjs.com; replace placeholder Chrome-Web-Store
+  links with an honest "listing pending (Phase 5)" note.
+
+  Completeness: add per-package CHANGELOG links, threat-model (SECURITY-NOTES /
+  peek THREATMODEL) links, a `report.footer` Options row + Node ≥ 22 prose for
+  wdio, an Install section for `@tracelane/report`, "Related packages" cross-link
+  lists, a minimal API pointer for the engine packages, and a brand logo +
+  "What it detects" / distribution note for `@tracelane/security`.
+
+  Also tightens the `@tracelane/cli` and `@tracelane/playwright` package.json
+  descriptions (npm sidebar) for accuracy. Docs/metadata only; no code change.
+
+- Updated dependencies [69cd9c1]
+- Updated dependencies [db8d39b]
+  - @cubenest/rrweb-core@0.1.0-alpha.7
+
 ## 0.1.0-alpha.20
 
 ### Patch Changes
