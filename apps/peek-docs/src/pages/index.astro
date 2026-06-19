@@ -1,5 +1,27 @@
 ---
 import Layout from '../layouts/Layout.astro';
+
+const jsonLd = {
+  '@context': 'https://schema.org',
+  '@type': 'SoftwareApplication',
+  name: 'peek',
+  description:
+    'Open-source, local-first browser companion for AI coding agents. Records a masked, authenticated browser session to a local SQLite store and turns it into a runnable Playwright repro the agent can re-run to verify its own fix, plus MCP read tools for console, network, and DOM. Ships as a Chrome MV3 extension, a stdio MCP server, and a CLI.',
+  applicationCategory: 'DeveloperApplication',
+  operatingSystem: 'macOS, Linux, Windows',
+  softwareVersion: 'alpha',
+  releaseNotes:
+    'Pre-1.0 alpha; APIs may shift before 1.0. The Chrome extension is loaded unpacked during alpha (Chrome Web Store listing pending).',
+  license: 'https://www.apache.org/licenses/LICENSE-2.0',
+  url: 'https://peek.cubenest.in',
+  offers: { '@type': 'Offer', price: '0', priceCurrency: 'USD' },
+  isAccessibleForFree: true,
+  sameAs: [
+    'https://github.com/Cubenest/rrweb-stack',
+    'https://www.npmjs.com/package/@peekdev/mcp',
+    'https://www.npmjs.com/package/@peekdev/cli',
+  ],
+};
 ---
 
 <Layout
@@ -98,4 +120,6 @@ import Layout from '../layouts/Layout.astro';
   <p style="color: var(--fg-muted); font-size: 0.9rem; margin-top: 2rem;">
     Repository: <a href="https://github.com/Cubenest/rrweb-stack" rel="noopener">github.com/Cubenest/rrweb-stack</a>.
   </p>
+
+  <script type="application/ld+json" is:inline set:html={JSON.stringify(jsonLd)} />
 </Layout>
