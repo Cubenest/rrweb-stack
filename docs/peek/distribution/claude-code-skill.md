@@ -19,7 +19,7 @@ ls -l ~/.claude/skills/peek/SKILL.md
 
 ## What it does
 
-Claude Code auto-loads `SKILL.md` files from `~/.claude/skills/<name>/SKILL.md` on session start. The peek skill's frontmatter tells Claude *when* to invoke peek (recent browser sessions, errors from manual repros, "what did the user do before X", DOM-at-time queries, Playwright test generation from a session). The body documents the 10 MCP tools, the standard workflow, the per-origin permission model, and example flows.
+Claude Code auto-loads `SKILL.md` files from `~/.claude/skills/<name>/SKILL.md` on session start. The peek skill's frontmatter tells Claude *when* to invoke peek (recent browser sessions, errors from manual repros, "what did the user do before X", DOM-at-time queries, Playwright test generation from a session). The body documents the 14 MCP tools, the standard workflow, the per-origin permission model, and example flows.
 
 It does NOT include the MCP server itself — you still need `@peekdev/mcp` configured in `~/.claude.json` for Claude Code to be able to call the tools. The skill teaches *when*; the MCP server provides *what*.
 

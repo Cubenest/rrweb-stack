@@ -1,13 +1,13 @@
 ---
 name: peek
-description: Use when the user mentions a recent browser session, an error they just reproduced, "what was the user doing before X", DOM state at some past moment, or wants to turn a manual repro into a Playwright test. Peek exposes 10 MCP tools backed by a local SQLite store of rrweb-captured browser sessions.
+description: Use when the user mentions a recent browser session, an error they just reproduced, "what was the user doing before X", DOM state at some past moment, or wants to turn a manual repro into a Playwright test. Peek exposes 14 MCP tools backed by a local SQLite store of rrweb-captured browser sessions.
 ---
 
 # peek — local browser-session inspection
 
 Peek is an OSS browser companion for AI coding agents. A Chrome MV3
 extension records masked rrweb sessions to a local SQLite store
-(`~/.peek/sessions.db`); a stdio MCP server exposes 10 tools that let you
+(`~/.peek/sessions.db`); a stdio MCP server exposes 14 tools that let you
 inspect those sessions and (with consent) drive the live browser.
 
 Peek runs entirely on the user's machine. No telemetry, no cloud, no
@@ -38,9 +38,9 @@ Don't reach for peek when:
   not a live debugger
 - The question is about static code, not runtime behavior
 
-## The 10 tools
+## The 14 tools
 
-**Read tools (8) — work at permission Level 2+ for the origin:**
+**Read tools (8) — usable at permission Level 1 (Read-only) and above:**
 
 | Tool | When |
 |---|---|
@@ -53,12 +53,26 @@ Don't reach for peek when:
 | `query_dom_history` | Given a CSS selector + sessionId, returns every snapshot where that element changed. Good for "when did this element appear/disappear/change text". |
 | `generate_playwright_repro` | Turns a session (or a slice of one) into a runnable Playwright test stub. Selectors are best-effort from rrweb metadata; surface to the user for review before assuming they'll work. |
 
-**Write tools (2) — escalating consent required:**
+**Act tools (2) — Level 3+; every call is audit-logged to `~/.peek/audit.log`:**
 
 | Tool | When |
 |---|---|
-| `request_authorization` | Ask the user to authorize a specific action against a specific origin. Always call this BEFORE `execute_action` if the action is destructive (form submission, navigation away from the current page, anything that mutates state). |
-| `execute_action` | Performs a click / type / navigate in the user's live browser. Gated by the per-origin permission level — Level 3 covers safe reads, Level 4 covers actions with destructive-action consent, Level 5 is full automation. |
+| `request_authorization` | Ask the user to authorize a specific action against a specific origin via the side-panel banner. On Allow it returns a one-shot `confirmToken` to pass to `execute_action`. Call this BEFORE `execute_action` at Level 3, or to pre-authorize. |
+| `execute_action` | Performs a click / type / navigate in the user's live browser. Gated by the per-origin level: **Level 3** prompts a confirm banner per action (unless a `confirmToken` is passed); **Level 4** auto-allows non-destructive actions; below Level 3 it's denied. The destructive-action blocklist (delete/send/pay/…) always prompts, even at Level 4. |
+
+**Suggest tools (2) — Level 2+; non-mutating:**
+
+| Tool | When |
+|---|---|
+| `suggest_element` | Draw a non-destructive highlight overlay on a CSS selector (optional label) to point something out. Never clicks, types, or navigates. |
+| `clear_highlight` | Remove the highlight overlay drawn by `suggest_element`. |
+
+**Control tools (2) — Level 4 with the control shield up:**
+
+| Tool | When |
+|---|---|
+| `set_intent` | Set the agent's status-banner text on the control shield (e.g. "Applying to Senior Frontend · step 2/4") so the user can follow what you're doing. |
+| `request_user_input` | Pause the agent and hand the keyboard back to the user for one editable field (or a free-text prompt) — a CAPTCHA, an OTP, a final review — then resume. |
 
 ## Workflow
 
@@ -144,19 +158,23 @@ User: "Click the Save button on the page I have open."
 
 ## Permission model
 
-Peek uses a five-level per-origin model. The state lives in
-`~/.peek/permissions.json`; the user manages it via the extension's
-side panel and `peek audit` (CLI).
+Peek uses a five-level per-origin model (ADR-0010). The level lives in the
+extension (`chrome.storage.sync`, key `peek:permissionLevels`); the user
+manages it via the side panel's trust dial. A freshly-enabled origin defaults
+to **Level 1 (Read-only)**.
 
-- **Level 0** — no access (default for new origins)
-- **Level 1** — list-only (sessionId + origin + timestamps; no event content)
-- **Level 2** — read full session content (all 8 read tools usable)
-- **Level 3** — read + safe actions (clicks, typing in inputs; no
-  navigation away, no form submission)
-- **Level 4** — read + actions including destructive (with per-action
-  `request_authorization` consent)
-- **Level 5** — automation (Level 4 actions without per-action consent;
-  rare, opt-in only)
+- **Level 0 — Off** — tool surface disabled for the origin (recording suppressed)
+- **Level 1 — Read-only** (default) — all 8 read tools; no action execution
+- **Level 2 — Suggest-only** — read + non-mutating highlight overlay
+  (`suggest_element` / `clear_highlight`); no DOM mutation
+- **Level 3 — Act-with-confirm** — read + `execute_action` (click/type/navigate),
+  each prompting Allow once / Always for this site / Deny
+- **Level 4 — YOLO this session** — read + non-destructive actions auto-allowed
+  with no prompt; auto-expires on tab close or after 60 min; also unlocks
+  `set_intent` / `request_user_input` while the control shield is up
+
+There is no Level 5. The destructive-action blocklist (delete/send/pay/…) is a
+cross-level override that **always** prompts — including at Level 4 — not a level.
 
 If a tool returns `{ error: 'permission_denied', origin, currentLevel,
 requiredLevel }`, tell the user how to escalate (via the side panel)
@@ -166,7 +184,7 @@ and stop. Don't retry, don't suggest workarounds.
 
 - Never invent sessions. If `list_recent_sessions` returns empty, say so
   and suggest the user record a session via the extension.
-- Never invent tool names. The 10 above are the entire surface.
+- Never invent tool names. The 14 above are the entire surface.
 - Selector results from `generate_playwright_repro` are derived from
   rrweb event metadata. Surface them for review; don't claim a generated
   test is production-ready without the user confirming.

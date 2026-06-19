@@ -90,6 +90,10 @@ The per-user config paths `peek init` writes to (canonical, see `packages/peek-c
 | `query_dom_history` | Timeline of attribute/text changes for a selector | none |
 | `request_authorization` | Side-panel consent for write actions (Level 3) | per-action user prompt |
 | `execute_action` | Dispatch a UI action (gated by permission level + destructive blocklist) | permission level + destructive blocklist |
+| `suggest_element` | Highlight an element via a non-destructive overlay | per-origin Level 2+ |
+| `clear_highlight` | Remove the highlight overlay | per-origin Level 2+ |
+| `set_intent` | Set the control-shield status banner | per-origin Level 4 |
+| `request_user_input` | Pause and hand a field back to the user, then resume | per-origin Level 4 |
 
 The full tool list is exposed via the MCP `tools/list` request (spec 2025-11-25 + back-compat for 2025-03-26). Tool docs ship with the binary via `tools/list` response `description` fields.
 
@@ -111,7 +115,7 @@ At **Level 3** every `execute_action` call prompts the user via the side-panel b
 
 Every `execute_action` and `request_authorization` call is appended to `~/.peek/audit.log` (JSONL, mode 0600 — `peek audit log --json` prints it), including denied ones.
 
-**The write-path is wired end to end:** the five-level model, the destructive blocklist, and the audit-log writer are enforced inside `peek-mcp` (observable via `~/.peek/audit.log`), and the cross-process IPC that lets `execute_action` fire a click in the browser now lands — a `LocalSocketHostBridge` (MCP process) ↔ `HostSocketServer` (native host) over `~/.peek/host.sock`, a MAIN-world action dispatcher (click/type/navigate/scroll), and a side-panel confirm banner. Both write levels are implemented: **Level 3** (act-with-confirm — every action prompts the banner) and **Level 4** (YOLO — non-destructive actions auto-allow, destructive ones still prompt via the blocklist override). Both are opt-in per origin; the default stays Level 1 (read-only). Level 2 highlight and the remaining action types are queued. The real-browser dispatch + banner are covered by the Playwright E2E (`e2e/smoke.spec.ts`).
+**The write-path is wired end to end:** the five-level model, the destructive blocklist, and the audit-log writer are enforced inside `peek-mcp` (observable via `~/.peek/audit.log`), and the cross-process IPC that lets `execute_action` fire a click in the browser now lands — a `LocalSocketHostBridge` (MCP process) ↔ `HostSocketServer` (native host) over `~/.peek/host.sock`, a MAIN-world action dispatcher (click/type/navigate/scroll), and a side-panel confirm banner. Both write levels are implemented: **Level 3** (act-with-confirm — every action prompts the banner) and **Level 4** (YOLO — non-destructive actions auto-allow, destructive ones still prompt via the blocklist override). Both are opt-in per origin; the default stays Level 1 (read-only). Level 2 highlight (`suggest_element` / `clear_highlight`) and the Level-4 control tools (`set_intent`, `request_user_input`) are also implemented. The real-browser dispatch + banner are covered by the Playwright E2E (`e2e/smoke.spec.ts`).
 
 ## Database
 
