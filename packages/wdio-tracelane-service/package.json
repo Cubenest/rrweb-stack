@@ -1,0 +1,65 @@
+{
+  "name": "wdio-tracelane-service",
+  "version": "0.1.0-alpha.0",
+  "description": "WebdriverIO service alias for @tracelane/wdio — the wdio-convention name so `services: ['tracelane']` and the `wdio config` wizard resolve it. Records rrweb sessions and writes a self-contained HTML report on failed tests.",
+  "keywords": [
+    "tracelane",
+    "webdriverio",
+    "wdio",
+    "wdio-service",
+    "wdio-plugin",
+    "testing",
+    "e2e",
+    "rrweb",
+    "session-replay",
+    "html-report",
+    "failed-test-recorder"
+  ],
+  "license": "Apache-2.0",
+  "funding": {
+    "type": "github",
+    "url": "https://github.com/sponsors/harry-harish"
+  },
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./hooks": {
+      "types": "./dist/hooks.d.ts",
+      "import": "./dist/hooks.js"
+    }
+  },
+  "files": ["dist", "NOTICE", "README.md"],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run --passWithNoTests"
+  },
+  "dependencies": {
+    "@tracelane/wdio": "workspace:*"
+  },
+  "peerDependencies": {
+    "@wdio/types": "^9.0.0",
+    "webdriverio": "^9.0.0"
+  },
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Cubenest/rrweb-stack",
+    "directory": "packages/wdio-tracelane-service"
+  },
+  "bugs": {
+    "url": "https://github.com/Cubenest/rrweb-stack/issues"
+  },
+  "homepage": "https://tracelane.cubenest.in",
+  "engines": {
+    "node": ">=22"
+  }
+}
