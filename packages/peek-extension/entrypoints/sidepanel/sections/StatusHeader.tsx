@@ -26,18 +26,28 @@ export interface HostStateView {
  * @param state the native-host connection state from the SW
  * @param reconnectAttempts consecutive failed reconnects since the last connect
  *   (default 0); a high value while 'reconnecting' surfaces the setup hint.
+ * @param hasEverConnected whether a connection has ever held this SW session
+ *   (default false); distinguishes the FIRST connect ("Connecting…") from a
+ *   re-connect after a real connection dropped ("Reconnecting…").
  */
-export function describeHostState(state: NativeHostState, reconnectAttempts = 0): HostStateView {
+export function describeHostState(
+  state: NativeHostState,
+  reconnectAttempts = 0,
+  hasEverConnected = false,
+): HostStateView {
   switch (state) {
     case 'connected':
       return { tone: 'ok', label: 'Connected to peek', showSetupHint: false };
     case 'reconnecting':
-      // A brief reconnect is a transient host restart → no hint. A persistent
-      // one almost always means the native host was never registered → surface
-      // the same "run `peek init`" guidance the disconnected state shows.
+      // Before any connection has held, a 'reconnecting' state is really the
+      // FIRST connect attempt — show "Connecting…", not the misleading
+      // "Reconnecting…" (which implies a connection was lost). A brief reconnect
+      // after a real connection is a transient host restart → no hint; a
+      // persistent one almost always means the host was never registered →
+      // surface the same "run `peek init`" guidance the disconnected state shows.
       return {
         tone: 'warn',
-        label: 'Reconnecting…',
+        label: hasEverConnected ? 'Reconnecting…' : 'Connecting…',
         showSetupHint: isReconnectStalled(reconnectAttempts),
       };
     default:
@@ -51,8 +61,8 @@ export function describeHostState(state: NativeHostState, reconnectAttempts = 0)
  * "last action" layer is deferred — no line is shown for it.
  */
 export function StatusHeader({ origin }: { origin: string | null }): React.JSX.Element {
-  const { state: hostState, reconnectAttempts } = useNativeHostState();
-  const view = describeHostState(hostState, reconnectAttempts);
+  const { state: hostState, reconnectAttempts, hasEverConnected } = useNativeHostState();
+  const view = describeHostState(hostState, reconnectAttempts, hasEverConnected);
   const [levelShort, setLevelShort] = useState<string | null>(null);
 
   // The pill mirrors the dial's `short` label so pill + dial share one

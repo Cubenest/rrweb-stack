@@ -14,7 +14,8 @@
 //   1. the SW climbs reconnectAttempts past the stall threshold (it never
 //      connects, so it retries with backoff), and
 //   2. the rendered side panel shows the "run `peek init`" hint while the pill
-//      still reads "Reconnecting…".
+//      reads "Connecting…" — the host has never held a connection, so that is
+//      the honest label ("Reconnecting…" would imply it had connected before).
 //
 // Timing: reconnectAttempts increments on each scheduleReconnect with full
 // jitter over a 1s→2s→4s… backoff, so reaching the 4-attempt threshold takes a
@@ -100,9 +101,11 @@ test('setup hint is reachable from a stuck reconnect (native host never register
     timeout: 10_000,
   });
 
-  // And the pill is still the reconnecting label (we surface guidance WITHOUT
-  // lying about the connection state).
-  await expect(panel.locator('.peek-status-label')).toHaveText('Reconnecting…');
+  // And the pill reads "Connecting…": the internal state is 'reconnecting' (the
+  // SW keeps retrying), but the host has never held a connection, so the honest
+  // user-facing label is "Connecting…" — showing "Reconnecting…" here would imply
+  // it had connected before. The setup hint, not the pill, surfaces the guidance.
+  await expect(panel.locator('.peek-status-label')).toHaveText('Connecting…');
 
   await panel.close();
 });

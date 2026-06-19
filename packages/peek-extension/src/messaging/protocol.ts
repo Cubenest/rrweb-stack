@@ -137,6 +137,13 @@ export interface RelayAck {
 export interface NativeHostStateView {
   state: NativeHostState;
   reconnectAttempts: number;
+  /**
+   * True once a native-host connection has HELD (survived CONNECTION_HELD_MS) at
+   * least once this SW session. Lets the side panel show "Connecting…" on the
+   * first attempt and "Reconnecting…" only after a connection that really
+   * existed dropped — `state === 'reconnecting'` alone can't tell them apart.
+   */
+  hasEverConnected: boolean;
 }
 
 /** Per-command response types. */

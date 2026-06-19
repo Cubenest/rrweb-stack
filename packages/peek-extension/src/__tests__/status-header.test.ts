@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { describeHostState } from '../../entrypoints/sidepanel/sections/StatusHeader';
 import { readHostState } from '../../entrypoints/sidepanel/useNativeHostState';
-import { type NativeHostState, ServiceWorkerUnavailableError } from '../messaging/protocol';
+import { ServiceWorkerUnavailableError } from '../messaging/protocol';
 
 describe('describeHostState — native-host state → header view', () => {
   it('connected → ok tone, no setup hint', () => {
@@ -17,6 +17,18 @@ describe('describeHostState — native-host state → header view', () => {
     expect(describeHostState('reconnecting').showSetupHint).toBe(false);
     // A couple of failed attempts is still "transient host restart" territory.
     expect(describeHostState('reconnecting', 1).showSetupHint).toBe(false);
+  });
+
+  it('reconnecting BEFORE any connection has held → "Connecting…" (not "Reconnecting…")', () => {
+    // Fresh start: the port hasn't held yet, so this is the FIRST connect, not a
+    // re-connect. Labelling it "Reconnecting…" implies a connection was lost.
+    expect(describeHostState('reconnecting', 0, false).label).toBe('Connecting…');
+    expect(describeHostState('reconnecting', 1, false).label).toBe('Connecting…');
+  });
+
+  it('reconnecting AFTER a connection has held → "Reconnecting…"', () => {
+    expect(describeHostState('reconnecting', 0, true).label).toBe('Reconnecting…');
+    expect(describeHostState('reconnecting', 1, true).label).toBe('Reconnecting…');
   });
 
   it('reconnecting persistently → warn tone WITH the setup hint (host likely unregistered)', () => {
@@ -37,26 +49,40 @@ describe('describeHostState — native-host state → header view', () => {
 });
 
 describe('readHostState — degrades a dead SW to disconnected', () => {
-  it('returns the reported host state + attempt count on success', async () => {
-    const send = async (): Promise<{ state: NativeHostState; reconnectAttempts: number }> => ({
+  it('returns the reported host state + attempt count + hasEverConnected on success', async () => {
+    const send = async () => ({
+      state: 'connected' as const,
+      reconnectAttempts: 0,
+      hasEverConnected: true,
+    });
+    expect(await readHostState(send)).toEqual({
       state: 'connected',
       reconnectAttempts: 0,
+      hasEverConnected: true,
     });
-    expect(await readHostState(send)).toEqual({ state: 'connected', reconnectAttempts: 0 });
   });
 
-  it('threads the reconnect attempt count through from the SW', async () => {
-    const send = async (): Promise<{ state: NativeHostState; reconnectAttempts: number }> => ({
+  it('threads the reconnect attempt count + hasEverConnected through from the SW', async () => {
+    const send = async () => ({
+      state: 'reconnecting' as const,
+      reconnectAttempts: 7,
+      hasEverConnected: false,
+    });
+    expect(await readHostState(send)).toEqual({
       state: 'reconnecting',
       reconnectAttempts: 7,
+      hasEverConnected: false,
     });
-    expect(await readHostState(send)).toEqual({ state: 'reconnecting', reconnectAttempts: 7 });
   });
 
-  it('returns disconnected with zero attempts when the SW is unavailable', async () => {
-    const send = async (): Promise<{ state: NativeHostState; reconnectAttempts: number }> => {
+  it('returns disconnected (never-connected) when the SW is unavailable', async () => {
+    const send = async (): Promise<never> => {
       throw new ServiceWorkerUnavailableError();
     };
-    expect(await readHostState(send)).toEqual({ state: 'disconnected', reconnectAttempts: 0 });
+    expect(await readHostState(send)).toEqual({
+      state: 'disconnected',
+      reconnectAttempts: 0,
+      hasEverConnected: false,
+    });
   });
 });
