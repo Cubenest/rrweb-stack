@@ -1,6 +1,6 @@
 {
   "name": "@peekdev/extension",
-  "version": "0.1.0-alpha.17",
+  "version": "0.1.0-alpha.18",
   "description": "peek Chrome MV3 extension: side panel UI, per-site activation, MAIN-world rrweb recorder, and the native-messaging bridge that keeps the service worker alive (ADR-0008, ADR-0009). Loaded unpacked by alpha testers; not published to npm.",
   "license": "Apache-2.0",
   "private": true,

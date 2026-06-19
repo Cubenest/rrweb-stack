@@ -1,5 +1,13 @@
 # @tracelane/security
 
+## 0.1.0-alpha.2
+
+### Patch Changes
+
+- Updated dependencies [69cd9c1]
+- Updated dependencies [db8d39b]
+  - @cubenest/rrweb-core@0.1.0-alpha.7
+
 ## 0.1.0-alpha.1
 
 ### Minor Changes

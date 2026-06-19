@@ -1,6 +1,6 @@
 {
   "name": "@tracelane/playwright",
-  "version": "0.1.0-alpha.7",
+  "version": "0.1.0-alpha.8",
   "description": "Playwright reporter + auto-fixture that writes a self-contained replayable HTML report on failed tests — or every test in `all` mode (rrweb + console + failed-network). No SaaS.",
   "keywords": [
     "tracelane",
