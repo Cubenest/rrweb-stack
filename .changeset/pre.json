@@ -12,7 +12,6 @@
     "@tracelane/report": "0.1.0-alpha.0",
     "@tracelane/security": "0.1.0-alpha.0",
     "@tracelane/wdio": "0.1.0-alpha.0",
-    "wdio-tracelane-service": "0.1.0-alpha.0",
     "peek-docs": "0.0.0",
     "tracelane-docs": "0.0.0",
     "@cubenest/docs-shared": "0.0.0",
@@ -94,7 +93,6 @@
     "tracelane-playwright-phase0",
     "tracelane-playwright",
     "tracelane-rrweb-node22-engines",
-    "tracelane-security-mvp",
-    "wdio-tracelane-service-alias"
+    "tracelane-security-mvp"
   ]
 }

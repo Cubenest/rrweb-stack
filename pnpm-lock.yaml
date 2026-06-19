@@ -372,18 +372,6 @@ importers:
         specifier: ^9.0.0
         version: 9.27.2
 
-  packages/wdio-tracelane-service:
-    dependencies:
-      '@tracelane/wdio':
-        specifier: workspace:*
-        version: link:../tracelane-wdio
-      '@wdio/types':
-        specifier: ^9.0.0
-        version: 9.27.2
-      webdriverio:
-        specifier: ^9.0.0
-        version: 9.27.2
-
 packages:
 
   '@1natsu/wait-element@4.2.0':
