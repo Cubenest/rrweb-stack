@@ -1,5 +1,29 @@
 ---
 import Layout from '../layouts/Layout.astro';
+
+const jsonLd = {
+  '@context': 'https://schema.org',
+  '@type': 'SoftwareApplication',
+  name: 'tracelane',
+  description:
+    'Open-source, local-first failed-test recorder for end-to-end suites. Captures an rrweb session plus console and failed network responses while WebdriverIO and Playwright tests run, and ships a single self-contained offline HTML report on failure: replay, console panel, and network panel, no server required.',
+  applicationCategory: 'DeveloperApplication',
+  operatingSystem: 'Node.js >= 22 (cross-platform: macOS, Linux, Windows)',
+  softwareVersion: 'alpha',
+  releaseNotes:
+    'Pre-1.0 alpha; APIs may shift before 1.0. WebdriverIO and Playwright adapters shipped; Cypress adapter on the roadmap with no committed date.',
+  license: 'https://www.apache.org/licenses/LICENSE-2.0',
+  url: 'https://tracelane.cubenest.in',
+  offers: { '@type': 'Offer', price: '0', priceCurrency: 'USD' },
+  isAccessibleForFree: true,
+  sameAs: [
+    'https://github.com/Cubenest/rrweb-stack',
+    'https://www.npmjs.com/package/@tracelane/wdio',
+    'https://www.npmjs.com/package/@tracelane/playwright',
+    'https://www.npmjs.com/package/@tracelane/core',
+    'https://www.npmjs.com/package/@tracelane/report',
+  ],
+};
 ---
 
 <Layout title="tracelane — failed-test recorder for WebdriverIO and Playwright">
@@ -69,4 +93,6 @@ import Layout from '../layouts/Layout.astro';
   <p style="color: var(--fg-muted); font-size: 0.9rem; margin-top: 2rem;">
     No telemetry. No cloud. No account. Reports are written to your local <code>outDir</code>.
   </p>
+
+  <script type="application/ld+json" is:inline set:html={JSON.stringify(jsonLd)} />
 </Layout>
