@@ -1,0 +1,6 @@
+# peek docs — allow all crawlers, including AI / answer-engine bots.
+# We want peek to be discoverable and citable (the opposite of blocking GPTBot/etc.).
+User-agent: *
+Allow: /
+
+Sitemap: https://peek.cubenest.in/sitemap-index.xml

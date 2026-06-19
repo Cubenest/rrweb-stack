@@ -13,8 +13,9 @@
     "test": "echo 'no tests' && exit 0"
   },
   "dependencies": {
-    "astro": "^5.18.2",
-    "@cubenest/docs-shared": "workspace:*"
+    "@astrojs/sitemap": "^3.7.3",
+    "@cubenest/docs-shared": "workspace:*",
+    "astro": "^5.18.2"
   },
   "devDependencies": {
     "@astrojs/check": "^0.9.4",
