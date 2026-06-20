@@ -1,6 +1,10 @@
 import { fakeBrowser } from '@webext-core/fake-browser';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { captureScreenshot, isReadOnlyAction } from '../../entrypoints/background';
+import {
+  captureScreenshot,
+  isReadOnlyAction,
+  resolveTargetArgs,
+} from '../../entrypoints/background';
 import { addEnabledOrigin } from '../activation/storage';
 import {
   type ActionHandlerDeps,
@@ -1543,6 +1547,61 @@ describe('isReadOnlyAction — resolveTarget read-only bypass (Lane 2)', () => {
     expect(isReadOnlyAction({ type: 'type', selector: '#x', text: 'a', delay: 40 })).toBe(false);
     expect(isReadOnlyAction({ type: 'scroll', selector: '#x' })).toBe(false);
     expect(isReadOnlyAction({ type: 'navigate', url: 'https://example.com' })).toBe(false);
+  });
+});
+
+// --- resolveTargetArgs — destructive-override executeScript-arg safety -------
+// REGRESSION GUARD for the R2 live-test §C2 finding: chrome.scripting.execute-
+// Script REJECTS a bare `undefined` in `args` (it throws), and the resolveTarget
+// dep's catch fails open to "no signals", which silently disabled the
+// destructive override at Level 4 (a `Delete`/`Pay` click auto-allowed with no
+// banner). The unit/e2e suites inject the resolver func directly, bypassing real
+// arg serialization — so this asserts the args are JSON-serializable, which is
+// the exact property the live executeScript demands.
+describe('resolveTargetArgs — executeScript args are always JSON-serializable (Lane 2)', () => {
+  const jsonRoundTrips = (args: unknown) => expect(JSON.parse(JSON.stringify(args))).toEqual(args);
+
+  it('a ref-only click (no selector, no nth) emits no undefined — the §C2 bug', () => {
+    const args = resolveTargetArgs({ type: 'click', ref: 'e5', button: 'left' });
+    expect(args).toEqual(['', 0, 'e5']);
+    expect(args?.some((a) => a === undefined)).toBe(false);
+    jsonRoundTrips(args);
+  });
+
+  it('a selector-only click (no ref, no nth) emits no undefined — the §C2 bug', () => {
+    const args = resolveTargetArgs({ type: 'click', selector: '#del', button: 'left' });
+    expect(args).toEqual(['#del', 0, '']);
+    expect(args?.some((a) => a === undefined)).toBe(false);
+    jsonRoundTrips(args);
+  });
+
+  it('threads an explicit nth through (matching the dispatched element)', () => {
+    const args = resolveTargetArgs({ type: 'click', selector: '#row', nth: 2, button: 'left' });
+    expect(args).toEqual(['#row', 2, '']);
+    jsonRoundTrips(args);
+  });
+
+  it('returns null for page-level verbs (nothing to resolve)', () => {
+    expect(resolveTargetArgs({ type: 'navigate', url: 'https://example.com' })).toBeNull();
+    expect(resolveTargetArgs({ type: 'reload' })).toBeNull();
+    expect(resolveTargetArgs({ type: 'back' })).toBeNull();
+  });
+
+  it('every element-operating shape produces only string|number args (never undefined)', () => {
+    const shapes: Parameters<typeof resolveTargetArgs>[0][] = [
+      { type: 'click', ref: 'e1', button: 'left' },
+      { type: 'click', selector: '#x', button: 'left' },
+      { type: 'type', selector: '#x', text: 'hi', delay: 40 },
+      { type: 'dblclick', ref: 'e9' },
+      { type: 'scroll', selector: '#x' },
+      { type: 'enter', ref: 'e3' },
+    ];
+    for (const action of shapes) {
+      const args = resolveTargetArgs(action);
+      expect(args).not.toBeNull();
+      for (const a of args ?? []) expect(typeof a === 'string' || typeof a === 'number').toBe(true);
+      jsonRoundTrips(args);
+    }
   });
 });
 

@@ -103,6 +103,35 @@ export function isReadOnlyAction(action: Action): boolean {
 }
 
 /**
+ * Build the positional args for the MAIN-world {@link resolveTargetInPage}
+ * injection that resolves an action's destructive-matcher signals.
+ *
+ * SECURITY: `chrome.scripting.executeScript` REJECTS a non-JSON-serializable
+ * `undefined` in `args` — the call THROWS ("may only contain JSON-serializable
+ * values"). The previous wiring passed `[selector, nth, ref]` with `nth`/`ref`
+ * left `undefined` for an ordinary click; the throw was swallowed by the dep's
+ * catch, which fails OPEN to "no signals" → the destructive matcher never ran →
+ * a Level-4 `Delete`/`Pay`/`Transfer` click was auto-allowed with NO confirm
+ * banner, defeating the destructive override (caught by the R2 live-test
+ * runbook §C2; the unit/e2e suites inject these funcs directly, bypassing real
+ * `executeScript` arg serialization).
+ *
+ * The fix: coerce the optionals to serializable sentinels that
+ * `resolveTargetInPage` already treats as "absent" — `nth` 0 (→ first match,
+ * same as omitting it) and `ref` '' (length 0 → skips the ref-registry branch).
+ * Returns `null` for page-level verbs (neither ref nor selector) so the caller
+ * skips resolution entirely.
+ */
+export function resolveTargetArgs(action: Action): [string, number, string] | null {
+  const selector =
+    'selector' in action && typeof action.selector === 'string' ? action.selector : '';
+  const ref = 'ref' in action && typeof action.ref === 'string' ? action.ref : '';
+  if (ref.length === 0 && selector.length === 0) return null;
+  const nth = 'nth' in action && typeof action.nth === 'number' ? action.nth : 0;
+  return [selector, nth, ref];
+}
+
+/**
  * The mutating verbs whose post-action `observe` diff RE-WALKS the page: the
  * page context (and the ref registry) survive, so a `diffPageView` is meaningful.
  * Navigating verbs (navigate/back/forward/reload) tear down the context, so they
@@ -571,21 +600,20 @@ export default defineBackground({
       // matcher inspects the SAME element — otherwise a ref-targeted destructive
       // action (e.g. a "Delete" button by ref) would skip the destructive
       // override. Only page-level verbs (neither ref nor selector) skip here.
-      const selector =
-        'selector' in action && typeof action.selector === 'string' ? action.selector : '';
-      const ref = 'ref' in action && typeof action.ref === 'string' ? action.ref : undefined;
-      if (!ref && selector.length === 0) return {};
-      // Item B: thread `nth` so the destructive matcher inspects the SAME
-      // element the dispatcher will click (`querySelectorAll(selector)[nth]`).
-      // Only the click branch carries `nth`; for everything else it's undefined
-      // → first match, matching dispatchAction. `ref` takes precedence over both.
-      const nth = 'nth' in action && typeof action.nth === 'number' ? action.nth : undefined;
+      //
+      // The args MUST be JSON-serializable — a bare `undefined` makes
+      // executeScript throw and the catch below fails open to "no signals",
+      // silently disabling the destructive override. resolveTargetArgs coerces
+      // the optionals to serializable sentinels; see its docstring. `null`
+      // means a page-level verb (nothing to resolve).
+      const args = resolveTargetArgs(action);
+      if (args === null) return {};
       try {
         const [frame] = await chrome.scripting.executeScript({
           target: { tabId },
           world: 'MAIN',
           func: resolveTargetInPage,
-          args: [selector, nth, ref],
+          args,
         });
         return (frame?.result as Awaited<ReturnType<typeof resolveTargetInPage>>) ?? {};
       } catch (err) {
