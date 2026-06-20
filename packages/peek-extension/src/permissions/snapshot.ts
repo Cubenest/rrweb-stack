@@ -366,6 +366,262 @@ export function diffPageView(opts: { selector?: string; maxElements?: number }):
 }
 
 /**
+ * FULLY self-contained diff for `executeScript({ world: 'MAIN', func })` — the
+ * function the SW actually injects for the post-action `observe` path.
+ *
+ * Why this exists separately from {@link diffPageView}: `executeScript({ func })`
+ * serializes ONLY the passed function's OWN source. `diffPageView` references the
+ * sibling module-level `buildPageView`, so injecting it bare throws
+ * `ReferenceError: buildPageView is not defined` in the page. A `new Function`/
+ * `eval` wrapper that re-creates `buildPageView` from a string would work in
+ * jsdom but is BLOCKED by the page's CSP in MAIN world on any site without
+ * `'unsafe-eval'` (MAIN-world injected code runs under the PAGE's CSP) — i.e. it
+ * would silently break the diff on most real, hardened sites. So this function
+ * nests `buildPageView` as a REAL inner function declaration: no cross-module
+ * reference, no runtime code generation, CSP-safe everywhere. The inner walker is
+ * a verbatim copy of the exported {@link buildPageView}; the serialization test
+ * guards it has no out-of-scope identifiers, and a parity test asserts it matches
+ * the canonical walker so the two can't silently drift.
+ */
+export function diffPageViewStandalone(opts: {
+  selector?: string;
+  maxElements?: number;
+}): PageViewDelta {
+  // --- verbatim copy of the exported buildPageView (kept in lockstep; see the
+  // parity test in snapshot.test.ts) -------------------------------------------
+  function buildPageView(o: { selector?: string; maxElements?: number }): PageViewResult {
+    const max =
+      typeof o?.maxElements === 'number' && o.maxElements > 0 ? Math.min(o.maxElements, 500) : 200;
+
+    interface RefState {
+      byId: Map<string, Element>;
+      byEl: WeakMap<Element, string>;
+    }
+    function refState(): RefState {
+      const w = window as unknown as {
+        __peekRefs?: Map<string, Element>;
+        __peekRefByEl?: WeakMap<Element, string>;
+        __peekRefSeq?: number;
+      };
+      if (!w.__peekRefByEl) w.__peekRefByEl = new WeakMap();
+      if (typeof w.__peekRefSeq !== 'number') w.__peekRefSeq = 0;
+      const byId = new Map<string, Element>();
+      w.__peekRefs = byId;
+      return { byId, byEl: w.__peekRefByEl };
+    }
+    function refFor(el: Element, st: RefState): string {
+      let ref = st.byEl.get(el);
+      if (!ref) {
+        const w = window as unknown as { __peekRefSeq?: number };
+        w.__peekRefSeq = (w.__peekRefSeq ?? 0) + 1;
+        ref = `e${w.__peekRefSeq}`;
+        st.byEl.set(el, ref);
+      }
+      st.byId.set(ref, el);
+      return ref;
+    }
+    const st = refState();
+
+    const SENSITIVE_AUTOFILL = new Set([
+      'cc-name',
+      'cc-number',
+      'cc-exp',
+      'cc-exp-month',
+      'cc-exp-year',
+      'cc-csc',
+      'cc-type',
+      'new-password',
+      'current-password',
+      'one-time-code',
+      'email',
+      'tel',
+      'tel-national',
+      'tel-local',
+      'tel-area-code',
+      'tel-extension',
+      'bday',
+      'bday-day',
+      'bday-month',
+      'bday-year',
+      'name',
+      'given-name',
+      'additional-name',
+      'family-name',
+      'honorific-prefix',
+      'honorific-suffix',
+      'organization',
+      'street-address',
+      'address-line1',
+      'address-line2',
+      'address-line3',
+      'address-level1',
+      'address-level2',
+      'address-level3',
+      'address-level4',
+      'postal-code',
+    ]);
+
+    function isSensitiveInput(el: Element): boolean {
+      const type = (el as HTMLInputElement).type;
+      const t = typeof type === 'string' ? type.toLowerCase() : '';
+      if (t === 'password' || t === 'email' || t === 'tel') return true;
+      const ac = (el.getAttribute('autocomplete') ?? '').toLowerCase().trim();
+      if (ac) {
+        const tokens = ac.split(/\s+/);
+        const field = tokens[tokens.length - 1] ?? '';
+        if (SENSITIVE_AUTOFILL.has(field) || field.startsWith('cc-')) return true;
+      }
+      try {
+        if (el.closest('.rr-mask, [data-private], [data-dd-privacy="mask"], [data-peek-mask]')) {
+          return true;
+        }
+      } catch {
+        /* selector unsupported in this env — ignore */
+      }
+      return false;
+    }
+
+    function roleOf(el: Element): string {
+      const explicit = el.getAttribute('role');
+      if (explicit) return explicit;
+      const tag = el.tagName.toLowerCase();
+      if (tag === 'a') return el.hasAttribute('href') ? 'link' : 'generic';
+      if (tag === 'button') return 'button';
+      if (tag === 'select') return 'combobox';
+      if (tag === 'textarea') return 'textbox';
+      if (tag === 'input') {
+        const it = (el as HTMLInputElement).type;
+        const t = typeof it === 'string' ? it.toLowerCase() : 'text';
+        if (t === 'checkbox') return 'checkbox';
+        if (t === 'radio') return 'radio';
+        if (t === 'submit' || t === 'button' || t === 'reset') return 'button';
+        return 'textbox';
+      }
+      if (/^h[1-6]$/.test(tag)) return 'heading';
+      return tag;
+    }
+
+    function accName(el: Element): string {
+      const aria = el.getAttribute('aria-label');
+      if (aria?.trim()) return aria.trim();
+      const labelledby = el.getAttribute('aria-labelledby');
+      if (labelledby) {
+        const t = labelledby
+          .split(/\s+/)
+          .map((id) => document.getElementById(id)?.textContent ?? '')
+          .join(' ')
+          .trim();
+        if (t) return t;
+      }
+      const id = el.getAttribute('id');
+      if (id) {
+        try {
+          const esc =
+            typeof CSS !== 'undefined' && typeof CSS.escape === 'function' ? CSS.escape(id) : id;
+          const lbl = document.querySelector(`label[for="${esc}"]`);
+          if (lbl?.textContent?.trim()) return lbl.textContent.trim();
+        } catch {
+          /* invalid selector — ignore */
+        }
+      }
+      const closestLabel = el.closest('label');
+      if (closestLabel?.textContent?.trim()) return closestLabel.textContent.trim();
+      const fallback =
+        el.getAttribute('alt') ??
+        el.getAttribute('placeholder') ??
+        el.getAttribute('title') ??
+        el.textContent ??
+        '';
+      return fallback.trim().replace(/\s+/g, ' ').slice(0, 200);
+    }
+
+    function isVisible(el: Element): boolean {
+      try {
+        const r = el.getBoundingClientRect();
+        if (r.width === 0 && r.height === 0) return false;
+        const cs = getComputedStyle(el as HTMLElement);
+        return cs.visibility !== 'hidden' && cs.display !== 'none';
+      } catch {
+        return true;
+      }
+    }
+
+    let root: ParentNode = document;
+    if (o?.selector) {
+      try {
+        root = document.querySelector(o.selector) ?? document;
+      } catch {
+        root = document;
+      }
+    }
+
+    const SEL =
+      'a[href],button,input,select,textarea,[role],[onclick],[contenteditable=""],[contenteditable="true"],h1,h2,h3,h4,h5,h6';
+    let candidates: Element[];
+    try {
+      candidates = Array.from(root.querySelectorAll(SEL));
+    } catch {
+      candidates = [];
+    }
+
+    const nodes: PageViewNode[] = [];
+    let truncated = false;
+    for (const el of candidates) {
+      if (nodes.length >= max) {
+        truncated = true;
+        break;
+      }
+      if (!isVisible(el)) continue;
+      const role = roleOf(el);
+      const name = accName(el);
+      const isControl = /^(button|link|textbox|checkbox|radio|combobox)$/.test(role);
+      if (!name && !isControl) continue;
+
+      const ref = refFor(el, st);
+
+      const node: { ref: string; role: string; name: string; value?: string; state?: string } = {
+        ref,
+        role,
+        name,
+      };
+
+      const rawValue = (el as HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement).value;
+      if (typeof rawValue === 'string' && role !== 'button') {
+        node.value = isSensitiveInput(el) ? '•••' : rawValue.slice(0, 100);
+      }
+
+      const stArr: string[] = [];
+      if ((el as HTMLInputElement).disabled) stArr.push('disabled');
+      if ((el as HTMLInputElement).checked) stArr.push('checked');
+      const exp = el.getAttribute('aria-expanded');
+      if (exp) stArr.push(`expanded=${exp}`);
+      if (stArr.length) node.state = stArr.join(',');
+
+      nodes.push(node);
+    }
+
+    (window as unknown as { __peekLastView?: PageViewNode[] }).__peekLastView = nodes;
+
+    return { ok: true, url: location.href, title: document.title, nodes, truncated };
+  }
+
+  // --- diff logic (identical to diffPageView) ---------------------------------
+  const prev = (window as unknown as { __peekLastView?: PageViewNode[] }).__peekLastView ?? [];
+  const prevByRef = new Map(prev.map((n) => [n.ref, n]));
+  const cur = buildPageView(opts);
+  const curByRef = new Map(cur.nodes.map((n) => [n.ref, n]));
+  const added = cur.nodes.filter((n) => !prevByRef.has(n.ref));
+  const changed = cur.nodes.filter((n) => {
+    const p = prevByRef.get(n.ref);
+    return (
+      !!p && (p.name !== n.name || p.value !== n.value || p.state !== n.state || p.role !== n.role)
+    );
+  });
+  const removed = prev.filter((n) => !curByRef.has(n.ref)).map((n) => n.ref);
+  return { url: cur.url, added, removed, changed, truncated: cur.truncated };
+}
+
+/**
  * Lossless, structured, masked drill-in for a single element resolved by `ref`.
  * NEVER reads outerHTML/innerHTML (would leak raw input values and bypass
  * masking). Self-contained for `executeScript({ world: 'MAIN' })` — all helpers

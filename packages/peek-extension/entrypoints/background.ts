@@ -66,7 +66,16 @@ import {
   resolveTarget as resolveTargetInPage,
 } from '../src/permissions/dispatcher';
 import { type HighlightResult, applyHighlight, clearHighlight } from '../src/permissions/highlight';
-import { type PageViewResult, buildPageView } from '../src/permissions/snapshot';
+import {
+  type ElementDetail,
+  type ElementDetailError,
+  type PageViewDelta,
+  type PageViewNode,
+  type PageViewResult,
+  buildElementDetail,
+  buildPageView,
+  diffPageViewStandalone,
+} from '../src/permissions/snapshot';
 import {
   PERMISSION_LEVELS_KEY,
   getPermissionLevel,
@@ -74,6 +83,7 @@ import {
 } from '../src/permissions/store';
 import { YoloSessionStore } from '../src/permissions/yolo';
 import { injectRecorder } from '../src/recorder/inject';
+import { maskUrl } from '../src/relay/mask';
 import { ShieldController } from '../src/shield/controller';
 import { type ShieldInbound, isShieldInbound } from '../src/shield/protocol';
 
@@ -91,6 +101,122 @@ const CONFIRM_TIMEOUT_MS = 2 * 60_000;
 export function isReadOnlyAction(action: Action): boolean {
   return action.type === 'waitFor' || action.type === 'screenshot';
 }
+
+/**
+ * SW-side masking of ONE page-view node (R1/R2). The MAIN-world walker already
+ * dropped raw sensitive input VALUES in-page (`•••`); here we additionally mask
+ * the accessible name + any non-sensitive value through `@cubenest/rrweb-core`'s
+ * `maskTextContent` (importable only SW-side) before anything leaves the device.
+ * `state`/`role`/`ref` are structural and carry no page text, so they pass
+ * through. Shared by the `page_view` branch and the `observe` diff path so both
+ * mask identically.
+ */
+export function maskPageViewNode(node: PageViewNode): PageViewNode {
+  const masked: { ref: string; role: string; name: string; value?: string; state?: string } = {
+    ref: node.ref,
+    role: node.role,
+    name: maskTextContent(node.name),
+  };
+  if (node.value !== undefined) {
+    // The `•••` placeholder is already a redaction marker — never run it through
+    // the masker (it isn't page text, and masking it is a no-op anyway).
+    masked.value = node.value === '•••' ? '•••' : maskTextContent(node.value);
+  }
+  if (node.state !== undefined) masked.state = node.state;
+  return masked;
+}
+
+/**
+ * SW-side masking of an {@link ElementDetail} (R2 `element_detail` read). The
+ * MAIN-world drill-in already dropped raw sensitive input VALUES in-page (`•••`);
+ * here we mask every page-text string before it leaves the device:
+ *   - `name`, `value`, `text`           → `maskTextContent`
+ *   - every `aria-*` VALUE (keys kept)  → `maskTextContent`
+ *   - `href`                            → `maskUrl` (same path/query mask as network)
+ *   - each `children[].name`            → `maskTextContent`
+ * Structural fields (`ref`/`tag`/`role`/`type`/`state`/`rect`/`visible`/`context`
+ * landmark+heading role/ref) carry no free page text from the element's value
+ * surface; `context.heading` IS page text, so it is masked too.
+ */
+export function maskElementDetail(detail: ElementDetail): ElementDetail {
+  const aria: Record<string, string> = {};
+  for (const [k, v] of Object.entries(detail.aria)) aria[k] = maskTextContent(v);
+
+  const out: {
+    ok: true;
+    ref: string;
+    tag: string;
+    role: string;
+    name: string;
+    value?: string;
+    type?: string;
+    href?: string;
+    state: string[];
+    aria: Record<string, string>;
+    rect: { x: number; y: number; w: number; h: number };
+    visible: boolean;
+    text?: string;
+    context?: { heading?: string; landmark?: string };
+    children?: { ref: string; role: string; name: string }[];
+  } = {
+    ok: true,
+    ref: detail.ref,
+    tag: detail.tag,
+    role: detail.role,
+    name: maskTextContent(detail.name),
+    state: detail.state,
+    aria,
+    rect: detail.rect,
+    visible: detail.visible,
+  };
+
+  if (detail.value !== undefined) {
+    out.value = detail.value === '•••' ? '•••' : maskTextContent(detail.value);
+  }
+  if (detail.type !== undefined) out.type = detail.type;
+  if (detail.href !== undefined) out.href = maskUrl(detail.href);
+  if (detail.text !== undefined) out.text = maskTextContent(detail.text);
+  if (detail.context !== undefined) {
+    const ctx: { heading?: string; landmark?: string } = {};
+    if (detail.context.heading !== undefined) ctx.heading = maskTextContent(detail.context.heading);
+    if (detail.context.landmark !== undefined) ctx.landmark = detail.context.landmark;
+    out.context = ctx;
+  }
+  if (detail.children !== undefined) {
+    out.children = detail.children.map((c) => ({
+      ref: c.ref,
+      role: c.role,
+      name: maskTextContent(c.name),
+    }));
+  }
+  return out;
+}
+
+/**
+ * The mutating verbs whose post-action `observe` diff RE-WALKS the page: the
+ * page context (and the ref registry) survive, so a `diffPageView` is meaningful.
+ * Navigating verbs (navigate/back/forward/reload) tear down the context, so they
+ * get the `{navigated:true}` marker instead (see dispatchInMainWorld).
+ */
+const OBSERVE_DIFFABLE_VERBS: ReadonlySet<Action['type']> = new Set([
+  'click',
+  'type',
+  'dblclick',
+  'scroll',
+  'enter',
+]);
+
+/**
+ * The navigating verbs whose `observe` returns a `{navigated:true}` marker
+ * (no diff — the page context + ref registry are torn down by the navigation,
+ * so a diff would be meaningless).
+ */
+const OBSERVE_NAVIGATING_VERBS: ReadonlySet<Action['type']> = new Set([
+  'navigate',
+  'back',
+  'forward',
+  'reload',
+]);
 
 /**
  * Screenshot via CDP `Page.captureScreenshot`. `chrome.tabs.captureVisibleTab`
@@ -743,6 +869,33 @@ export default defineBackground({
           return { ok: false, error: err instanceof Error ? err.message : String(err) };
         }
       }
+      // `element_detail` (R2) runs its OWN self-contained MAIN-world drill-in
+      // (buildElementDetail is standalone — it inlines all helpers), then we mask
+      // SW-side: name/value/text + every aria VALUE + every child name through
+      // `maskTextContent`, and `href` through `maskUrl` (the SAME path/query mask
+      // peek applies to network URLs). Raw sensitive input values were already
+      // dropped in-page (`•••`). An expired ref surfaces as the action ERROR
+      // (`ref expired …`) rather than a thrown exception, so the agent re-snapshots.
+      if (action.type === 'element_detail') {
+        try {
+          const [frame] = await chrome.scripting.executeScript({
+            target: { tabId },
+            world: 'MAIN',
+            func: buildElementDetail,
+            args: [action.ref],
+          });
+          const detail = frame?.result as ElementDetail | ElementDetailError | undefined;
+          if (!detail) return { ok: false, error: 'no result from MAIN-world element_detail' };
+          if (!detail.ok) {
+            // Expired/detached ref — surface as the action error, not a throw.
+            return { ok: false, error: detail.error };
+          }
+          return { ok: true, details: maskElementDetail(detail) };
+        } catch (err) {
+          return { ok: false, error: err instanceof Error ? err.message : String(err) };
+        }
+      }
+      let finalResult: { ok: true; details?: unknown } | { ok: false; error: string };
       try {
         const [frame] = await chrome.scripting.executeScript({
           target: { tabId },
@@ -757,12 +910,102 @@ export default defineBackground({
           | { ok: true; details?: unknown }
           | { ok: false; error: string }
           | undefined;
-        const finalResult = result ?? { ok: false, error: 'no result from MAIN-world dispatch' };
+        finalResult = result ?? { ok: false, error: 'no result from MAIN-world dispatch' };
         // Fire-and-forget the in-page cue AFTER computing the result; do not await.
         if (finalResult.ok) void emitActionFeedback(tabId, action);
-        return finalResult;
       } catch (err) {
         return { ok: false, error: err instanceof Error ? err.message : String(err) };
+      }
+      // ---- Post-action `observe` diff (R2) --------------------------------
+      // SAFETY / ORDERING: this runs ONLY in the success path of an action that
+      // was already gated-allow + already dispatched (finalResult.ok). It NEVER
+      // runs when the action was denied (this function is only reached after the
+      // gate allows) or errored (the `!finalResult.ok` guard below). The diff is
+      // a READ appended to an already-allowed, already-executed mutation — it must
+      // not become a side-channel to read the page when the action itself failed.
+      if (finalResult.ok && 'observe' in action && action.observe === true) {
+        const viewDelta = await computeObserveDelta(tabId, action);
+        return {
+          ok: true,
+          details: {
+            ...(typeof finalResult.details === 'object' && finalResult.details !== null
+              ? (finalResult.details as Record<string, unknown>)
+              : {}),
+            viewDelta,
+          },
+        };
+      }
+      return finalResult;
+    };
+
+    /**
+     * Compute the masked `viewDelta` for a successful `observe` action.
+     *
+     * NON-navigating verbs (click/type/dblclick/scroll/enter) keep the page
+     * context + ref registry, so we re-walk via `diffPageView` (injected together
+     * with `buildPageView` — see {@link runDiffInPage}) and SW-mask the added +
+     * changed nodes. NAVIGATING verbs (navigate/back/forward/reload) tore down the
+     * context, so a diff is meaningless: return a `{navigated:true}` marker with
+     * the post-navigation URL (best-effort) so the agent knows to re-snapshot.
+     * Best-effort throughout: any failure degrades to an empty/navigated delta —
+     * it must never turn a successful action into an error.
+     */
+    const computeObserveDelta = async (
+      tabId: number,
+      action: Action,
+    ): Promise<PageViewDelta | (PageViewDelta & { note: string })> => {
+      if (OBSERVE_NAVIGATING_VERBS.has(action.type)) {
+        // Use the post-navigation URL if we can read it; else the action's url
+        // (navigate carries one; back/forward/reload don't → fall back to '').
+        let url = 'url' in action && typeof action.url === 'string' ? action.url : '';
+        try {
+          const tab = await chrome.tabs.get(tabId);
+          if (tab.url) url = tab.url;
+        } catch {
+          /* tab gone — keep the action url */
+        }
+        return {
+          url,
+          navigated: true,
+          added: [],
+          removed: [],
+          changed: [],
+          truncated: false,
+          note: 'refs expired; call get_page_view',
+        };
+      }
+      // Only the known diffable verbs re-walk; an unrecognized `observe`-bearing
+      // verb (none today) degrades to an empty delta rather than a bogus diff.
+      if (!OBSERVE_DIFFABLE_VERBS.has(action.type)) {
+        return { url: '', added: [], removed: [], changed: [], truncated: false };
+      }
+      // Non-navigating: re-walk + diff in MAIN-world, then SW-mask. We inject
+      // `diffPageViewStandalone` (NOT `diffPageView`): it nests `buildPageView`
+      // as a real inner function, so it serializes self-contained and runs under
+      // the PAGE's CSP with no `new Function`/eval (which MAIN-world CSP blocks).
+      try {
+        const [frame] = await chrome.scripting.executeScript({
+          target: { tabId },
+          world: 'MAIN',
+          func: diffPageViewStandalone,
+          args: [{}],
+        });
+        const delta = frame?.result as PageViewDelta | undefined;
+        if (!delta) {
+          return { url: '', added: [], removed: [], changed: [], truncated: false };
+        }
+        return {
+          url: delta.url,
+          ...(delta.navigated !== undefined ? { navigated: delta.navigated } : {}),
+          added: delta.added.map(maskPageViewNode),
+          removed: delta.removed,
+          changed: delta.changed.map(maskPageViewNode),
+          truncated: delta.truncated,
+        };
+      } catch {
+        // A scripting failure (tab navigated/closed mid-diff) degrades to empty —
+        // the action itself already succeeded, so we never surface this as error.
+        return { url: '', added: [], removed: [], changed: [], truncated: false };
       }
     };
 

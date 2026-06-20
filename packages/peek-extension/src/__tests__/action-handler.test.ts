@@ -1,6 +1,11 @@
 import { fakeBrowser } from '@webext-core/fake-browser';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { captureScreenshot, isReadOnlyAction } from '../../entrypoints/background';
+import {
+  captureScreenshot,
+  isReadOnlyAction,
+  maskElementDetail,
+  maskPageViewNode,
+} from '../../entrypoints/background';
 import { addEnabledOrigin } from '../activation/storage';
 import {
   type ActionHandlerDeps,
@@ -240,6 +245,116 @@ describe('handleActionRequest — page_view (live read, Level 1+)', () => {
     expect(out.verdict).toBe('allow');
     expect(out.approver).toBe('level-1-read');
     expect(ctx.dispatchCalls).toBe(1);
+  });
+});
+
+describe('handleActionRequest — element_detail (live read, Level 1+, reuses level-1-read)', () => {
+  it('element_detail at Level 1 → allow + dispatches once + returns details + NEVER resolves a target', async () => {
+    await enableOriginAtLevel('https://example.com', 1);
+    const ctx = makeDeps(
+      {},
+      { dispatchOutcome: { ok: true, details: { ref: 'e5', tag: 'button', name: 'Save' } } },
+    );
+    const out = await handleActionRequest(
+      makeRequest({ action: { type: 'element_detail', ref: 'e5' } }),
+      ctx.deps,
+    );
+    expect(out.verdict).toBe('allow');
+    expect(out.result).toBe('ok');
+    expect(out.approver).toBe('level-1-read'); // reuses the read approver — NO new mirror
+    expect(out.details).toEqual({ ref: 'e5', tag: 'button', name: 'Save' });
+    expect(ctx.promptCalls).toBe(0);
+    expect(ctx.resolveTargetCalls).toBe(0); // a read: the destructive matcher never runs
+    expect(ctx.dispatchCalls).toBe(1);
+  });
+
+  it('element_detail at Level 0 → deny (requires Level 1+), no dispatch', async () => {
+    await enableOriginAtLevel('https://example.com', 0);
+    const ctx = makeDeps();
+    const out = await handleActionRequest(
+      makeRequest({ action: { type: 'element_detail', ref: 'e1' } }),
+      ctx.deps,
+    );
+    expect(out.verdict).toBe('deny');
+    expect(out.result).toBe('denied');
+    expect(String(out.error)).toContain('Level 1+');
+    expect(ctx.dispatchCalls).toBe(0);
+  });
+
+  it('element_detail at Level 4 → allow (still level-1-read approver)', async () => {
+    await enableOriginAtLevel('https://example.com', 4);
+    const ctx = makeDeps();
+    const out = await handleActionRequest(
+      makeRequest({ action: { type: 'element_detail', ref: 'e1' } }),
+      ctx.deps,
+    );
+    expect(out.verdict).toBe('allow');
+    expect(out.approver).toBe('level-1-read');
+    expect(ctx.resolveTargetCalls).toBe(0);
+    expect(ctx.dispatchCalls).toBe(1);
+  });
+
+  it('element_detail with an expired ref surfaces result=error (ref expired) without throwing', async () => {
+    // The SW dispatch folds buildElementDetail's {ok:false} into {ok:false,error};
+    // the handler surfaces that as verdict=allow (gate allowed the read) + error.
+    await enableOriginAtLevel('https://example.com', 1);
+    const ctx = makeDeps(
+      {},
+      { dispatchOutcome: { ok: false, error: 'ref expired (re-run get_page_view)' } },
+    );
+    const out = await handleActionRequest(
+      makeRequest({ action: { type: 'element_detail', ref: 'e9999' } }),
+      ctx.deps,
+    );
+    expect(out.verdict).toBe('allow'); // the read itself was allowed
+    expect(out.result).toBe('error');
+    expect(String(out.error)).toMatch(/ref expired/);
+    expect(out.approver).toBe('level-1-read');
+  });
+});
+
+describe('handleActionRequest — observe rides an already-gated mutating action', () => {
+  it('an allowed observe:true action surfaces details.viewDelta (the SW computed it post-success)', async () => {
+    // The gate change is NONE — observe rides the existing gate. The SW's
+    // dispatchInMainWorld appends viewDelta to details on success; the handler
+    // passes details through unchanged. We model that returned shape here.
+    await enableOriginAtLevel('https://example.com', 4);
+    const viewDelta = {
+      url: 'https://example.com/page',
+      added: [],
+      removed: [],
+      changed: [{ ref: 'e3', role: 'textbox', name: 'Amount', value: '100' }],
+      truncated: false,
+    };
+    const ctx = makeDeps({}, { dispatchOutcome: { ok: true, details: { viewDelta } } });
+    const out = await handleActionRequest(
+      makeRequest({
+        action: { type: 'type', selector: '#amount', text: '100', delay: 40, observe: true },
+      }),
+      ctx.deps,
+    );
+    expect(out.verdict).toBe('allow');
+    expect(out.result).toBe('ok');
+    expect((out.details as { viewDelta?: typeof viewDelta }).viewDelta?.changed[0]?.value).toBe(
+      '100',
+    );
+  });
+
+  it('a DENIED observe:true action returns NO viewDelta (the diff never runs on denial)', async () => {
+    // SAFETY: observe is a read appended only AFTER a successful dispatch. A
+    // denied action must never produce a delta — dispatchInMainWorld is not even
+    // called. Drive a Level-3 user-deny with observe set.
+    await enableOriginAtLevel('https://example.com', 3);
+    const ctx = makeDeps({}, { promptResult: { verdict: 'deny', approvalMs: 1 } });
+    const out = await handleActionRequest(
+      makeRequest({
+        action: { type: 'click', selector: '#go', button: 'left', observe: true },
+      }),
+      ctx.deps,
+    );
+    expect(out.verdict).toBe('deny');
+    expect(ctx.dispatchCalls).toBe(0); // never dispatched → no diff could run
+    expect(out.details).toBeUndefined(); // no viewDelta on a denial
   });
 });
 
@@ -1406,6 +1521,121 @@ describe('isReadOnlyAction — resolveTarget read-only bypass (Lane 2)', () => {
     expect(isReadOnlyAction({ type: 'type', selector: '#x', text: 'a', delay: 40 })).toBe(false);
     expect(isReadOnlyAction({ type: 'scroll', selector: '#x' })).toBe(false);
     expect(isReadOnlyAction({ type: 'navigate', url: 'https://example.com' })).toBe(false);
+  });
+});
+
+// --- SW-side masking of the R2 reads (element_detail + observe diff nodes) ---
+// These are the directly-testable units of dispatchInMainWorld's masking (the
+// closure itself isn't exported; the masking helpers it calls are). They guard
+// the two-layer privacy boundary: the MAIN-world walker drops raw sensitive
+// values in-page (•••); these add maskTextContent + maskUrl SW-side.
+
+describe('maskPageViewNode — SW masking of an observe-diff / page-view node', () => {
+  it('masks the accessible name + non-sensitive value through maskTextContent', () => {
+    const masked = maskPageViewNode({
+      ref: 'e1',
+      role: 'textbox',
+      name: 'Email jane@example.com',
+      value: 'reach me at jane@example.com',
+      state: 'disabled',
+    });
+    expect(masked.name).not.toContain('jane@example.com');
+    expect(masked.value).not.toContain('jane@example.com');
+    expect(masked.ref).toBe('e1'); // structural fields pass through
+    expect(masked.role).toBe('textbox');
+    expect(masked.state).toBe('disabled');
+  });
+
+  it('passes the ••• placeholder through untouched (already a redaction marker)', () => {
+    const masked = maskPageViewNode({ ref: 'e2', role: 'textbox', name: 'pw', value: '•••' });
+    expect(masked.value).toBe('•••');
+  });
+
+  it('omits value/state when absent (exactOptionalPropertyTypes-safe)', () => {
+    const masked = maskPageViewNode({ ref: 'e3', role: 'link', name: 'Home' });
+    expect('value' in masked).toBe(false);
+    expect('state' in masked).toBe(false);
+  });
+});
+
+describe('maskElementDetail — SW masking of an element_detail drill-in', () => {
+  const base = {
+    ok: true as const,
+    ref: 'e7',
+    tag: 'a',
+    role: 'link',
+    state: [] as string[],
+    aria: {} as Record<string, string>,
+    rect: { x: 1, y: 2, w: 3, h: 4 },
+    visible: true,
+  };
+
+  it('masks name/value/text + every aria VALUE (keys kept) + child names; path-masks href', () => {
+    const detail = {
+      ...base,
+      name: 'Mail jane@example.com',
+      value: 'contact: jane@example.com',
+      text: 'Reach jane@example.com for help',
+      href: 'https://shop.test/checkout?token=sk-live-secret&page=2',
+      aria: { 'aria-label': 'email jane@example.com', 'aria-hidden': 'false' },
+      children: [
+        { ref: 'e8', role: 'button', name: 'ping jane@example.com' },
+        { ref: 'e9', role: 'button', name: 'Cancel' },
+      ],
+    };
+    const masked = maskElementDetail(detail);
+    // name / value / text masked.
+    expect(masked.name).not.toContain('jane@example.com');
+    expect(masked.value).not.toContain('jane@example.com');
+    expect(masked.text).not.toContain('jane@example.com');
+    // aria VALUES masked, KEYS preserved.
+    expect(Object.keys(masked.aria).sort()).toEqual(['aria-hidden', 'aria-label']);
+    expect(masked.aria['aria-label']).not.toContain('jane@example.com');
+    expect(masked.aria['aria-hidden']).toBe('false');
+    // href path-masked with the SAME scheme as network URLs: origin+path kept,
+    // query VALUES redacted, secret gone.
+    expect(masked.href).not.toContain('sk-live-secret');
+    expect(masked.href).toContain('shop.test/checkout');
+    expect(masked.href).toContain('token=');
+    expect(masked.href).not.toContain('page=2');
+    // child names masked, refs/roles intact.
+    expect(masked.children?.[0]?.name).not.toContain('jane@example.com');
+    expect(masked.children?.[0]?.ref).toBe('e8');
+    expect(masked.children?.[1]?.name).toBe('Cancel');
+    // structural fields pass through.
+    expect(masked.tag).toBe('a');
+    expect(masked.rect).toEqual({ x: 1, y: 2, w: 3, h: 4 });
+  });
+
+  it('passes a ••• sensitive value through untouched', () => {
+    const masked = maskElementDetail({
+      ...base,
+      tag: 'input',
+      role: 'textbox',
+      name: 'pw',
+      value: '•••',
+    });
+    expect(masked.value).toBe('•••');
+  });
+
+  it('masks context.heading (page text) but leaves context.landmark (structural)', () => {
+    const masked = maskElementDetail({
+      ...base,
+      name: 'x',
+      context: { heading: 'Account for jane@example.com', landmark: 'main' },
+    });
+    expect(masked.context?.heading).not.toContain('jane@example.com');
+    expect(masked.context?.landmark).toBe('main');
+  });
+
+  it('omits value/type/href/text/context/children when absent (exactOptionalPropertyTypes-safe)', () => {
+    const masked = maskElementDetail({ ...base, name: 'Plain' });
+    expect('value' in masked).toBe(false);
+    expect('type' in masked).toBe(false);
+    expect('href' in masked).toBe(false);
+    expect('text' in masked).toBe(false);
+    expect('context' in masked).toBe(false);
+    expect('children' in masked).toBe(false);
   });
 });
 

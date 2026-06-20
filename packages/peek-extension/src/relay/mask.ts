@@ -64,8 +64,12 @@ export function maskNetMessage(rec: NetMessage): NetMessage {
  * keys + path preserves debugging value ("which params were sent") without
  * leaking the secret. Fails closed: if the URL won't parse, drop the query
  * entirely rather than forward it raw.
+ *
+ * Exported so the SW's R2 `element_detail` branch path-masks an element's `href`
+ * with the SAME scheme peek uses for network URLs (one masking definition, not a
+ * parallel one that could drift).
  */
-function maskUrl(url: string): string {
+export function maskUrl(url: string): string {
   try {
     const u = new URL(url);
     for (const key of [...u.searchParams.keys()]) {

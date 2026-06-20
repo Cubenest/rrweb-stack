@@ -2,11 +2,13 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import {
   type ElementDetail,
+  type PageViewDelta,
   type PageViewNode,
   type PageViewResult,
   buildElementDetail,
   buildPageView,
   diffPageView,
+  diffPageViewStandalone,
 } from '../permissions/snapshot';
 
 /** Wipe all four MAIN-world ref globals so stability tests start fresh. */
@@ -258,6 +260,73 @@ describe('diffPageView (R2)', () => {
     expect(Array.isArray(delta.removed)).toBe(true);
     expect(Array.isArray(delta.changed)).toBe(true);
     expect(typeof delta.url).toBe('string');
+  });
+});
+
+describe('diffPageViewStandalone (R2 — the function the SW actually injects)', () => {
+  it('is FULLY self-contained: survives MAIN-world serialization with NO out-of-scope identifier', () => {
+    // This is the load-bearing guard for the observe path. The SW injects this
+    // function BARE via executeScript({func: diffPageViewStandalone}) — NO eval,
+    // NO buildPageView passed alongside (it nests buildPageView itself). If it
+    // referenced ANY module-scope identifier (e.g. the sibling buildPageView),
+    // reconstructing it in a helper-free scope would throw ReferenceError in the
+    // page. We reconstruct in exactly that empty scope and run it.
+    const reconstructed = new Function(
+      `return (${diffPageViewStandalone.toString()})`,
+    )() as typeof diffPageViewStandalone;
+    buildPageView({}); // seed __peekLastView via the canonical walker
+    const delta = reconstructed({}) as PageViewDelta;
+    expect(Array.isArray(delta.added)).toBe(true);
+    expect(Array.isArray(delta.removed)).toBe(true);
+    expect(Array.isArray(delta.changed)).toBe(true);
+    expect(typeof delta.url).toBe('string');
+  });
+
+  it('does NOT use new Function / eval (CSP-safe in MAIN world)', () => {
+    // MAIN-world injected code runs under the PAGE's CSP; `new Function`/`eval`
+    // are blocked on any site without `unsafe-eval`. Guard the source has neither.
+    const src = diffPageViewStandalone.toString();
+    expect(src).not.toMatch(/new\s+Function/);
+    expect(src).not.toMatch(/\beval\s*\(/);
+  });
+
+  it('produces the SAME delta as the canonical diffPageView (parity — no drift)', () => {
+    // A value change must classify identically under both implementations.
+    buildPageView({}); // seed
+    (document.getElementById('desc') as HTMLInputElement).value = 'Changed once';
+    const canonical = diffPageView({});
+
+    // Re-seed an identical starting state, apply the same change, run standalone.
+    resetRefGlobals();
+    document.body.innerHTML = `
+      <h2>Danger Zone</h2>
+      <button id="del" aria-label="Delete This Repository">Delete</button>
+      <label for="desc">Repository description</label>
+      <input id="desc" value="Archived">
+      <a id="settings" href="/settings">Settings</a>
+    `;
+    buildPageView({}); // seed
+    (document.getElementById('desc') as HTMLInputElement).value = 'Changed once';
+    const standalone = diffPageViewStandalone({});
+
+    const names = (d: PageViewDelta) => ({
+      changed: d.changed.map((n) => n.name).sort(),
+      added: d.added.map((n) => n.name).sort(),
+      removed: [...d.removed].sort(),
+    });
+    expect(names(standalone)).toEqual(names(canonical));
+    expect(standalone.changed.find((n) => n.name === 'Repository description')?.value).toBe(
+      'Changed once',
+    );
+  });
+
+  it('refreshes __peekLastView so a second standalone diff is empty when nothing changed', () => {
+    buildPageView({});
+    diffPageViewStandalone({}); // refreshes __peekLastView
+    const second = diffPageViewStandalone({});
+    expect(second.added).toEqual([]);
+    expect(second.changed).toEqual([]);
+    expect(second.removed).toEqual([]);
   });
 });
 
