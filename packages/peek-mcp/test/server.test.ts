@@ -273,9 +273,9 @@ describe('peek MCP server: graceful no-DB', () => {
       eventsDir: join(dir, 'rrweb-events'),
     });
     try {
-      // tools/list still works (8 read + get_page_view + 2 write + 2 suggest + 1 handoff + set_intent).
+      // tools/list still works (8 read + get_page_view + get_element_detail + 2 write + 2 suggest + 1 handoff + set_intent).
       const { tools } = await client.listTools();
-      expect(tools).toHaveLength(15);
+      expect(tools).toHaveLength(16);
       // and a call returns the friendly message rather than erroring.
       const res = await client.callTool({ name: 'list_recent_sessions', arguments: {} });
       expect(textOf(res as never)).toContain('No sessions recorded yet');
@@ -728,6 +728,90 @@ describe('peek MCP server: get_page_view dispatch (live ref-tagged snapshot)', (
       // The ref-tagged view is surfaced to the agent in the result body's details.
       expect(textOf(res as never)).toContain('e1 button');
       expect(textOf(res as never)).toContain('level-1-read');
+    } finally {
+      await close();
+    }
+  });
+});
+
+describe('peek MCP server: get_element_detail dispatch (on-demand single-element drill-in)', () => {
+  it('rides the execute_action path with {type:element_detail,ref} and surfaces details', async () => {
+    const { dbPath, eventsDir } = seedStore(dir, [loginSession()]);
+    const bridge = new RegistryBackedHostBridge();
+    const { client, close } = await connectClient({ dbPath, eventsDir, hostBridge: bridge });
+    try {
+      const callP = client.callTool({
+        name: 'get_element_detail',
+        arguments: { sessionId: 's_login', ref: 'e5' },
+      });
+      for (let i = 0; i < 20 && bridge.pending.length === 0; i++) {
+        await new Promise((r) => setTimeout(r, 5));
+      }
+      expect(bridge.pending[0]?.req.tool).toBe('execute_action');
+      expect(bridge.pending[0]?.req.action).toEqual({ type: 'element_detail', ref: 'e5' });
+      bridge.resolveNext({
+        verdict: 'allow',
+        result: 'ok',
+        approver: 'level-1-read',
+        details: {
+          ok: true,
+          ref: 'e5',
+          tag: 'button',
+          role: 'button',
+          name: 'Sign in',
+          state: [],
+        },
+      });
+      const res = await callP;
+      // The full masked detail is surfaced to the agent in the result body's details.
+      expect(textOf(res as never)).toContain('Sign in');
+      expect(textOf(res as never)).toContain('level-1-read');
+    } finally {
+      await close();
+    }
+  });
+});
+
+describe('peek MCP server: execute_action observe (diff-after-action viewDelta)', () => {
+  it('accepts {observe:true} on a mutating action and surfaces details.viewDelta', async () => {
+    const { dbPath, eventsDir } = seedStore(dir, [loginSession()]);
+    const bridge = new RegistryBackedHostBridge();
+    const { client, close } = await connectClient({ dbPath, eventsDir, hostBridge: bridge });
+    try {
+      const callP = client.callTool({
+        name: 'execute_action',
+        arguments: { sessionId: 's_login', action: { type: 'click', ref: 'e1', observe: true } },
+      });
+      for (let i = 0; i < 20 && bridge.pending.length === 0; i++) {
+        await new Promise((r) => setTimeout(r, 5));
+      }
+      // `observe` threads through the execute_action action passthrough untouched
+      // (button defaults to 'left' via the click schema).
+      expect(bridge.pending[0]?.req.tool).toBe('execute_action');
+      expect(bridge.pending[0]?.req.action).toEqual({
+        type: 'click',
+        ref: 'e1',
+        button: 'left',
+        observe: true,
+      });
+      bridge.resolveNext({
+        verdict: 'allow',
+        result: 'ok',
+        approver: 'level-4-auto',
+        details: {
+          viewDelta: {
+            url: 'https://app/',
+            added: [],
+            removed: [],
+            changed: [{ ref: 'e2', role: 'status', name: 'Saved' }],
+            truncated: false,
+          },
+        },
+      });
+      const res = await callP;
+      // The delta of what changed is surfaced to the agent in details.viewDelta.
+      expect(textOf(res as never)).toContain('viewDelta');
+      expect(textOf(res as never)).toContain('Saved');
     } finally {
       await close();
     }

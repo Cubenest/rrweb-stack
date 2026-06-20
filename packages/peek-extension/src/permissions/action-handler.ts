@@ -448,6 +448,42 @@ export async function handleActionRequest(
     });
   }
 
+  // ---- Single-element detail (read; R2 token-optimization) ---------------
+  // A NON-mutating read, mirroring page_view exactly: resolves a `ref` (from a
+  // prior get_page_view) to the FULL masked detail of that one element. Routes
+  // around gate()/the destructive matcher (it acts on nothing), is auto-allowed
+  // at effective Level >= 1, and REUSES the `level-1-read` approver (no new
+  // mirror — it is the same read tier as page_view). Name/value/aria/href/text/
+  // children are masked SW-side (dispatchInMainWorld) before leaving the device;
+  // an expired ref surfaces as result=error so the agent re-snapshots.
+  if (request.action.type === 'element_detail') {
+    if (effectiveLevel < 1) {
+      return result(request, 'deny', 'denied', {
+        approver: 'user',
+        error: `element_detail requires Level 1+ (level ${effectiveLevel})`,
+      });
+    }
+    let detailRes: Awaited<ReturnType<ActionHandlerDeps['dispatchInMainWorld']>>;
+    try {
+      detailRes = await deps.dispatchInMainWorld({ tabId: tab.id, action: request.action });
+    } catch (err) {
+      return result(request, 'allow', 'error', {
+        approver: 'level-1-read',
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+    if (detailRes.ok) {
+      return result(request, 'allow', 'ok', {
+        approver: 'level-1-read',
+        ...(detailRes.details !== undefined ? { details: detailRes.details } : {}),
+      });
+    }
+    return result(request, 'allow', 'error', {
+      approver: 'level-1-read',
+      error: detailRes.error,
+    });
+  }
+
   // ---- Intent banner (Part 2) -------------------------------------------
   // A pure status update: the agent narrates what it's doing into the shield
   // banner so the user can follow along. Auto-allowed at effective Level 4

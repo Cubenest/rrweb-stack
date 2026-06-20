@@ -1,6 +1,8 @@
-// The peek MCP server. Builds an `McpServer` and registers the full 14-tool
-// surface: eight read-only session/query tools (incl. the Playwright repro
-// generator), the act tools (execute_action, request_authorization), the
+// The peek MCP server. Builds an `McpServer` and registers the full 16-tool
+// surface: read-only session/query tools (incl. the Playwright repro
+// generator) plus the Level-1 live read tools (get_page_view,
+// get_element_detail), the act tools (execute_action, request_authorization),
+// the
 // Level-2 Suggest tools (suggest_element, clear_highlight), and the Level-4
 // control tools (set_intent, request_user_input). All write tools are gated at
 // dispatch by the per-origin permission model — see `registerTools` +
@@ -835,6 +837,41 @@ export function createPeekMcpServer(options: CreatePeekMcpServerOptions = {}): P
         });
       },
     );
+
+    // 16. get_element_detail (R2 — on-demand lossless single-element drill-in;
+    // Level-1 read). Non-mutating: rides the execute_action rails with an
+    // `element_detail` action; the SW intercepts it before the gate and
+    // auto-allows at per-origin Level 1+ (reusing the `level-1-read` approver).
+    // The compact get_page_view stays cheap; call this only for the one element
+    // you need to disambiguate or act on. Returns the full masked detail in
+    // `details`.
+    server.registerTool(
+      'get_element_detail',
+      {
+        title: 'Get full masked detail for one element by ref',
+        description:
+          'Given a `ref` from get_page_view, return the FULL masked detail of that single element ' +
+          '(role, accessible name, all aria-*, state, value, href, position, nearby heading, and direct ' +
+          'interactive children with their refs). The compact get_page_view stays cheap; call this only for ' +
+          'the one element you need to disambiguate or act on. Refs expire on navigation. Level 1+; non-mutating; ' +
+          'audited. Values for password/email/PII inputs are masked; free-text values may be returned (like the recorder).',
+        inputSchema: {
+          sessionId: z.string().describe('Session id (origin context) from list_recent_sessions.'),
+          ref: z
+            .string()
+            .min(1)
+            .describe('An element ref (e.g. "e5") from a recent get_page_view.'),
+        },
+        annotations: { readOnlyHint: true, openWorldHint: true },
+      },
+      async ({ sessionId, ref }) => {
+        return await dispatchActTool({
+          tool: 'execute_action',
+          sessionId,
+          action: { type: 'element_detail', ref },
+        });
+      },
+    );
   }
 
   // --- Act-tool dispatch (shared between execute_action + request_authorization) ---
@@ -954,6 +991,8 @@ export const PEEK_MCP_TOOLS = [
   'query_dom_history',
   // Live page-view snapshot (R1 — Level 1+ read; ref targeting for the act path).
   'get_page_view',
+  // On-demand single-element detail (R2 — Level 1+ read; drill in by ref).
+  'get_element_detail',
   // Write tools (Phase 3d, Level 3+).
   'request_authorization',
   'execute_action',
