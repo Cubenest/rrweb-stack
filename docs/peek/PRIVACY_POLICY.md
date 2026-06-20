@@ -64,7 +64,7 @@ opt-in per origin.
 | Level | Name | What peek can do |
 |---|---|---|
 | 0 | Off | Recording suppressed, tool surface disabled for the origin. |
-| 1 | Observe | Read recorded sessions, and take an on-demand **live page snapshot** (`get_page_view`) — a masked, ref-tagged list of interactive elements, non-mutating. **Default.** |
+| 1 | Observe | Read recorded sessions, and take on-demand masked reads of the live page — a **page snapshot** (`get_page_view`, a ref-tagged list of interactive elements) and a single-element **detail** drill-in (`get_element_detail`). Both non-mutating. **Default.** |
 | 2 | Suggest | Read + propose actions (no execution). |
 | 3 | Confirm | Read + execute one-shot actions with per-action user confirmation in the side panel. |
 | 4 | YOLO | Read + execute without per-action prompts (60-min, tab-scoped). Destructive-action terms still prompt. |
@@ -77,7 +77,24 @@ It is non-mutating and audit-logged. Password/email/tel and PII-autofill values
 `data-private` / `data-dd-privacy` / `data-peek-mask`, are dropped in-page;
 structured PII in the remaining text is masked before it leaves the device. As with
 the recorder, free-text field values may be included — mark sensitive free-text
-fields with a mask class to exclude them.
+fields with a mask class to exclude them. Refs are identity-stable across
+snapshots (an element keeps its ref) via a MAIN-world `WeakMap` — a JS global,
+never a DOM attribute, so it is invisible to recordings.
+
+**Element detail (`get_element_detail`)** — also at Level 1+, an agent may drill
+into a single element by its `ref`: role, full accessible name, every `aria-*`
+attribute, state, value, type, href, position, nearby heading/landmark, and direct
+interactive children. It is non-mutating, audit-logged, and applies the **same
+masking** as `get_page_view` — sensitive input values become `•••` and structured
+PII is scrubbed before it leaves the device. It never reads raw `outerHTML` /
+`innerHTML` (that would bypass masking). The same free-text caveat applies.
+
+**Post-action delta (`observe`)** — when an agent passes `observe: true` on a
+mutating `execute_action`, peek returns a masked **delta** of what changed after
+the action (added / removed / changed refs), so it can verify the result without a
+second snapshot. The delta carries the same masked fields as `get_page_view` (same
+caveats); a navigating action returns only a "refs expired" marker, no element
+content.
 
 **Destructive-action blocklist override** — even at Level 4 YOLO, actions
 whose target matches "delete", "remove", "drop", "uninstall", "transfer",

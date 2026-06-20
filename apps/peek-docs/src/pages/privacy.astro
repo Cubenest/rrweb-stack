@@ -53,11 +53,43 @@ import Layout from '../layouts/Layout.astro';
   <p>Per-origin, 5 levels. Default is <strong>Level&nbsp;1 &mdash; Observe only</strong>.</p>
   <ul>
     <li><strong>Level 0 &mdash; Off:</strong> recording suppressed; tool surface disabled for the origin.</li>
-    <li><strong>Level 1 &mdash; Observe (default):</strong> read recorded sessions only.</li>
+    <li><strong>Level 1 &mdash; Observe (default):</strong> read recorded sessions, plus on-demand masked reads of the live page &mdash; a page snapshot (<code>get_page_view</code>) and a single-element detail drill-in (<code>get_element_detail</code>). Both non-mutating.</li>
     <li><strong>Level 2 &mdash; Suggest:</strong> read + propose actions (no execution).</li>
     <li><strong>Level 3 &mdash; Confirm:</strong> read + execute one-shot actions with per-action user confirmation.</li>
     <li><strong>Level 4 &mdash; YOLO:</strong> read + execute without per-action prompts (60-min, tab-scoped). Destructive-action terms still prompt.</li>
   </ul>
+  <p>
+    <strong>Live page snapshot (<code>get_page_view</code>)</strong> &mdash; at Level 1+,
+    an agent may request an on-demand snapshot of the current page: a compact,
+    ref-tagged list of interactive elements (so it can act on a stable reference
+    instead of guessing a CSS selector). It is non-mutating and audit-logged.
+    Password/email/tel and PII-autofill values (card, address, birthday, name, etc.),
+    and any field marked <code>.rr-mask</code> / <code>data-private</code> /
+    <code>data-dd-privacy</code> / <code>data-peek-mask</code>, are dropped in-page;
+    structured PII in the remaining text is masked before it leaves the device. As
+    with the recorder, free-text field values may be included &mdash; mark sensitive
+    free-text fields with a mask class to exclude them. Refs are identity-stable
+    across snapshots (an element keeps its ref) via a MAIN-world <code>WeakMap</code>
+    &mdash; a JS global, never a DOM attribute, so it is invisible to recordings.
+  </p>
+  <p>
+    <strong>Element detail (<code>get_element_detail</code>)</strong> &mdash; also at
+    Level 1+, an agent may drill into a single element by its <code>ref</code>: role,
+    full accessible name, every <code>aria-*</code> attribute, state, value, type,
+    href, position, nearby heading/landmark, and direct interactive children. It is
+    non-mutating, audit-logged, and applies the <strong>same masking</strong> as
+    <code>get_page_view</code> (sensitive values become <code>&bull;&bull;&bull;</code>;
+    structured PII is scrubbed). It never reads raw <code>outerHTML</code> /
+    <code>innerHTML</code>. The same free-text caveat applies.
+  </p>
+  <p>
+    <strong>Post-action delta (<code>observe</code>)</strong> &mdash; when an agent
+    passes <code>observe: true</code> on a mutating <code>execute_action</code>, peek
+    returns a masked delta of what changed after the action (added / removed / changed
+    refs), so it can verify the result without a second snapshot. The delta carries
+    the same masked fields as <code>get_page_view</code> (same caveats); a navigating
+    action returns only a &ldquo;refs expired&rdquo; marker, no element content.
+  </p>
   <p>
     <strong>Destructive-action blocklist override</strong> &mdash; even at Level 4 YOLO,
     targets matching &ldquo;delete&rdquo;, &ldquo;remove&rdquo;, &ldquo;drop&rdquo;,
