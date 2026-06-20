@@ -99,7 +99,7 @@ export type WaitForAction = z.infer<typeof WaitForActionSchema>;
 export const EnterActionSchema = z.object({
   type: z.literal('enter'),
   ref: z.string().min(1).optional(),
-  selector: z.string().optional(),
+  selector: z.string().min(1).optional(),
   observe: z.boolean().optional(),
 });
 export type EnterAction = z.infer<typeof EnterActionSchema>;
