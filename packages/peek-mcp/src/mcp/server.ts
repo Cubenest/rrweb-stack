@@ -851,8 +851,8 @@ export function createPeekMcpServer(options: CreatePeekMcpServerOptions = {}): P
         title: 'Get full masked detail for one element by ref',
         description:
           'Given a `ref` from get_page_view, return the FULL masked detail of that single element ' +
-          '(role, accessible name, all aria-*, state, value, href, position, nearby heading, and direct ' +
-          'interactive children with their refs). The compact get_page_view stays cheap; call this only for ' +
+          '(role, accessible name, all aria-*, state, value, href, position, nearby heading, and its ' +
+          'interactive descendants with their refs, capped). The compact get_page_view stays cheap; call this only for ' +
           'the one element you need to disambiguate or act on. Refs expire on navigation. Level 1+; non-mutating; ' +
           'audited. Values for password/email/PII inputs are masked; free-text values may be returned (like the recorder).',
         inputSchema: {

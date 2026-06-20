@@ -156,6 +156,25 @@ describe('buildPageView', () => {
     expect(v.nodes.some((n) => n.name === 'Public button')).toBe(true);
   });
 
+  it('still filters unnamed non-control nodes inside a masked region (noise filter on real name)', () => {
+    // Regression: masking replaced an empty name with '•••' BEFORE the noise
+    // filter, so an unnamed non-control in a masked region stopped being filtered
+    // and bloated the snapshot. The filter must run on the REAL (empty) name.
+    document.body.innerHTML = `
+      <main>
+        <section data-private role="group"></section>
+        <button>Save</button>
+      </main>
+    `;
+    const v = buildPageView({});
+    // The empty masked group has no real name + isn't a control → dropped, NOT
+    // surfaced as a '•••' node.
+    expect(v.nodes.some((n) => n.role === 'group')).toBe(false);
+    expect(v.nodes.some((n) => n.name === '•••')).toBe(false);
+    // A real control still comes through.
+    expect(v.nodes.some((n) => n.name === 'Save')).toBe(true);
+  });
+
   it('is self-contained: survives MAIN-world serialization (no module-scope helpers)', () => {
     // Mirror executeScript({world:'MAIN', func}) — reconstruct from source in a
     // scope WITHOUT any module-scope helpers, then run it.

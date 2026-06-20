@@ -323,12 +323,15 @@ export function buildPageView(opts: { selector?: string; maxElements?: number })
     // value path below is already covered via isSensitiveInput honoring the same
     // selector). This makes the docs' "masked in-page" claim true for names too.
     const masked = isPrivacyMasked(el);
-    const name = masked ? '•••' : accName(el);
+    // Decide noise-filtering on the REAL name FIRST, then mask. Masking before
+    // the filter would replace an empty name with '•••' (truthy) and stop
+    // unnamed non-controls in a masked region from being filtered out — bloating
+    // the snapshot/delta and consuming the maxElements budget with noise.
+    const rawName = accName(el);
     const isControl = /^(button|link|textbox|checkbox|radio|combobox)$/.test(role);
-    // Skip pure-noise nodes: no name and not an interactive control. (A masked
-    // control keeps its •••  name; a masked non-control with no real name would
-    // have been skipped anyway since accName→isControl gating is unchanged.)
-    if (!name && !isControl) continue;
+    // Skip pure-noise nodes: no name and not an interactive control.
+    if (!rawName && !isControl) continue;
+    const name = masked ? '•••' : rawName;
 
     const ref = refFor(el, st);
 
@@ -606,9 +609,12 @@ export function diffPageViewStandalone(opts: {
       if (!isVisible(el)) continue;
       const role = roleOf(el);
       const masked = isPrivacyMasked(el);
-      const name = masked ? '•••' : accName(el);
+      // Noise-filter on the REAL name FIRST, then mask (see buildPageView — a
+      // masked '•••' name must not make unnamed non-controls un-filterable).
+      const rawName = accName(el);
       const isControl = /^(button|link|textbox|checkbox|radio|combobox)$/.test(role);
-      if (!name && !isControl) continue;
+      if (!rawName && !isControl) continue;
+      const name = masked ? '•••' : rawName;
 
       const ref = refFor(el, st);
 

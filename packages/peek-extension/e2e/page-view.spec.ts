@@ -340,14 +340,17 @@ test.describe('live page view — stable refs / masking / detail (real browser)'
       );
 
       // A masked drill-in of the password field never leaks the cleartext.
+      // Pin to the PASSWORD node by its accessible name — other masked inputs in
+      // this fixture (e.g. the data-private SSN) also carry value '•••', so
+      // matching on '•••' alone could drill into the wrong element.
       const pwView = await page.evaluate(buildPageView, {});
-      const pwRef = pwView.nodes.find((n) => n.value === '•••')?.ref;
-      if (pwRef) {
-        const pwDetail = await page.evaluate(buildElementDetail, pwRef);
-        expect(JSON.stringify(pwDetail), 'password cleartext never in detail').not.toContain(
-          'hunter2',
-        );
-      }
+      const pwNode = pwView.nodes.find((n) => n.name === 'Password');
+      if (!pwNode) throw new Error('expected a "Password" node in the page view');
+      expect(pwNode.value, 'password value masked in page view').toBe('•••');
+      const pwDetail = await page.evaluate(buildElementDetail, pwNode.ref);
+      expect(JSON.stringify(pwDetail), 'password cleartext never in detail').not.toContain(
+        'hunter2',
+      );
     } finally {
       await context.close();
     }
