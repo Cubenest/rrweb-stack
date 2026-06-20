@@ -26,6 +26,8 @@ export const ClickActionSchema = z.object({
   selector: z.string().min(1).optional(),
   nth: z.number().int().min(0).optional(),
   button: z.enum(['left', 'middle', 'right']).default('left'),
+  // R2: when true, the SW appends a `details.viewDelta` diff after the action lands.
+  observe: z.boolean().optional(),
 });
 export type ClickAction = z.infer<typeof ClickActionSchema>;
 
@@ -36,6 +38,7 @@ export const TypeActionSchema = z.object({
   selector: z.string().min(1).optional(),
   text: z.string(),
   delay: z.number().int().min(0).default(40),
+  observe: z.boolean().optional(),
 });
 export type TypeAction = z.infer<typeof TypeActionSchema>;
 
@@ -43,17 +46,27 @@ export type TypeAction = z.infer<typeof TypeActionSchema>;
 export const NavigateActionSchema = z.object({
   type: z.literal('navigate'),
   url: z.string().url(),
+  observe: z.boolean().optional(),
 });
 export type NavigateAction = z.infer<typeof NavigateActionSchema>;
 
 /** History.back / forward / location.reload — no DOM target. */
-export const BackActionSchema = z.object({ type: z.literal('back') });
+export const BackActionSchema = z.object({
+  type: z.literal('back'),
+  observe: z.boolean().optional(),
+});
 export type BackAction = z.infer<typeof BackActionSchema>;
 
-export const ForwardActionSchema = z.object({ type: z.literal('forward') });
+export const ForwardActionSchema = z.object({
+  type: z.literal('forward'),
+  observe: z.boolean().optional(),
+});
 export type ForwardAction = z.infer<typeof ForwardActionSchema>;
 
-export const ReloadActionSchema = z.object({ type: z.literal('reload') });
+export const ReloadActionSchema = z.object({
+  type: z.literal('reload'),
+  observe: z.boolean().optional(),
+});
 export type ReloadAction = z.infer<typeof ReloadActionSchema>;
 
 /** Scroll: to absolute (x,y), or scrollIntoView on a `ref`/`selector` element. */
@@ -63,6 +76,7 @@ export const ScrollActionSchema = z.object({
   selector: z.string().optional(),
   x: z.number().int().optional(),
   y: z.number().int().optional(),
+  observe: z.boolean().optional(),
 });
 export type ScrollAction = z.infer<typeof ScrollActionSchema>;
 
@@ -86,6 +100,7 @@ export const EnterActionSchema = z.object({
   type: z.literal('enter'),
   ref: z.string().min(1).optional(),
   selector: z.string().optional(),
+  observe: z.boolean().optional(),
 });
 export type EnterAction = z.infer<typeof EnterActionSchema>;
 
@@ -95,6 +110,7 @@ export const DblClickActionSchema = z.object({
   ref: z.string().min(1).optional(),
   selector: z.string().min(1).optional(),
   nth: z.number().int().min(0).optional(),
+  observe: z.boolean().optional(),
 });
 export type DblClickAction = z.infer<typeof DblClickActionSchema>;
 
@@ -152,6 +168,19 @@ export const PageViewActionSchema = z.object({
 });
 export type PageViewAction = z.infer<typeof PageViewActionSchema>;
 
+/**
+ * Single-element drill-in (R2). A non-mutating READ that rides the execute_action
+ * rails (wire tool='execute_action'); the SW intercepts it before the gate and
+ * auto-allows at per-origin Level 1+, reusing the `level-1-read` approver. Resolves
+ * a `ref` (from get_page_view) to the FULL masked detail of that one element. No
+ * secret in the action itself — just the ref.
+ */
+export const ElementDetailActionSchema = z.object({
+  type: z.literal('element_detail'),
+  ref: z.string().min(1),
+});
+export type ElementDetailAction = z.infer<typeof ElementDetailActionSchema>;
+
 /** The full Action discriminated union (P2 PRD §E.4). */
 export const ActionSchema = z.discriminatedUnion('type', [
   ClickActionSchema,
@@ -170,6 +199,7 @@ export const ActionSchema = z.discriminatedUnion('type', [
   SetIntentActionSchema,
   RequestUserInputActionSchema,
   PageViewActionSchema,
+  ElementDetailActionSchema,
 ]);
 export type Action = z.infer<typeof ActionSchema>;
 

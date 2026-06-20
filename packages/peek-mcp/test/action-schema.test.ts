@@ -161,6 +161,45 @@ describe('RequestUserInputAction (Plan B)', () => {
   });
 });
 
+describe('ElementDetailAction (R2 single-element drill-in)', () => {
+  it('accepts a ref-targeted element_detail action', () => {
+    expect(ActionSchema.safeParse({ type: 'element_detail', ref: 'e5' }).success).toBe(true);
+  });
+  it('rejects element_detail without a ref', () => {
+    expect(ActionSchema.safeParse({ type: 'element_detail' }).success).toBe(false);
+  });
+  it('rejects element_detail with an empty ref (min(1))', () => {
+    expect(ActionSchema.safeParse({ type: 'element_detail', ref: '' }).success).toBe(false);
+  });
+  it('redactActionForAudit passes element_detail through unchanged (no secret, only a ref)', () => {
+    const action = { type: 'element_detail' as const, ref: 'e5' };
+    expect(redactActionForAudit(action)).toEqual(action);
+  });
+});
+
+describe('observe flag on mutating verbs (R2 diff-after-action)', () => {
+  it('accepts observe:true on a mutating action', () => {
+    expect(ActionSchema.safeParse({ type: 'click', ref: 'e1', observe: true }).success).toBe(true);
+    expect(
+      ActionSchema.safeParse({ type: 'navigate', url: 'https://x.com/', observe: true }).success,
+    ).toBe(true);
+  });
+  it('observe is optional — a mutating action without it still parses', () => {
+    expect(ActionSchema.safeParse({ type: 'click', ref: 'e1' }).success).toBe(true);
+  });
+  it('redactActionForAudit preserves observe while redacting the secret text', () => {
+    expect(
+      redactActionForAudit({
+        type: 'type',
+        selector: '#a',
+        text: 'secret',
+        delay: 40,
+        observe: true,
+      }),
+    ).toEqual({ type: 'type', selector: '#a', text: '<<REDACTED>>', delay: 40, observe: true });
+  });
+});
+
 describe('SetIntentAction + request_user_input scope (Part 2)', () => {
   it('parses set_intent with text', () => {
     expect(ActionSchema.parse({ type: 'set_intent', text: 'Applying · step 2/4' })).toEqual({
