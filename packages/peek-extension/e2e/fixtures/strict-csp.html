@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <!-- STRICT CSP: script-src 'self' only — NO 'unsafe-eval'. A snapshot
+         implementation that used new Function/eval to reconstruct its walker
+         would throw "EvalError: ... unsafe-eval" when injected into the MAIN
+         world here; the no-eval diffPageViewStandalone runs fine. -->
+    <meta http-equiv="Content-Security-Policy" content="script-src 'self'" />
+    <title>peek e2e strict-CSP fixture</title>
+  </head>
+  <body>
+    <main>
+      <h1>Account settings</h1>
+      <button id="save" type="button">Save changes</button>
+      <label for="note">Note</label>
+      <input id="note" value="a free-text note" />
+      <input id="pw" type="password" value="hunter2" aria-label="Password" />
+    </main>
+  </body>
+</html>

@@ -89,8 +89,9 @@ The per-user config paths `peek init` writes to (canonical, see `packages/peek-c
 | `get_dom_snapshot` | Reconstruct the DOM of a recorded session at a given timestamp (forensic) | none |
 | `query_dom_history` | Timeline of attribute/text changes for a selector | none |
 | `get_page_view` | Live, masked, ref-tagged list of interactive elements — target a `ref` in write actions instead of a CSS selector (cheaper + deterministic than `get_dom_snapshot`) | per-origin Level 1+ |
+| `get_element_detail` | Full masked detail for one `ref` from `get_page_view` (role, name, all `aria-*`, state, value, href, position, nearby heading, direct interactive children with their refs) — drill in only on the element you need to disambiguate or act on | per-origin Level 1+ |
 | `request_authorization` | Side-panel consent for write actions (Level 3) | per-action user prompt |
-| `execute_action` | Dispatch a UI action (gated by permission level + destructive blocklist) | permission level + destructive blocklist |
+| `execute_action` | Dispatch a UI action (gated by permission level + destructive blocklist). Pass `observe: true` on a mutating action (`click`/`type`/`scroll`/`enter`/`dblclick`/`navigate`/…) to also get back a `details.viewDelta` of what changed (added/removed/changed refs) in one round-trip — instead of re-calling `get_page_view` | permission level + destructive blocklist |
 | `suggest_element` | Highlight an element via a non-destructive overlay | per-origin Level 2+ |
 | `clear_highlight` | Remove the highlight overlay | per-origin Level 2+ |
 | `set_intent` | Set the control-shield status banner | per-origin Level 4 |

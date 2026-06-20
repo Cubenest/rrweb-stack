@@ -16,6 +16,8 @@ export interface ClickAction {
   selector?: string;
   nth?: number;
   button: 'left' | 'middle' | 'right';
+  /** R2: when true, the SW appends a `details.viewDelta` diff after the action lands. */
+  observe?: boolean;
 }
 export interface TypeAction {
   type: 'type';
@@ -23,19 +25,24 @@ export interface TypeAction {
   selector?: string;
   text: string;
   delay: number;
+  observe?: boolean;
 }
 export interface NavigateAction {
   type: 'navigate';
   url: string;
+  observe?: boolean;
 }
 export interface BackAction {
   type: 'back';
+  observe?: boolean;
 }
 export interface ForwardAction {
   type: 'forward';
+  observe?: boolean;
 }
 export interface ReloadAction {
   type: 'reload';
+  observe?: boolean;
 }
 export interface ScrollAction {
   type: 'scroll';
@@ -43,6 +50,7 @@ export interface ScrollAction {
   selector?: string;
   x?: number;
   y?: number;
+  observe?: boolean;
 }
 export interface ScreenshotAction {
   type: 'screenshot';
@@ -57,12 +65,14 @@ export interface EnterAction {
   type: 'enter';
   ref?: string;
   selector?: string;
+  observe?: boolean;
 }
 export interface DblClickAction {
   type: 'dblclick';
   ref?: string;
   selector?: string;
   nth?: number;
+  observe?: boolean;
 }
 export interface HighlightAction {
   type: 'highlight';
@@ -92,6 +102,11 @@ export interface PageViewAction {
   selector?: string;
   maxElements?: number;
 }
+/** R2 — single-element drill-in (non-mutating read). Resolves `ref` → masked detail in `details`. */
+export interface ElementDetailAction {
+  type: 'element_detail';
+  ref: string;
+}
 
 export type Action =
   | ClickAction
@@ -109,7 +124,8 @@ export type Action =
   | ClearHighlightAction
   | RequestUserInputAction
   | SetIntentAction
-  | PageViewAction;
+  | PageViewAction
+  | ElementDetailAction;
 
 /** host → SW: please run / authorize this action. */
 export interface ActionRequestMessage {
