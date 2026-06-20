@@ -28,11 +28,15 @@ verify its action in one round-trip instead of a second `get_page_view`. A
 navigating action returns a `{ navigated: true }` "refs expired" marker (the
 registry is wiped by the new page), prompting a fresh snapshot.
 
-Masking is unchanged and consistent with peek's recorder: password/email/tel and
-PII-autofill values (card, address, birthday, name, organization, etc.) are
-masked in-page to `•••`, structured PII in accessible names and remaining values
-is scrubbed by the service worker before anything reaches the agent, and any
-field marked `.rr-mask` / `data-private` / `data-dd-privacy` / `data-peek-mask`
-is dropped. As with the recorder, **free-text field values (e.g. a search box or
-a textarea) may still be returned** — annotate sensitive free-text fields with a
-mask class to exclude them. This does not claim no PII reaches the agent.
+Masking is consistent with peek's recorder: password/email/tel and PII-autofill
+values (card, address, birthday, name, organization, etc.) are masked in-page to
+`•••`, and structured PII in accessible names and remaining values is scrubbed by
+the service worker before anything reaches the agent. Any region marked `.rr-mask`
+/ `data-private` / `data-dd-privacy="mask"` / `data-peek-mask` is now masked to
+`•••` **in-page across names, values, and text** for both `get_page_view` and
+`get_element_detail` (the element's accessible name, value, own/descendant text,
+every `aria-*` value, and every child name) — closing a gap where only input
+*values* honored these annotations. As with the recorder, **free-text values of
+non-annotated fields (e.g. a search box or a textarea) may still be returned** —
+annotate sensitive free-text regions with a mask class to exclude them. This does
+not claim no PII reaches the agent.

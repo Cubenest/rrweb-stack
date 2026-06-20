@@ -249,6 +249,59 @@ test.describe('live page view — stable refs / masking / detail (real browser)'
     }
   });
 
+  test('in-page MASKING: a data-private region is ••• across name/value/text/aria/children (HIGH fix)', async () => {
+    // Load-bearing real-browser proof of FIX 1 (HIGH): an explicitly-masked
+    // region (`data-private`) must leak NO free text from the live page —
+    // get_page_view redacts its names/values, and get_element_detail redacts the
+    // element's name, value, text, every aria VALUE, and every child name. The
+    // unit suite asserts this over jsdom; this confirms it under real Chromium
+    // with the EXACT injected functions the service worker serializes.
+    const { context } = await launchExtension();
+    try {
+      const page = await context.newPage();
+      await page.route(`${ORIGIN}/**`, (r) =>
+        r.fulfill({ contentType: 'text/html', body: pageViewHtml }),
+      );
+      await page.goto(`${ORIGIN}/`);
+
+      const view = await page.evaluate(buildPageView, {});
+      // The masked region's cleartext PII appears NOWHERE in the page view.
+      const viewJson = JSON.stringify(view);
+      expect(viewJson, 'masked PII never in get_page_view').not.toContain('Jane Doe');
+      expect(viewJson, 'masked SSN never in get_page_view').not.toContain('123-45-6789');
+      // The masked SSN input emits a node with a redacted value.
+      const ssnNode = view.nodes.find((n) => n.role === 'textbox' && n.value === '•••');
+      expect(ssnNode, 'masked input value is •••').toBeDefined();
+
+      // Drill into the masked <section> — every text field must be •••.
+      const secRef = await page.evaluate(() => {
+        const reg = (window as unknown as { __peekRefs?: Map<string, Element> }).__peekRefs;
+        const target = document.getElementById('secret');
+        for (const [r, el] of reg?.entries() ?? []) if (el === target) return r;
+        return '';
+      });
+      expect(secRef, 'masked section ref resolved').not.toBe('');
+      const detail = await page.evaluate(buildElementDetail, secRef);
+      expect(detail.ok).toBe(true);
+      if (detail.ok) {
+        expect(detail.name, 'masked name → •••').toBe('•••');
+        expect(detail.text, 'masked text → •••').toBe('•••');
+        for (const [, v] of Object.entries(detail.aria)) {
+          expect(v, 'masked aria value → •••').toBe('•••');
+        }
+        for (const c of detail.children ?? []) {
+          expect(c.name, 'masked child name → •••').toBe('•••');
+        }
+      }
+      const detailJson = JSON.stringify(detail);
+      expect(detailJson, 'masked PII never in get_element_detail').not.toContain('Jane Doe');
+      expect(detailJson, 'masked SSN never in get_element_detail').not.toContain('123-45-6789');
+      expect(detailJson, 'masked confidential text never leaks').not.toContain('Confidential');
+    } finally {
+      await context.close();
+    }
+  });
+
   test('element_detail: returns structured detail and NEVER exposes outerHTML/innerHTML', async () => {
     const { context } = await launchExtension();
     try {

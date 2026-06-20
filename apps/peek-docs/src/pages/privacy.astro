@@ -63,24 +63,31 @@ import Layout from '../layouts/Layout.astro';
     an agent may request an on-demand snapshot of the current page: a compact,
     ref-tagged list of interactive elements (so it can act on a stable reference
     instead of guessing a CSS selector). It is non-mutating and audit-logged.
-    Password/email/tel and PII-autofill values (card, address, birthday, name, etc.),
-    and any field marked <code>.rr-mask</code> / <code>data-private</code> /
-    <code>data-dd-privacy</code> / <code>data-peek-mask</code>, are dropped in-page;
-    structured PII in the remaining text is masked before it leaves the device. As
-    with the recorder, free-text field values may be included &mdash; mark sensitive
-    free-text fields with a mask class to exclude them. Refs are identity-stable
-    across snapshots (an element keeps its ref) via a MAIN-world <code>WeakMap</code>
-    &mdash; a JS global, never a DOM attribute, so it is invisible to recordings.
+    Password/email/tel and PII-autofill values (card, address, birthday, name, etc.)
+    are masked in-page to <code>&bull;&bull;&bull;</code>. Any region marked
+    <code>.rr-mask</code> / <code>data-private</code> / <code>data-dd-privacy</code> /
+    <code>data-peek-mask</code> is masked to <code>&bull;&bull;&bull;</code> in-page
+    across its element names, values, and text (not only input values); structured
+    PII in the remaining text is masked before it leaves the device. As with the
+    recorder, free-text values of <em>non-annotated</em> fields may be included
+    &mdash; mark sensitive free-text regions with a mask class to exclude them. Refs
+    are identity-stable across snapshots (an element keeps its ref) via a MAIN-world
+    <code>WeakMap</code> &mdash; a JS global, never a DOM attribute, so it is
+    invisible to recordings.
   </p>
   <p>
     <strong>Element detail (<code>get_element_detail</code>)</strong> &mdash; also at
     Level 1+, an agent may drill into a single element by its <code>ref</code>: role,
     full accessible name, every <code>aria-*</code> attribute, state, value, type,
-    href, position, nearby heading/landmark, and direct interactive children. It is
+    href, position, nearby heading/landmark, and interactive descendants. It is
     non-mutating, audit-logged, and applies the <strong>same masking</strong> as
     <code>get_page_view</code> (sensitive values become <code>&bull;&bull;&bull;</code>;
-    structured PII is scrubbed). It never reads raw <code>outerHTML</code> /
-    <code>innerHTML</code>. The same free-text caveat applies.
+    structured PII is scrubbed). A region marked <code>.rr-mask</code> /
+    <code>data-private</code> / <code>data-dd-privacy</code> / <code>data-peek-mask</code>
+    is masked to <code>&bull;&bull;&bull;</code> across the element&apos;s name, value,
+    own/descendant text, every <code>aria-*</code> value, and every child name. It
+    never reads raw <code>outerHTML</code> / <code>innerHTML</code>. The same free-text
+    caveat applies.
   </p>
   <p>
     <strong>Post-action delta (<code>observe</code>)</strong> &mdash; when an agent

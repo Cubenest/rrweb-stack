@@ -85,7 +85,7 @@ export interface ElementDetail {
   readonly visible: boolean;
   readonly text?: string; // clipped own/descendant textContent (SW masks later)
   readonly context?: { heading?: string; landmark?: string };
-  readonly children?: { ref: string; role: string; name: string }[]; // direct interactive children, capped at 20
+  readonly children?: { ref: string; role: string; name: string }[]; // interactive descendants (capped at 20)
 }
 
 /** Failure shape shared by the ref-resolving R2 reads. */
@@ -187,6 +187,26 @@ export function buildPageView(opts: { selector?: string; maxElements?: number })
     'postal-code',
   ]);
 
+  // The privacy-annotation selector a site/user puts on regions to keep content
+  // out of recordings: rrweb `.rr-mask`, a generic `data-private`, Datadog's
+  // `data-dd-privacy="mask"`, and a peek-specific opt-out. Factored to ONE place
+  // per function (reused by isSensitiveInput + isPrivacyMasked) so the two never
+  // drift. NOTE: the standalone copy + buildElementDetail carry verbatim copies.
+  const MASK_SELECTOR = '.rr-mask, [data-private], [data-dd-privacy="mask"], [data-peek-mask]';
+
+  // True if the element (or any ancestor) is inside an explicitly-masked region.
+  // Used to drop NAMES + VALUES — not just input values — so free-text PII inside
+  // a `.rr-mask` / `data-private` subtree is masked in-page (defense in depth on
+  // top of the SW's maskTextContent).
+  function isPrivacyMasked(el: Element): boolean {
+    try {
+      return !!el.closest(MASK_SELECTOR);
+    } catch {
+      /* selector unsupported in this env — ignore */
+      return false;
+    }
+  }
+
   function isSensitiveInput(el: Element): boolean {
     const type = (el as HTMLInputElement).type;
     const t = typeof type === 'string' ? type.toLowerCase() : '';
@@ -197,16 +217,9 @@ export function buildPageView(opts: { selector?: string; maxElements?: number })
       const field = tokens[tokens.length - 1] ?? '';
       if (SENSITIVE_AUTOFILL.has(field) || field.startsWith('cc-')) return true;
     }
-    // Honor privacy annotations the site/user already uses to keep content out of
-    // recordings (rrweb `.rr-mask`, Datadog, a generic `data-private`, and a
-    // peek-specific opt-out) — drop the value if the field or an ancestor is masked.
-    try {
-      if (el.closest('.rr-mask, [data-private], [data-dd-privacy="mask"], [data-peek-mask]')) {
-        return true;
-      }
-    } catch {
-      /* selector unsupported in this env — ignore */
-    }
+    // Honor privacy annotations the site/user already uses — drop the value if
+    // the field or an ancestor is masked (same selector as isPrivacyMasked).
+    if (isPrivacyMasked(el)) return true;
     return false;
   }
 
@@ -305,9 +318,16 @@ export function buildPageView(opts: { selector?: string; maxElements?: number })
     }
     if (!isVisible(el)) continue;
     const role = roleOf(el);
-    const name = accName(el);
+    // Privacy: an element inside an explicitly-masked region leaks NO free text —
+    // its accessible name is replaced with the redaction marker in-page (the
+    // value path below is already covered via isSensitiveInput honoring the same
+    // selector). This makes the docs' "masked in-page" claim true for names too.
+    const masked = isPrivacyMasked(el);
+    const name = masked ? '•••' : accName(el);
     const isControl = /^(button|link|textbox|checkbox|radio|combobox)$/.test(role);
-    // Skip pure-noise nodes: no name and not an interactive control.
+    // Skip pure-noise nodes: no name and not an interactive control. (A masked
+    // control keeps its •••  name; a masked non-control with no real name would
+    // have been skipped anyway since accName→isControl gating is unchanged.)
     if (!name && !isControl) continue;
 
     const ref = refFor(el, st);
@@ -320,7 +340,7 @@ export function buildPageView(opts: { selector?: string; maxElements?: number })
 
     const rawValue = (el as HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement).value;
     if (typeof rawValue === 'string' && role !== 'button') {
-      node.value = isSensitiveInput(el) ? '•••' : rawValue.slice(0, 100);
+      node.value = masked || isSensitiveInput(el) ? '•••' : rawValue.slice(0, 100);
     }
 
     const stArr: string[] = [];
@@ -342,11 +362,17 @@ export function buildPageView(opts: { selector?: string; maxElements?: number })
 /**
  * Diff the current DOM against the previous snapshot (window.__peekLastView),
  * returning ONLY what changed. Re-walks via buildPageView (stable refs make the
- * two node lists comparable) and also refreshes __peekLastView. Self-contained
- * for `executeScript({ world: 'MAIN' })` — references only buildPageView (which
- * the controller injects alongside it) plus DOM/window globals.
+ * two node lists comparable) and also refreshes __peekLastView.
  *
- * The SW only calls diffPageView for NON-navigating actions; navigation is
+ * TEST / PARITY ONLY — this is NEVER the injected function. It references the
+ * sibling module-level `buildPageView`, so injecting it bare via
+ * `executeScript({ func })` would throw `ReferenceError: buildPageView is not
+ * defined` in the page. The SW injects {@link diffPageViewStandalone} (which
+ * nests its own walker) instead. This canonical version exists so the diff logic
+ * is exercised against the canonical walker and a parity test can assert the
+ * standalone copy hasn't drifted.
+ *
+ * The SW only calls the observe diff for NON-navigating actions; navigation is
  * handled SW-side, so this has no navigation branch.
  */
 export function diffPageView(opts: { selector?: string; maxElements?: number }): PageViewDelta {
@@ -461,6 +487,18 @@ export function diffPageViewStandalone(opts: {
       'postal-code',
     ]);
 
+    // Verbatim copy of the canonical buildPageView's privacy selector + helper
+    // (kept in lockstep; see the parity test in snapshot.test.ts).
+    const MASK_SELECTOR = '.rr-mask, [data-private], [data-dd-privacy="mask"], [data-peek-mask]';
+    function isPrivacyMasked(el: Element): boolean {
+      try {
+        return !!el.closest(MASK_SELECTOR);
+      } catch {
+        /* selector unsupported in this env — ignore */
+        return false;
+      }
+    }
+
     function isSensitiveInput(el: Element): boolean {
       const type = (el as HTMLInputElement).type;
       const t = typeof type === 'string' ? type.toLowerCase() : '';
@@ -471,13 +509,7 @@ export function diffPageViewStandalone(opts: {
         const field = tokens[tokens.length - 1] ?? '';
         if (SENSITIVE_AUTOFILL.has(field) || field.startsWith('cc-')) return true;
       }
-      try {
-        if (el.closest('.rr-mask, [data-private], [data-dd-privacy="mask"], [data-peek-mask]')) {
-          return true;
-        }
-      } catch {
-        /* selector unsupported in this env — ignore */
-      }
+      if (isPrivacyMasked(el)) return true;
       return false;
     }
 
@@ -573,7 +605,8 @@ export function diffPageViewStandalone(opts: {
       }
       if (!isVisible(el)) continue;
       const role = roleOf(el);
-      const name = accName(el);
+      const masked = isPrivacyMasked(el);
+      const name = masked ? '•••' : accName(el);
       const isControl = /^(button|link|textbox|checkbox|radio|combobox)$/.test(role);
       if (!name && !isControl) continue;
 
@@ -587,7 +620,7 @@ export function diffPageViewStandalone(opts: {
 
       const rawValue = (el as HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement).value;
       if (typeof rawValue === 'string' && role !== 'button') {
-        node.value = isSensitiveInput(el) ? '•••' : rawValue.slice(0, 100);
+        node.value = masked || isSensitiveInput(el) ? '•••' : rawValue.slice(0, 100);
       }
 
       const stArr: string[] = [];
@@ -675,6 +708,17 @@ export function buildElementDetail(ref: string): ElementDetail | ElementDetailEr
     'postal-code',
   ]);
 
+  // Verbatim copy of buildPageView's privacy selector + helper (kept in lockstep).
+  const MASK_SELECTOR = '.rr-mask, [data-private], [data-dd-privacy="mask"], [data-peek-mask]';
+  function isPrivacyMasked(node: Element): boolean {
+    try {
+      return !!node.closest(MASK_SELECTOR);
+    } catch {
+      /* selector unsupported in this env — ignore */
+      return false;
+    }
+  }
+
   function isSensitiveInput(node: Element): boolean {
     const type = (node as HTMLInputElement).type;
     const t = typeof type === 'string' ? type.toLowerCase() : '';
@@ -685,13 +729,7 @@ export function buildElementDetail(ref: string): ElementDetail | ElementDetailEr
       const field = tokens[tokens.length - 1] ?? '';
       if (SENSITIVE_AUTOFILL.has(field) || field.startsWith('cc-')) return true;
     }
-    try {
-      if (node.closest('.rr-mask, [data-private], [data-dd-privacy="mask"], [data-peek-mask]')) {
-        return true;
-      }
-    } catch {
-      /* selector unsupported in this env — ignore */
-    }
+    if (isPrivacyMasked(node)) return true;
     return false;
   }
 
@@ -781,9 +819,16 @@ export function buildElementDetail(ref: string): ElementDetail | ElementDetailEr
     return r;
   }
 
+  // Privacy: if the resolved element (or an ancestor) is inside an
+  // explicitly-masked region, NO free text from it may leave the page — name,
+  // value, text, and every aria-* VALUE are replaced with the redaction marker
+  // in-page (defense in depth on top of the SW's maskTextContent). This makes
+  // the docs' "masked in-page across names/values/text" claim true for the
+  // element_detail read, not only input values.
+  const masked = isPrivacyMasked(el);
   const tag = el.tagName.toLowerCase();
   const role = roleOf(el);
-  const name = accName(el);
+  const name = masked ? '•••' : accName(el);
   const visible = isVisible(el);
 
   // rect — guard for jsdom (all-zero is fine).
@@ -795,10 +840,11 @@ export function buildElementDetail(ref: string): ElementDetail | ElementDetailEr
     /* no layout — keep zeros */
   }
 
-  // aria — every aria-* attribute.
+  // aria — every aria-* attribute (KEYS kept; VALUES redacted when masked, since
+  // aria-label/aria-description carry free-text PII just like the name).
   const aria: Record<string, string> = {};
   for (const a of Array.from(el.attributes)) {
-    if (a.name.startsWith('aria-')) aria[a.name] = a.value;
+    if (a.name.startsWith('aria-')) aria[a.name] = masked ? '•••' : a.value;
   }
 
   // state — disabled / checked / expanded=… / selected / required / readonly.
@@ -839,10 +885,10 @@ export function buildElementDetail(ref: string): ElementDetail | ElementDetailEr
     visible,
   };
 
-  // value — only when present and not a button; sensitive → '•••'.
+  // value — only when present and not a button; sensitive OR masked → '•••'.
   const rawValue = (el as HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement).value;
   if (typeof rawValue === 'string' && role !== 'button') {
-    detail.value = isSensitiveInput(el) ? '•••' : rawValue.slice(0, 200);
+    detail.value = masked || isSensitiveInput(el) ? '•••' : rawValue.slice(0, 200);
   }
 
   // type (inputs/buttons).
@@ -853,9 +899,15 @@ export function buildElementDetail(ref: string): ElementDetail | ElementDetailEr
   const href = el.getAttribute('href');
   if (href) detail.href = href;
 
-  // text — clipped own/descendant textContent (NOT innerHTML).
-  const text = (el.textContent ?? '').trim().replace(/\s+/g, ' ').slice(0, 500);
-  if (text) detail.text = text;
+  // text — clipped own/descendant textContent (NOT innerHTML). A masked element's
+  // text is the redaction marker (the textContent could be the very PII the
+  // mask annotation exists to hide).
+  if (masked) {
+    detail.text = '•••';
+  } else {
+    const text = (el.textContent ?? '').trim().replace(/\s+/g, ' ').slice(0, 500);
+    if (text) detail.text = text;
+  }
 
   // context — nearest preceding heading + nearest ancestor landmark.
   const context: { heading?: string; landmark?: string } = {};
@@ -866,6 +918,9 @@ export function buildElementDetail(ref: string): ElementDetail | ElementDetailEr
       let sib: Element | null = cur.previousElementSibling;
       while (sib) {
         if (/^h[1-6]$/.test(sib.tagName.toLowerCase())) {
+          // A heading inside an explicitly-masked region must not leak its text
+          // through the context of a (possibly unmasked) sibling element.
+          if (isPrivacyMasked(sib)) return '•••';
           const t = (sib.textContent ?? '').trim().replace(/\s+/g, ' ');
           if (t) return t.slice(0, 200);
         }
@@ -873,6 +928,7 @@ export function buildElementDetail(ref: string): ElementDetail | ElementDetailEr
         try {
           const nested = sib.querySelector('h1,h2,h3,h4,h5,h6');
           if (nested) {
+            if (isPrivacyMasked(nested)) return '•••';
             const t = (nested.textContent ?? '').trim().replace(/\s+/g, ' ');
             if (t) return t.slice(0, 200);
           }
@@ -902,7 +958,10 @@ export function buildElementDetail(ref: string): ElementDetail | ElementDetailEr
     detail.context = context;
   }
 
-  // children — direct interactive descendants, capped at 20.
+  // children — interactive descendants (capped at 20). Each child's NAME is
+  // redacted if the parent is masked OR the child is itself inside a masked
+  // region (per-child check — a masked subtree under an unmasked parent must
+  // still redact, and the whole-element mask above covers the inverse).
   const SEL =
     'a[href],button,input,select,textarea,[role],[onclick],[contenteditable=""],[contenteditable="true"],h1,h2,h3,h4,h5,h6';
   const children: { ref: string; role: string; name: string }[] = [];
@@ -915,7 +974,12 @@ export function buildElementDetail(ref: string): ElementDetail | ElementDetailEr
   for (const kid of kids) {
     if (children.length >= 20) break;
     if (!isVisible(kid)) continue;
-    children.push({ ref: refForLive(kid), role: roleOf(kid), name: accName(kid) });
+    const kidMasked = masked || isPrivacyMasked(kid);
+    children.push({
+      ref: refForLive(kid),
+      role: roleOf(kid),
+      name: kidMasked ? '•••' : accName(kid),
+    });
   }
   if (children.length) detail.children = children;
 

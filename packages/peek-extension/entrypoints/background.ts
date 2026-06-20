@@ -858,7 +858,10 @@ export default defineBackground({
           return {
             ok: true,
             details: {
-              url: view.url,
+              // Path-mask the page URL with the SAME scheme as network URLs: a
+              // query string can carry a token (?reset_token=…) — keep origin+path,
+              // redact query VALUES (maskUrl) before it reaches the agent.
+              url: maskUrl(view.url),
               title: maskTextContent(view.title),
               count: view.nodes.length,
               truncated: view.truncated,
@@ -965,7 +968,9 @@ export default defineBackground({
           /* tab gone — keep the action url */
         }
         return {
-          url,
+          // Path-mask: the navigated-to URL can carry a token in its query
+          // (?reset_token=…); redact query VALUES before it reaches the agent.
+          url: maskUrl(url),
           navigated: true,
           added: [],
           removed: [],
@@ -995,7 +1000,9 @@ export default defineBackground({
           return { url: '', added: [], removed: [], changed: [], truncated: false };
         }
         return {
-          url: delta.url,
+          // Path-mask the delta URL with the SAME scheme as network URLs (a
+          // query string can carry a token); origin+path kept, query values gone.
+          url: maskUrl(delta.url),
           ...(delta.navigated !== undefined ? { navigated: delta.navigated } : {}),
           added: delta.added.map(maskPageViewNode),
           removed: delta.removed,

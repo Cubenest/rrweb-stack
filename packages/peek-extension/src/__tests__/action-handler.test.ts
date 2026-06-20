@@ -356,6 +356,32 @@ describe('handleActionRequest — observe rides an already-gated mutating action
     expect(ctx.dispatchCalls).toBe(0); // never dispatched → no diff could run
     expect(out.details).toBeUndefined(); // no viewDelta on a denial
   });
+
+  it('a destructive observe:true at Level 4 forces a confirm; DENY → no dispatch, no viewDelta', async () => {
+    // FIX 3 (MEDIUM): observe must NOT weaken the destructive override. A YOLO
+    // (Level 4) click whose resolved target is destructive ("Delete account")
+    // still routes through the confirm path — and on DENY the action neither
+    // dispatches nor produces a viewDelta (the diff is a read appended ONLY after
+    // a successful, already-gated mutation; a denial can't become a read
+    // side-channel). Mirrors the Level-4 destructive test harness (target text +
+    // deny verdict), with observe:true added.
+    await enableOriginAtLevel('https://example.com', 4);
+    const ctx = makeDeps(
+      {},
+      { target: { text: 'Delete account' }, promptResult: { verdict: 'deny', approvalMs: 1 } },
+    );
+    const out = await handleActionRequest(
+      makeRequest({
+        action: { type: 'click', selector: '#delete', button: 'left', observe: true },
+      }),
+      ctx.deps,
+    );
+    expect(out.verdict).toBe('deny');
+    expect(out.destructiveTerm).toBe('delete'); // the destructive-confirm path ran
+    expect(ctx.promptCalls).toBe(1); // a confirm/banner WAS requested
+    expect(ctx.dispatchCalls).toBe(0); // denied → never dispatched
+    expect((out.details as { viewDelta?: unknown } | undefined)?.viewDelta).toBeUndefined(); // no viewDelta on a destructive-deny
+  });
 });
 
 describe('handleActionRequest — Level 3 act-with-confirm', () => {

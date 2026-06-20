@@ -118,8 +118,42 @@ describe('buildPageView', () => {
     expect(get('addr')).toBe('•••'); // address dropped (was missed by the old substring matcher)
     expect(get('user')).toBe('ada'); // username shown (was over-masked before)
     expect(get('note')).toBe('plain text'); // free-text non-PII kept (consistent with recorder)
-    expect(get('secret')).toBe('•••'); // .rr-mask honored
+    // .rr-mask honored — FIX 1 (HIGH): both the NAME and the value of an
+    // explicitly-masked field are now •••  (previously the name "secret" leaked).
+    // Autofill-only masks (bday/addr) redact the VALUE but NOT the name; only a
+    // privacy-ANNOTATED region (.rr-mask) also redacts the name — so the masked
+    // node is the one whose NAME is •••.
+    const secret = v.nodes.find((n) => n.name === '•••');
+    expect(secret, 'the .rr-mask field is registered with a •••  name').toBeDefined();
+    expect(secret?.value).toBe('•••');
+    expect(v.nodes.some((n) => n.name === 'secret')).toBe(false); // name no longer leaks
+    // The autofill-masked fields keep their REAL names (only the value is •••).
+    expect(v.nodes.find((n) => n.name === 'bday')?.value).toBe('•••');
     expect(JSON.stringify(v)).not.toContain('hidden value');
+  });
+
+  it('masks the NAME (not just the value) of a privacy-annotated element to •••', () => {
+    // FIX 1 (HIGH): a free-text element inside a masked region leaked its
+    // accessible NAME at Level 1 (only input VALUES were honored). Both the name
+    // AND the value of an explicitly-masked field must be •••  in-page.
+    document.body.innerHTML = `
+      <div data-private>
+        <button aria-label="Pay Jane Doe $4,200">Send money</button>
+        <input aria-label="Recipient account" value="123456789">
+      </div>
+      <button aria-label="Public button">OK</button>
+    `;
+    const v = buildPageView({});
+    // The masked region's NAMES are redacted — the cleartext PII is gone.
+    expect(v.nodes.some((n) => n.name === 'Pay Jane Doe $4,200')).toBe(false);
+    expect(JSON.stringify(v)).not.toContain('Jane Doe');
+    expect(JSON.stringify(v)).not.toContain('123456789');
+    // The masked input still emits a node, with both name + value redacted.
+    const maskedInput = v.nodes.find((n) => n.role === 'textbox');
+    expect(maskedInput?.name).toBe('•••');
+    expect(maskedInput?.value).toBe('•••');
+    // A button outside the masked region keeps its real name.
+    expect(v.nodes.some((n) => n.name === 'Public button')).toBe(true);
   });
 
   it('is self-contained: survives MAIN-world serialization (no module-scope helpers)', () => {
@@ -328,6 +362,43 @@ describe('diffPageViewStandalone (R2 — the function the SW actually injects)',
     expect(second.changed).toEqual([]);
     expect(second.removed).toEqual([]);
   });
+
+  it('MASKING parity: standalone + canonical redact a password value + a masked name IDENTICALLY', () => {
+    // FIX 2 (MEDIUM): the existing parity test only checks diff CLASSIFICATION.
+    // The standalone walker carries a VERBATIM copy of the privacy logic; this
+    // guards that its •••  output (password value AND an explicitly-masked
+    // element's name) matches the canonical walker — so the duplicate can't
+    // silently drift on the security-critical masking, not just the diff shape.
+    const fixture = `
+      <input id="pw" type="password" value="hunter2" aria-label="Password">
+      <div data-private><button aria-label="Pay Jane Doe">Send</button></div>
+    `;
+
+    // Canonical: build the page (added classification carries every node), then
+    // capture the emitted nodes.
+    document.body.innerHTML = fixture;
+    const canonical = diffPageView({}); // no prior view → everything is `added`
+
+    // Standalone on an identical fresh fixture.
+    resetRefGlobals();
+    document.body.innerHTML = fixture;
+    const standalone = diffPageViewStandalone({});
+
+    // Compare the masked node payloads (name + value) ref-agnostically.
+    const payload = (d: PageViewDelta) =>
+      d.added.map((n) => `${n.role}|${n.name}|${n.value ?? ''}`).sort();
+    expect(payload(standalone)).toEqual(payload(canonical));
+
+    // And assert the actual redaction happened (not just that they agree).
+    const pw = standalone.added.find((n) => n.role === 'textbox' && n.value === '•••');
+    expect(pw, 'password value → •••').toBeDefined();
+    const masked = standalone.added.find((n) => n.name === '•••');
+    expect(masked, 'masked region name → •••').toBeDefined();
+    expect(JSON.stringify(standalone)).not.toContain('hunter2');
+    expect(JSON.stringify(standalone)).not.toContain('Jane Doe');
+    expect(JSON.stringify(canonical)).not.toContain('hunter2');
+    expect(JSON.stringify(canonical)).not.toContain('Jane Doe');
+  });
 });
 
 describe('buildElementDetail (R2)', () => {
@@ -377,6 +448,33 @@ describe('buildElementDetail (R2)', () => {
     for (const c of detail.children ?? []) expect(c.ref).toMatch(/^e\d+$/);
   });
 
+  it('does NOT leak a masked heading through context.heading', () => {
+    // The target is NOT itself masked, but its nearest preceding heading sits
+    // inside a data-private region — its text must not leak via context.heading.
+    document.body.innerHTML = `
+      <main>
+        <section data-private>
+          <h3>Medical Record MRN 884213</h3>
+        </section>
+        <div id="target" role="region" aria-label="Notes"></div>
+      </main>
+    `;
+    buildPageView({});
+    const reg = (window as unknown as { __peekRefs?: Map<string, Element> }).__peekRefs;
+    let ref = '';
+    for (const [r, el] of reg?.entries() ?? []) {
+      if (el === document.getElementById('target')) ref = r;
+    }
+    expect(ref).not.toBe('');
+    const detail = buildElementDetail(ref) as ElementDetail;
+    // target itself is unmasked (real name), but the masked heading is redacted.
+    expect(detail.name).toBe('Notes');
+    expect(detail.context?.heading).toBe('•••');
+    // the cleartext heading appears nowhere in the serialized detail.
+    expect(JSON.stringify(detail)).not.toContain('Medical Record');
+    expect(JSON.stringify(detail)).not.toContain('884213');
+  });
+
   it('caps direct interactive children at 20', () => {
     const container = document.createElement('div');
     container.id = 'big';
@@ -409,6 +507,64 @@ describe('buildElementDetail (R2)', () => {
     const detail = buildElementDetail(ref) as ElementDetail;
     expect(detail.value).toBe('•••');
     expect(JSON.stringify(detail)).not.toContain('hunter2');
+  });
+
+  it('redacts name/value/text/aria/children of a privacy-annotated element to •••', () => {
+    // FIX 1 (HIGH): a masked element's free text (name, text, aria values, child
+    // names) was returned raw at Level 1. Every page-text field must be •••.
+    document.body.innerHTML = `
+      <section data-private role="region" aria-label="Patient Jane Doe, DOB 1990-01-02">
+        <h3>Diagnosis notes</h3>
+        <p>Confidential medical history for Jane Doe</p>
+        <input aria-label="SSN" value="123-45-6789">
+        <button aria-label="Save Jane Doe record">Save</button>
+      </section>
+    `;
+    buildPageView({}); // role="region" makes the section walkable / registrable
+    const reg = (window as unknown as { __peekRefs?: Map<string, Element> }).__peekRefs;
+    let ref = '';
+    for (const [r, el] of reg?.entries() ?? []) {
+      if (el === document.querySelector('section[data-private]')) ref = r;
+    }
+    expect(ref).not.toBe('');
+    const detail = buildElementDetail(ref) as ElementDetail;
+    expect(detail.ok).toBe(true);
+    expect(detail.name).toBe('•••'); // accessible name (aria-label PII) redacted
+    expect(detail.text).toBe('•••'); // descendant textContent redacted
+    // every aria VALUE redacted (keys preserved).
+    for (const [, v] of Object.entries(detail.aria)) expect(v).toBe('•••');
+    // every child NAME redacted.
+    for (const c of detail.children ?? []) expect(c.name).toBe('•••');
+    // The cleartext PII appears NOWHERE in the serialized detail.
+    const serialized = JSON.stringify(detail);
+    expect(serialized).not.toContain('Jane Doe');
+    expect(serialized).not.toContain('1990-01-02');
+    expect(serialized).not.toContain('123-45-6789');
+    expect(serialized).not.toContain('Confidential');
+  });
+
+  it('redacts a child NAME when only the CHILD (not the parent) is privacy-masked', () => {
+    // FIX 1 (HIGH), per-child clause: an UNMASKED container with a masked child
+    // must still redact that child's name (isPrivacyMasked applied per child).
+    document.body.innerHTML = `
+      <div id="panel" role="region" aria-label="Billing">
+        <button>Visible Action</button>
+        <button class="rr-mask" aria-label="Charge card 4111 1111 1111 1111">Pay</button>
+      </div>
+    `;
+    buildPageView({});
+    const reg = (window as unknown as { __peekRefs?: Map<string, Element> }).__peekRefs;
+    let ref = '';
+    for (const [r, el] of reg?.entries() ?? []) {
+      if (el === document.getElementById('panel')) ref = r;
+    }
+    const detail = buildElementDetail(ref) as ElementDetail;
+    // The parent itself is NOT masked — its own name is intact.
+    expect(detail.name).toBe('Billing');
+    const names = detail.children?.map((c) => c.name) ?? [];
+    expect(names).toContain('Visible Action'); // unmasked child kept
+    expect(names).toContain('•••'); // masked child redacted
+    expect(JSON.stringify(detail)).not.toContain('4111');
   });
 
   it('NEVER contains an outerHTML/innerHTML key', () => {
