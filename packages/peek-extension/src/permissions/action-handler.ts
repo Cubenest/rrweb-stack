@@ -412,6 +412,42 @@ export async function handleActionRequest(
     });
   }
 
+  // ---- Live page-view snapshot (read; R1 token-optimization) -------------
+  // A NON-mutating read: returns a compact ref-tagged list of interactive
+  // elements so the agent can target a `ref` instead of authoring a CSS
+  // selector. Routes around gate()/the destructive matcher (it acts on nothing)
+  // and is auto-allowed at effective Level >= 1 (observe) — the same tier at
+  // which peek already streams the live DOM into the recording. Accessible
+  // names/values are masked SW-side (dispatchInMainWorld) before leaving the
+  // device; raw sensitive input values never leave the page (see snapshot.ts).
+  if (request.action.type === 'page_view') {
+    if (effectiveLevel < 1) {
+      return result(request, 'deny', 'denied', {
+        approver: 'user',
+        error: `page_view requires Level 1+ (level ${effectiveLevel})`,
+      });
+    }
+    let viewRes: Awaited<ReturnType<ActionHandlerDeps['dispatchInMainWorld']>>;
+    try {
+      viewRes = await deps.dispatchInMainWorld({ tabId: tab.id, action: request.action });
+    } catch (err) {
+      return result(request, 'allow', 'error', {
+        approver: 'level-1-read',
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+    if (viewRes.ok) {
+      return result(request, 'allow', 'ok', {
+        approver: 'level-1-read',
+        ...(viewRes.details !== undefined ? { details: viewRes.details } : {}),
+      });
+    }
+    return result(request, 'allow', 'error', {
+      approver: 'level-1-read',
+      error: viewRes.error,
+    });
+  }
+
   // ---- Intent banner (Part 2) -------------------------------------------
   // A pure status update: the agent narrates what it's doing into the shield
   // banner so the user can follow along. Auto-allowed at effective Level 4

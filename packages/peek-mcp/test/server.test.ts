@@ -273,9 +273,9 @@ describe('peek MCP server: graceful no-DB', () => {
       eventsDir: join(dir, 'rrweb-events'),
     });
     try {
-      // tools/list still works (8 read + 2 write + 2 suggest + 1 handoff + set_intent).
+      // tools/list still works (8 read + get_page_view + 2 write + 2 suggest + 1 handoff + set_intent).
       const { tools } = await client.listTools();
-      expect(tools).toHaveLength(14);
+      expect(tools).toHaveLength(15);
       // and a call returns the friendly message rather than erroring.
       const res = await client.callTool({ name: 'list_recent_sessions', arguments: {} });
       expect(textOf(res as never)).toContain('No sessions recorded yet');
@@ -609,7 +609,10 @@ describe('peek MCP server: execute_action (Task 3.24)', () => {
         name: 'execute_action',
         arguments: {
           sessionId: 's_login',
-          action: { type: 'click' }, // missing selector → invalid
+          // Invalid button enum → zod rejects at the tool boundary. (A bare
+          // `{type:'click'}` is now VALID — selector is optional, ref-or-selector
+          // is enforced at dispatch — so use a genuinely malformed field here.)
+          action: { type: 'click', button: 'turbo' },
         },
       });
       // The SDK returns { isError: true } for input validation failures.
@@ -688,6 +691,43 @@ describe('peek MCP server: suggest_element + clear_highlight dispatch', () => {
       expect(bridge.pending[0]?.req.action).toEqual({ type: 'clear_highlight' });
       bridge.resolveNext({ verdict: 'allow', result: 'ok', approver: 'level-2-suggest' });
       await callP;
+    } finally {
+      await close();
+    }
+  });
+});
+
+describe('peek MCP server: get_page_view dispatch (live ref-tagged snapshot)', () => {
+  it('rides the execute_action path with {type:page_view} and surfaces details', async () => {
+    const { dbPath, eventsDir } = seedStore(dir, [loginSession()]);
+    const bridge = new RegistryBackedHostBridge();
+    const { client, close } = await connectClient({ dbPath, eventsDir, hostBridge: bridge });
+    try {
+      const callP = client.callTool({
+        name: 'get_page_view',
+        arguments: { sessionId: 's_login', maxElements: 50 },
+      });
+      for (let i = 0; i < 20 && bridge.pending.length === 0; i++) {
+        await new Promise((r) => setTimeout(r, 5));
+      }
+      expect(bridge.pending[0]?.req.tool).toBe('execute_action');
+      expect(bridge.pending[0]?.req.action).toEqual({ type: 'page_view', maxElements: 50 });
+      bridge.resolveNext({
+        verdict: 'allow',
+        result: 'ok',
+        approver: 'level-1-read',
+        details: {
+          url: 'https://app/',
+          title: 'App',
+          count: 1,
+          truncated: false,
+          view: 'e1 button "Go"',
+        },
+      });
+      const res = await callP;
+      // The ref-tagged view is surfaced to the agent in the result body's details.
+      expect(textOf(res as never)).toContain('e1 button');
+      expect(textOf(res as never)).toContain('level-1-read');
     } finally {
       await close();
     }

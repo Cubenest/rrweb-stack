@@ -198,6 +198,51 @@ describe('handleActionRequest — highlight (Suggest tier, Level 2+)', () => {
   });
 });
 
+describe('handleActionRequest — page_view (live read, Level 1+)', () => {
+  it('page_view at Level 1 → allow + dispatches once (no prompt) + returns details', async () => {
+    await enableOriginAtLevel('https://example.com', 1);
+    const ctx = makeDeps(
+      {},
+      { dispatchOutcome: { ok: true, details: { view: 'e1 button "Go"' } } },
+    );
+    const out = await handleActionRequest(
+      makeRequest({ action: { type: 'page_view', maxElements: 200 } }),
+      ctx.deps,
+    );
+    expect(out.verdict).toBe('allow');
+    expect(out.result).toBe('ok');
+    expect(out.approver).toBe('level-1-read');
+    expect(out.details).toEqual({ view: 'e1 button "Go"' });
+    expect(ctx.promptCalls).toBe(0);
+    expect(ctx.resolveTargetCalls).toBe(0); // no destructive matcher for a read
+    expect(ctx.dispatchCalls).toBe(1);
+  });
+
+  it('page_view at Level 0 → deny (page_view requires Level 1+), no dispatch', async () => {
+    await enableOriginAtLevel('https://example.com', 0);
+    const ctx = makeDeps();
+    const out = await handleActionRequest(
+      makeRequest({ action: { type: 'page_view', maxElements: 200 } }),
+      ctx.deps,
+    );
+    expect(out.verdict).toBe('deny');
+    expect(out.result).toBe('denied');
+    expect(ctx.dispatchCalls).toBe(0);
+  });
+
+  it('page_view at Level 4 → allow (still level-1-read approver)', async () => {
+    await enableOriginAtLevel('https://example.com', 4);
+    const ctx = makeDeps();
+    const out = await handleActionRequest(
+      makeRequest({ action: { type: 'page_view', maxElements: 200 } }),
+      ctx.deps,
+    );
+    expect(out.verdict).toBe('allow');
+    expect(out.approver).toBe('level-1-read');
+    expect(ctx.dispatchCalls).toBe(1);
+  });
+});
+
 describe('handleActionRequest — Level 3 act-with-confirm', () => {
   it('execute_action prompts the user; allow → dispatch + ok', async () => {
     await enableOriginAtLevel('https://example.com', 3);

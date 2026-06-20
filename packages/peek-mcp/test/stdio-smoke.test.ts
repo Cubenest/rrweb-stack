@@ -1,7 +1,7 @@
 // End-to-end stdio smoke (Task 3.11 verification): spawn the BUILT bin over a
 // real child-process stdio pipe, complete the MCP initialize handshake, and
-// assert tools/list returns the documented peek tool surface (14:
-// 8 read + 2 act + 2 suggest + 1 handoff + 1 set_intent). This is the closest thing to how an
+// assert tools/list returns the documented peek tool surface (15:
+// 8 read + get_page_view + 2 act + 2 suggest + 1 handoff + 1 set_intent). This is the closest thing to how an
 // AI tool (Claude Code / Cursor) actually launches `npx -y @peekdev/mcp`.
 //
 // Requires `dist/index.js` to exist — the test skips with a clear message if the
@@ -73,7 +73,7 @@ afterEach(() => {
 });
 
 describe.skipIf(!built)('peek-mcp stdio smoke (built bin)', () => {
-  it('completes initialize + tools/list over real stdio, returning all 14 tools', async () => {
+  it('completes initialize + tools/list over real stdio, returning all 15 tools', async () => {
     child = spawn(process.execPath, [distEntry], {
       env: { ...process.env, PEEK_HOME: home },
       stdio: ['pipe', 'pipe', 'pipe'],
@@ -96,6 +96,7 @@ describe.skipIf(!built)('peek-mcp stdio smoke (built bin)', () => {
         // Read tools (Phase 3c).
         'generate_playwright_repro',
         'get_dom_snapshot',
+        'get_page_view',
         'get_session_console_errors',
         'get_session_network_errors',
         'get_session_summary',

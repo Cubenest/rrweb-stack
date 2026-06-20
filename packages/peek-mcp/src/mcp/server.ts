@@ -790,6 +790,51 @@ export function createPeekMcpServer(options: CreatePeekMcpServerOptions = {}): P
         });
       },
     );
+
+    // 15. get_page_view (live ref-tagged snapshot for the act path; Level-1 read).
+    // Non-mutating: rides the execute_action rails with a `page_view` action; the
+    // SW intercepts it before the gate and auto-allows at per-origin Level 1+.
+    // Returns the ref-tagged element list in `details.view` so the agent targets
+    // a `ref` instead of authoring a CSS selector — deterministic + far cheaper
+    // than reading get_dom_snapshot's HTML.
+    server.registerTool(
+      'get_page_view',
+      {
+        title: 'Get a live, ref-tagged view of the current page',
+        description:
+          "Return a compact, masked snapshot of the user's LIVE page as a list of interactive/labeled elements, each with a stable `ref` (e.g. e5). Pass a `ref` to execute_action / request_authorization (click/type/scroll/enter/dblclick) instead of authoring a CSS selector — deterministic and far cheaper than reading get_dom_snapshot's HTML. Refs expire on navigation; re-call after navigating. Available at per-origin Level 1+; non-mutating; recorded to ~/.peek/audit.log. Password/email/tel and PII-autofill (card/address/etc.) input values, and fields marked private, are masked; structured PII is scrubbed, but free-text field values may be returned.",
+        inputSchema: {
+          sessionId: z
+            .string()
+            .describe(
+              'Session id (origin context) from list_recent_sessions; determines the per-origin permission level.',
+            ),
+          selector: z
+            .string()
+            .optional()
+            .describe('Scope the snapshot to a CSS subtree. Omit for the whole page.'),
+          maxElements: z
+            .number()
+            .int()
+            .min(1)
+            .max(500)
+            .default(200)
+            .describe('Cap on elements returned (1-500; default 200).'),
+        },
+        annotations: { readOnlyHint: true, openWorldHint: true },
+      },
+      async ({ sessionId, selector, maxElements }) => {
+        return await dispatchActTool({
+          tool: 'execute_action',
+          sessionId,
+          action: {
+            type: 'page_view',
+            maxElements,
+            ...(selector !== undefined ? { selector } : {}),
+          },
+        });
+      },
+    );
   }
 
   // --- Act-tool dispatch (shared between execute_action + request_authorization) ---
@@ -907,6 +952,8 @@ export const PEEK_MCP_TOOLS = [
   'generate_playwright_repro',
   'get_dom_snapshot',
   'query_dom_history',
+  // Live page-view snapshot (R1 — Level 1+ read; ref targeting for the act path).
+  'get_page_view',
   // Write tools (Phase 3d, Level 3+).
   'request_authorization',
   'execute_action',

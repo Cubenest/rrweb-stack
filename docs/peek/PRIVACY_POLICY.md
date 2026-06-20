@@ -64,10 +64,21 @@ opt-in per origin.
 | Level | Name | What peek can do |
 |---|---|---|
 | 0 | Off | Recording suppressed, tool surface disabled for the origin. |
-| 1 | Observe | Read recorded sessions. **Default.** |
+| 1 | Observe | Read recorded sessions, and take an on-demand **live page snapshot** (`get_page_view`) — a masked, ref-tagged list of interactive elements, non-mutating. **Default.** |
 | 2 | Suggest | Read + propose actions (no execution). |
 | 3 | Confirm | Read + execute one-shot actions with per-action user confirmation in the side panel. |
 | 4 | YOLO | Read + execute without per-action prompts (60-min, tab-scoped). Destructive-action terms still prompt. |
+
+**Live page snapshot (`get_page_view`)** — at Level 1+, an agent may request an
+on-demand snapshot of the current page: a compact, ref-tagged list of interactive
+elements (so it can prefer a stable reference over guessing a CSS selector;
+selector targeting still works as a fallback).
+It is non-mutating and audit-logged. Password/email/tel and PII-autofill values
+(card, address, birthday, name, etc.), and any field marked `.rr-mask` /
+`data-private` / `data-dd-privacy` / `data-peek-mask`, are dropped in-page;
+structured PII in the remaining text is masked before it leaves the device. As with
+the recorder, free-text field values may be included — mark sensitive free-text
+fields with a mask class to exclude them.
 
 **Destructive-action blocklist override** — even at Level 4 YOLO, actions
 whose target matches "delete", "remove", "drop", "uninstall", "transfer",
