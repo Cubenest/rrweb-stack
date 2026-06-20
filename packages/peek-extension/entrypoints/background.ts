@@ -66,11 +66,11 @@ import {
   resolveTarget as resolveTargetInPage,
 } from '../src/permissions/dispatcher';
 import { type HighlightResult, applyHighlight, clearHighlight } from '../src/permissions/highlight';
+import { maskElementDetail, maskPageViewNode } from '../src/permissions/mask-view';
 import {
   type ElementDetail,
   type ElementDetailError,
   type PageViewDelta,
-  type PageViewNode,
   type PageViewResult,
   buildElementDetail,
   buildPageView,
@@ -83,7 +83,7 @@ import {
 } from '../src/permissions/store';
 import { YoloSessionStore } from '../src/permissions/yolo';
 import { injectRecorder } from '../src/recorder/inject';
-import { maskUrl } from '../src/relay/mask';
+import { maskUrl } from '../src/relay/mask-url';
 import { ShieldController } from '../src/shield/controller';
 import { type ShieldInbound, isShieldInbound } from '../src/shield/protocol';
 
@@ -100,96 +100,6 @@ const CONFIRM_TIMEOUT_MS = 2 * 60_000;
  */
 export function isReadOnlyAction(action: Action): boolean {
   return action.type === 'waitFor' || action.type === 'screenshot';
-}
-
-/**
- * SW-side masking of ONE page-view node (R1/R2). The MAIN-world walker already
- * dropped raw sensitive input VALUES in-page (`•••`); here we additionally mask
- * the accessible name + any non-sensitive value through `@cubenest/rrweb-core`'s
- * `maskTextContent` (importable only SW-side) before anything leaves the device.
- * `state`/`role`/`ref` are structural and carry no page text, so they pass
- * through. Shared by the `page_view` branch and the `observe` diff path so both
- * mask identically.
- */
-export function maskPageViewNode(node: PageViewNode): PageViewNode {
-  const masked: { ref: string; role: string; name: string; value?: string; state?: string } = {
-    ref: node.ref,
-    role: node.role,
-    name: maskTextContent(node.name),
-  };
-  if (node.value !== undefined) {
-    // The `•••` placeholder is already a redaction marker — never run it through
-    // the masker (it isn't page text, and masking it is a no-op anyway).
-    masked.value = node.value === '•••' ? '•••' : maskTextContent(node.value);
-  }
-  if (node.state !== undefined) masked.state = node.state;
-  return masked;
-}
-
-/**
- * SW-side masking of an {@link ElementDetail} (R2 `element_detail` read). The
- * MAIN-world drill-in already dropped raw sensitive input VALUES in-page (`•••`);
- * here we mask every page-text string before it leaves the device:
- *   - `name`, `value`, `text`           → `maskTextContent`
- *   - every `aria-*` VALUE (keys kept)  → `maskTextContent`
- *   - `href`                            → `maskUrl` (same path/query mask as network)
- *   - each `children[].name`            → `maskTextContent`
- * Structural fields (`ref`/`tag`/`role`/`type`/`state`/`rect`/`visible`/`context`
- * landmark+heading role/ref) carry no free page text from the element's value
- * surface; `context.heading` IS page text, so it is masked too.
- */
-export function maskElementDetail(detail: ElementDetail): ElementDetail {
-  const aria: Record<string, string> = {};
-  for (const [k, v] of Object.entries(detail.aria)) aria[k] = maskTextContent(v);
-
-  const out: {
-    ok: true;
-    ref: string;
-    tag: string;
-    role: string;
-    name: string;
-    value?: string;
-    type?: string;
-    href?: string;
-    state: string[];
-    aria: Record<string, string>;
-    rect: { x: number; y: number; w: number; h: number };
-    visible: boolean;
-    text?: string;
-    context?: { heading?: string; landmark?: string };
-    children?: { ref: string; role: string; name: string }[];
-  } = {
-    ok: true,
-    ref: detail.ref,
-    tag: detail.tag,
-    role: detail.role,
-    name: maskTextContent(detail.name),
-    state: detail.state,
-    aria,
-    rect: detail.rect,
-    visible: detail.visible,
-  };
-
-  if (detail.value !== undefined) {
-    out.value = detail.value === '•••' ? '•••' : maskTextContent(detail.value);
-  }
-  if (detail.type !== undefined) out.type = detail.type;
-  if (detail.href !== undefined) out.href = maskUrl(detail.href);
-  if (detail.text !== undefined) out.text = maskTextContent(detail.text);
-  if (detail.context !== undefined) {
-    const ctx: { heading?: string; landmark?: string } = {};
-    if (detail.context.heading !== undefined) ctx.heading = maskTextContent(detail.context.heading);
-    if (detail.context.landmark !== undefined) ctx.landmark = detail.context.landmark;
-    out.context = ctx;
-  }
-  if (detail.children !== undefined) {
-    out.children = detail.children.map((c) => ({
-      ref: c.ref,
-      role: c.role,
-      name: maskTextContent(c.name),
-    }));
-  }
-  return out;
 }
 
 /**

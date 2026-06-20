@@ -1,11 +1,6 @@
 import { fakeBrowser } from '@webext-core/fake-browser';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import {
-  captureScreenshot,
-  isReadOnlyAction,
-  maskElementDetail,
-  maskPageViewNode,
-} from '../../entrypoints/background';
+import { captureScreenshot, isReadOnlyAction } from '../../entrypoints/background';
 import { addEnabledOrigin } from '../activation/storage';
 import {
   type ActionHandlerDeps,
@@ -15,6 +10,7 @@ import {
   handleActionRequest,
 } from '../permissions/action-handler';
 import type { Action, ActionRequestMessage } from '../permissions/action-protocol';
+import { maskElementDetail, maskPageViewNode } from '../permissions/mask-view';
 import { setPermissionLevel } from '../permissions/store';
 import { YoloSessionStore } from '../permissions/yolo';
 
