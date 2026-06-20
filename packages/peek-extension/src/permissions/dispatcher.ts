@@ -77,7 +77,16 @@ export async function dispatchAction(action: DispatchableAction): Promise<Dispat
   // be `undefined` there (ReferenceError on first use). Declare resolveElement
   // as a nested function so it travels with the dispatcher. Keep it in sync with
   // the identical nested copy in resolveTarget.
-  function resolveElement(selector: string, nth?: number): Element | null {
+  function resolveElement(selector: string, nth?: number, ref?: string): Element | null {
+    // Prefer a `ref` from a prior get_page_view: look it up in the MAIN-world
+    // registry (window.__peekRefs). A missing entry or a detached node means the
+    // ref expired (e.g. the page navigated) — return null so the caller surfaces
+    // a "ref expired" error and the agent re-snapshots.
+    if (typeof ref === 'string' && ref.length > 0) {
+      const reg = (window as unknown as { __peekRefs?: Map<string, Element> }).__peekRefs;
+      const el = reg?.get(ref);
+      return el?.isConnected ? el : null;
+    }
     if (typeof selector !== 'string' || selector.length === 0) return null;
     try {
       if (typeof nth === 'number' && nth > 0) {
@@ -89,6 +98,20 @@ export async function dispatchAction(action: DispatchableAction): Promise<Dispat
       // An invalid selector string throws a SyntaxError — treat as not found.
       return null;
     }
+  }
+  // Build the "not found" error for a target, distinguishing an expired ref
+  // (re-snapshot) from a selector miss.
+  function notFound(ref: string | undefined, selector: string): { ok: false; error: string } {
+    if (typeof ref === 'string' && ref.length > 0) {
+      return { ok: false, error: `ref expired: ${ref} (re-run get_page_view)` };
+    }
+    if (selector.length === 0) {
+      return {
+        ok: false,
+        error: 'target required: provide a ref (from get_page_view) or a selector',
+      };
+    }
+    return { ok: false, error: `element not found: ${selector}` };
   }
   // INLINED for MAIN-world injection: scroll the target into view ONLY when it
   // isn't already fully visible, so a human can see where peek is acting without
@@ -107,18 +130,20 @@ export async function dispatchAction(action: DispatchableAction): Promise<Dispat
   }
   switch (action.type) {
     case 'click': {
+      const ref = typeof action.ref === 'string' ? action.ref : undefined;
       const selector = typeof action.selector === 'string' ? action.selector : '';
       const nth = typeof action.nth === 'number' ? action.nth : undefined;
-      const el = resolveElement(selector, nth);
-      if (!el) return { ok: false, error: `element not found: ${selector}` };
+      const el = resolveElement(selector, nth, ref);
+      if (!el) return notFound(ref, selector);
       bringIntoView(el);
       (el as HTMLElement).click();
       return { ok: true };
     }
     case 'type': {
+      const ref = typeof action.ref === 'string' ? action.ref : undefined;
       const selector = typeof action.selector === 'string' ? action.selector : '';
-      const el = resolveElement(selector);
-      if (!el) return { ok: false, error: `element not found: ${selector}` };
+      const el = resolveElement(selector, undefined, ref);
+      if (!el) return notFound(ref, selector);
       bringIntoView(el);
       const text = typeof action.text === 'string' ? action.text : '';
       // Assign as a plain string value — NEVER innerHTML.
@@ -143,10 +168,11 @@ export async function dispatchAction(action: DispatchableAction): Promise<Dispat
       return { ok: true };
     }
     case 'scroll': {
-      const sel = action.selector;
-      if (typeof sel === 'string' && sel.length > 0) {
-        const el = resolveElement(sel);
-        if (!el) return { ok: false, error: `element not found: ${sel}` };
+      const ref = typeof action.ref === 'string' ? action.ref : undefined;
+      const sel = typeof action.selector === 'string' ? action.selector : '';
+      if (ref || sel.length > 0) {
+        const el = resolveElement(sel, undefined, ref);
+        if (!el) return notFound(ref, sel);
         (el as HTMLElement).scrollIntoView({ block: 'center', inline: 'nearest' });
         return { ok: true };
       }
@@ -233,11 +259,12 @@ export async function dispatchAction(action: DispatchableAction): Promise<Dispat
       // Focus the selector if given; otherwise dispatch to the currently active
       // element. Fires keydown → keypress → keyup so both native form-submit
       // handlers and framework key-listener patterns receive the full sequence.
+      const ref = typeof action.ref === 'string' ? action.ref : undefined;
       const selector = typeof action.selector === 'string' ? action.selector : '';
       let target: Element | null;
-      if (selector.length > 0) {
-        target = resolveElement(selector);
-        if (!target) return { ok: false, error: `element not found: ${selector}` };
+      if (ref || selector.length > 0) {
+        target = resolveElement(selector, undefined, ref);
+        if (!target) return notFound(ref, selector);
         (target as HTMLElement).focus?.();
         bringIntoView(target);
       } else {
@@ -258,10 +285,11 @@ export async function dispatchAction(action: DispatchableAction): Promise<Dispat
       return { ok: true };
     }
     case 'dblclick': {
+      const ref = typeof action.ref === 'string' ? action.ref : undefined;
       const selector = typeof action.selector === 'string' ? action.selector : '';
       const nth = typeof action.nth === 'number' ? action.nth : undefined;
-      const el = resolveElement(selector, nth);
-      if (!el) return { ok: false, error: `element not found: ${selector}` };
+      const el = resolveElement(selector, nth, ref);
+      if (!el) return notFound(ref, selector);
       bringIntoView(el);
       (el as HTMLElement).dispatchEvent(
         new MouseEvent('dblclick', { bubbles: true, cancelable: true }),
@@ -293,11 +321,18 @@ export interface ResolvedTarget {
  * non-destructive and skip the confirm. Defaults to the first match (nth 0 /
  * undefined), matching {@link dispatchAction}'s click branch.
  */
-export function resolveTarget(selector: string, nth?: number): ResolvedTarget {
+export function resolveTarget(selector: string, nth?: number, ref?: string): ResolvedTarget {
   // INLINED for MAIN-world injection (see dispatchAction): this function is also
   // serialized into the page via `executeScript({ world: 'MAIN', func })`, so it
-  // must not depend on the module-scope resolveElement. Declare it nested.
-  function resolveElement(sel: string, n?: number): Element | null {
+  // must not depend on the module-scope resolveElement. Declare it nested. Keep
+  // the ref-registry branch in sync with dispatchAction's resolveElement so the
+  // destructive matcher inspects the SAME element a ref-targeted action will hit.
+  function resolveElement(sel: string, n?: number, r?: string): Element | null {
+    if (typeof r === 'string' && r.length > 0) {
+      const reg = (window as unknown as { __peekRefs?: Map<string, Element> }).__peekRefs;
+      const el = reg?.get(r);
+      return el?.isConnected ? el : null;
+    }
     if (typeof sel !== 'string' || sel.length === 0) return null;
     try {
       if (typeof n === 'number' && n > 0) {
@@ -310,7 +345,7 @@ export function resolveTarget(selector: string, nth?: number): ResolvedTarget {
       return null;
     }
   }
-  const el = resolveElement(selector, nth);
+  const el = resolveElement(selector, nth, ref);
   if (!el) return {};
   const text = (el.textContent ?? '').trim();
   const ariaLabel = el.getAttribute('aria-label');

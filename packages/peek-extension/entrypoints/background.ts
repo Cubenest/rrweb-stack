@@ -1,3 +1,4 @@
+import { maskTextContent } from '@cubenest/rrweb-core';
 import { defineBackground } from 'wxt/utils/define-background';
 import { originFromUrl } from '../src/activation/origin';
 import { diffAddedOrigins } from '../src/activation/storage';
@@ -65,6 +66,7 @@ import {
   resolveTarget as resolveTargetInPage,
 } from '../src/permissions/dispatcher';
 import { type HighlightResult, applyHighlight, clearHighlight } from '../src/permissions/highlight';
+import { type PageViewResult, buildPageView } from '../src/permissions/snapshot';
 import {
   PERMISSION_LEVELS_KEY,
   getPermissionLevel,
@@ -528,19 +530,26 @@ export default defineBackground({
       // destructive matcher firing on an incidental selector hit. Short-circuit
       // BEFORE element resolution.
       if (isReadOnlyAction(action)) return {};
-      const selector = 'selector' in action ? action.selector : undefined;
-      if (typeof selector !== 'string' || selector.length === 0) return {};
+      // A target may be addressed by `ref` (from get_page_view) OR `selector`.
+      // We MUST resolve whichever the dispatcher will act on so the destructive
+      // matcher inspects the SAME element — otherwise a ref-targeted destructive
+      // action (e.g. a "Delete" button by ref) would skip the destructive
+      // override. Only page-level verbs (neither ref nor selector) skip here.
+      const selector =
+        'selector' in action && typeof action.selector === 'string' ? action.selector : '';
+      const ref = 'ref' in action && typeof action.ref === 'string' ? action.ref : undefined;
+      if (!ref && selector.length === 0) return {};
       // Item B: thread `nth` so the destructive matcher inspects the SAME
       // element the dispatcher will click (`querySelectorAll(selector)[nth]`).
       // Only the click branch carries `nth`; for everything else it's undefined
-      // → first match, matching dispatchAction.
+      // → first match, matching dispatchAction. `ref` takes precedence over both.
       const nth = 'nth' in action && typeof action.nth === 'number' ? action.nth : undefined;
       try {
         const [frame] = await chrome.scripting.executeScript({
           target: { tabId },
           world: 'MAIN',
           func: resolveTargetInPage,
-          args: [selector, nth],
+          args: [selector, nth, ref],
         });
         return (frame?.result as Awaited<ReturnType<typeof resolveTargetInPage>>) ?? {};
       } catch (err) {
@@ -684,6 +693,52 @@ export default defineBackground({
               error: 'no result from MAIN-world clear_highlight',
             }
           );
+        } catch (err) {
+          return { ok: false, error: err instanceof Error ? err.message : String(err) };
+        }
+      }
+      // `page_view` (R1) runs its OWN self-contained MAIN-world walker, then we
+      // mask the accessible names/values SW-side (raw sensitive input values were
+      // already dropped in-page by buildPageView) and format compact ref-tagged
+      // lines so the agent can target a `ref`. Token-lean: one text block, not an
+      // array of objects with repeated keys.
+      if (action.type === 'page_view') {
+        try {
+          const [frame] = await chrome.scripting.executeScript({
+            target: { tabId },
+            world: 'MAIN',
+            func: buildPageView,
+            args: [
+              {
+                ...(action.selector ? { selector: action.selector } : {}),
+                maxElements: action.maxElements ?? 200,
+              },
+            ],
+          });
+          const view = frame?.result as PageViewResult | undefined;
+          if (!view) return { ok: false, error: 'no result from MAIN-world page_view' };
+          const lines = view.nodes.map((node) => {
+            const name = maskTextContent(node.name);
+            let value = '';
+            if (node.value !== undefined) {
+              value =
+                node.value === '•••'
+                  ? ' value=•••'
+                  : ` value=${JSON.stringify(maskTextContent(node.value))}`;
+            }
+            const state = node.state ? ` (${node.state})` : '';
+            return `${node.ref} ${node.role} "${name}"${value}${state}`;
+          });
+          return {
+            ok: true,
+            details: {
+              url: view.url,
+              title: maskTextContent(view.title),
+              count: view.nodes.length,
+              truncated: view.truncated,
+              view: lines.join('\n'),
+            },
+          };
         } catch (err) {
           return { ok: false, error: err instanceof Error ? err.message : String(err) };
         }

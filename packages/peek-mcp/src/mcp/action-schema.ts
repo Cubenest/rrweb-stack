@@ -14,19 +14,26 @@
 
 import { z } from 'zod';
 
-/** Click on a selector. Optionally pick nth match + which button. */
+/**
+ * Click a target. Target by `ref` (from get_page_view — deterministic, preferred)
+ * OR `selector`; at least one is required (enforced at dispatch, kept optional in
+ * the schema so this stays a plain object usable in the discriminated union).
+ * Optionally pick nth match (selector only) + which button.
+ */
 export const ClickActionSchema = z.object({
   type: z.literal('click'),
-  selector: z.string().min(1),
+  ref: z.string().min(1).optional(),
+  selector: z.string().min(1).optional(),
   nth: z.number().int().min(0).optional(),
   button: z.enum(['left', 'middle', 'right']).default('left'),
 });
 export type ClickAction = z.infer<typeof ClickActionSchema>;
 
-/** Type into an input. `delay` is per-character in ms. */
+/** Type into an input. Target by `ref` or `selector` (one required). `delay` per-char ms. */
 export const TypeActionSchema = z.object({
   type: z.literal('type'),
-  selector: z.string().min(1),
+  ref: z.string().min(1).optional(),
+  selector: z.string().min(1).optional(),
   text: z.string(),
   delay: z.number().int().min(0).default(40),
 });
@@ -49,9 +56,10 @@ export type ForwardAction = z.infer<typeof ForwardActionSchema>;
 export const ReloadActionSchema = z.object({ type: z.literal('reload') });
 export type ReloadAction = z.infer<typeof ReloadActionSchema>;
 
-/** Scroll: either to absolute (x,y) or scrollIntoView on the selected element. */
+/** Scroll: to absolute (x,y), or scrollIntoView on a `ref`/`selector` element. */
 export const ScrollActionSchema = z.object({
   type: z.literal('scroll'),
+  ref: z.string().min(1).optional(),
   selector: z.string().optional(),
   x: z.number().int().optional(),
   y: z.number().int().optional(),
@@ -73,17 +81,19 @@ export const WaitForActionSchema = z.object({
 });
 export type WaitForAction = z.infer<typeof WaitForActionSchema>;
 
-/** Press Enter on the active element or a specific selector (focus → keydown/keypress/keyup). */
+/** Press Enter on the active element, or a `ref`/`selector` target (focus → keydown/keypress/keyup). */
 export const EnterActionSchema = z.object({
   type: z.literal('enter'),
+  ref: z.string().min(1).optional(),
   selector: z.string().optional(),
 });
 export type EnterAction = z.infer<typeof EnterActionSchema>;
 
-/** Double-click a target element. */
+/** Double-click a target. Target by `ref` or `selector` (one required). */
 export const DblClickActionSchema = z.object({
   type: z.literal('dblclick'),
-  selector: z.string().min(1),
+  ref: z.string().min(1).optional(),
+  selector: z.string().min(1).optional(),
   nth: z.number().int().min(0).optional(),
 });
 export type DblClickAction = z.infer<typeof DblClickActionSchema>;
@@ -128,6 +138,20 @@ export const RequestUserInputActionSchema = z.object({
 });
 export type RequestUserInputAction = z.infer<typeof RequestUserInputActionSchema>;
 
+/**
+ * Live page-view snapshot (R1, token-optimization). A non-mutating READ that
+ * rides the execute_action rails (wire tool='execute_action'); the SW intercepts
+ * it before the gate and auto-allows at per-origin Level 1+. Returns a compact
+ * ref-tagged list of interactive/labeled elements in `details` so the agent can
+ * target a `ref` instead of authoring a CSS selector. No DOM target itself.
+ */
+export const PageViewActionSchema = z.object({
+  type: z.literal('page_view'),
+  selector: z.string().optional(),
+  maxElements: z.number().int().min(1).max(500).default(200),
+});
+export type PageViewAction = z.infer<typeof PageViewActionSchema>;
+
 /** The full Action discriminated union (P2 PRD §E.4). */
 export const ActionSchema = z.discriminatedUnion('type', [
   ClickActionSchema,
@@ -145,6 +169,7 @@ export const ActionSchema = z.discriminatedUnion('type', [
   ClearHighlightActionSchema,
   SetIntentActionSchema,
   RequestUserInputActionSchema,
+  PageViewActionSchema,
 ]);
 export type Action = z.infer<typeof ActionSchema>;
 

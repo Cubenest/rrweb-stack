@@ -498,3 +498,77 @@ describe('dispatchAction — scroll-in before mutation', () => {
     expect(el.value).toBe('hi');
   });
 });
+
+describe('dispatchAction — ref targeting (window.__peekRefs registry)', () => {
+  beforeEach(() => {
+    Element.prototype.scrollIntoView = function scrollIntoView(): void {};
+    document.body.innerHTML = '<button id="r">Run</button><input id="f">';
+    (window as unknown as { __peekRefs?: Map<string, Element> | undefined }).__peekRefs = undefined;
+  });
+
+  function seedRef(id: string, el: Element): void {
+    const w = window as unknown as { __peekRefs?: Map<string, Element> };
+    const reg: Map<string, Element> = w.__peekRefs ?? new Map<string, Element>();
+    reg.set(id, el);
+    w.__peekRefs = reg;
+  }
+
+  it('clicks the element registered under a ref', async () => {
+    const btn = document.getElementById('r') as HTMLButtonElement;
+    seedRef('e1', btn);
+    let clicked = false;
+    btn.addEventListener('click', () => {
+      clicked = true;
+    });
+    expect(await dispatchAction({ type: 'click', ref: 'e1', button: 'left' })).toEqual({
+      ok: true,
+    });
+    expect(clicked).toBe(true);
+  });
+
+  it('types into the element registered under a ref', async () => {
+    const input = document.getElementById('f') as HTMLInputElement;
+    seedRef('e2', input);
+    expect(await dispatchAction({ type: 'type', ref: 'e2', text: 'hello' })).toEqual({ ok: true });
+    expect(input.value).toBe('hello');
+  });
+
+  it('returns a "ref expired" error for an unknown ref', async () => {
+    const res = await dispatchAction({ type: 'click', ref: 'e99', button: 'left' });
+    expect(res.ok).toBe(false);
+    expect((res as { error: string }).error).toMatch(/ref expired: e99/);
+  });
+
+  it('returns "ref expired" when the registered node has detached', async () => {
+    const btn = document.getElementById('r') as HTMLButtonElement;
+    seedRef('e3', btn);
+    btn.remove(); // detached → isConnected false
+    const res = await dispatchAction({ type: 'click', ref: 'e3', button: 'left' });
+    expect(res.ok).toBe(false);
+    expect((res as { error: string }).error).toMatch(/ref expired/);
+  });
+
+  it('still resolves by selector when no ref is given', async () => {
+    const btn = document.getElementById('r') as HTMLButtonElement;
+    let clicked = false;
+    btn.addEventListener('click', () => {
+      clicked = true;
+    });
+    expect(await dispatchAction({ type: 'click', selector: '#r', button: 'left' })).toEqual({
+      ok: true,
+    });
+    expect(clicked).toBe(true);
+  });
+
+  it('resolveTarget resolves destructive signals via a ref (gate inspects the right element)', () => {
+    // C1 regression: a ref-targeted destructive action must still feed the
+    // destructive matcher the SAME element, so the override fires.
+    document.body.innerHTML =
+      '<section><h2>Danger Zone</h2><button id="del">Delete account</button></section>';
+    const del = document.getElementById('del') as HTMLButtonElement;
+    seedRef('e9', del);
+    const target = resolveTarget('', undefined, 'e9');
+    expect(target.text).toBe('Delete account');
+    expect(target.nearbyHeading).toBe('Danger Zone');
+  });
+});

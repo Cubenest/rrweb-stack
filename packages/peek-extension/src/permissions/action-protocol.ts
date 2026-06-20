@@ -11,13 +11,16 @@
 /** A typed shape for an Action (mirrors the zod schema in peek-mcp). */
 export interface ClickAction {
   type: 'click';
-  selector: string;
+  /** Target by `ref` (from get_page_view) or `selector`; one required (enforced at dispatch). */
+  ref?: string;
+  selector?: string;
   nth?: number;
   button: 'left' | 'middle' | 'right';
 }
 export interface TypeAction {
   type: 'type';
-  selector: string;
+  ref?: string;
+  selector?: string;
   text: string;
   delay: number;
 }
@@ -36,6 +39,7 @@ export interface ReloadAction {
 }
 export interface ScrollAction {
   type: 'scroll';
+  ref?: string;
   selector?: string;
   x?: number;
   y?: number;
@@ -51,11 +55,13 @@ export interface WaitForAction {
 }
 export interface EnterAction {
   type: 'enter';
+  ref?: string;
   selector?: string;
 }
 export interface DblClickAction {
   type: 'dblclick';
-  selector: string;
+  ref?: string;
+  selector?: string;
   nth?: number;
 }
 export interface HighlightAction {
@@ -80,6 +86,12 @@ export interface SetIntentAction {
   type: 'set_intent';
   text: string;
 }
+/** R1 — live page-view snapshot (non-mutating read). Returns nodes in `details`. */
+export interface PageViewAction {
+  type: 'page_view';
+  selector?: string;
+  maxElements?: number;
+}
 
 export type Action =
   | ClickAction
@@ -96,7 +108,8 @@ export type Action =
   | HighlightAction
   | ClearHighlightAction
   | RequestUserInputAction
-  | SetIntentAction;
+  | SetIntentAction
+  | PageViewAction;
 
 /** host → SW: please run / authorize this action. */
 export interface ActionRequestMessage {
@@ -132,7 +145,7 @@ export interface ActionResultMessage {
   tool: 'execute_action' | 'request_authorization';
   verdict: 'allow' | 'deny';
   result: 'ok' | 'denied' | 'error';
-  approver: 'user' | 'allow-list-match' | 'level-4-auto' | 'level-2-suggest';
+  approver: 'user' | 'allow-list-match' | 'level-4-auto' | 'level-2-suggest' | 'level-1-read';
   approvalMs?: number;
   destructiveTerm?: string;
   details?: unknown;

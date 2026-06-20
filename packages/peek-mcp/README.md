@@ -86,8 +86,9 @@ The per-user config paths `peek init` writes to (canonical, see `packages/peek-c
 | `get_session_network_errors` | List failed/notable network requests in a session | none |
 | `get_user_action_before_error` | Last N user actions before a console error | none |
 | `generate_playwright_repro` | Generate a runnable Playwright test from a session | none |
-| `get_dom_snapshot` | Reconstruct the DOM at a given timestamp | none |
+| `get_dom_snapshot` | Reconstruct the DOM of a recorded session at a given timestamp (forensic) | none |
 | `query_dom_history` | Timeline of attribute/text changes for a selector | none |
+| `get_page_view` | Live, masked, ref-tagged list of interactive elements — target a `ref` in write actions instead of a CSS selector (cheaper + deterministic than `get_dom_snapshot`) | per-origin Level 1+ |
 | `request_authorization` | Side-panel consent for write actions (Level 3) | per-action user prompt |
 | `execute_action` | Dispatch a UI action (gated by permission level + destructive blocklist) | permission level + destructive blocklist |
 | `suggest_element` | Highlight an element via a non-destructive overlay | per-origin Level 2+ |

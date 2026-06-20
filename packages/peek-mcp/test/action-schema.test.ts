@@ -34,10 +34,20 @@ describe('ActionSchema (P2 PRD §E.4 discriminated union)', () => {
     expect(waitFor).toMatchObject({ timeoutMs: 5000 });
   });
 
+  it('accepts ref- or selector-targeted actions (one-required enforced at dispatch)', () => {
+    // selector is now OPTIONAL: a target may be given by `ref` (from get_page_view)
+    // OR `selector`. The "at least one" rule is enforced in the dispatcher, not the
+    // schema (so each member stays a plain object usable in the discriminated union).
+    expect(ActionSchema.safeParse({ type: 'click' }).success).toBe(true);
+    expect(ActionSchema.safeParse({ type: 'click', ref: 'e5' }).success).toBe(true);
+    expect(ActionSchema.safeParse({ type: 'click', selector: '#a' }).success).toBe(true);
+    expect(ActionSchema.safeParse({ type: 'page_view' }).success).toBe(true);
+    expect(ActionSchema.parse({ type: 'page_view' })).toMatchObject({ maxElements: 200 });
+  });
+
   it('rejects malformed actions', () => {
     expect(ActionSchema.safeParse({ type: 'unknown' }).success).toBe(false);
-    expect(ActionSchema.safeParse({ type: 'click' }).success).toBe(false); // no selector
-    expect(ActionSchema.safeParse({ type: 'click', selector: '' }).success).toBe(false);
+    expect(ActionSchema.safeParse({ type: 'click', selector: '' }).success).toBe(false); // empty selector
     expect(ActionSchema.safeParse({ type: 'navigate', url: 'not a url' }).success).toBe(false);
     expect(
       ActionSchema.safeParse({ type: 'type', selector: '#a', text: 'hi', delay: -1 }).success,

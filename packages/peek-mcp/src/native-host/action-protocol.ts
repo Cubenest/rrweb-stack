@@ -45,8 +45,8 @@ export interface ActionResultMessage {
   verdict: 'allow' | 'deny';
   /** Final result of the dispatch (or 'denied' if verdict='deny'). */
   result: 'ok' | 'denied' | 'error';
-  /** 'user' | 'allow-list-match' | 'level-4-auto' | 'level-2-suggest'. */
-  approver: 'user' | 'allow-list-match' | 'level-4-auto' | 'level-2-suggest';
+  /** 'user' | 'allow-list-match' | 'level-4-auto' | 'level-2-suggest' | 'level-1-read'. */
+  approver: 'user' | 'allow-list-match' | 'level-4-auto' | 'level-2-suggest' | 'level-1-read';
   /** ms-since-epoch when the user confirmed / denied (Level 3). */
   approvalMs?: number;
   /** The destructive term that fired, if applicable (for the audit log). */
