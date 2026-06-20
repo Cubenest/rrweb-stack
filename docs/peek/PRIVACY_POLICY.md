@@ -71,7 +71,8 @@ opt-in per origin.
 
 **Live page snapshot (`get_page_view`)** — at Level 1+, an agent may request an
 on-demand snapshot of the current page: a compact, ref-tagged list of interactive
-elements (so it can act on a stable reference instead of guessing a CSS selector).
+elements (so it can prefer a stable reference over guessing a CSS selector;
+selector targeting still works as a fallback).
 It is non-mutating and audit-logged. Password/email/tel and PII-autofill values
 (card, address, birthday, name, etc.), and any field marked `.rr-mask` /
 `data-private` / `data-dd-privacy` / `data-peek-mask`, are dropped in-page;
