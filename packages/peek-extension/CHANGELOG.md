@@ -1,5 +1,100 @@
 # @peekdev/extension
 
+## 0.1.0-alpha.19
+
+### Minor Changes
+
+- 2adf61f: Add `get_page_view`: a live, masked, ref-tagged page snapshot for the act path.
+
+  The agent can now perceive the live page as a compact list of interactive/labeled
+  elements — each with a stable `ref` (e.g. `e5`) — and target a `ref` in
+  `execute_action` / `request_authorization` (click/type/scroll/enter/dblclick)
+  instead of authoring a CSS selector from `get_dom_snapshot`'s HTML. That is far
+  fewer tokens per perception (an accessibility-style list vs ~24KB of HTML) and
+  deterministic — no selector guessing or ambiguity.
+
+  Details: refs live in a MAIN-world registry that is invisible to rrweb recordings,
+  expire on navigation, and resolve to a clear `ref expired` error so the agent
+  re-snapshots. `get_page_view` is non-mutating, available at per-origin Level 1+,
+  and audit-logged with a new `level-1-read` approver.
+
+  Masking: password/email/tel and PII-autofill input values (credit-card, address,
+  birthday, name, organization, etc.), plus any field under `.rr-mask` /
+  `data-private` / `data-dd-privacy` / `data-peek-mask`, are dropped in-page; the
+  service worker then runs `maskTextContent` over accessible names and remaining
+  values to scrub structured PII (emails, cards, tokens). As with peek's existing
+  recorder, free-text field values (e.g. a search box or a textarea) may still be
+  returned — annotate sensitive free-text fields with a mask class to exclude them.
+
+  Ref-targeted destructive actions go through the destructive-confirm override (the
+  matcher resolves the same ref'd element). `ref` or `selector` is required for
+  targeting verbs, enforced at dispatch (kept optional in the zod schema so each
+  member stays a plain object usable in the discriminated union). Existing
+  `selector` targeting is unchanged and backward-compatible.
+
+- c2f2090: Make refs identity-stable, add `get_element_detail`, and add `observe` to the act path.
+
+  Refs are now **identity-stable**: an element keeps the same `ref` (e.g. `e5`)
+  across `get_page_view` snapshots, and a newly-appeared element gets a fresh
+  higher `e{N}`. Identity is keyed by a MAIN-world `WeakMap<Element, ref>` (a JS
+  global, auto-GC'd on detach) plus a monotonic counter — never a DOM attribute,
+  so rrweb still never records it. The agent can therefore reason about "the same
+  button" turn-over-turn instead of re-resolving from scratch.
+
+  `get_element_detail(ref)` (NEW): an on-demand, lossless, masked drill-in for a
+  single element resolved by `ref` — role, full accessible name, every `aria-*`
+  attribute, state (disabled/checked/expanded/selected/required/readonly), value,
+  type, href, position, nearby heading + landmark, and direct interactive children
+  with their own refs. Use it to disambiguate or inspect just the one element you
+  need rather than re-snapshotting the page. It is non-mutating, available at
+  per-origin Level 1+, and audit-logged via the `level-1-read` approver. It NEVER
+  reads `outerHTML`/`innerHTML` (that would bypass masking and return raw input
+  values).
+
+  `observe: true` on a mutating `execute_action` returns `details.viewDelta` — a
+  masked diff of what changed (added / removed / changed refs) — so the agent can
+  verify its action in one round-trip instead of a second `get_page_view`. A
+  navigating action returns a `{ navigated: true }` "refs expired" marker (the
+  registry is wiped by the new page), prompting a fresh snapshot.
+
+  Masking is consistent with peek's recorder: password/email/tel and PII-autofill
+  values (card, address, birthday, name, organization, etc.) are masked in-page to
+  `•••`, and structured PII in accessible names and remaining values is scrubbed by
+  the service worker before anything reaches the agent. Any region marked `.rr-mask`
+  / `data-private` / `data-dd-privacy="mask"` / `data-peek-mask` is now masked to
+  `•••` **in-page across names, values, and text** for both `get_page_view` and
+  `get_element_detail` (the element's accessible name, value, own/descendant text,
+  every `aria-*` value, and every child name) — closing a gap where only input
+  _values_ honored these annotations. As with the recorder, **free-text values of
+  non-annotated fields (e.g. a search box or a textarea) may still be returned** —
+  annotate sensitive free-text regions with a mask class to exclude them. This does
+  not claim no PII reaches the agent.
+
+### Patch Changes
+
+- fe5c89d: Fix a destructive-action override bypass at permission Level 4 (YOLO).
+
+  The service worker resolves an action's destructive-matcher signals by injecting
+  `resolveTargetInPage` into the page's MAIN world via
+  `chrome.scripting.executeScript`. The args were passed positionally as
+  `[selector, nth, ref]`, leaving `nth`/`ref` as `undefined` for an ordinary
+  click. `executeScript` rejects a non-JSON-serializable `undefined` in `args` and
+  throws; the dep's `catch` fails open to "no signals", so the destructive matcher
+  never ran. As a result a Level-4 `Delete`/`Pay`/`Transfer`/etc. action — by
+  `ref` **or** `selector` — was auto-allowed with no confirm banner, defeating the
+  destructive override (which is supposed to always prompt, even at Level 4).
+
+  The injected args are now built by a new `resolveTargetArgs` helper that coerces
+  the optionals to JSON-serializable sentinels `resolveTargetInPage` already treats
+  as "absent" (`nth` 0 → first match, `ref` '' → skip the ref-registry branch), so
+  the call no longer throws and the matcher inspects the real target element.
+
+  The unit and Chromium e2e suites missed this because they inject the resolver
+  function directly, bypassing real `executeScript` arg serialization; it surfaced
+  in the R2 live MCP→native-host→service-worker round-trip test (§C2). A regression
+  test now asserts the injected args are always JSON-serializable. Read paths
+  (`get_page_view`, `get_element_detail`) and Level&nbsp;1–3 gating are unaffected.
+
 ## 0.1.0-alpha.18
 
 ### Patch Changes
