@@ -14,7 +14,12 @@ Until the real screenshots land, the recipe verifier
 below is present, CI can flip `STRICT_RECIPE_ASSETS=1` to make a missing hero
 image a hard build failure.
 
-## Expected files (one per published recipe)
+## Expected files (one per published recipe that embeds a hero)
+
+These are the hero images the verifier enforces — the set of `](/recipes/assets/…)`
+references across all `status: published` recipes. A few published recipes
+(e.g. `assisted-apply-with-supervision`, `clone-a-web-app-with-peek`) embed no
+hero image and so are not listed here.
 
 | File | Recipe |
 |---|---|

@@ -107,8 +107,10 @@ For what `tracelane` captures, masks, and never sends off your machine, see the 
 | `capture.network` | `boolean` | `true` | Capture network requests via the in-page `rrweb/network@1` plugin — all browsers, no CDP. Privacy-first: only URL/method/status/timing by default (headers + bodies off; opt in via `capture.networkOptions`). CDP is an optional fallback that adds authoritative status + true no-response failures where it's available. |
 | `capture.networkOptions` | `NetworkRecordOptions` | plugin defaults | Forwarded to the in-page network plugin (`recordHeaders`, `recordBody`, `maskRequestFn`, `payloadHostDenyList`, …). Defaults are privacy-first (headers + bodies off). Ignored when `capture.network` is `false`. |
 | `capture.console` | `boolean` | `true` | Capture `console.*` via the rrweb console plugin. Setting this `false` also drops any `[tracelane.net]` network-error lines from the CDP fallback path, since those surface through `console.error`. |
+| `consolePluginOptions` | `ConsolePluginOptions` | plugin defaults | Forwarded to the in-page rrweb console plugin. Ignored when `capture.console` is `false` (which instead passes `{ level: [] }` to patch no methods). |
 | `drainIntervalMs` | `number` | `500` | Node-side drain poll interval. |
 | `cooldownMs` | `number` | `250` | Re-injection cooldown guard (suppresses double-init on hash/HMR navigation). |
+| `security` | `boolean` | `true` | Advisory security-hygiene signals (`[tracelane.sec]`) captured during the run and analyzed in the report. Set `false` to disable both the capture and the analysis. When on, an optional `tracelane.security.suppress.json` in the project cwd silences known-acceptable signals (missing/malformed file degrades to no suppressions). |
 | `allure` | `boolean` | `false` | Reserved for the v1.1 Allure shim. No-op in v1. |
 | `visualDiff` | `boolean` | `false` | Reserved for the post-MVP visual-diff add-on. No-op in v1. |
 | `report.footer` | `boolean` | `true` | Show the tool-credit footer in the generated HTML report. Set `false` to suppress it. |

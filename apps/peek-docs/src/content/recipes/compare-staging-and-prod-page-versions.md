@@ -18,7 +18,7 @@ A Claude Code diff between two peek sessions of "the same" page: one captured on
 ## Prerequisites
 
 - Claude Code with peek wired in (`peek init` adds the MCP entry to `~/.claude.json`)
-- Chrome with the peek extension loaded (`chrome://extensions` → **Load unpacked** → `packages/peek-extension/chrome-mv3/`; not yet on the Chrome Web Store)
+- Chrome with the **peek** extension installed — from the [Chrome Web Store](https://chromewebstore.google.com/detail/peek/dmgpmkeneheenpdnfmpjjahnkknkaejb), or loaded unpacked from `packages/peek-extension/chrome-mv3/` for local builds
 - Two Chrome profiles, one signed in to staging and one to prod (or two separate browsers)
 
 ## Steps

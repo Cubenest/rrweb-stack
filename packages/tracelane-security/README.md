@@ -40,6 +40,11 @@ This package is **not published to npm** — it is private (`private: true`).
 The analyzer is vendored into [`@tracelane/report`](https://github.com/Cubenest/rrweb-stack/blob/main/packages/tracelane-report/README.md)
 at build time and wired in automatically by the tracelane reporters
 (`@tracelane/wdio`, `@tracelane/playwright`). It runs by default; disable it
-with `security: false` in the reporter/service options.
+with `security: false` in the reporter/service options. To silence specific
+findings while leaving the layer on, drop a `tracelane.security.suppress.json`
+file in the project root — the reporters load it at report-write time and pass
+the rules to the analyzer.
+
+See the [CHANGELOG](https://github.com/Cubenest/rrweb-stack/blob/main/packages/tracelane-security/CHANGELOG.md).
 
 Apache-2.0.

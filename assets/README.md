@@ -8,6 +8,8 @@ Generated artifacts (`.gif`, `.png`, `.webm`) **are committed**. The sources use
 
 | File | Used by | How to regenerate |
 |---|---|---|
+| `brand/sub-tracelane.svg` | logo mark at the top of every `packages/tracelane-*/README.md` + the root README; inlined by `_launch-render.mjs` | hand-authored SVG — edit by hand |
+| `brand/sub-peek.svg` | logo mark at the top of every `packages/peek-*/README.md` + the root README; inlined by `_launch-render.mjs` | hand-authored SVG — edit by hand |
 | `tracelane-hero.tape` | `packages/tracelane-wdio/README.md` (hero GIF) | see "Recording tracelane-hero.gif" below |
 | `tracelane-hero.gif` | same | same |
 | `record-tracelane-hero.sh` | (driver script) | invoked manually; see below |
@@ -60,9 +62,9 @@ git push origin main
 
 ## Recording `peek-hero.gif`
 
-The GIF demonstrates the read side of peek: a recorded browser session appears as a queryable structured artifact your AI agent (or you, via the CLI) can drill into. Shows `peek sessions list` → `peek sessions show ... --format markdown` → `... --format json`. The install half (`npx peek init`) is covered in the README install code block; the init wizard is interactive (multiSelect prompts) and doesn't record cleanly in 15 seconds.
+The GIF demonstrates the read side of peek: a recorded browser session appears as a queryable structured artifact your AI agent (or you, via the CLI) can drill into. Shows `peek sessions list` → `peek sessions show <id>` (which prints AI-paste-ready Markdown by default — JSON/HTML/Playwright shapes live behind `peek sessions export --format …`). The install half (`npx peek init`) is covered in the README install code block; the init wizard is interactive (multiSelect prompts) and doesn't record cleanly in 15 seconds.
 
-Target: under 15 seconds, under 6 MB (Gate B1). The current take is ~660 KB.
+Target: under 15 seconds, under 6 MB (Gate B1). The current take is ~190 KB.
 
 ```sh
 # 1. Install vhs + sqlite3 (sqlite3 ships preinstalled on macOS).

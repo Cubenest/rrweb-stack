@@ -88,8 +88,10 @@ minor of the latest major receives fixes; older majors are best-effort.
 - Chromium-based browsers (Chrome, Edge, Brave, Arc, Opera) on the
   same Chromium base version or later.
 - **Not** published to npm. Distribution is via the Chrome Web Store
-  for alpha testers (submission pending — Phase 5 launch gate, tracked
-  in `docs/peek/distribution/`).
+  for alpha testers — the **peek** extension is available on the
+  [Chrome Web Store](https://chromewebstore.google.com/detail/peek/dmgpmkeneheenpdnfmpjjahnkknkaejb)
+  (alpha), tracked in `docs/peek/distribution/`. For local builds, load
+  it unpacked from `packages/peek-extension/chrome-mv3/`.
 - Firefox is **not** supported in the alpha — the WXT scaffold can
   target it later, but the `nativeMessaging` flow differs and would
   require a per-OS native-host installer story we have not built.

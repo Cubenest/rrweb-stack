@@ -44,17 +44,19 @@ The same nav + a true assertion. Test passes. **No report** should be written (A
 
 ## Pinned versions
 
-The `package.json` pins `webdriverio@^9` and `@tracelane/wdio@^0.1.0-alpha.1` (latest published alpha). If you bump WDIO majors, the fixture's hook signatures may need adjustments — see the @tracelane/wdio README for the version compat note.
+The `package.json` pins `webdriverio@^9` and `@tracelane/wdio@^0.1.0-alpha.2` (latest published alpha). If you bump WDIO majors, the fixture's hook signatures may need adjustments — see the @tracelane/wdio README for the version compat note.
 
 ## Note on network capture (QA item C.4)
 
-This fixture does NOT register `@wdio/devtools-service`. WDIO 9 has no stable `@wdio/devtools-service` line (it stabilized at v10 — see the @tracelane/wdio README "Version compat"). So when this fixture runs, `tracelane` logs:
+`@tracelane/wdio` captures network **in-page by default** via the `rrweb/network@1` plugin (`capture.network: true`, set in `wdio.conf.ts`) — no CDP, no `@wdio/devtools-service` required, all browsers. So the failing spec's `fetch('/api/will-fail')` IS captured and the replay's **network panel shows a row** for it. Because the fetch is same-origin (the fixture's static server and `/api/will-fail` share the `127.0.0.1:<port>` origin), the in-page plugin can report its status; the panel is **not** empty.
+
+This fixture does NOT register `@wdio/devtools-service` (WDIO 9 has no stable line — it stabilized at v10; see the @tracelane/wdio README "Version compat"). CDP is now only an **optional enhancement** that adds authoritative HTTP status and true no-response failures over the in-page rows. With no devtools-service present, `tracelane` logs once:
 
 ```
 [tracelane/wdio] network capture unavailable (CDP not attached); degrading to rrweb+console only.
 ```
 
-…which means the replay's **network panel will be empty** even though the failing spec issues a `fetch('/api/will-fail')`. **This is expected behavior under WDIO 9.** QA item C.4 should be marked ✅ as long as the DOM replay + console panel show the deliberate `button clicked` line; the network panel emptiness is the documented graceful-degrade path. To validate the full network capture, switch this fixture to WDIO 8 + `@wdio/devtools-service@8`, or wait until `@tracelane/wdio` ships its own WDIO-10-compatible CDP attach (Phase 5 follow-up).
+This warning is **benign** — it means only the CDP authoritative-status enhancement is unavailable, not that network capture failed. The in-page plugin still populates the network panel. QA item C.4 should be marked ✅ when the DOM replay + console panel show the deliberate `button clicked` line and the network panel shows the `/api/will-fail` row. To additionally validate the CDP authoritative-status path, run a CDP-capable session (e.g. `@wdio/devtools-service@10`).
 
 ## Layout
 

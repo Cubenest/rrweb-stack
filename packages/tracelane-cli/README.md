@@ -62,6 +62,29 @@ Options:
 
 `--dry-run` prints exactly the steps the run would take (and the conf-edit preview) without modifying anything. Re-running `init` against an already-wired conf is a no-op (idempotent).
 
+## `tracelane index` — triage many reports at once
+
+A second subcommand turns a directory of report HTML files into one self-contained index page, with a metadata card per run sorted failures-first. Useful for triaging a whole CI run.
+
+```
+npx @tracelane/cli index <dir> [options]
+
+Arguments:
+  <dir>                Directory containing tracelane report .html files (scanned recursively).
+
+Options:
+  --out <path>         Output file path. Default: <dir>/index.html.
+  --sort <field>       Sort cards by 'captured' (default) | 'spec' | 'status'.
+  --title <text>       Override the index page title.
+  --help, -h           Show usage.
+```
+
+```sh
+npx @tracelane/cli index ./tracelane-reports
+```
+
+Exit codes: `0` written (even if some reports failed to parse), `1` `<dir>` missing or no `.html` reports inside, `2` bad arguments.
+
 ## What this is NOT
 
 - Not a test runner. tracelane wires itself **into** WebdriverIO / Playwright; you keep using `npx wdio run wdio.conf.ts` or `npx playwright test`.

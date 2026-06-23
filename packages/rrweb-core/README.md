@@ -30,6 +30,7 @@ Shared rrweb-based capture substrate. Used by [`tracelane`](https://github.com/C
 ## Versioning
 
 Independent semver. Breaking changes are coordinated across `tracelane` and `peek` releases.
+
 ## Related packages
 
 The two product families that consume this substrate:

@@ -1,5 +1,11 @@
 # peek — Chrome Web Store submission (copy-paste scaffold)
 
+> **Status — DONE (2026-06-21):** peek is live on the Chrome Web Store at
+> <https://chromewebstore.google.com/detail/peek/dmgpmkeneheenpdnfmpjjahnkknkaejb>
+> (listing name "peek", publisher "cubenest", Developer Tools, Apache-2.0). The
+> scaffold below is preserved as the record of what was submitted and stays the
+> staging copy for any future listing edits.
+
 > **What this is:** the exact text + assets to paste into each field of the
 > Chrome Web Store developer dashboard submission form, consolidated from the
 > repo's source-of-truth docs. **Do not edit listing copy here and expect it to
@@ -125,8 +131,11 @@ https://peek.cubenest.in/privacy
 
 - **Visibility:** Public (or Unlisted for a quieter alpha — maintainer's call).
 - **Pricing:** Free.
-- The announce post may say **"Chrome Web Store submission pending"** — peek runs
-  unpacked today and CWS review takes 3–10 business days; do not block the launch on approval.
+- **Submitted + live (2026-06-21)** at
+  <https://chromewebstore.google.com/detail/peek/dmgpmkeneheenpdnfmpjjahnkknkaejb>.
+  peek is now available on the Chrome Web Store; it also still runs unpacked from
+  `packages/peek-extension/chrome-mv3/` for local builds. (Review took 3–10 business
+  days; the launch was not blocked on approval.)
 - **Limited Use compliance:** peek's use of any data obtained through the permissions
   above adheres to the Chrome Web Store User Data Policy, including the Limited Use
   requirements — data is used solely to provide the single purpose, stays on-device, and

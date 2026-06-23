@@ -18,11 +18,15 @@ image a hard build failure.
 
 | File | Recipe |
 |---|---|
+| `add-tracelane-to-playwright-in-5-minutes.png` | Add tracelane to Playwright in 5 minutes |
 | `add-tracelane-to-webdriverio-in-5-minutes.png` | Add tracelane to WebdriverIO in 5 minutes |
+| `attach-rrweb-replay-to-every-playwright-pr.png` | Attach an rrweb replay to every Playwright PR failure |
 | `catch-visual-regression-across-test-run.png` | Catch a visual regression across a test run |
+| `collect-playwright-shard-reports-in-ci.png` | Collect tracelane replays across a sharded Playwright run |
 | `debug-flaky-checkout-test-in-ci.png` | Debug a flaky checkout test in CI |
 | `reproduce-headless-only-failure-locally.png` | Reproduce a headless-only failure locally |
 | `share-failing-test-with-a-developer.png` | Share a failing test with a developer |
+| `surface-security-hygiene-on-failed-tests.png` | Surface security-hygiene signals on failed tests |
 | `triage-ci-run-with-replay-thumbnails.png` | Triage a CI run with replay thumbnails |
 
 Draft recipes also reference `<slug>.png` images, but the verifier only

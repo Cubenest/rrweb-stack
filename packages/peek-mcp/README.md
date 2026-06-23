@@ -166,12 +166,12 @@ user-facing install guide.
 - [mcp.so submission](https://github.com/Cubenest/rrweb-stack/blob/main/docs/peek/distribution/mcp-so.md) — web-form submission with the source content paste-ready.
 - [Claude Code skill standalone install](https://github.com/Cubenest/rrweb-stack/blob/main/docs/peek/distribution/claude-code-skill.md) — curl recipe for users who want the Claude Code skill without running `peek init`.
 
-Launch order is documented in [`docs/peek/distribution/README.md`](https://github.com/Cubenest/rrweb-stack/blob/main/docs/peek/distribution/README.md) (CWS first, then the MCP-registry fan-out).
+Launch order is documented in [`docs/peek/distribution/README.md`](https://github.com/Cubenest/rrweb-stack/blob/main/docs/peek/distribution/README.md) (CWS first, then the MCP-registry fan-out). The Chrome Web Store listing is submitted + live: [chromewebstore.google.com/detail/peek/dmgpmkeneheenpdnfmpjjahnkknkaejb](https://chromewebstore.google.com/detail/peek/dmgpmkeneheenpdnfmpjjahnkknkaejb).
 
 ## Related packages
 
 - [`@peekdev/cli`](https://www.npmjs.com/package/@peekdev/cli) — the `peek init` wizard that wires this MCP server into your AI client and installs the native messaging host. **Start here.**
-- [`@peekdev/extension`](https://github.com/Cubenest/rrweb-stack/tree/main/packages/peek-extension) — the Chrome MV3 extension that records masked browser sessions and writes them to `~/.peek/sessions.db`. Loaded unpacked (not published to npm).
+- [`@peekdev/extension`](https://github.com/Cubenest/rrweb-stack/tree/main/packages/peek-extension) — the Chrome MV3 extension that records masked browser sessions and writes them to `~/.peek/sessions.db`. Available on the [Chrome Web Store](https://chromewebstore.google.com/detail/peek/dmgpmkeneheenpdnfmpjjahnkknkaejb); contributors can also load it unpacked from `packages/peek-extension/chrome-mv3/` for local builds. The npm package stays `private` (not published to npm).
 
 ## License
 

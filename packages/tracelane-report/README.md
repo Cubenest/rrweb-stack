@@ -18,9 +18,10 @@ The self-contained, offline HTML report builder for [`tracelane`](https://github
 - opens in any browser, fully offline (no network fetch at view time);
 - embeds the [`rrweb-player`](https://www.npmjs.com/package/rrweb-player) UMD + CSS inline;
 - embeds the events as a gzipped, base64-encoded blob that is decompressed in-page with an inlined [`fflate`](https://github.com/101arrowz/fflate) gunzip;
-- renders console + network panels, a metadata header, and a "Copy as Markdown for AI paste" button.
+- renders console + network panels, a metadata header, an advisory security-hygiene panel (when the analyzer flags anything), and a "Copy as Markdown for AI paste" button.
 
 **Not generally intended for direct consumption** — depend on a product package (`@tracelane/wdio`) instead. See the [`@tracelane/wdio` README](https://github.com/Cubenest/rrweb-stack/tree/main/packages/tracelane-wdio) for the integration guide.
+
 ## Install
 
 ```sh
@@ -48,6 +49,13 @@ const html = buildReport(events, {
 });
 // write `html` to ./tracelane-reports/<spec>--<title>.html
 ```
+
+An optional third argument tunes the build (`BuildReportOptions`):
+
+- `enforceSizeBudget` (default `true`) — prune events to the 25 MB budget (ADR-0005) before embedding; the report shows a banner when a prune fired.
+- `footer` (default `true`) — render the self-marketing report footer; pass `false` to suppress it.
+- `security` (default `true`) — run the advisory `@tracelane/security` analyzer over the stream and surface findings in a collapsed panel + the Markdown export. Advisory only, not a security audit; pass `false` to skip analysis entirely.
+- `securitySuppress` — `Suppression[]` forwarded to the analyzer to silence known-acceptable signals (ignored when `security` is `false`).
 
 ## Design
 
