@@ -20,7 +20,7 @@ A working peek MCP server registered with whichever of Cline, Windsurf, or Codex
 - One or more of: Cline, Windsurf, Codex CLI
 - Node >= 22 (peek's native `better-sqlite3` dependency only ships prebuilt binaries for Node 22+; older Node falls back to compiling from source and fails on stock Windows)
 - `npm i -g @peekdev/cli`
-- Chrome with the peek extension loaded (`chrome://extensions` → **Load unpacked** → `packages/peek-extension/chrome-mv3/`; not yet on the Chrome Web Store)
+- Chrome with the **peek** extension installed — from the [Chrome Web Store](https://chromewebstore.google.com/detail/peek/dmgpmkeneheenpdnfmpjjahnkknkaejb), or loaded unpacked from `packages/peek-extension/chrome-mv3/` for local builds
 
 ## Steps
 

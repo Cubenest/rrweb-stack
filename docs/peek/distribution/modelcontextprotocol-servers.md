@@ -119,11 +119,13 @@ curation tools — see PulseMCP / Smithery / mcp.so entries already in it).
 peek does NOT belong here — it's a server, not a registry. **Do not
 submit a PR to that README.** The registry listing is sufficient.
 
-## TODO_AFTER_CWS
+## Companion extension on the Chrome Web Store
 
-The Chrome Web Store URL for the companion extension can be referenced in
-the `description` once the listing is live. Until then, the description
-above stays clear of CWS-link claims to keep the listing accurate.
+The companion extension is now available on the
+[Chrome Web Store](https://chromewebstore.google.com/detail/peek/dmgpmkeneheenpdnfmpjjahnkknkaejb)
+(listing "peek" by cubenest), so its URL can be referenced in the `description`.
+Note the `description` is still capped at 100 characters, so only add the link if
+it fits the budget.
 
 ## Maintainer notes
 

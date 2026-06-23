@@ -20,7 +20,7 @@ Framework-agnostic recording engine for `tracelane`. Wraps a per-framework `brow
 ```sh
 npm install --save-dev @tracelane/wdio        # WebdriverIO Service
 npm install --save-dev @tracelane/playwright  # Playwright reporter + fixture
-# @tracelane/cypress — planned Q4 2026
+# @tracelane/cypress — on the roadmap
 ```
 
 See the [`@tracelane/wdio` README](https://github.com/Cubenest/rrweb-stack/tree/main/packages/tracelane-wdio) for the integration guide.

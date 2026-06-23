@@ -18,7 +18,7 @@ A Claude Code conversation where you describe a bug ("the Place Order button doe
 ## Prerequisites
 
 - A recent install of Claude Code (CLI or VS Code extension)
-- Chrome with the peek extension loaded (currently via `chrome://extensions` → **Load unpacked** at `packages/peek-extension/chrome-mv3/`; not yet on the Chrome Web Store)
+- Chrome with the **peek** extension installed — from the [Chrome Web Store](https://chromewebstore.google.com/detail/peek/dmgpmkeneheenpdnfmpjjahnkknkaejb), or loaded unpacked from `packages/peek-extension/chrome-mv3/` for local builds
 - An authenticated session on a staging environment you want to debug
 
 ## Steps

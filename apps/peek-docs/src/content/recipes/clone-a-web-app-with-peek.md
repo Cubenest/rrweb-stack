@@ -17,7 +17,7 @@ A working rebuild of the app, generated from the real DOM peek recorded instead 
 ## Prerequisites
 
 - Claude Code or Cursor with MCP enabled
-- Chrome with the peek extension loaded (`chrome://extensions` → **Load unpacked** → `packages/peek-extension/chrome-mv3/`; not yet on the Chrome Web Store)
+- Chrome with the **peek** extension installed — from the [Chrome Web Store](https://chromewebstore.google.com/detail/peek/dmgpmkeneheenpdnfmpjjahnkknkaejb), or loaded unpacked from `packages/peek-extension/chrome-mv3/` for local builds
 - Whatever stack you want to rebuild in (the example used Vite + React + Tailwind)
 
 ## Steps

@@ -32,7 +32,7 @@ peek init
 2. Detects your AI coding-agent client (Claude Code, Cursor, Cline, Windsurf, VS Code) and adds the `peek-mcp` server to its MCP configuration.
 3. Prints a one-line "install the extension" link.
 
-Then you install the **Peek Chrome extension** (CWS listing pending — Phase 5; for now it loads unpacked, see [`@peekdev/extension`](https://github.com/Cubenest/rrweb-stack/tree/main/packages/peek-extension)), open the side panel on the site you want to capture, and click **Enable on this site**. Your AI agent can now query the recording.
+Then you install the **Peek Chrome extension** — available on the [Chrome Web Store](https://chromewebstore.google.com/detail/peek/dmgpmkeneheenpdnfmpjjahnkknkaejb) (contributors and local builds can instead load it unpacked from `packages/peek-extension/chrome-mv3/`, see [`@peekdev/extension`](https://github.com/Cubenest/rrweb-stack/tree/main/packages/peek-extension)) — open the side panel on the site you want to capture, and click **Enable on this site**. Your AI agent can now query the recording.
 
 ## What this is NOT
 
@@ -43,17 +43,18 @@ Then you install the **Peek Chrome extension** (CWS listing pending — Phase 5;
 ## Commands
 
 ```sh
-peek init                          # interactive install (see above)
-peek status                        # health check — extension connected? DB writable?
-peek sessions list [--json]        # list recent recording sessions
-peek sessions show <id>            # show one session's metadata + counts
-peek sessions export <id> --format <html|json|playwright>  # export for sharing
-peek sessions delete <id>          # delete one session + its on-disk events
-peek audit [--json]                # show the destructive-action audit log
-peek <cmd> --help                  # usage for any subcommand
+peek init                                  # interactive install (see above)
+peek status                                # health check — extension connected? DB writable?
+peek sessions list [--origin <url>] [--limit <n>] [--json]  # list recent sessions
+peek sessions show <id>                    # print one session as Markdown (metadata + errors)
+peek sessions export <id> [--format <markdown|json|playwright>] [--out <file>]  # export (default markdown)
+peek sessions delete <id>                  # delete one session
+peek sessions delete --all-older-than <dur>  # delete every session older than e.g. 7d
+peek audit log [--since <dur>] [--tool <name>] [--client <name>] [--json]  # act-tool audit log
+peek <cmd> --help                          # usage for any subcommand
 ```
 
-All commands operate read-only on `~/.peek/sessions.db` except `sessions delete` (and `peek init` which writes the install config). Nothing leaves your machine.
+`--format html` is reserved but not yet implemented (it exits non-zero with a message — use `markdown` or `json`). All commands read `~/.peek/sessions.db` except `sessions delete` (and `peek init`, which writes the install config). Nothing leaves your machine.
 
 ## Querying from an AI agent
 
@@ -64,7 +65,7 @@ After `peek init`, the `peek-mcp` server is available to your AI client as an MC
 - "find network requests with status >= 400 from the last 5 minutes of recording on `example.com`"
 - "generate a Playwright reproduction script from session `abc123`"
 
-The MCP server exposes 14 tools — listing, session summaries, console/network drill-down, user-action history, DOM reconstruction and history, Playwright-repro generation, non-destructive element highlighting, and (with explicit per-origin permission) actions like clicks/inputs/navigation plus a pause-and-hand-back-to-the-user input handoff. See [`@peekdev/mcp`](https://github.com/Cubenest/rrweb-stack/tree/main/packages/peek-mcp) for the tool reference.
+The MCP server exposes 16 tools — listing, session summaries, console/network drill-down, user-action history, DOM reconstruction and history, Playwright-repro generation, a live ref-tagged page view, non-destructive element highlighting, and (with explicit per-origin permission) actions like clicks/inputs/navigation plus a pause-and-hand-back-to-the-user input handoff. See [`@peekdev/mcp`](https://github.com/Cubenest/rrweb-stack/tree/main/packages/peek-mcp) for the tool reference.
 
 ## Privacy
 
@@ -124,7 +125,7 @@ The skill is idempotent on re-run (no-op when the on-disk content matches the bu
 
 Commit it or add it to `.gitignore` — Cursor reads either. Cursor's docs document the global file as "tools available everywhere" and the project file as "project-specific tools" (see [cursor.com/docs/context/mcp](https://cursor.com/docs/context/mcp) for current merge semantics).
 
-This is the same block `peek init` writes to the global file, so the two configs are interchangeable. You still need the **Peek Chrome extension** installed (CWS listing pending — Phase 5; loads unpacked for now, see [`@peekdev/extension`](https://github.com/Cubenest/rrweb-stack/tree/main/packages/peek-extension)) and the native messaging host registered — run `peek init --skip-clients` if you want the host installed without touching any MCP config.
+This is the same block `peek init` writes to the global file, so the two configs are interchangeable. You still need the **Peek Chrome extension** installed — from the [Chrome Web Store](https://chromewebstore.google.com/detail/peek/dmgpmkeneheenpdnfmpjjahnkknkaejb), or loaded unpacked from `packages/peek-extension/chrome-mv3/` for local builds (see [`@peekdev/extension`](https://github.com/Cubenest/rrweb-stack/tree/main/packages/peek-extension)) — and the native messaging host registered — run `peek init --skip-clients` if you want the host installed without touching any MCP config.
 
 ## Versioning & compatibility
 

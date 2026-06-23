@@ -18,7 +18,7 @@ A Claude Code report listing concrete findings against a flow you just walked th
 ## Prerequisites
 
 - Claude Code with peek wired in (`peek init` adds the MCP entry to `~/.claude.json`)
-- Chrome with the peek extension loaded (`chrome://extensions` → **Load unpacked** → `packages/peek-extension/chrome-mv3/`; not yet on the Chrome Web Store)
+- Chrome with the **peek** extension installed — from the [Chrome Web Store](https://chromewebstore.google.com/detail/peek/dmgpmkeneheenpdnfmpjjahnkknkaejb), or loaded unpacked from `packages/peek-extension/chrome-mv3/` for local builds
 - A flow worth reviewing (sign-up, password reset, payment, OAuth callback)
 
 ## Steps

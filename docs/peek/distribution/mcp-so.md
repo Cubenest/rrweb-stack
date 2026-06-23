@@ -30,6 +30,7 @@ Bring your real authenticated browser session to AI coding agents. Local-first M
 
 ### Links
 - **NPM:** `@peekdev/mcp` — https://www.npmjs.com/package/@peekdev/mcp
+- **Chrome Web Store:** peek — https://chromewebstore.google.com/detail/peek/dmgpmkeneheenpdnfmpjjahnkknkaejb
 - **Repo:** https://github.com/Cubenest/rrweb-stack
 - **Subfolder:** https://github.com/Cubenest/rrweb-stack/tree/main/packages/peek-mcp
 - **License:** Apache-2.0
@@ -79,7 +80,8 @@ is the source of truth.
 claude mcp add peek -- npx -y @peekdev/mcp
 
 # 2. Install the Chrome extension from the Chrome Web Store
-# (link added once the CWS listing is approved)
+# https://chromewebstore.google.com/detail/peek/dmgpmkeneheenpdnfmpjjahnkknkaejb
+# (or load unpacked from packages/peek-extension/chrome-mv3/ for local builds)
 ```
 
 ### Tags
@@ -103,8 +105,10 @@ claude mcp add peek -- npx -y @peekdev/mcp
 
 ## TODO_AFTER_CWS
 
-- [ ] Replace the "Chrome extension" install line with the actual Chrome
-      Web Store URL once the CWS listing is live.
+- [x] Replace the "Chrome extension" install line with the actual Chrome
+      Web Store URL once the CWS listing is live. **DONE** — the peek
+      extension is live on the Chrome Web Store (since 2026-06-21):
+      https://chromewebstore.google.com/detail/peek/dmgpmkeneheenpdnfmpjjahnkknkaejb
 
 ## TODO_VERIFY
 

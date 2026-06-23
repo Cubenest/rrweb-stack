@@ -114,11 +114,13 @@ matters more than any submission copy.
       listing's tagline.
 - [ ] README hero block + install instructions land cleanly when
       rendered standalone on cursor.directory.
-- [ ] The Chrome Web Store listing is live, or the README clearly states
-      the extension companion's install path. cursor.directory users may
-      install peek's MCP via the JSON snippet without the extension, in
-      which case they will see zero sessions until the extension is
-      installed and recording — make the dependency explicit.
+- [x] The Chrome Web Store listing is live — peek is available on the
+      [Chrome Web Store](https://chromewebstore.google.com/detail/peek/dmgpmkeneheenpdnfmpjjahnkknkaejb).
+      The README should still state the extension companion's install path:
+      cursor.directory users may install peek's MCP via the JSON snippet
+      without the extension, in which case they will see zero sessions until
+      the extension is installed and recording — make the dependency
+      explicit.
 
 ## TODO before submitting
 

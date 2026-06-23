@@ -7,7 +7,7 @@ Two OSS products on one rrweb-based substrate. Both ship as `npm` packages today
 | Product | One line | Install |
 |---|---|---|
 | **[tracelane](packages/tracelane-wdio/)** | The recorder for your WebdriverIO and Playwright tests — Cypress on the roadmap. Self-contained HTML for every run — replay failures, audit successes, attach to any bug tracker. No SaaS, no dashboard, no signup. | `npx @tracelane/cli init` |
-| **[peek](packages/peek-cli/)** | Your real browser, exposed to your AI coding agent over MCP — capture once, query forever, never leaves your machine. | `npm install -g @peekdev/cli && npx peek init` |
+| **[peek](packages/peek-cli/)** | Your real browser, exposed to your AI coding agent over MCP — the agent reads recorded sessions and, with your explicit consent, drives the live page. Never leaves your machine. | `npm install -g @peekdev/cli && npx peek init` |
 
 ![tracelane install — one command](https://raw.githubusercontent.com/Cubenest/rrweb-stack/main/assets/tracelane-hero.gif)
 
@@ -33,7 +33,7 @@ Two OSS products on one rrweb-based substrate. Both ship as `npm` packages today
 |---|---|---|
 | [`@tracelane/wdio`](packages/tracelane-wdio/) | alpha | WebdriverIO Service — capture + write HTML report |
 | [`@tracelane/playwright`](packages/tracelane-playwright/) | alpha | Playwright Reporter + auto-fixture — capture + write HTML report |
-| [`@tracelane/cypress`](https://github.com/Cubenest/rrweb-stack/issues) | planned (Q4 2026) | JSON-output adapter (no Test Replay overlap) |
+| [`@tracelane/cypress`](https://github.com/Cubenest/rrweb-stack/issues) | planned | JSON-output adapter (no Test Replay overlap) |
 | [`@tracelane/core`](packages/tracelane-core/) | alpha | Framework-agnostic capture engine — depended on by the adapters |
 | [`@tracelane/report`](packages/tracelane-report/) | alpha | Self-contained HTML report builder |
 
@@ -44,8 +44,8 @@ Docs: [tracelane.cubenest.in](https://tracelane.cubenest.in) (source under [`app
 | Package | Status | What it does |
 |---|---|---|
 | [`@peekdev/cli`](packages/peek-cli/) | alpha | `peek init` installer + `peek sessions` query / export |
-| [`@peekdev/mcp`](packages/peek-mcp/) | alpha | stdio MCP server — exposes captured sessions to Claude Code, Cursor, Cline, Windsurf |
-| [`peek-extension`](packages/peek-extension/) | alpha (CWS submission pending) | Chrome MV3 extension — the real browser, recorded |
+| [`@peekdev/mcp`](packages/peek-mcp/) | alpha | stdio MCP server — exposes captured sessions, plus consent-gated live read + act tools, to Claude Code, Cursor, Cline, Windsurf |
+| [`peek-extension`](packages/peek-extension/) | alpha · [on the Chrome Web Store](https://chromewebstore.google.com/detail/peek/dmgpmkeneheenpdnfmpjjahnkknkaejb) | Chrome MV3 extension — the real browser, recorded |
 
 Docs: [peek.cubenest.in](https://peek.cubenest.in) (source under [`apps/peek-docs/`](apps/peek-docs/)).
 
@@ -63,13 +63,15 @@ Docs: [peek.cubenest.in](https://peek.cubenest.in) (source under [`apps/peek-doc
 Same recording engine, same trust model, two different consumer surfaces:
 
 - **tracelane** ships test-time captures into a self-contained HTML artifact your team and AI agents can read offline.
-- **peek** ships live-browser captures into an MCP server your AI coding agent can query.
+- **peek** ships live-browser captures into an MCP server your AI coding agent can query — and, with your explicit per-origin consent, drive the live page through.
+
+peek's live read + act tools are gated by a five-level per-origin permission model (`0 Off → 1 Read-only → 2 Suggest-only → 3 Act-with-confirm → 4 YOLO`, the default is Level 1) with a destructive-action blocklist that always prompts. No telemetry, no cloud — everything stays in `~/.peek`.
 
 Shared upstream means one fork to track, one masking surface to harden, one license + DCO + security policy.
 
 ## Pre-launch state
 
-Pre-1.0. Alpha packages live on npm. Branch protection is on `main` (PR + CI + DCO + linear history). All workflows use Trusted Publishing OIDC + SLSA provenance. Renovate runs with a 7-day cooldown (21 days for the `@posthog/rrweb` lineage) and `config:best-practices`. tracelane has publicly launched (npm alpha + a live demo report); peek is alpha on npm with its Chrome Web Store submission still pending.
+Pre-1.0. Alpha packages live on npm. Branch protection is on `main` (PR + CI + DCO + linear history). All workflows use Trusted Publishing OIDC + SLSA provenance. Renovate runs with a 7-day cooldown (21 days for the `@posthog/rrweb` lineage) and `config:best-practices`. tracelane has publicly launched (npm alpha + a live demo report); peek is alpha on npm and its Chrome MV3 extension is available on the [Chrome Web Store](https://chromewebstore.google.com/detail/peek/dmgpmkeneheenpdnfmpjjahnkknkaejb).
 
 ## Security
 
