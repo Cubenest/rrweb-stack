@@ -5,12 +5,16 @@
   "description": "Two-product OSS initiative: tracelane + peek.",
   "license": "Apache-2.0",
   "packageManager": "pnpm@9.14.4",
-  "engines": { "node": ">=22.0.0" },
+  "engines": {
+    "node": ">=22.0.0"
+  },
   "repository": {
     "type": "git",
     "url": "https://github.com/Cubenest/rrweb-stack"
   },
-  "bugs": { "url": "https://github.com/Cubenest/rrweb-stack/issues" },
+  "bugs": {
+    "url": "https://github.com/Cubenest/rrweb-stack/issues"
+  },
   "publishConfig": {
     "access": "public"
   },
@@ -27,9 +31,9 @@
   "devDependencies": {
     "@biomejs/biome": "^1.9.4",
     "@changesets/cli": "^2.27.10",
+    "lefthook": "^2.1.9",
     "typescript": "^5.7.2",
-    "vitest": "^2.1.8",
-    "lefthook": "^1.10.10"
+    "vitest": "^2.1.8"
   },
   "pnpm": {
     "onlyBuiltDependencies": ["better-sqlite3"],

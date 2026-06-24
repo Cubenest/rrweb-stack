@@ -19,7 +19,7 @@
   },
   "devDependencies": {
     "@astrojs/check": "^0.9.4",
-    "cross-env": "^7.0.3",
+    "cross-env": "^10.1.0",
     "typescript": "^5.7.2"
   }
 }
