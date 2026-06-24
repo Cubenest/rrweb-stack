@@ -29,7 +29,7 @@
     "@fontsource-variable/jetbrains-mono": "^5.2.7",
     "@tracelane/core": "workspace:*",
     "fflate": "^0.8.2",
-    "rrweb-player": "1.0.0-alpha.4"
+    "rrweb-player": "2.0.1"
   },
   "devDependencies": {
     "@tracelane/security": "workspace:*",

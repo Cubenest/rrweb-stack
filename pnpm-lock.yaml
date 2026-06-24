@@ -248,7 +248,7 @@ importers:
         version: 0.0.24
       '@rrweb/rrweb-plugin-console-record':
         specifier: 2.0.0-alpha.20
-        version: 2.0.0-alpha.20(@rrweb/utils@2.0.0-alpha.20)(rrweb@2.0.0-alpha.20)
+        version: 2.0.0-alpha.20(@rrweb/utils@2.0.1)(rrweb@2.0.1)
       fflate:
         specifier: ^0.8.2
         version: 0.8.3
@@ -316,8 +316,8 @@ importers:
         specifier: ^0.8.2
         version: 0.8.3
       rrweb-player:
-        specifier: 1.0.0-alpha.4
-        version: 1.0.0-alpha.4
+        specifier: 2.0.1
+        version: 2.0.1
     devDependencies:
       '@tracelane/security':
         specifier: workspace:*
@@ -2106,17 +2106,23 @@ packages:
     cpu: [x64]
     os: [win32]
 
+  '@rrweb/packer@2.0.1':
+    resolution: {integrity: sha512-2U8RkVe+ZK3gTtmKjJKjoh6QL1Q6wIlt3sBTJeCPERLr9e0JIimNrZ1+bog1L30CTVP3ULuDf5Ba7RZO+QNcHg==}
+
+  '@rrweb/replay@2.0.1':
+    resolution: {integrity: sha512-UrZONirb8o4t0urg1aJ8aMSWhNHvJ3a2usuVbPJIm/edyFbwTvvY9sg/rrXccyXOntFhhp73R5nCretODRZcCw==}
+
   '@rrweb/rrweb-plugin-console-record@2.0.0-alpha.20':
     resolution: {integrity: sha512-4v05qwW7C4AnGxkwf7YeIkSGrNJpZ4tFj2j5Wa6suHlDsDvpqHH/ZRNTqdNRjeWcceSMuqka/zULOGX/f0KcCA==}
     peerDependencies:
       '@rrweb/utils': ^2.0.0-alpha.20
       rrweb: ^2.0.0-alpha.20
 
-  '@rrweb/types@2.0.0-alpha.20':
-    resolution: {integrity: sha512-RbnDgKxA/odwB1R4gF7eUUj+rdSrq6ROQJsnMw7MIsGzlbSYvJeZN8YY4XqU0G6sKJvXI6bSzk7w/G94jNwzhw==}
+  '@rrweb/types@2.0.1':
+    resolution: {integrity: sha512-x8cNaKFxdvS0/5IfKOj1xG8Htnw1fUwqoPqgP61bOaWqZL6t9UtRPpO9ZlMB2z+FiTxg9zlFFL+Da4ZpFuhoiA==}
 
-  '@rrweb/utils@2.0.0-alpha.20':
-    resolution: {integrity: sha512-MTQOmhPRe39C0fYaCnnVYOufQsyGzwNXpUStKiyFSfGLUJrzuwhbRoUAKR5w6W2j5XuA0bIz3ZDIBztkquOhLw==}
+  '@rrweb/utils@2.0.1':
+    resolution: {integrity: sha512-t+b+4rB23/e4EpoGMdPUr6cKtDsFuOb3LxA9IHE8e3A/Xo0nMUfH0bkwqdpUNa/VGDOdiGeG3bhHjuO9zWX54g==}
 
   '@sec-ant/readable-stream@0.4.1':
     resolution: {integrity: sha512-831qok9r2t8AlxLko40y2ebgSDhenenCatLVeW/uBtnHPyhHOvG0C7TvfgecV+wHzIm5KUICgzmVpWS+IMEAeg==}
@@ -3605,6 +3611,9 @@ packages:
     peerDependenciesMeta:
       picomatch:
         optional: true
+
+  fflate@0.4.8:
+    resolution: {integrity: sha512-FJqqoDBR00Mdj9ppamLa/Y7vxm+PRmNWA67N846RvsoYVMKB4q3y/de5PA7gUmRMYK/8CMz2GDZQmCRN1wBcWA==}
 
   fflate@0.8.3:
     resolution: {integrity: sha512-tbZNuJrLwGUp3zshBtdy4W+ORxZuIh8a5ilyIEQDC5rY1f3U20JMry0Ll3WBzU58EZKsEuJFXhb5gwv8CsPvgA==}
@@ -5411,8 +5420,8 @@ packages:
     resolution: {integrity: sha512-nLTrUKm2UyiL7rlhapu/Zl45FwNgkZGaCpZbIHajDYgwlJCOzLSk+cIPAnsEqV955GjILJnKbdQC1nVPz+gAYQ==}
     engines: {node: '>= 18'}
 
-  rrdom@2.0.0-alpha.20:
-    resolution: {integrity: sha512-hoqjS4662LtBp82qEz9GrqU36UpEmCvTA2Hns3qdF7cklLFFy3G+0Th8hLytJENleHHWxsB5nWJ3eXz5mSRxdQ==}
+  rrdom@2.0.1:
+    resolution: {integrity: sha512-z8GdQWFmVfa8GpcGkAqfBXseb89z0ciTPSBkID0qr0i6KHCye1MdQ4VoXFf0Ejp3ELe/c7AObu4zsbSbMT+hiw==}
 
   rrweb-cssom@0.7.1:
     resolution: {integrity: sha512-TrEMa7JGdVm0UThDJSx7ddw5nVm3UJS9o9CCIZ72B1vSyEZoziDqBYP3XIoi/12lKrJR8rE3jeFHMok2F/Mnsg==}
@@ -5420,14 +5429,14 @@ packages:
   rrweb-cssom@0.8.0:
     resolution: {integrity: sha512-guoltQEx+9aMf2gDZ0s62EcV8lsXR+0w8915TC3ITdn2YueuNjdAYh/levpU9nFaoChh9RUS5ZdQMrKfVEN9tw==}
 
-  rrweb-player@1.0.0-alpha.4:
-    resolution: {integrity: sha512-Wlmn9GZ5Fdqa37vd3TzsYdLl/JWEvXNUrLCrYpnOwEgmY409HwVIvvA5aIo7k582LoKgdRCsB87N+f0oWAR0Kg==}
+  rrweb-player@2.0.1:
+    resolution: {integrity: sha512-v8PVnOy7Q3kXqWriGuzZo4ndGEV06nCMRkH/jSHweJfTLwpLqb2evgMj0S5FwQLsN2X1VM+L2/i7QWGJfgj9zw==}
 
-  rrweb-snapshot@2.0.0-alpha.20:
-    resolution: {integrity: sha512-YTNf9YVeaGRo/jxY3FKBge2c/Ojd/KTHmuWloUSB+oyPXuY73ZeeG873qMMmhIpqEn7hn7aBF1eWEQmP7wjf8A==}
+  rrweb-snapshot@2.0.1:
+    resolution: {integrity: sha512-H8TA29ct2tpYtr5oaB0N+ksRY9bhEErfAYcKbce4+w8lqEUQChpKZd41HpBJLkp04b5QUfWUg4v6r9Okf8r7vA==}
 
-  rrweb@2.0.0-alpha.20:
-    resolution: {integrity: sha512-CZKDlm+j1VA50Ko3gnMbpvguCAleljsTNXPnVk9aeNP8o6T6kolRbISHyDZpqZ4G+bdDLlQOignPP3jEsXs8Gg==}
+  rrweb@2.0.1:
+    resolution: {integrity: sha512-MQYzOtI7aZft9ffDMT6rmRSAj6hO4W6T7iA4eB9Mtcuiv3M7DbnnxDMrcPW0sQXepgYN46YhfSKe75d/mlUHrQ==}
 
   run-applescript@7.1.0:
     resolution: {integrity: sha512-DPe5pVFaAsinSaV6QjQ6gdiedWDcRCbUuiQfQa2wmWV7+xC9bGulGI8+TdRmoFkAPaBXk8CrAbnlY2ISniJ47Q==}
@@ -8121,14 +8130,24 @@ snapshots:
   '@rollup/rollup-win32-x64-msvc@4.60.4':
     optional: true
 
-  '@rrweb/rrweb-plugin-console-record@2.0.0-alpha.20(@rrweb/utils@2.0.0-alpha.20)(rrweb@2.0.0-alpha.20)':
+  '@rrweb/packer@2.0.1':
     dependencies:
-      '@rrweb/utils': 2.0.0-alpha.20
-      rrweb: 2.0.0-alpha.20
+      '@rrweb/types': 2.0.1
+      fflate: 0.4.8
 
-  '@rrweb/types@2.0.0-alpha.20': {}
+  '@rrweb/replay@2.0.1':
+    dependencies:
+      '@rrweb/types': 2.0.1
+      rrweb: 2.0.1
 
-  '@rrweb/utils@2.0.0-alpha.20': {}
+  '@rrweb/rrweb-plugin-console-record@2.0.0-alpha.20(@rrweb/utils@2.0.1)(rrweb@2.0.1)':
+    dependencies:
+      '@rrweb/utils': 2.0.1
+      rrweb: 2.0.1
+
+  '@rrweb/types@2.0.1': {}
+
+  '@rrweb/utils@2.0.1': {}
 
   '@sec-ant/readable-stream@0.4.1': {}
 
@@ -9959,6 +9978,8 @@ snapshots:
   fdir@6.5.0(picomatch@4.0.4):
     optionalDependencies:
       picomatch: 4.0.4
+
+  fflate@0.4.8: {}
 
   fflate@0.8.3: {}
 
@@ -12072,33 +12093,34 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
-  rrdom@2.0.0-alpha.20:
+  rrdom@2.0.1:
     dependencies:
-      rrweb-snapshot: 2.0.0-alpha.20
+      rrweb-snapshot: 2.0.1
 
   rrweb-cssom@0.7.1: {}
 
   rrweb-cssom@0.8.0: {}
 
-  rrweb-player@1.0.0-alpha.4:
+  rrweb-player@2.0.1:
     dependencies:
+      '@rrweb/packer': 2.0.1
+      '@rrweb/replay': 2.0.1
       '@tsconfig/svelte': 1.0.13
-      rrweb: 2.0.0-alpha.20
 
-  rrweb-snapshot@2.0.0-alpha.20:
+  rrweb-snapshot@2.0.1:
     dependencies:
       postcss: 8.5.15
 
-  rrweb@2.0.0-alpha.20:
+  rrweb@2.0.1:
     dependencies:
-      '@rrweb/types': 2.0.0-alpha.20
-      '@rrweb/utils': 2.0.0-alpha.20
+      '@rrweb/types': 2.0.1
+      '@rrweb/utils': 2.0.1
       '@types/css-font-loading-module': 0.0.7
       '@xstate/fsm': 1.6.5
       base64-arraybuffer: 1.0.2
       mitt: 3.0.1
-      rrdom: 2.0.0-alpha.20
-      rrweb-snapshot: 2.0.0-alpha.20
+      rrdom: 2.0.1
+      rrweb-snapshot: 2.0.1
 
   run-applescript@7.1.0: {}
 

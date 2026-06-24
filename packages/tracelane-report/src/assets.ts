@@ -54,12 +54,20 @@ function readUmdViaUnpkg(packageName: string): string {
 }
 
 /**
- * The rrweb-player UMD bundle (~115 KB). Inlined verbatim into a top-level
- * `<script>` in the report; its `var rrwebPlayer = (function(){…})()` IIFE then
- * exposes `window.rrwebPlayer` for the bootstrap script to instantiate.
+ * The rrweb-player UMD bundle (~132 KB minified). Inlined verbatim into a
+ * top-level `<script>` in the report; its UMD wrapper assigns `window.rrwebPlayer`
+ * for the bootstrap script to instantiate.
+ *
+ * rrweb-player 2.x's `exports` map only exposes `.` and `./dist/style.css`, so
+ * neither a deep `dist/*` specifier nor `package.json` is resolvable (the latter
+ * rules out the `unpkg`-field trick `readUmdViaUnpkg` uses). We resolve the bare
+ * entry (`dist/rrweb-player.cjs`) and read the sibling minified UMD, which —
+ * unlike the bare CJS entry — is plain-`<script>`-safe (it sets the global rather
+ * than assigning to `module.exports`).
  */
 export function loadPlayerUmd(): string {
-  return readAsset('rrweb-player/dist/index.js');
+  const cjsEntry = localRequire.resolve('rrweb-player');
+  return readFileSync(cjsEntry.replace(/[^/]+$/, 'rrweb-player.umd.min.cjs'), 'utf8');
 }
 
 /**
