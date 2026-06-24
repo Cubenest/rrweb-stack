@@ -23,10 +23,17 @@ needs vite ≥6, already satisfied; the coordinated move also raises root
 ## Prioritized board
 
 ### 🟢 Tier A — safe-now batch (executed here)
-`lefthook 1→2.1.9`, `cross-env 7→10`, `js-yaml 4→5`, `better-sqlite3 12.10→12.11.1`
+`lefthook 1→2.1.9`, `cross-env 7→10`, `better-sqlite3 12.10→12.11.1`
 (⚠️ 12.11.0 is unpublished/404 — target .1; Node-22 prebuilds intact), `sharp 0.34→0.35`,
 `wxt 0.20.27`, `tsx 4.22.4`, `@webext-core/fake-browser 1.5.2`, `esbuild 0.28.1`,
-`@types/chrome 0.1→0.2`. Verified: typecheck + tests green.
+`@types/chrome 0.1→0.2`. Verified: full local CI (build, lint, typecheck, tests, recipe-verify) green.
+
+> **`js-yaml 4→5` was pulled from this batch.** It is NOT a safe drop-in: v5 removed the
+> `default` export **and** changed YAML timestamp parsing (dates now parse to strings),
+> which broke the recipe `z.date()` schema in the CI-only `verify-recipes` gate. Deferred to
+> its own migration (namespace import + a date coercion/parse step, re-validate the recipe
+> gate). Lesson: a "low-risk major" still has to be run through the CI-only checks, not just
+> `typecheck`/`test`.
 
 ### 🟢 Tier C — low-risk minor batch (executed here)
 `@wdio/* + webdriverio 9.27→9.29`, `@playwright/test + playwright 1.60→1.61`,
