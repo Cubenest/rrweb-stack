@@ -21,6 +21,6 @@
     "@astrojs/check": "^0.9.4",
     "@peekdev/todomvc-demo": "workspace:*",
     "cross-env": "^10.1.0",
-    "typescript": "^5.7.2"
+    "typescript": "^6.0.3"
   }
 }

@@ -17,6 +17,11 @@
     // The @wxt-dev/module-react plugin wires this for the Vite build; we set it
     // explicitly here so `tsc --noEmit` typechecks the .tsx entrypoints too.
     "jsx": "react-jsx",
+    // TS 6 changed the default `types` to `[]` (no auto-included @types/*), and
+    // WXT's generated `.wxt/tsconfig.json` sets no `types`. Re-declare the ambient
+    // libs this package relies on: `chrome` (@types/chrome globals) and
+    // `vite/client` (the `*.css` side-effect module declarations for the side panel).
+    "types": ["chrome", "vite/client"],
     "strict": true,
     "noUncheckedIndexedAccess": true,
     "noImplicitOverride": true,
