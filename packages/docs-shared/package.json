@@ -29,7 +29,7 @@
     "@cubenest/rrweb-core": "workspace:*",
     "@modelcontextprotocol/sdk": "^1.29.0",
     "@tracelane/report": "workspace:*",
-    "js-yaml": "^4.1.1",
-    "playwright": "^1.60.0"
+    "js-yaml": "^5.1.0",
+    "playwright": "^1.61.1"
   }
 }
