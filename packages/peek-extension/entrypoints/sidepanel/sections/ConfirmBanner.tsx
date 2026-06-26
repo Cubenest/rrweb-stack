@@ -4,7 +4,7 @@
  * When the SW receives an `execute_action`/`request_authorization` for a
  * Level-3 origin (and no valid confirmToken skipped it), it opens the side
  * panel and posts a {@link ShowConfirmMessage}. This banner renders the pending
- * action and the user's three choices: Allow once / Always for this site / Deny.
+ * action and the user's three choices: Allow once / Always allow (still confirm) / Deny.
  *
  * Security posture (fail-closed): the verdict reducer + closed-panel default
  * both resolve to DENY for any non-affirmative path, and the typed text of a
@@ -106,8 +106,13 @@ export function ConfirmBanner({ pending, onResolve }: ConfirmBannerProps): React
         <button type="button" className="peek-btn peek-btn-primary" onClick={() => choose('allow')}>
           Allow once
         </button>
-        <button type="button" className="peek-btn" onClick={() => choose('always')}>
-          Always for this site
+        <button
+          type="button"
+          className="peek-btn"
+          title="Let your agent keep acting on this site — peek will still ask you to confirm each action."
+          onClick={() => choose('always')}
+        >
+          Always allow (still confirm)
         </button>
         <button type="button" className="peek-btn peek-btn-danger" onClick={() => choose('deny')}>
           Deny
