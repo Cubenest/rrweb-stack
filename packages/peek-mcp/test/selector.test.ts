@@ -155,6 +155,21 @@ describe('selectorFor', () => {
     expect(selectorFor(index, testNode.id)).toBe('[data-testid="cta"]');
     expect(selectorFor(index, named.id)).toBe('input[name="email"]');
   });
+
+  // Untrusted recordings can carry adversarial attribute values. A `name` value
+  // that literally contains `[aria-label=` must NOT be mistaken for a soft
+  // aria-label segment — the soft check keys off the first attribute NAME, not a
+  // substring of the rendered selector, so this still anchors as tag[name].
+  it('does not mis-classify a name value that contains "[aria-label="', () => {
+    freshIds();
+    const tricky = el('input', { attributes: { name: 'x[aria-label=y' } });
+    const sibling = el('input', { attributes: { name: 'z' } });
+    const wrapper = el('div', { attributes: { class: 'form' }, children: [tricky, sibling] });
+    const root = documentWith([wrapper]);
+    const index = indexNodes(root);
+    // Anchors as a bare tag[name] selector — no parent prefix, no nth-of-type.
+    expect(selectorFor(index, tricky.id)).toBe('input[name="x[aria-label=y"]');
+  });
 });
 
 describe('localSelector — aria-label / placeholder hooks', () => {

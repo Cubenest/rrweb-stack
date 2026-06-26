@@ -216,8 +216,12 @@ export function selectorFor(index: NodeIndex, id: number): string | undefined {
 
     // `aria-label`/`placeholder` are readable but NOT guaranteed unique, so they
     // must keep climbing for ancestor + nth-of-type disambiguation. Only the
-    // genuinely-unique hooks (#id, [data-*], tag[name]) terminate the climb.
-    const isSoftAttr = local.includes('[aria-label=') || local.includes('[placeholder=');
+    // genuinely-unique hooks (#id, [data-*], tag[name]) terminate the climb. Key
+    // off the FIRST attribute name (not a substring of the rendered segment) so
+    // an attribute *value* that happens to contain `[aria-label=` — possible in
+    // an untrusted recording — can't be mistaken for a soft attribute.
+    const firstAttr = local.match(/\[([a-zA-Z-]+)[=\]]/)?.[1];
+    const isSoftAttr = firstAttr === 'aria-label' || firstAttr === 'placeholder';
     const isAnchor = !isSoftAttr && (local.startsWith('#') || local.includes('['));
     if (isAnchor) {
       segments.unshift(local);
