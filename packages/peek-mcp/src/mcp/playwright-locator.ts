@@ -87,8 +87,16 @@ export function visibleText(node: serializedNodeWithId): string {
  *     for locator purposes)
  */
 export function accessibleName(node: serializedNodeWithId): string | undefined {
-  const aria = strAttr(attributes(node), 'aria-label');
+  const attrs = attributes(node);
+  const aria = strAttr(attrs, 'aria-label');
   if (aria !== undefined) return aria;
+  if (tagName(node) === 'input') {
+    const type = (strAttr(attrs, 'type') ?? 'text').toLowerCase();
+    if (type === 'image') return strAttr(attrs, 'alt');
+    if (type === 'button' || type === 'submit' || type === 'reset') {
+      return strAttr(attrs, 'value');
+    }
+  }
   const role = implicitRole(node);
   if (role === 'button' || role === 'link') {
     const t = visibleText(node);

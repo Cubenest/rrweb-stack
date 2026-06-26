@@ -49,6 +49,21 @@ describe('visibleText / accessibleName', () => {
     expect(accessibleName(el('button', { children: [text('Sign in')] }))).toBe('Sign in');
     expect(accessibleName(el('input', { attributes: { type: 'text' } }))).toBeUndefined();
   });
+  it('derives accessibleName from value/alt for button-like inputs', () => {
+    freshIds();
+    expect(accessibleName(el('input', { attributes: { type: 'submit', value: 'Save' } }))).toBe(
+      'Save',
+    );
+    expect(accessibleName(el('input', { attributes: { type: 'image', alt: 'Search' } }))).toBe(
+      'Search',
+    );
+    expect(accessibleName(el('input', { attributes: { type: 'button', value: 'Go' } }))).toBe('Go');
+    expect(accessibleName(el('input', { attributes: { type: 'reset', value: 'Clear' } }))).toBe(
+      'Clear',
+    );
+    // No regression: a plain text input still has no accessible name.
+    expect(accessibleName(el('input', { attributes: { type: 'text' } }))).toBeUndefined();
+  });
 });
 
 describe('playwrightLocator', () => {
@@ -68,6 +83,13 @@ describe('playwrightLocator', () => {
     freshIds();
     const i = el('input', { attributes: { placeholder: 'Email' } });
     expect(playwrightLocator(idx(documentWith([i])), i.id)).toBe("page.getByPlaceholder('Email')");
+  });
+  it('uses getByRole(button) for a button-like <input> via its value', () => {
+    freshIds();
+    const i = el('input', { attributes: { type: 'submit', value: 'Save' } });
+    expect(playwrightLocator(idx(documentWith([i])), i.id)).toBe(
+      "page.getByRole('button', { name: 'Save' })",
+    );
   });
   it('falls back to CSS page.locator when ambiguous', () => {
     freshIds();
