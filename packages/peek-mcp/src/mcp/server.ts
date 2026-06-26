@@ -548,7 +548,9 @@ export function createPeekMcpServer(options: CreatePeekMcpServerOptions = {}): P
             .min(1)
             .max(500)
             .default(100)
-            .describe('Maximum changes to return (1-500; default 100).'),
+            .describe(
+              'Maximum changes to return (1-500; default 100). Selector mode keeps the earliest matches; window mode keeps the most recent (closest to `ts`).',
+            ),
         },
         annotations: { readOnlyHint: true, openWorldHint: false },
       },

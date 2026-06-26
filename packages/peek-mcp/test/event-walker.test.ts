@@ -383,8 +383,15 @@ describe('extractDomMutationsInWindow', () => {
     expect(changes.map((c) => c.value)).toEqual(['2', '3']);
   });
 
-  it('returns [] when there is no FullSnapshot', () => {
+  it('returns [] for an empty event stream', () => {
     freshIds();
     expect(extractDomMutationsInWindow([], 0, 1)).toEqual([]);
+  });
+
+  it('emits in-window mutations even without a FullSnapshot (no target resolved)', () => {
+    freshIds();
+    const events = [mutationEvent({ attributes: [{ id: 5, attributes: { class: 'x' } }] }, 1500)];
+    const changes = extractDomMutationsInWindow(events, 1000, 2000);
+    expect(changes).toEqual([{ ts: 1500, op: 'attribute', attribute: 'class', value: 'x' }]); // no `target` key
   });
 });

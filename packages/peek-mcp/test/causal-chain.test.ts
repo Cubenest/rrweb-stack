@@ -101,6 +101,20 @@ describe('buildCausalChain', () => {
     );
   });
 
+  it('narrative highlights the network error closest to the console error', () => {
+    const earlier = { ...net, id: 2, url: '/early', ts: 1000 }; // -4000ms (oldest)
+    const closer = { ...net, id: 3, url: '/api/login', ts: 4850 }; // -150ms (closest)
+    const chain = buildCausalChain({
+      error,
+      windowMs: 5000,
+      actions: [],
+      domMutations: [],
+      networkErrors: [earlier, closer],
+    });
+    expect(chain.narrative).toContain('Network error: POST /api/login → 500 (150ms before)');
+    expect(chain.narrative).not.toContain('/early');
+  });
+
   it('emits a deterministic narrative for an empty window', () => {
     const chain = buildCausalChain({
       error,

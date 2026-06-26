@@ -76,9 +76,9 @@ function buildNarrative(
   const lastAction = actions[actions.length - 1];
   if (lastAction)
     s += ` Last action: ${lastAction.summary} (${error.ts - lastAction.ts}ms before).`;
-  const firstNet = networkErrors[0];
-  if (firstNet)
-    s += ` Network error: ${firstNet.method} ${clipStr(firstNet.url, 80)} → ${firstNet.status ?? firstNet.errorText ?? 'error'} (${error.ts - firstNet.ts}ms before).`;
+  const lastNet = networkErrors[networkErrors.length - 1];
+  if (lastNet)
+    s += ` Network error: ${lastNet.method} ${clipStr(lastNet.url, 80)} → ${lastNet.status ?? lastNet.errorText ?? 'error'} (${error.ts - lastNet.ts}ms before).`;
   return s;
 }
 
