@@ -427,7 +427,7 @@ export function createPeekMcpServer(options: CreatePeekMcpServerOptions = {}): P
       {
         title: 'Generate Playwright repro',
         description:
-          'Generate a runnable Playwright test (TypeScript) reproducing the user actions in a session: clicks, typing, navigation, and <select> changes. Optionally limit to a [startTs, endTs] epoch-ms window. Returns the test source as text. Note: only single-value <select> is represented (rrweb captures one value per input).',
+          'Generate a runnable Playwright test (TypeScript) reproducing the user actions in a session: clicks, typing, navigation, and <select> changes. Optionally limit to a [startTs, endTs] epoch-ms window. Pass errorId (from get_session_console_errors) to seed a console-error-absence regression assertion — the generated test will capture console errors and assert the given error is not reproduced. Returns the test source as text. Note: only single-value <select> is represented (rrweb captures one value per input).',
         inputSchema: {
           sessionId: z.string().describe('Session id from list_recent_sessions.'),
           startTs: z
@@ -444,20 +444,35 @@ export function createPeekMcpServer(options: CreatePeekMcpServerOptions = {}): P
             .describe(
               'Only include actions at or before this epoch-ms timestamp. Omit to run through the session end.',
             ),
+          errorId: z
+            .number()
+            .int()
+            .optional()
+            .describe(
+              'Console error id (from get_session_console_errors) to seed a console-error-absence regression assertion.',
+            ),
         },
         annotations: { readOnlyHint: true, openWorldHint: false },
       },
-      ({ sessionId, startTs, endTs }) => {
+      ({ sessionId, startTs, endTs, errorId }) => {
         const handle = getDb();
         if (!handle) return textResult(NO_DB_MESSAGE);
         const row = getSessionSummaryRow(handle, sessionId);
         if (!row) return textResult(`No session found with id '${sessionId}'.`);
+        let errorMessage: string | undefined;
+        if (errorId !== undefined) {
+          const err = getConsoleErrorById(handle, sessionId, errorId);
+          if (!err)
+            return textResult(`No console error with id ${errorId} in session '${sessionId}'.`);
+          errorMessage = err.message;
+        }
         const ev = eventsFor(sessionId);
         if (!ev.ok) return textResult(ev.message);
         const script = generatePlaywrightRepro(ev.events, {
           title: row.title ?? `peek session ${sessionId}`,
           ...(startTs !== undefined ? { startTs } : {}),
           ...(endTs !== undefined ? { endTs } : {}),
+          ...(errorMessage !== undefined ? { errorMessage } : {}),
         });
         return textResult(script);
       },

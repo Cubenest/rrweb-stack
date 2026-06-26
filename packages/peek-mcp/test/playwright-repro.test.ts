@@ -317,4 +317,32 @@ describe('generatePlaywrightRepro', () => {
     expect(script).toContain(`await page.getByPlaceholder('Search').fill('shoes');`);
     expect(script).toContain(`await page.getByTestId('submit').click();`);
   });
+
+  it('seeds a console-error-absence assertion when errorMessage is given', () => {
+    freshIds();
+    const b = el('button', { attributes: { id: 'go' } });
+    const events = [
+      metaNav('https://app.test/a', 1000),
+      fullSnapshot(documentWith([b]), 1000),
+      clickEvent(b.id, 1100),
+    ];
+    const script = generatePlaywrightRepro(events, {
+      title: 't',
+      errorMessage: 'TypeError: x is undefined',
+    });
+    expect(script).toContain('const consoleErrors: string[] = [];');
+    expect(script).toContain(
+      "page.on('console', (m) => { if (m.type() === 'error') consoleErrors.push(m.text()); });",
+    );
+    expect(script).toContain(
+      "expect(consoleErrors.join('\\n')).not.toContain('TypeError: x is undefined');",
+    );
+  });
+
+  it('omits the console block when no errorMessage', () => {
+    freshIds();
+    const events = [fullSnapshot(documentWith([el('div')]), 1000)];
+    const script = generatePlaywrightRepro(events, { title: 't' });
+    expect(script).not.toContain("page.on('console'");
+  });
 });

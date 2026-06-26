@@ -226,8 +226,8 @@ describe('peek MCP server: read tools over a seeded store', () => {
       const script = textOf(res as never);
       expect(script).toContain("import { test, expect } from '@playwright/test';");
       expect(script).toContain("await page.goto('https://app.test/login');");
-      expect(script).toContain("await page.fill('input[name=\"email\"]', 'me@x.com');");
-      expect(script).toContain("await page.click('#login');");
+      expect(script).toContain("await page.locator('input[name=\"email\"]').fill('me@x.com');");
+      expect(script).toContain("await page.locator('#login').click();");
     } finally {
       await close();
     }

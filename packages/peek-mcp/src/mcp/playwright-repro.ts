@@ -24,6 +24,8 @@ export interface GenerateReproOptions {
   readonly title?: string;
   /** Max actions to emit (default 200); keeps the latest N, the rest noted. */
   readonly maxActions?: number;
+  /** When set, seed a console-error-absence assertion for this captured message. */
+  readonly errorMessage?: string;
 }
 
 /** Default ceiling on emitted actions — caps the output size (PRD §B token budget). */
@@ -114,6 +116,13 @@ export function generatePlaywrightRepro(
   lines.push('');
   lines.push(`test(${jsString(title)}, async ({ page }) => {`);
 
+  if (options.errorMessage !== undefined) {
+    lines.push('  const consoleErrors: string[] = [];');
+    lines.push(
+      `  page.on('console', (m) => { if (m.type() === 'error') consoleErrors.push(m.text()); });`,
+    );
+  }
+
   if (actions.length === 0) {
     lines.push('  // No user actions were recorded in this window.');
   } else if (truncated) {
@@ -140,6 +149,20 @@ export function generatePlaywrightRepro(
       lines.push(`  await expect(page).toHaveURL(${jsString(a.url)});`);
       break;
     }
+  }
+
+  if (options.errorMessage !== undefined) {
+    const needle =
+      options.errorMessage.length <= 200
+        ? options.errorMessage
+        : options.errorMessage.slice(0, 200);
+    lines.push(
+      '  // This console error was captured in the session; the repro should not reproduce it once fixed.',
+    );
+    lines.push(
+      '  // If the message has dynamic parts (ids/timestamps), trim the expected substring below.',
+    );
+    lines.push(`  expect(consoleErrors.join('\\n')).not.toContain(${jsString(needle)});`);
   }
 
   lines.push('});');
