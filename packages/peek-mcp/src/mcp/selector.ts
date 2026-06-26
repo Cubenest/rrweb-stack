@@ -58,14 +58,14 @@ export function nodeChildren(node: serializedNodeWithId): serializedNodeWithId[]
   return [];
 }
 
-function tagName(node: serializedNodeWithId): string | undefined {
+export function tagName(node: serializedNodeWithId): string | undefined {
   if (node.type === NodeType.Element) {
     return (node as { tagName: string }).tagName.toLowerCase();
   }
   return undefined;
 }
 
-function attributes(node: serializedNodeWithId): Record<string, unknown> {
+export function attributes(node: serializedNodeWithId): Record<string, unknown> {
   if (node.type === NodeType.Element) {
     return (node as { attributes?: Record<string, unknown> }).attributes ?? {};
   }
@@ -73,7 +73,7 @@ function attributes(node: serializedNodeWithId): Record<string, unknown> {
 }
 
 /** A non-empty string attribute value, or undefined. */
-function strAttr(attrs: Record<string, unknown>, key: string): string | undefined {
+export function strAttr(attrs: Record<string, unknown>, key: string): string | undefined {
   const v = attrs[key];
   return typeof v === 'string' && v.length > 0 ? v : undefined;
 }
@@ -115,6 +115,16 @@ export function localSelector(node: serializedNodeWithId): string | undefined {
     return `${tag}[name="${cssAttrValue(name)}"]`;
   }
 
+  const ariaLabel = strAttr(attrs, 'aria-label');
+  if (ariaLabel !== undefined) {
+    return `[aria-label="${cssAttrValue(ariaLabel)}"]`;
+  }
+
+  const placeholder = strAttr(attrs, 'placeholder');
+  if (placeholder !== undefined && (tag === 'input' || tag === 'textarea')) {
+    return `${tag}[placeholder="${cssAttrValue(placeholder)}"]`;
+  }
+
   const className = strAttr(attrs, 'class');
   if (className !== undefined) {
     const classes = className
@@ -131,7 +141,7 @@ export function localSelector(node: serializedNodeWithId): string | undefined {
 }
 
 /** Escape a double-quoted CSS attribute value. */
-function cssAttrValue(value: string): string {
+export function cssAttrValue(value: string): string {
   return value.replace(/["\\]/g, (ch) => `\\${ch}`);
 }
 
@@ -204,10 +214,15 @@ export function selectorFor(index: NodeIndex, id: number): string | undefined {
     // (the segment so far is rooted at body, which is what an agent wants).
     if (tag === 'body' || tag === 'html') break;
 
-    // An id or any attribute selector (#id, [data-testid], tag[name=…]) is
-    // specific enough to stop climbing — and specific enough that it needs no
-    // nth-of-type disambiguation.
-    const isAnchor = local.startsWith('#') || local.includes('[');
+    // `aria-label`/`placeholder` are readable but NOT guaranteed unique, so they
+    // must keep climbing for ancestor + nth-of-type disambiguation. Only the
+    // genuinely-unique hooks (#id, [data-*], tag[name]) terminate the climb. Key
+    // off the FIRST attribute name (not a substring of the rendered segment) so
+    // an attribute *value* that happens to contain `[aria-label=` — possible in
+    // an untrusted recording — can't be mistaken for a soft attribute.
+    const firstAttr = local.match(/\[([a-zA-Z-]+)[=\]]/)?.[1];
+    const isSoftAttr = firstAttr === 'aria-label' || firstAttr === 'placeholder';
+    const isAnchor = !isSoftAttr && (local.startsWith('#') || local.includes('['));
     if (isAnchor) {
       segments.unshift(local);
       break;

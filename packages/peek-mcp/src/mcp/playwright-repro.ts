@@ -2,10 +2,10 @@
 // actions into a runnable Playwright test string. Each action maps to the
 // idiomatic Playwright call:
 //   navigate          -> await page.goto('url')
-//   click             -> await page.click('selector')
-//   input (select)    -> await page.selectOption('selector', 'value')
-//   input (checkbox/radio) -> await page.check/uncheck('selector')
-//   input (other)     -> await page.fill('selector', 'value')
+//   click             -> await action.locator.click()
+//   input (select)    -> await action.locator.selectOption('value')
+//   input (checkbox/radio) -> await action.locator.check/uncheck()
+//   input (other)     -> await action.locator.fill('value')
 // The first navigation seeds the opening goto; subsequent navigations are
 // emitted inline (e.g. an in-app route change that triggered a full load).
 // After the actions, a final `await expect(page).toHaveURL(...)` is emitted
@@ -24,6 +24,8 @@ export interface GenerateReproOptions {
   readonly title?: string;
   /** Max actions to emit (default 200); keeps the latest N, the rest noted. */
   readonly maxActions?: number;
+  /** When set, seed a console-error-absence assertion for this captured message. */
+  readonly errorMessage?: string;
 }
 
 /** Default ceiling on emitted actions — caps the output size (PRD §B token budget). */
@@ -46,15 +48,15 @@ function actionToStatement(action: UserAction): string | undefined {
     case 'navigate':
       return action.url ? `  await page.goto(${jsString(action.url)});` : undefined;
     case 'click':
-      return action.selector ? `  await page.click(${jsString(action.selector)});` : undefined;
+      return action.locator ? `  await ${action.locator}.click();` : undefined;
     case 'input': {
-      if (!action.selector) return undefined;
-      const sel = jsString(action.selector);
+      const loc = action.locator;
+      if (!loc) return undefined;
       if (action.elementTag === 'input') {
         if (action.inputType === 'checkbox' || action.inputType === 'radio') {
-          if (action.checked === true) return `  await page.check(${sel});`;
-          if (action.checked === false) return `  await page.uncheck(${sel});`;
-          return `  // TODO: <input type="${action.inputType}"> ${action.selector} — checked state unknown; add check()/uncheck()`;
+          if (action.checked === true) return `  await ${loc}.check();`;
+          if (action.checked === false) return `  await ${loc}.uncheck();`;
+          return `  // TODO: <input type="${action.inputType}"> ${action.selector ?? ''} — checked state unknown; add check()/uncheck()`;
         }
         if (
           action.inputType === 'hidden' ||
@@ -66,7 +68,7 @@ function actionToStatement(action: UserAction): string | undefined {
           return `  // TODO: skipped <input type="${action.inputType}"> (not a user text entry)`;
         }
         if (action.inputType === 'file') {
-          return `  // TODO: file input ${action.selector} — setInputFiles can't be reconstructed from a recording`;
+          return `  // TODO: file input ${action.selector ?? ''} — setInputFiles can't be reconstructed from a recording`;
         }
       }
       if (action.elementTag === 'select') {
@@ -79,9 +81,9 @@ function actionToStatement(action: UserAction): string | undefined {
         // ("did not find some options"). Emit a TODO so the script stays runnable.
         if (value === '')
           return '  // TODO: <select> reset to placeholder — selectOption needs a value or { index: 0 }';
-        return `  await page.selectOption(${jsString(action.selector)}, ${jsString(value)});`;
+        return `  await ${loc}.selectOption(${jsString(value)});`;
       }
-      return `  await page.fill(${jsString(action.selector)}, ${jsString(action.value ?? '')});`;
+      return `  await ${loc}.fill(${jsString(action.value ?? '')});`;
     }
     default:
       return undefined;
@@ -114,6 +116,13 @@ export function generatePlaywrightRepro(
   lines.push('');
   lines.push(`test(${jsString(title)}, async ({ page }) => {`);
 
+  if (options.errorMessage !== undefined) {
+    lines.push('  const consoleErrors: string[] = [];');
+    lines.push(
+      `  page.on('console', (m) => { if (m.type() === 'error') consoleErrors.push(m.text()); });`,
+    );
+  }
+
   if (actions.length === 0) {
     lines.push('  // No user actions were recorded in this window.');
   } else if (truncated) {
@@ -139,6 +148,26 @@ export function generatePlaywrightRepro(
     if (a && a.type === 'navigate' && a.url) {
       lines.push(`  await expect(page).toHaveURL(${jsString(a.url)});`);
       break;
+    }
+  }
+
+  if (options.errorMessage !== undefined) {
+    const needle =
+      options.errorMessage.length <= 200
+        ? options.errorMessage
+        : options.errorMessage.slice(0, 200);
+    if (needle.length === 0) {
+      lines.push(
+        '  // TODO: captured console error message was empty; replace with a stable non-empty substring to assert on.',
+      );
+    } else {
+      lines.push(
+        '  // This console error was captured in the session; the repro should not reproduce it once fixed.',
+      );
+      lines.push(
+        '  // If the message has dynamic parts (ids/timestamps), trim the expected substring below.',
+      );
+      lines.push(`  expect(consoleErrors.join('\\n')).not.toContain(${jsString(needle)});`);
     }
   }
 

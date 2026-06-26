@@ -346,6 +346,18 @@ describe('adversarial robustness', () => {
   });
 });
 
+describe('extractUserActions — locator', () => {
+  it('attaches a Playwright locator expression to click actions', () => {
+    freshIds();
+    const submit = el('button', { attributes: { 'data-testid': 'go' } });
+    const root = documentWith([submit]);
+    const events = [fullSnapshot(root, 1000), clickEvent(submit.id, 1100)];
+    const actions = extractUserActions(events);
+    const click = actions.find((a) => a.type === 'click');
+    expect(click?.locator).toBe("page.getByTestId('go')");
+  });
+});
+
 describe('extractDomMutationsInWindow', () => {
   it('returns attribute + text mutations within [fromTs, toTs] with target hints', () => {
     freshIds();
