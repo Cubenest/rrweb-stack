@@ -2,6 +2,8 @@
 // shell (Task 3.10, ADR-0010 / P2 PRD §H3). Reads ~/.peek/audit.log (JSONL),
 // runs the pure parse + filter, and prints. The native host / extension write
 // the log; the CLI only reads it.
+// `peek audit verify [--dir <path>] [--json]` (Task 6) — verify the hash
+// chain and report integrity status (exit 0/1/2).
 
 import { readFileSync } from 'node:fs';
 import { parseArgs } from 'node:util';
@@ -13,18 +15,29 @@ import {
 } from '../lib/audit.js';
 import { cutoffBefore } from '../lib/duration.js';
 import { auditLogPath } from '../lib/peek-home.js';
+import { runAuditVerify } from './audit-verify.js';
 
 function printUsage(): void {
   process.stdout.write(
     [
-      'Usage: peek audit log [options]',
+      'Usage: peek audit <subcommand> [options]',
       '',
-      'Options:',
+      'Subcommands:',
+      '  log     Show the act-tool audit log',
+      '  verify  Verify the audit log hash chain',
+      '',
+      'peek audit log [options]',
       '  --since <dur>     Only entries newer than e.g. 1h, 30m, 7d',
       '  --tool <name>     Filter by tool (e.g. execute_action)',
       '  --client <name>   Filter by MCP client (e.g. cursor, claude-code)',
       '  --json            Emit matching entries as JSON instead of a table',
       '  --help            Show this help and exit',
+      '',
+      'peek audit verify [options]',
+      '  --dir <path>      Directory containing audit.log + audit.head.json',
+      '                    (default: ~/.peek)',
+      '  --json            Emit result as JSON instead of human text',
+      '  Exit: 0=intact/no-log, 1=anomaly, 2=tampered',
       '',
     ].join('\n'),
   );
@@ -46,14 +59,19 @@ function renderEntry(e: AuditEntry): string {
 }
 
 /** Entry for `peek audit ...`; `argv` excludes the `audit` token. */
-export function runAudit(argv: string[]): number {
+export function runAudit(argv: string[]): number | Promise<number> {
   const sub = argv[0];
+  if (sub === 'verify') {
+    return runAuditVerify(argv.slice(1));
+  }
   if (sub !== 'log') {
     if (sub === undefined || sub === 'help' || sub === '--help' || sub === '-h') {
       printUsage();
       return sub === undefined ? 1 : 0;
     }
-    process.stderr.write(`peek audit: unknown subcommand '${sub}' (did you mean 'log'?)\n`);
+    process.stderr.write(
+      `peek audit: unknown subcommand '${sub}' (did you mean 'log' or 'verify'?)\n`,
+    );
     return 1;
   }
 

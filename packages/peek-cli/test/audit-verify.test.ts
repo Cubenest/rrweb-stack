@@ -1,4 +1,8 @@
-import { describe, expect, it } from 'vitest';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { runAuditVerify } from '../src/commands/audit-verify.js';
 import {
   type AuditHead,
   GENESIS_PREV,
@@ -108,5 +112,61 @@ describe('verifyAuditChain', () => {
     const r = verifyAuditChain(buf, head);
     expect(r.status).toBe('gaps');
     expect(r.gaps).toEqual([2]);
+  });
+});
+
+describe('peek audit verify (command)', () => {
+  let dir: string;
+  beforeEach(() => {
+    dir = mkdtempSync(join(tmpdir(), 'peek-verify-'));
+  });
+  afterEach(() => rmSync(dir, { recursive: true, force: true }));
+
+  it('exits 0 and prints "intact" for a good chain', async () => {
+    const { buf, head } = chainLog(2);
+    writeFileSync(join(dir, 'audit.log'), buf);
+    writeFileSync(join(dir, 'audit.head.json'), JSON.stringify(head));
+    const out: string[] = [];
+    const code = await runAuditVerify(['--dir', dir], (s) => out.push(s));
+    expect(code).toBe(0);
+    expect(out.join('')).toMatch(/intact through 2 entries/i);
+  });
+
+  it('exits 2 and pinpoints the broken line', async () => {
+    const { buf, head } = chainLog(3);
+    const lines = buf.toString('utf8').split('\n');
+    // biome-ignore lint/style/noNonNullAssertion: lines[1] is the second of 3+1 (empty trailing) split results
+    const o = JSON.parse(lines[1]!);
+    o.tool = 'x';
+    lines[1] = JSON.stringify(o);
+    writeFileSync(join(dir, 'audit.log'), lines.join('\n'));
+    writeFileSync(join(dir, 'audit.head.json'), JSON.stringify(head));
+    const code = await runAuditVerify(['--dir', dir], () => {});
+    expect(code).toBe(2);
+  });
+
+  it('--json emits machine output', async () => {
+    const { buf, head } = chainLog(1);
+    writeFileSync(join(dir, 'audit.log'), buf);
+    writeFileSync(join(dir, 'audit.head.json'), JSON.stringify(head));
+    const out: string[] = [];
+    const code = await runAuditVerify(['--dir', dir, '--json'], (s) => out.push(s));
+    expect(code).toBe(0);
+    expect(JSON.parse(out.join('')).status).toBe('intact');
+  });
+
+  it('exits 0 with "no audit log" when the log is absent', async () => {
+    const code = await runAuditVerify(['--dir', dir], () => {});
+    expect(code).toBe(0);
+  });
+
+  it('degrades to head-missing (exit 0) when the head file is corrupt', async () => {
+    const { buf } = chainLog(2);
+    writeFileSync(join(dir, 'audit.log'), buf);
+    writeFileSync(join(dir, 'audit.head.json'), '{ this is not json');
+    const out: string[] = [];
+    const code = await runAuditVerify(['--dir', dir, '--json'], (s) => out.push(s));
+    expect(code).toBe(0);
+    expect(JSON.parse(out.join('')).status).toBe('head-missing');
   });
 });
