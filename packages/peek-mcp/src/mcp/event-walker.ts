@@ -18,6 +18,7 @@
 // Everything works on the decoded `eventWithTime[]` with no live DOM, so it
 // runs in plain Node (no jsdom) — matching ADR-0011's "thin local client".
 
+import { playwrightLocator } from './playwright-locator.js';
 import {
   EventType,
   IncrementalSource,
@@ -49,6 +50,8 @@ export interface UserAction {
   readonly ts: number;
   /** Derived CSS selector for the target node, when resolvable. */
   readonly selector?: string;
+  /** Derived Playwright locator expression (e.g. `page.getByRole('button', { name: 'Go' })`), when resolvable. */
+  readonly locator?: string;
   /** For input actions: the (already-masked-by-capture) value typed. */
   readonly value?: string;
   /** For input actions: the lowercase HTML tag name of the target element (e.g. 'select', 'input', 'textarea'). */
@@ -129,10 +132,12 @@ export function extractUserActions(events: eventWithTime[]): UserAction[] {
       const mi = data as unknown as mouseInteractionData;
       if (mi.type === MouseInteractions.Click || mi.type === MouseInteractions.DblClick) {
         const selector = resolveSelector(mi.id);
+        const loc = index ? playwrightLocator(index as NodeIndex, mi.id) : undefined;
         actions.push({
           type: 'click',
           ts: e.timestamp,
           ...(selector !== undefined ? { selector } : {}),
+          ...(loc !== undefined ? { locator: loc } : {}),
           summary: selector !== undefined ? `click ${selector}` : `click node#${mi.id}`,
         });
       }
@@ -142,6 +147,7 @@ export function extractUserActions(events: eventWithTime[]): UserAction[] {
     if (data.source === IncrementalSource.Input) {
       const input = data as unknown as inputData;
       const selector = resolveSelector(input.id);
+      const loc = index ? playwrightLocator(index as NodeIndex, input.id) : undefined;
       // rrweb already masks values per the recorder config; we surface as-is.
       const value = typeof input.text === 'string' ? input.text : '';
       const nodeEntry = index?.get(input.id);
@@ -158,6 +164,7 @@ export function extractUserActions(events: eventWithTime[]): UserAction[] {
         type: 'input',
         ts: e.timestamp,
         ...(selector !== undefined ? { selector } : {}),
+        ...(loc !== undefined ? { locator: loc } : {}),
         value,
         ...(elementTag !== undefined ? { elementTag } : {}),
         ...(inputType !== undefined ? { inputType } : {}),
