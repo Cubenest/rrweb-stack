@@ -145,7 +145,8 @@ describe('peek audit log --help (P-18 alpha.7)', () => {
       const code = runAudit(['log', '--help']);
       expect(code).toBe(0);
       expect(err).toBe('');
-      expect(out).toContain('Usage: peek audit log');
+      expect(out).toContain('peek audit log');
+      expect(out).toContain('peek audit verify');
       expect(out).toContain('--since');
       expect(out).toContain('--tool');
       expect(out).toContain('--client');

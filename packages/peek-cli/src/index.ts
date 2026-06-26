@@ -5,6 +5,7 @@
 //   peek sessions <list|show|export|delete>
 //   peek init
 //   peek audit log
+//   peek audit verify
 //
 // Arg parsing uses the built-in node:util parseArgs at each command boundary
 // (no CLI framework dependency); this top-level dispatcher just routes on the
@@ -29,6 +30,7 @@ Commands:
   sessions delete <id>         Delete a session (or --all-older-than <dur>)
   init                         Interactive wizard: configure MCP clients + native host
   audit log                    Show the act-tool audit log (--since/--tool/--client)
+  audit verify                 Verify the audit log hash chain (exit 0 ok, 1 anomaly, 2 tampered)
 
 Run \`peek <command> --help\` for command-specific options.
 

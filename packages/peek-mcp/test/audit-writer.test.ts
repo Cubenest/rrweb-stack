@@ -1,7 +1,18 @@
-import { existsSync, mkdtempSync, readFileSync, rmSync, statSync } from 'node:fs';
+import {
+  closeSync,
+  existsSync,
+  mkdtempSync,
+  openSync,
+  readFileSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { GENESIS_PREV, LOCK_GAP_PREV, hashLine } from '../src/native-host/audit-chain.js';
+import { auditHeadPath, auditLockPath, readHead } from '../src/native-host/audit-head.js';
 import {
   appendAuditEntry,
   buildAuditEntry,
@@ -43,6 +54,9 @@ describe('buildAuditEntry', () => {
     expect(entry.client).toBe('cursor');
     expect(entry.sessionId).toBe('s_abc');
     expect(entry.result).toBe('ok');
+    // buildAuditEntry produces a DRAFT — it never sets the chain fields.
+    expect('seq' in entry).toBe(false);
+    expect('prevHash' in entry).toBe(false);
   });
 
   it('omits approvalTs when no user-approval timestamp is given', () => {
@@ -89,7 +103,7 @@ describe('buildAuditEntry', () => {
       approvalMs: 1716480001500,
       destructiveTerm: 'delete',
     });
-    const line = serializeAuditEntry(entry);
+    const line = serializeAuditEntry({ ...entry, seq: 1, prevHash: GENESIS_PREV });
     const parsed = JSON.parse(line.trimEnd());
     expect(parsed).toMatchObject({
       ts: '2024-05-23T16:00:00.000Z',
@@ -132,6 +146,8 @@ describe('serializeAuditEntry', () => {
       client: 'cursor',
       sessionId: 's',
       result: 'ok',
+      seq: 1,
+      prevHash: GENESIS_PREV,
     });
     expect(line.endsWith('\n')).toBe(true);
     expect(line.split('\n')).toHaveLength(2);
@@ -139,6 +155,8 @@ describe('serializeAuditEntry', () => {
     expect(JSON.parse(line.trimEnd())).toMatchObject({
       tool: 'execute_action',
       result: 'ok',
+      seq: 1,
+      prevHash: GENESIS_PREV,
     });
   });
 });
@@ -178,10 +196,12 @@ describe('appendAuditEntry / recordAuditEntry', () => {
       tool: 'execute_action',
       result: 'ok',
       ts: built.ts,
+      seq: 1,
     });
     expect(JSON.parse(lines[1] ?? '')).toMatchObject({
       tool: 'request_authorization',
       result: 'denied',
+      seq: 2,
     });
     // And the redaction took effect on the second entry.
     expect(JSON.parse(lines[1] ?? '').args.text).toBe('<<REDACTED>>');
@@ -245,5 +265,130 @@ describe('appendAuditEntry / recordAuditEntry', () => {
     for (let i = 0; i < 5; i++) {
       expect(JSON.parse(lines[i] ?? '').sessionId).toBe(`s_${i}`);
     }
+  });
+});
+
+describe('audit hash-chain', () => {
+  function input(sessionId: string, nowMs: number) {
+    return {
+      tool: 'execute_action' as const,
+      action: { type: 'click' as const, selector: '#a', button: 'left' as const },
+      approver: 'user' as const,
+      client: 'cursor',
+      sessionId,
+      result: 'ok' as const,
+      nowMs,
+    };
+  }
+
+  it('seeds the first chained line with seq 1 and the genesis prevHash', () => {
+    const path = join(workdir, 'audit.log');
+    const entry = recordAuditEntry(input('s_1', 1716480000000), { path });
+    expect(entry.seq).toBe(1);
+    expect(entry.prevHash).toBe(GENESIS_PREV);
+    const lines = readFileSync(path, 'utf8').split('\n').filter(Boolean);
+    const parsed = JSON.parse(lines[0] ?? '') as { seq: number; prevHash: string };
+    expect(parsed.seq).toBe(1);
+    expect(parsed.prevHash).toBe(GENESIS_PREV);
+  });
+
+  it('links two successive writes into a linear chain', () => {
+    const path = join(workdir, 'audit.log');
+    const a = recordAuditEntry(input('s_1', 1716480000000), { path });
+    const b = recordAuditEntry(input('s_2', 1716480001000), { path });
+    expect(b.seq).toBe(a.seq + 1);
+    const rawA = `${readFileSync(path, 'utf8').split('\n').filter(Boolean)[0]}\n`;
+    expect(b.prevHash).toBe(hashLine(rawA));
+  });
+
+  it('records a head file with seq and a byte count matching the log size', () => {
+    const path = join(workdir, 'audit.log');
+    recordAuditEntry(input('s_1', 1716480000000), { path });
+    const headPath = auditHeadPath(path);
+    expect(existsSync(headPath)).toBe(true);
+    const head = readHead(headPath);
+    expect(head).not.toBeNull();
+    expect(head?.seq).toBe(1);
+    expect(head?.bytes).toBe(statSync(path).size);
+  });
+
+  it('seals a pre-existing unchained log line as the prefix', () => {
+    const path = join(workdir, 'audit.log');
+    const legacy = `${JSON.stringify({ ts: '2025-01-01T00:00:00.000Z', tool: 'execute_action', args: { type: 'reload' }, approver: 'user', client: 'cursor', sessionId: 's_legacy', result: 'ok' })}\n`;
+    const legacyBytes = Buffer.byteLength(legacy, 'utf8');
+    // Write the legacy (unchained) line directly, bypassing the chained writer.
+    writeFileSync(path, legacy, { mode: 0o600 });
+    const entry = recordAuditEntry(input('s_new', 1716480000000), { path });
+    expect(entry.seq).toBe(1);
+    expect(entry.prevHash).toBe(GENESIS_PREV);
+    const head = readHead(auditHeadPath(path));
+    expect(head?.prefix?.bytes).toBe(legacyBytes);
+  });
+
+  it('writes a gap line (LOCK_GAP_PREV) when the lock cannot be acquired', () => {
+    const path = join(workdir, 'audit.log');
+    const lockFd = openSync(auditLockPath(path), 'wx'); // hold the lock
+    try {
+      const entry = recordAuditEntry(input('s_gap', 1716480000000), {
+        path,
+        lock: { maxWaitMs: 40, retryMs: 10, staleMs: 9999 },
+      });
+      expect(entry.prevHash).toBe(LOCK_GAP_PREV);
+      const lines = readFileSync(path, 'utf8').split('\n').filter(Boolean);
+      expect(lines).toHaveLength(1);
+    } finally {
+      closeSync(lockFd);
+      rmSync(auditLockPath(path), { force: true });
+    }
+  });
+
+  it('rebuilds (not reseals) the chain when the head is missing on an already-chained log', () => {
+    const path = join(workdir, 'audit.log');
+    // Two real chained entries via the writer.
+    recordAuditEntry(input('s_1', 1716480000000), { path });
+    recordAuditEntry(input('s_2', 1716480001000), { path });
+    // Simulate a deleted/lost head file (the log itself is untouched + chained).
+    const headPath = auditHeadPath(path);
+    rmSync(headPath, { force: true });
+    expect(existsSync(headPath)).toBe(false);
+
+    const third = recordAuditEntry(input('s_3', 1716480002000), { path });
+
+    // It must chain off the REAL tail (line 2), not restart at seq 1.
+    expect(third.seq).toBe(3);
+    const rawLines = readFileSync(path, 'utf8').split('\n').filter(Boolean);
+    expect(rawLines).toHaveLength(3);
+    expect(third.prevHash).toBe(hashLine(`${rawLines[1] ?? ''}\n`));
+
+    // And the rebuilt head must NOT seal the chained log as a legacy prefix.
+    const head = readHead(headPath);
+    expect(head).not.toBeNull();
+    expect(head?.prefix).toBeNull();
+    expect(head?.seq).toBe(3);
+  });
+
+  it('a normal write after a gap line chains off the gap line and counts the gap', () => {
+    const logPath = join(workdir, 'audit.log');
+    const headPath = auditHeadPath(logPath);
+    const baseInput = input('s_gapheal', 1716480000000);
+    const fd = openSync(auditLockPath(logPath), 'wx'); // hold the lock → force a gap line
+    let gap: ReturnType<typeof recordAuditEntry>;
+    try {
+      gap = recordAuditEntry(baseInput, {
+        path: logPath,
+        lock: { maxWaitMs: 40, retryMs: 10, staleMs: 9999 },
+      });
+    } finally {
+      closeSync(fd);
+      rmSync(auditLockPath(logPath), { force: true }); // release so the next write can lock
+    }
+    expect(gap.prevHash).toBe(LOCK_GAP_PREV);
+
+    const next = recordAuditEntry(baseInput, { path: logPath }); // normal locked write
+    const rawLines = readFileSync(logPath, 'utf8').split('\n').filter(Boolean);
+    expect(next.prevHash).toBe(hashLine(rawLines[0] ?? '')); // chains off the gap line's bytes
+    const head = JSON.parse(readFileSync(headPath, 'utf8'));
+    expect(head.gapCount).toBe(1);
+    expect(head.seq).toBe(next.seq);
   });
 });
