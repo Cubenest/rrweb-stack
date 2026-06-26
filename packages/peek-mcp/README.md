@@ -85,7 +85,7 @@ The per-user config paths `peek init` writes to (canonical, see `packages/peek-c
 | `get_session_console_errors` | List console errors recorded in a session | none |
 | `get_session_network_errors` | List failed/notable network requests in a session | none |
 | `get_user_action_before_error` | Pre-assembled causal chain for a console error: time-ordered `timeline` (user action → DOM mutation → network/console error), grouped `actions`/`domMutations`/`networkErrors`, the seed `error`, a deterministic `narrative`, and `windowMs` bounding the correlated window. Backward-compatible: `errorId`/`errorTs`/`actions` are still present. | none |
-| `generate_playwright_repro` | Generate a runnable Playwright test from a session | none |
+| `generate_playwright_repro` | Generate a runnable Playwright test from a session. Emits semantic locators (`getByTestId`/`getByRole`/`getByPlaceholder`/`getByText`, uniqueness-checked, CSS fallback). Accepts an optional `errorId` that seeds a console-error-absence assertion so the repro fails while the bug is present and passes once fixed. | none |
 | `get_dom_snapshot` | Reconstruct the DOM of a recorded session at a given timestamp (forensic) | none |
 | `query_dom_history` | Two modes: **selector mode** — timeline of attribute/text changes for one node (as before); **window mode** (`ts` + optional `windowMs`, no selector) — all DOM changes in a time window with `target` hints. | none |
 | `get_page_view` | Live, masked, ref-tagged list of interactive elements — target a `ref` in write actions instead of a CSS selector (cheaper + deterministic than `get_dom_snapshot`) | per-origin Level 1+ |
