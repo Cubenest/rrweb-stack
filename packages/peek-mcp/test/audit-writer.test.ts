@@ -342,6 +342,31 @@ describe('audit hash-chain', () => {
     }
   });
 
+  it('rebuilds (not reseals) the chain when the head is missing on an already-chained log', () => {
+    const path = join(workdir, 'audit.log');
+    // Two real chained entries via the writer.
+    recordAuditEntry(input('s_1', 1716480000000), { path });
+    recordAuditEntry(input('s_2', 1716480001000), { path });
+    // Simulate a deleted/lost head file (the log itself is untouched + chained).
+    const headPath = auditHeadPath(path);
+    rmSync(headPath, { force: true });
+    expect(existsSync(headPath)).toBe(false);
+
+    const third = recordAuditEntry(input('s_3', 1716480002000), { path });
+
+    // It must chain off the REAL tail (line 2), not restart at seq 1.
+    expect(third.seq).toBe(3);
+    const rawLines = readFileSync(path, 'utf8').split('\n').filter(Boolean);
+    expect(rawLines).toHaveLength(3);
+    expect(third.prevHash).toBe(hashLine(`${rawLines[1] ?? ''}\n`));
+
+    // And the rebuilt head must NOT seal the chained log as a legacy prefix.
+    const head = readHead(headPath);
+    expect(head).not.toBeNull();
+    expect(head?.prefix).toBeNull();
+    expect(head?.seq).toBe(3);
+  });
+
   it('a normal write after a gap line chains off the gap line and counts the gap', () => {
     const logPath = join(workdir, 'audit.log');
     const headPath = auditHeadPath(logPath);

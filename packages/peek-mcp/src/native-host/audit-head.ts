@@ -44,6 +44,39 @@ export function writeHeadAtomic(headPath: string, head: AuditHead): void {
   writeJsonAtomic(headPath, head);
 }
 
+/**
+ * True iff the log already contains chained entries — i.e. its first non-empty
+ * line parses as JSON and carries a string `prevHash` field. Pure legacy
+ * (unchained) lines lack `prevHash`, so this distinguishes "head is missing but
+ * the chain is real" (rebuild) from "first ever chained write over a legacy
+ * log" (seal as prefix). Used by loadHead in audit.ts.
+ */
+export function logIsChained(logPath: string): boolean {
+  if (!existsSync(logPath)) return false;
+  const buf = readFileSync(logPath);
+  let start = 0;
+  for (let i = 0; i < buf.length; i++) {
+    if (buf[i] !== 0x0a) continue; // '\n'
+    const lineBuf = buf.subarray(start, i);
+    start = i + 1;
+    if (lineBuf.length === 0) continue;
+    return firstLineIsChained(lineBuf);
+  }
+  // No newline found, or only a trailing unterminated fragment: treat the
+  // remainder (if any) as the first line.
+  if (start < buf.length) return firstLineIsChained(buf.subarray(start));
+  return false;
+}
+
+function firstLineIsChained(lineBuf: Buffer): boolean {
+  try {
+    const obj = JSON.parse(lineBuf.toString('utf8')) as { prevHash?: unknown };
+    return typeof obj.prevHash === 'string';
+  } catch {
+    return false;
+  }
+}
+
 export function initHead(logPath: string): AuditHead {
   if (!existsSync(logPath)) {
     return { version: 1, prefix: null, seq: 0, headHash: GENESIS_PREV, gapCount: 0, bytes: 0 };

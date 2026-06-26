@@ -25,9 +25,11 @@ import { peekHomeDir } from '../db/open.js';
 import { type Action, redactActionForAudit } from '../mcp/action-schema.js';
 import { LOCK_GAP_PREV, hashLine } from './audit-chain.js';
 import {
+  type AuditHead,
   auditHeadPath,
   auditLockPath,
   initHead,
+  logIsChained,
   readHead,
   rebuildHeadFromLog,
   writeHeadAtomic,
@@ -148,12 +150,26 @@ function ensureLogFile(logPath: string): void {
 }
 
 /**
+ * Resolve the head for an append. Prefers the on-disk head. If it's missing or
+ * corrupt we must NOT blindly `initHead`, which seals the whole log as a legacy
+ * `prefix` and restarts the chain — when the log already has chained entries
+ * that destroys their per-entry tamper-evidence. So: if the log is already
+ * chained, rebuild the head from its real tail (prefix stays null); only seal a
+ * genuinely-legacy (unchained) log as a prefix.
+ */
+function loadHead(logPath: string, headPath: string): AuditHead {
+  const existing = readHead(headPath);
+  if (existing) return existing;
+  return logIsChained(logPath) ? rebuildHeadFromLog(logPath, null) : initHead(logPath);
+}
+
+/**
  * Append ONE chained line under the file lock. Reads (or initialises) the head,
  * self-heals it if the on-disk size has drifted, stamps `seq`/`prevHash`,
  * appends the line, then atomically advances the head to point at the new tail.
  */
 function chainAppend(draft: DraftAuditEntry, logPath: string, headPath: string): AuditEntry {
-  let head = readHead(headPath) ?? initHead(logPath);
+  let head = loadHead(logPath, headPath);
   // Size-drift self-heal: if the log grew/shrank since the head was written
   // (e.g. a prior gap-append, an external edit, a crash), re-derive the tail.
   const onDisk = existsSync(logPath) ? statSync(logPath).size : 0;
@@ -190,7 +206,7 @@ function gapAppend(draft: DraftAuditEntry, logPath: string, headPath: string): A
   // pipe), and even a torn line would land inside an already-gap-flagged region
   // that `verify` flags — so the worst case is a detectable gap, not silent
   // corruption. The trade-off is deliberate: we never drop an audit line.
-  const head = readHead(headPath) ?? initHead(logPath);
+  const head = loadHead(logPath, headPath);
   // `seq` here is advisory: the head was read without the lock, so this seq may
   // collide with a concurrent locked write across the LOCK_GAP_PREV boundary.
   // Chain linkage via `prevHash` is the authoritative ordering — a verifier MUST
