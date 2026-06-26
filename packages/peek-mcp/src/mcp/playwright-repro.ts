@@ -156,13 +156,19 @@ export function generatePlaywrightRepro(
       options.errorMessage.length <= 200
         ? options.errorMessage
         : options.errorMessage.slice(0, 200);
-    lines.push(
-      '  // This console error was captured in the session; the repro should not reproduce it once fixed.',
-    );
-    lines.push(
-      '  // If the message has dynamic parts (ids/timestamps), trim the expected substring below.',
-    );
-    lines.push(`  expect(consoleErrors.join('\\n')).not.toContain(${jsString(needle)});`);
+    if (needle.length === 0) {
+      lines.push(
+        '  // TODO: captured console error message was empty; replace with a stable non-empty substring to assert on.',
+      );
+    } else {
+      lines.push(
+        '  // This console error was captured in the session; the repro should not reproduce it once fixed.',
+      );
+      lines.push(
+        '  // If the message has dynamic parts (ids/timestamps), trim the expected substring below.',
+      );
+      lines.push(`  expect(consoleErrors.join('\\n')).not.toContain(${jsString(needle)});`);
+    }
   }
 
   lines.push('});');

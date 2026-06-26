@@ -345,4 +345,17 @@ describe('generatePlaywrightRepro', () => {
     const script = generatePlaywrightRepro(events, { title: 't' });
     expect(script).not.toContain("page.on('console'");
   });
+
+  // An empty captured message would make `.not.toContain('')` fail
+  // unconditionally — an unusable repro. Guard the empty needle with a TODO.
+  it('skips the console-error assertion (with a TODO) when errorMessage is empty', () => {
+    freshIds();
+    const b = el('button', { attributes: { id: 'go' } });
+    const events = [fullSnapshot(documentWith([b]), 1000), clickEvent(b.id, 1100)];
+    const script = generatePlaywrightRepro(events, { title: 't', errorMessage: '' });
+    expect(script).not.toContain("not.toContain('')");
+    expect(script).toContain('// TODO: captured console error message was empty');
+    // The collector is still emitted (errorMessage !== undefined), just no assertion.
+    expect(script).toContain('const consoleErrors: string[] = [];');
+  });
 });
