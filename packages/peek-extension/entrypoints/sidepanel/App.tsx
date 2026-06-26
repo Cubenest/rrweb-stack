@@ -10,6 +10,7 @@ import { ActionFeedbackToggle } from './sections/ActionFeedbackToggle';
 import { AgentControlSection } from './sections/AgentControlSection';
 import { CaptureSection } from './sections/CaptureSection';
 import { ConfirmBanner, closedVerdict } from './sections/ConfirmBanner';
+import { FirstRunCard } from './sections/FirstRunCard';
 import { RecordingBorderToggle } from './sections/RecordingBorderToggle';
 import { StatusHeader } from './sections/StatusHeader';
 import { useActiveTab } from './useActiveTab';
@@ -84,6 +85,8 @@ export function App(): React.JSX.Element {
         <h1 className="peek-title">peek</h1>
         <span className="peek-tagline">browser session capture for AI agents</span>
       </header>
+
+      <FirstRunCard />
 
       {pendingConfirm ? (
         <ConfirmBanner pending={pendingConfirm} onResolve={resolveConfirm} />

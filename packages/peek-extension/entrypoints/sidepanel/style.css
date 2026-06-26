@@ -447,3 +447,22 @@ code {
 .peek-pref-row input {
   accent-color: var(--peek-accent);
 }
+
+/* ---- First-run orientation card ---- */
+.peek-firstrun {
+  border: 1px solid var(--peek-border);
+  border-radius: 8px;
+  padding: 12px 14px;
+  margin-bottom: 12px;
+  background: var(--peek-surface);
+}
+.peek-firstrun-lead {
+  margin: 6px 0;
+}
+.peek-firstrun-points {
+  margin: 8px 0 12px;
+  padding-left: 18px;
+}
+.peek-firstrun-points li {
+  margin: 4px 0;
+}
