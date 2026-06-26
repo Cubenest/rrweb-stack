@@ -214,10 +214,11 @@ export function selectorFor(index: NodeIndex, id: number): string | undefined {
     // (the segment so far is rooted at body, which is what an agent wants).
     if (tag === 'body' || tag === 'html') break;
 
-    // An id or any attribute selector (#id, [data-testid], tag[name=…]) is
-    // specific enough to stop climbing — and specific enough that it needs no
-    // nth-of-type disambiguation.
-    const isAnchor = local.startsWith('#') || local.includes('[');
+    // `aria-label`/`placeholder` are readable but NOT guaranteed unique, so they
+    // must keep climbing for ancestor + nth-of-type disambiguation. Only the
+    // genuinely-unique hooks (#id, [data-*], tag[name]) terminate the climb.
+    const isSoftAttr = local.includes('[aria-label=') || local.includes('[placeholder=');
+    const isAnchor = !isSoftAttr && (local.startsWith('#') || local.includes('['));
     if (isAnchor) {
       segments.unshift(local);
       break;
