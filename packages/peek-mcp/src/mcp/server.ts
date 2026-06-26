@@ -513,16 +513,35 @@ export function createPeekMcpServer(options: CreatePeekMcpServerOptions = {}): P
       {
         title: 'DOM change timeline',
         description:
-          'Timeline of attribute and/or text changes over a session for the node matching a CSS selector - useful for tracking how one element evolved. Returns JSON { selector, changes }. Use op to restrict to attribute changes or innerText; omit for both.',
+          "Timeline of DOM changes in a session. Two modes: (1) selector mode — pass `selector` to track one node's attribute/text history (use `op` to restrict). (2) window mode — pass `ts` (and optional `windowMs`) instead, to get ALL DOM changes in [ts - windowMs, ts] with per-change `target` hints, no selector needed. Returns JSON { selector, changes } or { ts, windowMs, changes }.",
         inputSchema: {
           sessionId: z.string().describe('Session id from list_recent_sessions.'),
           selector: z
             .string()
-            .describe("CSS selector for the node to track, e.g. '#status' or '.cart-count'."),
+            .optional()
+            .describe(
+              "Selector mode: CSS selector to track one node, e.g. '#status'. Omit and pass `ts` for window mode.",
+            ),
+          ts: z
+            .number()
+            .int()
+            .optional()
+            .describe(
+              'Window mode: anchor (epoch-ms). Returns DOM changes in [ts - windowMs, ts]. Ignored if `selector` is given.',
+            ),
+          windowMs: z
+            .number()
+            .int()
+            .min(100)
+            .max(60000)
+            .default(5000)
+            .describe('Window mode size in ms (100-60000; default 5000).'),
           op: z
             .enum(['attributeChanges', 'innerText'])
             .optional()
-            .describe("Restrict to 'attributeChanges' or 'innerText'. Omit to include both."),
+            .describe(
+              "Selector mode only: restrict to 'attributeChanges' or 'innerText'. Omit for both.",
+            ),
           limit: z
             .number()
             .int()
@@ -533,16 +552,30 @@ export function createPeekMcpServer(options: CreatePeekMcpServerOptions = {}): P
         },
         annotations: { readOnlyHint: true, openWorldHint: false },
       },
-      ({ sessionId, selector, op, limit }) => {
+      ({ sessionId, selector, ts, op, windowMs, limit }) => {
         const handle = getDb();
         if (!handle) return textResult(NO_DB_MESSAGE);
+        if (selector === undefined && ts === undefined) {
+          return textResult(
+            'query_dom_history needs either `selector` (history of one node) or `ts` (window mode).',
+          );
+        }
         const ev = eventsFor(sessionId);
         if (!ev.ok) return textResult(ev.message);
-        const changes = queryDomHistory(ev.events, selector, {
-          limit,
-          ...(op !== undefined ? { op } : {}),
-        });
-        return jsonResult({ selector, changes });
+        if (selector !== undefined) {
+          const changes = queryDomHistory(ev.events, selector, {
+            limit,
+            ...(op !== undefined ? { op } : {}),
+          });
+          return jsonResult({ selector, changes });
+        }
+        if (ts === undefined) {
+          return textResult(
+            'query_dom_history needs either `selector` (history of one node) or `ts` (window mode).',
+          );
+        }
+        const changes = extractDomMutationsInWindow(ev.events, ts - windowMs, ts, limit);
+        return jsonResult({ ts, windowMs, changes });
       },
     );
 
