@@ -1,4 +1,5 @@
-import { closeSync, openSync, statSync, unlinkSync } from 'node:fs';
+import { randomBytes } from 'node:crypto';
+import { closeSync, openSync, readFileSync, statSync, unlinkSync, writeSync } from 'node:fs';
 
 export interface LockOptions {
   /** Max time to wait for the lock before throwing. */
@@ -23,7 +24,7 @@ function sleepSync(ms: number): void {
 export function withFileLock<T>(lockPath: string, fn: () => T, options: LockOptions = {}): T {
   const { maxWaitMs, retryMs, staleMs } = { ...DEFAULTS, ...options };
   const deadline = Date.now() + maxWaitMs;
-  const fd = acquireLock(lockPath, deadline, retryMs, staleMs, maxWaitMs);
+  const { fd, token } = acquireLock(lockPath, deadline, retryMs, staleMs, maxWaitMs);
   try {
     return fn();
   } finally {
@@ -33,9 +34,13 @@ export function withFileLock<T>(lockPath: string, fn: () => T, options: LockOpti
       /* already closed */
     }
     try {
-      unlinkSync(lockPath);
+      // Only remove the lock if we still own it. If our critical section ran
+      // past staleMs, another process may have stolen the lock as stale and
+      // rewritten it with its own token — deleting that would free a lock we
+      // no longer hold and break mutual exclusion.
+      if (readFileSync(lockPath, 'utf8') === token) unlinkSync(lockPath);
     } catch {
-      /* already removed */
+      /* gone already / unreadable — nothing of ours to release */
     }
   }
 }
@@ -47,10 +52,16 @@ function acquireLock(
   retryMs: number,
   staleMs: number,
   maxWaitMs: number,
-): number {
+): { fd: number; token: string } {
   for (;;) {
     try {
-      return openSync(lockPath, 'wx'); // O_CREAT | O_EXCL — fails if it exists
+      const fd = openSync(lockPath, 'wx'); // O_CREAT | O_EXCL — fails if it exists
+      // Stamp the lock with an ownership token so release can verify we still
+      // hold it. A stale-takeover by another process reopens via this path and
+      // writes its own token, keeping release ownership-safe on both sides.
+      const token = `${process.pid}-${randomBytes(8).toString('hex')}`;
+      writeSync(fd, token);
+      return { fd, token };
     } catch (err) {
       if ((err as NodeJS.ErrnoException).code !== 'EEXIST') throw err;
       try {

@@ -1,4 +1,13 @@
-import { closeSync, existsSync, mkdtempSync, openSync, rmSync, utimesSync } from 'node:fs';
+import {
+  closeSync,
+  existsSync,
+  mkdtempSync,
+  openSync,
+  readFileSync,
+  rmSync,
+  utimesSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
@@ -51,5 +60,18 @@ describe('withFileLock', () => {
     });
     expect(out).toBe('ok');
     expect(existsSync(lockPath)).toBe(false);
+  });
+
+  it('does not delete a lock that was stolen and re-owned by another process', () => {
+    // Simulate the stale-takeover race: while we hold the lock, another process
+    // replaces it (unlink + recreate) and stamps its own token. On release we
+    // must NOT delete that lock — it belongs to whoever owns it now.
+    const out = withFileLock(lockPath, () => {
+      writeFileSync(lockPath, 'someone-else-token');
+      return 'x';
+    });
+    expect(out).toBe('x');
+    expect(existsSync(lockPath)).toBe(true);
+    expect(readFileSync(lockPath, 'utf8')).toBe('someone-else-token');
   });
 });
