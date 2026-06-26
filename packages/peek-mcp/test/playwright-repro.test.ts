@@ -41,9 +41,9 @@ describe('generatePlaywrightRepro', () => {
     const body = lines.filter((l) => l.trim().startsWith('await'));
     expect(body).toEqual([
       `  await page.goto('https://app.test/login');`,
-      `  await page.fill('input[name="email"]', 'me@x.com');`,
-      `  await page.fill('input[name="password"]', 'hunter2');`,
-      `  await page.click('#login');`,
+      `  await page.locator('input[name="email"]').fill('me@x.com');`,
+      `  await page.locator('input[name="password"]').fill('hunter2');`,
+      `  await page.locator('#login').click();`,
       `  await page.goto('https://app.test/dashboard');`,
       `  await expect(page).toHaveURL('https://app.test/dashboard');`,
     ]);
@@ -54,7 +54,7 @@ describe('generatePlaywrightRepro', () => {
     const { events } = loginFlow();
     // Only the click at 1300 falls in [1250, 1350].
     const script = generatePlaywrightRepro(events, { startTs: 1250, endTs: 1350 });
-    expect(script).toContain(`await page.click('#login');`);
+    expect(script).toContain(`await page.locator('#login').click();`);
     expect(script).not.toContain('page.goto');
     expect(script).not.toContain('page.fill');
   });
@@ -70,8 +70,8 @@ describe('generatePlaywrightRepro', () => {
       inputEvent(email.id, 'me@x.com', 1200),
     ];
     const script = generatePlaywrightRepro(events);
-    expect(script).toContain(`await page.selectOption('#lang', 'en');`);
-    expect(script).toContain(`await page.fill('input[name="email"]', 'me@x.com');`);
+    expect(script).toContain(`await page.locator('#lang').selectOption('en');`);
+    expect(script).toContain(`await page.locator('input[name="email"]').fill('me@x.com');`);
     expect(script).not.toContain(`page.fill('#lang'`);
   });
 
@@ -81,7 +81,7 @@ describe('generatePlaywrightRepro', () => {
     const root = documentWith([input]);
     const events = [fullSnapshot(root, 1000), inputEvent(input.id, "it's mine", 1100)];
     const script = generatePlaywrightRepro(events);
-    expect(script).toContain(`await page.fill('input[name="note"]', 'it\\'s mine');`);
+    expect(script).toContain(`await page.locator('input[name="note"]').fill('it\\'s mine');`);
   });
 
   it('emits a TODO comment for an unresolved selector instead of dropping it', () => {
@@ -107,8 +107,8 @@ describe('generatePlaywrightRepro', () => {
     const events = [fullSnapshot(root, 1000), inputEvent(input.id, 'a\r\nb', 1100)];
     const script = generatePlaywrightRepro(events);
     // The fill statement must contain escaped \r and \n, no raw line terminators.
-    const fillLine = script.split('\n').find((l) => l.includes('page.fill'));
-    expect(fillLine).toBe(`  await page.fill('input[name="note"]', 'a\\r\\nb');`);
+    const fillLine = script.split('\n').find((l) => l.includes('.fill('));
+    expect(fillLine).toBe(`  await page.locator('input[name="note"]').fill('a\\r\\nb');`);
   });
 
   it('caps output to the latest N actions with a truncation note (I1)', () => {
@@ -126,7 +126,7 @@ describe('generatePlaywrightRepro', () => {
     }
 
     const script = generatePlaywrightRepro(events, { maxActions: 200 });
-    const clickLines = script.split('\n').filter((l) => l.includes('page.click'));
+    const clickLines = script.split('\n').filter((l) => l.includes('.click()'));
     expect(clickLines).toHaveLength(200);
     expect(script).toContain('// truncated: showing last 200 of 250 actions');
     // The kept actions are the LATEST 200; the earliest is dropped.
@@ -163,7 +163,7 @@ describe('generatePlaywrightRepro', () => {
     const root = documentWith([lang]);
     const events = [fullSnapshot(root, 1000), inputEvent(lang.id, "a'b\nc", 1100)];
     const script = generatePlaywrightRepro(events);
-    expect(script).toContain(`await page.selectOption('#lang', 'a\\'b\\nc');`);
+    expect(script).toContain(`await page.locator('#lang').selectOption('a\\'b\\nc');`);
   });
 
   // --- Tier-0 coalescing / dedup -----------------------------------------
@@ -191,8 +191,8 @@ describe('generatePlaywrightRepro', () => {
       clickEvent(button.id, 1200), // 100ms later, within 700ms window
     ];
     const script = generatePlaywrightRepro(events);
-    const clickLines = script.split('\n').filter((l) => l.includes('page.click'));
-    expect(clickLines).toEqual([`  await page.click('#go');`]);
+    const clickLines = script.split('\n').filter((l) => l.includes('.click()'));
+    expect(clickLines).toEqual([`  await page.locator('#go').click();`]);
   });
 
   it('keeps two clicks on the same selector spaced beyond the coalesce window', () => {
@@ -205,8 +205,11 @@ describe('generatePlaywrightRepro', () => {
       clickEvent(button.id, 2000), // 900ms later, beyond 700ms window
     ];
     const script = generatePlaywrightRepro(events);
-    const clickLines = script.split('\n').filter((l) => l.includes('page.click'));
-    expect(clickLines).toEqual([`  await page.click('#go');`, `  await page.click('#go');`]);
+    const clickLines = script.split('\n').filter((l) => l.includes('.click()'));
+    expect(clickLines).toEqual([
+      `  await page.locator('#go').click();`,
+      `  await page.locator('#go').click();`,
+    ]);
   });
 
   it('coalesces a typing burst into a single fill with the final value', () => {
@@ -221,8 +224,8 @@ describe('generatePlaywrightRepro', () => {
       inputEvent(input.id, 'hello', 1130),
     ];
     const script = generatePlaywrightRepro(events);
-    const fillLines = script.split('\n').filter((l) => l.includes('page.fill'));
-    expect(fillLines).toEqual([`  await page.fill('input[name="q"]', 'hello');`]);
+    const fillLines = script.split('\n').filter((l) => l.includes('.fill('));
+    expect(fillLines).toEqual([`  await page.locator('input[name="q"]').fill('hello');`]);
   });
 
   it('emits page.check for a checked checkbox and page.uncheck for an unchecked one', () => {
@@ -236,8 +239,8 @@ describe('generatePlaywrightRepro', () => {
       inputEvent(optout.id, '', 1200, { isChecked: false }),
     ];
     const script = generatePlaywrightRepro(events);
-    expect(script).toContain(`await page.check('#remember');`);
-    expect(script).toContain(`await page.uncheck('#optout');`);
+    expect(script).toContain(`await page.locator('#remember').check();`);
+    expect(script).toContain(`await page.locator('#optout').uncheck();`);
     expect(script).not.toContain('page.fill');
   });
 
@@ -250,7 +253,7 @@ describe('generatePlaywrightRepro', () => {
       inputEvent(radio.id, 'pro', 1100, { isChecked: true }),
     ];
     const script = generatePlaywrightRepro(events);
-    expect(script).toContain(`await page.check('#plan-pro');`);
+    expect(script).toContain(`await page.locator('#plan-pro').check();`);
     expect(script).not.toContain('page.fill');
   });
 
@@ -298,5 +301,20 @@ describe('generatePlaywrightRepro', () => {
     const events = [fullSnapshot(root, 1000), clickEvent(button.id, 1100)];
     const script = generatePlaywrightRepro(events);
     expect(script).not.toContain('toHaveURL');
+  });
+
+  it('emits semantic locators when available', () => {
+    freshIds();
+    const search = el('input', { attributes: { placeholder: 'Search' } });
+    const submit = el('button', { attributes: { 'data-testid': 'submit' } });
+    const root = documentWith([search, submit]);
+    const events = [
+      fullSnapshot(root, 1000),
+      inputEvent(search.id, 'shoes', 1100),
+      clickEvent(submit.id, 1200),
+    ];
+    const script = generatePlaywrightRepro(events, { title: 't' });
+    expect(script).toContain(`await page.getByPlaceholder('Search').fill('shoes');`);
+    expect(script).toContain(`await page.getByTestId('submit').click();`);
   });
 });

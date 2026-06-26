@@ -2,10 +2,10 @@
 // actions into a runnable Playwright test string. Each action maps to the
 // idiomatic Playwright call:
 //   navigate          -> await page.goto('url')
-//   click             -> await page.click('selector')
-//   input (select)    -> await page.selectOption('selector', 'value')
-//   input (checkbox/radio) -> await page.check/uncheck('selector')
-//   input (other)     -> await page.fill('selector', 'value')
+//   click             -> await action.locator.click()
+//   input (select)    -> await action.locator.selectOption('value')
+//   input (checkbox/radio) -> await action.locator.check/uncheck()
+//   input (other)     -> await action.locator.fill('value')
 // The first navigation seeds the opening goto; subsequent navigations are
 // emitted inline (e.g. an in-app route change that triggered a full load).
 // After the actions, a final `await expect(page).toHaveURL(...)` is emitted
@@ -46,15 +46,15 @@ function actionToStatement(action: UserAction): string | undefined {
     case 'navigate':
       return action.url ? `  await page.goto(${jsString(action.url)});` : undefined;
     case 'click':
-      return action.selector ? `  await page.click(${jsString(action.selector)});` : undefined;
+      return action.locator ? `  await ${action.locator}.click();` : undefined;
     case 'input': {
-      if (!action.selector) return undefined;
-      const sel = jsString(action.selector);
+      const loc = action.locator;
+      if (!loc) return undefined;
       if (action.elementTag === 'input') {
         if (action.inputType === 'checkbox' || action.inputType === 'radio') {
-          if (action.checked === true) return `  await page.check(${sel});`;
-          if (action.checked === false) return `  await page.uncheck(${sel});`;
-          return `  // TODO: <input type="${action.inputType}"> ${action.selector} — checked state unknown; add check()/uncheck()`;
+          if (action.checked === true) return `  await ${loc}.check();`;
+          if (action.checked === false) return `  await ${loc}.uncheck();`;
+          return `  // TODO: <input type="${action.inputType}"> ${action.selector ?? ''} — checked state unknown; add check()/uncheck()`;
         }
         if (
           action.inputType === 'hidden' ||
@@ -66,7 +66,7 @@ function actionToStatement(action: UserAction): string | undefined {
           return `  // TODO: skipped <input type="${action.inputType}"> (not a user text entry)`;
         }
         if (action.inputType === 'file') {
-          return `  // TODO: file input ${action.selector} — setInputFiles can't be reconstructed from a recording`;
+          return `  // TODO: file input ${action.selector ?? ''} — setInputFiles can't be reconstructed from a recording`;
         }
       }
       if (action.elementTag === 'select') {
@@ -79,9 +79,9 @@ function actionToStatement(action: UserAction): string | undefined {
         // ("did not find some options"). Emit a TODO so the script stays runnable.
         if (value === '')
           return '  // TODO: <select> reset to placeholder — selectOption needs a value or { index: 0 }';
-        return `  await page.selectOption(${jsString(action.selector)}, ${jsString(value)});`;
+        return `  await ${loc}.selectOption(${jsString(value)});`;
       }
-      return `  await page.fill(${jsString(action.selector)}, ${jsString(action.value ?? '')});`;
+      return `  await ${loc}.fill(${jsString(action.value ?? '')});`;
     }
     default:
       return undefined;
