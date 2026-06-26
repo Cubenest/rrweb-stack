@@ -23,11 +23,34 @@ function sleepSync(ms: number): void {
 export function withFileLock<T>(lockPath: string, fn: () => T, options: LockOptions = {}): T {
   const { maxWaitMs, retryMs, staleMs } = { ...DEFAULTS, ...options };
   const deadline = Date.now() + maxWaitMs;
-  let fd: number | undefined;
+  const fd = acquireLock(lockPath, deadline, retryMs, staleMs, maxWaitMs);
+  try {
+    return fn();
+  } finally {
+    try {
+      closeSync(fd);
+    } catch {
+      /* already closed */
+    }
+    try {
+      unlinkSync(lockPath);
+    } catch {
+      /* already removed */
+    }
+  }
+}
+
+/** Spin on O_EXCL open until acquired, the lock is stolen as stale, or the deadline passes. */
+function acquireLock(
+  lockPath: string,
+  deadline: number,
+  retryMs: number,
+  staleMs: number,
+  maxWaitMs: number,
+): number {
   for (;;) {
     try {
-      fd = openSync(lockPath, 'wx'); // O_CREAT | O_EXCL — fails if it exists
-      break;
+      return openSync(lockPath, 'wx'); // O_CREAT | O_EXCL — fails if it exists
     } catch (err) {
       if ((err as NodeJS.ErrnoException).code !== 'EEXIST') throw err;
       try {
@@ -37,25 +60,16 @@ export function withFileLock<T>(lockPath: string, fn: () => T, options: LockOpti
           continue;
         }
       } catch {
+        // lock vanished between open and stat — honor the deadline so a lock
+        // that repeatedly appears/disappears can't spin past maxWaitMs.
+        if (Date.now() >= deadline)
+          throw new Error(`audit lock timeout after ${maxWaitMs}ms: ${lockPath}`);
+        sleepSync(retryMs);
         continue;
-      } // lock vanished between open and stat — retry immediately
+      }
       if (Date.now() >= deadline)
         throw new Error(`audit lock timeout after ${maxWaitMs}ms: ${lockPath}`);
       sleepSync(retryMs);
-    }
-  }
-  try {
-    return fn();
-  } finally {
-    try {
-      closeSync(fd as number);
-    } catch {
-      /* already closed */
-    }
-    try {
-      unlinkSync(lockPath);
-    } catch {
-      /* already removed */
     }
   }
 }
