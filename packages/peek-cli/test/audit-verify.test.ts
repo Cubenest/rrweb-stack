@@ -97,6 +97,56 @@ describe('verifyAuditChain', () => {
     expect(r.entriesVerified).toBe(2);
   });
 
+  it('reports tail-tampered when the final entry is edited but seq/prevHash kept', () => {
+    const { buf, head } = chainLog(3);
+    const lines = buf.toString('utf8').split('\n').filter(Boolean);
+    // Edit the LAST line's body, keeping its seq + prevHash so the chain still
+    // links — only the sealed head.headHash can detect this.
+    // biome-ignore lint/style/noNonNullAssertion: lines has 3 entries (filtered)
+    const obj = JSON.parse(lines[2]!);
+    obj.tool = 'tampered';
+    lines[2] = JSON.stringify(obj);
+    const tampered = Buffer.from(`${lines.join('\n')}\n`, 'utf8');
+    const r = verifyAuditChain(tampered, head);
+    expect(r.status).toBe('tail-tampered');
+    expect(r.expected).toBe(head.headHash);
+  });
+
+  it('reports intact when the head benignly lags by one entry (crash before head-write)', () => {
+    const { buf } = chainLog(3);
+    const lines = buf.toString('utf8').split('\n').filter(Boolean);
+    // The writer appended line 3 but crashed before advancing the head, so the
+    // head still points at line 2. This is benign — head.headHash is in the
+    // walked chain (at line 2) and lastSeq (3) ≥ head.seq (2).
+    // biome-ignore lint/style/noNonNullAssertion: lines has 3 entries (filtered)
+    const line2Raw = `${lines[1]!}\n`;
+    const laggingHead: AuditHead = {
+      version: 1,
+      prefix: null,
+      seq: 2,
+      headHash: hashLine(line2Raw),
+      gapCount: 0,
+      bytes: buf.length,
+    };
+    const r = verifyAuditChain(buf, laggingHead);
+    expect(r.status).toBe('intact');
+    expect(r.entriesVerified).toBe(3);
+  });
+
+  it('reports incomplete-final for a parseable unterminated last line (not counted)', () => {
+    const { buf, head } = chainLog(2);
+    // A complete, parseable JSON object but with NO trailing newline — a crash
+    // after JSON.stringify but before the newline flush. New contract: an
+    // unterminated final fragment is never a committed entry.
+    const partial = Buffer.concat([
+      buf,
+      Buffer.from(JSON.stringify({ ts: 't3', tool: 'execute_action', seq: 3 }), 'utf8'),
+    ]);
+    const r = verifyAuditChain(partial, head);
+    expect(r.status).toBe('incomplete-final');
+    expect(r.entriesVerified).toBe(2);
+  });
+
   it('reports gaps for lock-gap lines', () => {
     const l1 = JSON.stringify({ ts: 't1', seq: 1, prevHash: GENESIS_PREV });
     const l2 = JSON.stringify({ ts: 't2', seq: 2, prevHash: 'peek-audit-lockgap-v1' });
@@ -158,6 +208,34 @@ describe('peek audit verify (command)', () => {
   it('exits 0 with "no audit log" when the log is absent', async () => {
     const code = await runAuditVerify(['--dir', dir], () => {});
     expect(code).toBe(0);
+  });
+
+  it('prints usage and exits 0 for --help without touching any files', async () => {
+    const out: string[] = [];
+    // No audit.log / audit.head.json exist in `dir`, so this also proves --help
+    // short-circuits BEFORE any file read.
+    const code = await runAuditVerify(['--help'], (s) => out.push(s));
+    expect(code).toBe(0);
+    const text = out.join('');
+    expect(text).toMatch(/Usage: peek audit verify/);
+    expect(text).toMatch(/--json/);
+    expect(text).toMatch(/--dir <path>/);
+    expect(text).toMatch(/tail-tampered/);
+  });
+
+  it('exits 2 for a tail-tampered chain (final entry modified)', async () => {
+    const { buf, head } = chainLog(3);
+    const lines = buf.toString('utf8').split('\n').filter(Boolean);
+    // biome-ignore lint/style/noNonNullAssertion: lines has 3 entries (filtered)
+    const obj = JSON.parse(lines[2]!);
+    obj.tool = 'tampered';
+    lines[2] = JSON.stringify(obj);
+    writeFileSync(join(dir, 'audit.log'), `${lines.join('\n')}\n`);
+    writeFileSync(join(dir, 'audit.head.json'), JSON.stringify(head));
+    const out: string[] = [];
+    const code = await runAuditVerify(['--dir', dir, '--json'], (s) => out.push(s));
+    expect(code).toBe(2);
+    expect(JSON.parse(out.join('')).status).toBe('tail-tampered');
   });
 
   it('degrades to head-missing (exit 0) when the head file is corrupt', async () => {

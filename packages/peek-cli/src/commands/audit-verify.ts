@@ -16,9 +16,27 @@ import { peekHomeDir } from '../lib/peek-home.js';
 
 const EXIT = { ok: 0, anomaly: 1, tampered: 2 } as const;
 
+const VERIFY_USAGE = [
+  'Usage: peek audit verify [options]',
+  '',
+  'Verify the audit log hash chain and report integrity.',
+  '',
+  '  --json            Emit result as JSON instead of human text',
+  '  --dir <path>      Directory containing audit.log + audit.head.json',
+  '                    (default: ~/.peek)',
+  '  --help            Show this help and exit',
+  '',
+  'Exit codes:',
+  '  0  ok        intact | head-missing | no-log',
+  '  1  anomaly   incomplete-final | gaps',
+  '  2  tampered  broken | tail-tampered | truncated | prefix-tampered',
+  '',
+].join('\n');
+
 function exitCodeFor(status: VerifyResult['status']): number {
   switch (status) {
     case 'broken':
+    case 'tail-tampered':
     case 'truncated':
     case 'prefix-tampered':
       return EXIT.tampered;
@@ -41,6 +59,8 @@ function human(r: VerifyResult): string {
       return `${pre}chain broken at line ${r.brokenAtLine}: expected prevHash ${r.expected ?? '?'}, got ${r.got ?? '?'}.\n`;
     case 'truncated':
       return `${pre}tail truncated: log ends before the recorded head (verified ${r.entriesVerified} entries).\n`;
+    case 'tail-tampered':
+      return `${pre}the sealed tail entry was modified (computed tail hash ${r.got ?? '?'} ≠ sealed head hash ${r.expected ?? '?'}).\n`;
     case 'prefix-tampered':
       return 'pre-chain prelude was modified (sealed hash mismatch).\n';
     case 'incomplete-final':
@@ -59,9 +79,16 @@ export async function runAuditVerify(
     options: {
       json: { type: 'boolean' },
       dir: { type: 'string' },
+      help: { type: 'boolean' },
     },
     allowPositionals: false,
   });
+  // Short-circuit to usage BEFORE any file reads so `peek audit verify --help`
+  // always works even on a broken install (mirrors `peek audit log --help`).
+  if (values.help) {
+    write(VERIFY_USAGE);
+    return EXIT.ok;
+  }
   const dir = values.dir ?? peekHomeDir();
   const logPath = join(dir, 'audit.log');
   const headPath = join(dir, 'audit.head.json');
