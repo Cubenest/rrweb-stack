@@ -213,6 +213,65 @@ export function getNetworkErrors(
   }));
 }
 
+/** The full console error row for one id (the seed of a causal chain). */
+export function getConsoleErrorById(
+  db: Database,
+  id: string,
+  errorId: number,
+): ConsoleErrorRow | undefined {
+  const r = db
+    .prepare(
+      "SELECT id, ts_ms, level, message, stack FROM console_events WHERE id = ? AND session_id = ? AND level = 'error'",
+    )
+    .get(errorId, id) as
+    | { id: number; ts_ms: number; level: string; message: string; stack: string | null }
+    | undefined;
+  return r
+    ? { id: r.id, ts: r.ts_ms, level: r.level, message: r.message, stack: r.stack }
+    : undefined;
+}
+
+/** Error-ish network rows (status >= statusGte OR error_text) within [fromTs, toTs], ascending by ts. */
+export function getNetworkErrorsInWindow(
+  db: Database,
+  id: string,
+  fromTs: number,
+  toTs: number,
+  options: { statusGte?: number; limit?: number } = {},
+): NetworkErrorRow[] {
+  const statusGte = options.statusGte ?? 400;
+  const limit = options.limit ?? 200;
+  const rows = db
+    .prepare(
+      `SELECT id, ts_ms, method, url, status, status_text, resource_type, duration_ms, error_text
+         FROM network_events
+        WHERE session_id = ? AND ts_ms >= ? AND ts_ms <= ? AND (status >= ? OR error_text IS NOT NULL)
+        ORDER BY ts_ms ASC LIMIT ?`,
+    )
+    .all(id, fromTs, toTs, statusGte, limit) as Array<{
+    id: number;
+    ts_ms: number;
+    method: string;
+    url: string;
+    status: number | null;
+    status_text: string | null;
+    resource_type: string | null;
+    duration_ms: number | null;
+    error_text: string | null;
+  }>;
+  return rows.map((r) => ({
+    id: r.id,
+    ts: r.ts_ms,
+    method: r.method,
+    url: r.url,
+    status: r.status,
+    statusText: r.status_text,
+    resourceType: r.resource_type,
+    durationMs: r.duration_ms,
+    errorText: r.error_text,
+  }));
+}
+
 /** Look up the events blob path + first-event ts for a session (for the walker tools). */
 export function getSessionBlobRef(
   db: Database,
