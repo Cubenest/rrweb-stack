@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  extractDomMutationsInWindow,
   extractUserActions,
   queryDomHistory,
   reconstructDomAt,
@@ -342,5 +343,55 @@ describe('adversarial robustness', () => {
     const snap = reconstructDomAt(events, 1000);
     expect(snap).toBeDefined();
     expect(snap?.html).toContain('[truncated: max depth]');
+  });
+});
+
+describe('extractDomMutationsInWindow', () => {
+  it('returns attribute + text mutations within [fromTs, toTs] with target hints', () => {
+    freshIds();
+    const t0 = text('old');
+    const status = el('div', { attributes: { id: 'status' }, children: [t0] });
+    const root = documentWith([status]);
+    const events = [
+      fullSnapshot(root, 1000),
+      mutationEvent({ attributes: [{ id: status.id, attributes: { class: 'ok' } }] }, 1100),
+      mutationEvent({ texts: [{ id: t0.id, value: 'done' }] }, 1500),
+      mutationEvent({ attributes: [{ id: status.id, attributes: { class: 'err' } }] }, 9000), // outside window
+    ];
+    const changes = extractDomMutationsInWindow(events, 1000, 2000);
+    expect(changes).toHaveLength(2);
+    expect(changes[0]).toMatchObject({
+      ts: 1100,
+      op: 'attribute',
+      attribute: 'class',
+      value: 'ok',
+      target: '#status',
+    });
+    expect(changes[1]).toMatchObject({ ts: 1500, op: 'text', value: 'done', target: '#status' });
+  });
+
+  it('keeps the most recent `cap` changes when capped', () => {
+    freshIds();
+    const d = el('div', { attributes: { id: 'x' } });
+    const events = [
+      fullSnapshot(documentWith([d]), 1000),
+      mutationEvent({ attributes: [{ id: d.id, attributes: { a: '1' } }] }, 1100),
+      mutationEvent({ attributes: [{ id: d.id, attributes: { a: '2' } }] }, 1200),
+      mutationEvent({ attributes: [{ id: d.id, attributes: { a: '3' } }] }, 1300),
+    ];
+    const changes = extractDomMutationsInWindow(events, 1000, 2000, 2);
+    expect(changes.map((c) => c.value)).toEqual(['2', '3']);
+  });
+
+  it('returns [] for an empty event stream', () => {
+    freshIds();
+    expect(extractDomMutationsInWindow([], 0, 1)).toEqual([]);
+  });
+
+  it('emits in-window mutations even without a FullSnapshot (no target resolved)', () => {
+    freshIds();
+    const events = [mutationEvent({ attributes: [{ id: 5, attributes: { class: 'x' } }] }, 1500)];
+    const changes = extractDomMutationsInWindow(events, 1000, 2000);
+    expect(changes).toEqual([{ ts: 1500, op: 'attribute', attribute: 'class', value: 'x' }]); // no `target` key
   });
 });

@@ -36,14 +36,21 @@ import {
   recordAuditEntry,
 } from '../native-host/audit.js';
 import { ActionSchema } from './action-schema.js';
+import { buildCausalChain } from './causal-chain.js';
 import { SessionEventsError, loadSessionEvents } from './event-blobs.js';
-import { queryDomHistory, reconstructDomAt, userActionsBeforeError } from './event-walker.js';
+import {
+  extractDomMutationsInWindow,
+  queryDomHistory,
+  reconstructDomAt,
+  userActionsBeforeError,
+} from './event-walker.js';
 import { type HostBridge, MissingHostBridge } from './host-bridge.js';
 import { generatePlaywrightRepro } from './playwright-repro.js';
 import {
+  getConsoleErrorById,
   getConsoleErrors,
-  getConsoleEventTs,
   getNetworkErrors,
+  getNetworkErrorsInWindow,
   getSessionBlobRef,
   getSessionSummaryRow,
   listRecentSessions,
@@ -372,7 +379,7 @@ export function createPeekMcpServer(options: CreatePeekMcpServerOptions = {}): P
       {
         title: 'Actions before an error',
         description:
-          'Reconstruct what the user did right before a console error: returns the last `window` user actions (click/type/navigate) preceding the error, to explain how it was triggered. Returns JSON { errorId, errorTs, actions }. Get errorId from get_session_console_errors first.',
+          'Pre-assembled causal chain for a console error: the user actions, DOM mutations, and network errors in the window before it, merged into one time-ordered timeline with a deterministic narrative — to explain how the error was triggered. Returns JSON { errorId, errorTs, error, windowMs, actions, domMutations, networkErrors, timeline, narrative, truncated }. Get errorId from get_session_console_errors first.',
         inputSchema: {
           sessionId: z.string().describe('Session id from list_recent_sessions.'),
           errorId: z.number().int().describe('Console error id from get_session_console_errors.'),
@@ -383,20 +390,34 @@ export function createPeekMcpServer(options: CreatePeekMcpServerOptions = {}): P
             .max(50)
             .default(10)
             .describe('How many preceding user actions to return (1-50; default 10).'),
+          windowMs: z
+            .number()
+            .int()
+            .min(100)
+            .max(60000)
+            .default(5000)
+            .describe(
+              'Time window (ms) before the error for correlated DOM mutations + network errors (100-60000; default 5000).',
+            ),
         },
         annotations: { readOnlyHint: true, openWorldHint: false },
       },
-      ({ sessionId, errorId, window }) => {
+      ({ sessionId, errorId, window, windowMs }) => {
         const handle = getDb();
         if (!handle) return textResult(NO_DB_MESSAGE);
-        const errorTs = getConsoleEventTs(handle, sessionId, errorId);
-        if (errorTs === undefined) {
+        const error = getConsoleErrorById(handle, sessionId, errorId);
+        if (error === undefined) {
           return textResult(`No console error with id ${errorId} in session '${sessionId}'.`);
         }
         const ev = eventsFor(sessionId);
         if (!ev.ok) return textResult(ev.message);
-        const actions = userActionsBeforeError(ev.events, errorTs, window);
-        return jsonResult({ errorId, errorTs, actions });
+        const fromTs = error.ts - windowMs;
+        const actions = userActionsBeforeError(ev.events, error.ts, window);
+        const domMutations = extractDomMutationsInWindow(ev.events, fromTs, error.ts);
+        const networkErrors = getNetworkErrorsInWindow(handle, sessionId, fromTs, error.ts);
+        return jsonResult(
+          buildCausalChain({ error, windowMs, actions, domMutations, networkErrors }),
+        );
       },
     );
 
@@ -492,36 +513,68 @@ export function createPeekMcpServer(options: CreatePeekMcpServerOptions = {}): P
       {
         title: 'DOM change timeline',
         description:
-          'Timeline of attribute and/or text changes over a session for the node matching a CSS selector - useful for tracking how one element evolved. Returns JSON { selector, changes }. Use op to restrict to attribute changes or innerText; omit for both.',
+          "Timeline of DOM changes in a session. Two modes: (1) selector mode — pass `selector` to track one node's attribute/text history (use `op` to restrict). (2) window mode — pass `ts` (and optional `windowMs`) instead, to get ALL DOM changes in [ts - windowMs, ts] with per-change `target` hints, no selector needed. Returns JSON { selector, changes } or { ts, windowMs, changes }.",
         inputSchema: {
           sessionId: z.string().describe('Session id from list_recent_sessions.'),
           selector: z
             .string()
-            .describe("CSS selector for the node to track, e.g. '#status' or '.cart-count'."),
+            .optional()
+            .describe(
+              "Selector mode: CSS selector to track one node, e.g. '#status'. Omit and pass `ts` for window mode.",
+            ),
+          ts: z
+            .number()
+            .int()
+            .optional()
+            .describe(
+              'Window mode: anchor (epoch-ms). Returns DOM changes in [ts - windowMs, ts]. Ignored if `selector` is given.',
+            ),
+          windowMs: z
+            .number()
+            .int()
+            .min(100)
+            .max(60000)
+            .default(5000)
+            .describe('Window mode size in ms (100-60000; default 5000).'),
           op: z
             .enum(['attributeChanges', 'innerText'])
             .optional()
-            .describe("Restrict to 'attributeChanges' or 'innerText'. Omit to include both."),
+            .describe(
+              "Selector mode only: restrict to 'attributeChanges' or 'innerText'. Omit for both.",
+            ),
           limit: z
             .number()
             .int()
             .min(1)
             .max(500)
             .default(100)
-            .describe('Maximum changes to return (1-500; default 100).'),
+            .describe(
+              'Maximum changes to return (1-500; default 100). Selector mode keeps the earliest matches; window mode keeps the most recent (closest to `ts`).',
+            ),
         },
         annotations: { readOnlyHint: true, openWorldHint: false },
       },
-      ({ sessionId, selector, op, limit }) => {
+      ({ sessionId, selector, ts, op, windowMs, limit }) => {
         const handle = getDb();
         if (!handle) return textResult(NO_DB_MESSAGE);
+        if (selector === undefined && ts === undefined) {
+          return textResult(
+            'query_dom_history needs either `selector` (history of one node) or `ts` (window mode).',
+          );
+        }
         const ev = eventsFor(sessionId);
         if (!ev.ok) return textResult(ev.message);
-        const changes = queryDomHistory(ev.events, selector, {
-          limit,
-          ...(op !== undefined ? { op } : {}),
-        });
-        return jsonResult({ selector, changes });
+        if (selector !== undefined) {
+          const changes = queryDomHistory(ev.events, selector, {
+            limit,
+            ...(op !== undefined ? { op } : {}),
+          });
+          return jsonResult({ selector, changes });
+        }
+        // selector === undefined + both-undefined returned above ⇒ ts is defined here
+        const anchor = ts as number;
+        const changes = extractDomMutationsInWindow(ev.events, anchor - windowMs, anchor, limit);
+        return jsonResult({ ts: anchor, windowMs, changes });
       },
     );
 

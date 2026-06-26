@@ -525,6 +525,8 @@ export interface DomChange {
   readonly attribute?: string;
   /** The new value (attribute value / text content); null = removed. */
   readonly value?: string | null;
+  /** Window mode only: a derived selector hint for the changed node (text nodes resolve to their parent element). */
+  readonly target?: string;
 }
 
 /**
@@ -596,6 +598,83 @@ export function queryDomHistory(
   }
 
   return changes.slice(0, limit);
+}
+
+/**
+ * DOM mutations within [fromTs, toTs] (inclusive) WITHOUT requiring a selector,
+ * each tagged with a `target` hint. The node index is seeded from the first
+ * FullSnapshot and grown by adds (mirrors extractUserActions) so targets on
+ * inserted nodes resolve. Adds are folded for ALL mutation events so the index
+ * stays current; only changes inside the window are emitted. When `cap` is given,
+ * the most recent `cap` changes are kept.
+ */
+export function extractDomMutationsInWindow(
+  events: eventWithTime[],
+  fromTs: number,
+  toTs: number,
+  cap?: number,
+): DomChange[] {
+  let index: Map<number, { node: serializedNodeWithId; parentId: number | null }> | undefined;
+  const changes: DomChange[] = [];
+  const targetFor = (id: number): string | undefined =>
+    index ? selectorFor(index as NodeIndex, id) : undefined;
+  const textTargetFor = (id: number): string | undefined => {
+    const parentId = index?.get(id)?.parentId;
+    return (
+      (parentId !== null && parentId !== undefined ? targetFor(parentId) : undefined) ??
+      targetFor(id)
+    );
+  };
+
+  for (const e of events) {
+    if (isFullSnapshot(e)) {
+      index = new Map(indexNodes(e.data.node));
+      continue;
+    }
+    if (!isIncremental(e)) continue;
+    const data = e.data as { source: number };
+    if (data.source !== IncrementalSource.Mutation) continue;
+    const m = data as unknown as mutationData;
+    foldAddsIntoIndex(index, m.adds);
+    if (e.timestamp < fromTs || e.timestamp > toTs) continue;
+
+    for (const at of m.attributes ?? []) {
+      const target = targetFor(at.id);
+      for (const [key, value] of Object.entries(at.attributes)) {
+        changes.push({
+          ts: e.timestamp,
+          op: 'attribute',
+          attribute: key,
+          value: value === null ? null : String(value),
+          ...(target !== undefined ? { target } : {}),
+        });
+      }
+    }
+    for (const t of m.texts ?? []) {
+      const target = textTargetFor(t.id);
+      changes.push({
+        ts: e.timestamp,
+        op: 'text',
+        value: t.value ?? null,
+        ...(target !== undefined ? { target } : {}),
+      });
+    }
+    for (const a of m.adds ?? []) {
+      const id = a.node?.id;
+      const target = typeof id === 'number' ? targetFor(id) : undefined;
+      changes.push({ ts: e.timestamp, op: 'added', ...(target !== undefined ? { target } : {}) });
+    }
+    for (const r of m.removes ?? []) {
+      const target = targetFor(r.id);
+      changes.push({
+        ts: e.timestamp,
+        op: 'removed',
+        ...(target !== undefined ? { target } : {}),
+      });
+    }
+  }
+  if (cap !== undefined && changes.length > cap) return changes.slice(changes.length - cap);
+  return changes;
 }
 
 function truncate(s: string, max: number): string {
