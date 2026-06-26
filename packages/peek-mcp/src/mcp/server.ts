@@ -569,13 +569,10 @@ export function createPeekMcpServer(options: CreatePeekMcpServerOptions = {}): P
           });
           return jsonResult({ selector, changes });
         }
-        if (ts === undefined) {
-          return textResult(
-            'query_dom_history needs either `selector` (history of one node) or `ts` (window mode).',
-          );
-        }
-        const changes = extractDomMutationsInWindow(ev.events, ts - windowMs, ts, limit);
-        return jsonResult({ ts, windowMs, changes });
+        // selector === undefined + both-undefined returned above ⇒ ts is defined here
+        const anchor = ts as number;
+        const changes = extractDomMutationsInWindow(ev.events, anchor - windowMs, anchor, limit);
+        return jsonResult({ ts: anchor, windowMs, changes });
       },
     );
 

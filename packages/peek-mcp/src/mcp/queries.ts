@@ -283,11 +283,3 @@ export function getSessionBlobRef(
   if (!row) return undefined;
   return { blobPath: row.events_blob_path, startedAt: isoToMs(row.created_at) };
 }
-
-/** The ts of a single console event id (used by get_user_action_before_error). */
-export function getConsoleEventTs(db: Database, id: string, errorId: number): number | undefined {
-  const row = db
-    .prepare('SELECT ts_ms FROM console_events WHERE id = ? AND session_id = ?')
-    .get(errorId, id) as { ts_ms: number } | undefined;
-  return row?.ts_ms;
-}
