@@ -58,14 +58,14 @@ export function nodeChildren(node: serializedNodeWithId): serializedNodeWithId[]
   return [];
 }
 
-function tagName(node: serializedNodeWithId): string | undefined {
+export function tagName(node: serializedNodeWithId): string | undefined {
   if (node.type === NodeType.Element) {
     return (node as { tagName: string }).tagName.toLowerCase();
   }
   return undefined;
 }
 
-function attributes(node: serializedNodeWithId): Record<string, unknown> {
+export function attributes(node: serializedNodeWithId): Record<string, unknown> {
   if (node.type === NodeType.Element) {
     return (node as { attributes?: Record<string, unknown> }).attributes ?? {};
   }
@@ -73,7 +73,7 @@ function attributes(node: serializedNodeWithId): Record<string, unknown> {
 }
 
 /** A non-empty string attribute value, or undefined. */
-function strAttr(attrs: Record<string, unknown>, key: string): string | undefined {
+export function strAttr(attrs: Record<string, unknown>, key: string): string | undefined {
   const v = attrs[key];
   return typeof v === 'string' && v.length > 0 ? v : undefined;
 }
@@ -131,7 +131,7 @@ export function localSelector(node: serializedNodeWithId): string | undefined {
 }
 
 /** Escape a double-quoted CSS attribute value. */
-function cssAttrValue(value: string): string {
+export function cssAttrValue(value: string): string {
   return value.replace(/["\\]/g, (ch) => `\\${ch}`);
 }
 
