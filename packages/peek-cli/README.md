@@ -51,10 +51,30 @@ peek sessions export <id> [--format <markdown|json|playwright>] [--out <file>]  
 peek sessions delete <id>                  # delete one session
 peek sessions delete --all-older-than <dur>  # delete every session older than e.g. 7d
 peek audit log [--since <dur>] [--tool <name>] [--client <name>] [--json]  # act-tool audit log
+peek audit verify [--json]                 # verify the audit log hash chain (exit 0 ok, 1 anomaly, 2 tampered)
 peek <cmd> --help                          # usage for any subcommand
 ```
 
 `--format html` is reserved but not yet implemented (it exits non-zero with a message — use `markdown` or `json`). All commands read `~/.peek/sessions.db` except `sessions delete` (and `peek init`, which writes the install config). Nothing leaves your machine.
+
+### Audit log integrity
+
+The audit log (`~/.peek/audit.log`) is hash-chained: each JSONL entry carries a `seq` counter and a `prevHash` field (SHA-256 of the previous line), written under a file lock. A small sidecar (`audit.head.json`) records the tail hash so that tail truncation is also detectable.
+
+`peek audit verify [--json]` recomputes the chain and reports:
+
+| Status | Meaning | Exit code |
+|---|---|:---:|
+| `intact` | chain is complete and unbroken | 0 |
+| `head-missing` | chain is internally consistent but the sidecar is absent (tail truncation cannot be ruled out) | 0 |
+| `no-log` | no audit log exists yet | 0 |
+| `incomplete-final` | last line is an incomplete write (likely a crash mid-write) | 1 |
+| `gaps` | intentional gaps from lock-contention fallback entries | 1 |
+| `broken` | `prevHash` mismatch — a line was edited or reordered | 2 |
+| `truncated` | log ends before the recorded head (lines were removed from the tail) | 2 |
+| `prefix-tampered` | pre-chain prelude was modified | 2 |
+
+The audit log is **tamper-evident, not tamper-proof.** It detects accidental corruption, truncation, reordering, and edits, but does not stop a determined local attacker who recomputes the whole chain. There are no keys, no external anchor, and no egress.
 
 ## Querying from an AI agent
 
