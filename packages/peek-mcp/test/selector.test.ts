@@ -103,3 +103,21 @@ describe('selectorFor', () => {
     expect(selectorFor(index, 9999)).toBeUndefined();
   });
 });
+
+describe('localSelector — aria-label / placeholder hooks', () => {
+  it('uses [aria-label] when no id/test-id/name', () => {
+    expect(localSelector(el('button', { attributes: { 'aria-label': 'Close' } }))).toBe(
+      '[aria-label="Close"]',
+    );
+  });
+  it('uses tag[placeholder] for inputs when no id/test-id/name', () => {
+    expect(localSelector(el('input', { attributes: { placeholder: 'Email' } }))).toBe(
+      'input[placeholder="Email"]',
+    );
+  });
+  it('id still wins over aria-label', () => {
+    expect(localSelector(el('button', { attributes: { id: 'x', 'aria-label': 'Close' } }))).toBe(
+      '#x',
+    );
+  });
+});

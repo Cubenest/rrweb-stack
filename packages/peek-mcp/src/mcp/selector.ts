@@ -115,6 +115,16 @@ export function localSelector(node: serializedNodeWithId): string | undefined {
     return `${tag}[name="${cssAttrValue(name)}"]`;
   }
 
+  const ariaLabel = strAttr(attrs, 'aria-label');
+  if (ariaLabel !== undefined) {
+    return `[aria-label="${cssAttrValue(ariaLabel)}"]`;
+  }
+
+  const placeholder = strAttr(attrs, 'placeholder');
+  if (placeholder !== undefined && (tag === 'input' || tag === 'textarea')) {
+    return `${tag}[placeholder="${cssAttrValue(placeholder)}"]`;
+  }
+
   const className = strAttr(attrs, 'class');
   if (className !== undefined) {
     const classes = className
