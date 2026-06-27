@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   PERMISSION_LEVELS,
   type PermissionLevel,
@@ -51,11 +51,21 @@ export function TrustDial({ origin }: { origin: string | null }): React.JSX.Elem
 
   const [pendingAuto, setPendingAuto] = useState(false);
 
+  // Defensive: if the active origin changes, drop any armed Level-4 warning so
+  // it can't carry over to a different site. origin is the intentional trigger.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: setPendingAuto is stable; origin is the intentional reset signal.
+  useEffect(() => {
+    setPendingAuto(false);
+  }, [origin]);
+
   const onSelect = (next: PermissionLevel): void => {
     if (needsAutoWarning(level, next)) {
       setPendingAuto(true);
       return;
     }
+    // Any non-4 selection backs down from an armed warning — clear it so the
+    // "Enable auto-approve" button can't stay armed after the user retreats.
+    setPendingAuto(false);
     void set(next);
   };
 
