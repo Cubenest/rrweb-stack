@@ -60,7 +60,7 @@ beforeEach(() => {
   seed();
 });
 afterEach(() => {
-  if (origHome === undefined) process.env.PEEK_HOME = '';
+  if (origHome === undefined) Reflect.deleteProperty(process.env, 'PEEK_HOME');
   else process.env.PEEK_HOME = origHome;
   rmSync(home, { recursive: true, force: true });
 });
