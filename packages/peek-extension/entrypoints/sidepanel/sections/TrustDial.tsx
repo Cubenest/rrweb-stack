@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import {
   PERMISSION_LEVELS,
   type PermissionLevel,
@@ -8,6 +9,26 @@ import { usePermissionLevel } from '../usePermissionLevel';
 export interface DialSegment {
   level: PermissionLevel;
   short: string;
+}
+
+/**
+ * True when selecting `next` should pop the explicit Level-4 (Auto) warning:
+ * only when raising TO Level 4 from a lower level. Re-selecting 4, or moving to
+ * any lower level, never warns.
+ */
+export function needsAutoWarning(current: PermissionLevel, next: PermissionLevel): boolean {
+  return next === 4 && current !== 4;
+}
+
+export interface LegendEntry {
+  level: PermissionLevel;
+  name: string;
+  behavior: string;
+}
+
+/** The full five-level ladder (name + behavior) for the legend disclosure. */
+export function legendEntries(): LegendEntry[] {
+  return PERMISSION_LEVELS.map((l) => ({ level: l.level, name: l.name, behavior: l.behavior }));
 }
 
 /** Pure: the ordered dial segments (Off → Auto). */
@@ -27,6 +48,25 @@ const SEGMENTS: readonly DialSegment[] = dialSegments();
 export function TrustDial({ origin }: { origin: string | null }): React.JSX.Element {
   const { level, loaded, busy, error, set } = usePermissionLevel(origin);
   const disabled = !origin || !loaded || busy;
+
+  const [pendingAuto, setPendingAuto] = useState(false);
+
+  const onSelect = (next: PermissionLevel): void => {
+    if (needsAutoWarning(level, next)) {
+      setPendingAuto(true);
+      return;
+    }
+    void set(next);
+  };
+
+  const confirmAuto = (): void => {
+    setPendingAuto(false);
+    void set(4);
+  };
+
+  const cancelAuto = (): void => {
+    setPendingAuto(false);
+  };
 
   return (
     <div className="peek-agent">
@@ -58,14 +98,49 @@ export function TrustDial({ origin }: { origin: string | null }): React.JSX.Elem
                     value={seg.level}
                     checked={active}
                     disabled={disabled}
-                    onChange={() => void set(seg.level)}
+                    onChange={() => onSelect(seg.level)}
                   />
                   <span>{seg.short}</span>
                 </label>
               );
             })}
           </div>
+          {pendingAuto ? (
+            <div className="peek-auto-warning" role="alertdialog" aria-label="Enable auto-approve?">
+              <p>
+                Auto-approve lets your agent act without asking. It turns off after 60 minutes or
+                when you close the tab. Destructive actions still ask first.
+                {origin ? (
+                  <>
+                    {' '}
+                    Enable for <code>{origin}</code>?
+                  </>
+                ) : null}
+              </p>
+              <div className="peek-auto-warning-actions">
+                <button type="button" className="peek-btn peek-btn-danger" onClick={confirmAuto}>
+                  Enable auto-approve
+                </button>
+                <button type="button" className="peek-btn" onClick={cancelAuto}>
+                  Cancel
+                </button>
+              </div>
+            </div>
+          ) : null}
           <p className="peek-dial-summary">{permissionLevelInfo(level).summary}</p>
+          <details className="peek-level-legend">
+            <summary>What do these levels mean?</summary>
+            <ul className="peek-level-legend-list">
+              {legendEntries().map((e) => (
+                <li key={e.level}>
+                  <strong>
+                    {e.level}. {e.name}
+                  </strong>{' '}
+                  — {e.behavior}
+                </li>
+              ))}
+            </ul>
+          </details>
         </>
       )}
       {error !== null && (
