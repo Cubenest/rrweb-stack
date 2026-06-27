@@ -56,7 +56,7 @@ import Layout from '../layouts/Layout.astro';
     <li><strong>Level 1 &mdash; Observe (default):</strong> read recorded sessions, plus on-demand masked reads of the live page &mdash; a page snapshot (<code>get_page_view</code>) and a single-element detail drill-in (<code>get_element_detail</code>). Both non-mutating.</li>
     <li><strong>Level 2 &mdash; Suggest:</strong> read + propose actions (no execution).</li>
     <li><strong>Level 3 &mdash; Confirm:</strong> read + execute one-shot actions with per-action user confirmation.</li>
-    <li><strong>Level 4 &mdash; YOLO:</strong> read + execute without per-action prompts (60-min, tab-scoped). Destructive-action terms still prompt.</li>
+    <li><strong>Level 4 &mdash; Auto:</strong> read + execute without per-action prompts; stays on until you lower the trust level. Destructive-action terms still prompt.</li>
   </ul>
   <p>
     <strong>Live page snapshot (<code>get_page_view</code>)</strong> &mdash; at Level 1+,
@@ -98,7 +98,7 @@ import Layout from '../layouts/Layout.astro';
     action returns only a &ldquo;refs expired&rdquo; marker, no element content.
   </p>
   <p>
-    <strong>Destructive-action blocklist override</strong> &mdash; even at Level 4 YOLO,
+    <strong>Destructive-action blocklist override</strong> &mdash; even at Level 4 (Auto),
     targets matching &ldquo;delete&rdquo;, &ldquo;remove&rdquo;, &ldquo;drop&rdquo;,
     &ldquo;uninstall&rdquo;, &ldquo;transfer&rdquo;, &ldquo;send&rdquo;,
     &ldquo;pay&rdquo;, etc. require explicit confirmation.
