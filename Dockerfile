@@ -18,7 +18,7 @@
 # it would write) unless `PEEK_INSTALL_NATIVE_HOST=1` — which we deliberately
 # do NOT set here, so install is filesystem-clean.
 
-FROM node:22-slim
+FROM node:22-slim@sha256:813a7480f28fdadac1f7f5c824bcdad435b5bc1322a5968bbbdef8d058f9dff4  # node:22-slim
 
 WORKDIR /srv/peek-mcp
 RUN chown -R node:node /srv/peek-mcp
