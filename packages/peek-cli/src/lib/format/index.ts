@@ -20,7 +20,7 @@ import { formatSessionMarkdown } from './markdown.js';
 import { formatSessionPlaywright } from './playwright.js';
 
 /** Supported `--format` values (P2 PRD §C.1). */
-export const EXPORT_FORMATS = ['markdown', 'json', 'html', 'playwright'] as const;
+export const EXPORT_FORMATS = ['markdown', 'json', 'html', 'playwright', 'bundle'] as const;
 export type ExportFormat = (typeof EXPORT_FORMATS)[number];
 
 export function isExportFormat(value: string): value is ExportFormat {
@@ -68,6 +68,15 @@ export function formatSession(
         message:
           "export format 'html' is not yet implemented (a peek-specific self-contained " +
           'rrweb replay viewer is tracked for a follow-up). Use --format markdown or json.',
+      };
+    case 'bundle':
+      // Binary export — branches in runExport before formatSession is called.
+      // This arm is unreachable in normal execution; guarded here so the switch
+      // exhausts all ExportFormat values and TypeScript is satisfied.
+      return {
+        ok: false,
+        message:
+          "export format 'bundle' is a binary export and must not be called through formatSession",
       };
   }
 }

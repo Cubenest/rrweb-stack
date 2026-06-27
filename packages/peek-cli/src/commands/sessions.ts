@@ -16,10 +16,14 @@
 import { writeFileSync } from 'node:fs';
 import { parseArgs } from 'node:util';
 import { openDb } from '@peekdev/mcp/db';
+import { loadSessionEvents } from '@peekdev/mcp/mcp/event-blobs';
 import type { Database } from 'better-sqlite3';
 import {
   deleteSession,
   deleteSessionsOlderThan,
+  getAllConsoleEvents,
+  getAllNetworkEvents,
+  getSession,
   getSessionDetail,
   listSessions,
   listSessionsWithCounts,
@@ -31,8 +35,15 @@ import {
   formatSession,
   isExportFormat,
 } from '../lib/format/index.js';
+import { importSessionBundle } from '../lib/import-session.js';
 import { formatBytes, pad } from '../lib/output.js';
-import { defaultDbPath } from '../lib/peek-home.js';
+import { defaultDbPath, rrwebEventsDir } from '../lib/peek-home.js';
+import {
+  FULLSNAPSHOT_CAVEAT,
+  packBundle,
+  unpackBundle,
+  verifyBundle,
+} from '../lib/session-bundle.js';
 
 /** Open the shared DB for reading (migrations applied so a fresh DB is valid). */
 function open(): Database {
@@ -48,6 +59,7 @@ function printUsage(): void {
       '  list [--origin <url>] [--limit 20] [--json]   List recent sessions (newest first)',
       '  show <session-id>                              Show one session (metadata + errors)',
       `  export <session-id> --format <${EXPORT_FORMATS.join('|')}> [--out <file>]`,
+      '  import <bundle-file> [--keep-id] [--force]    Import a *.peekbundle into the local store',
       '  delete <session-id>                            Delete one session',
       '  delete --all-older-than <dur>                  Delete sessions older than e.g. 7d',
       '',
@@ -100,10 +112,150 @@ function printExportHelp(): void {
       '  markdown    Structured AI-paste (default)',
       '  json        Machine-readable, same schema as the MCP get_session_* tools',
       '  playwright  Runnable Playwright `test(...)` script (K.2 alpha.7)',
+      '  bundle      Portable *.peekbundle archive (events + rows + integrity hash)',
       '  html        Self-contained replay viewer (deferred — see --help error)',
       '',
     ].join('\n'),
   );
+}
+
+function printImportHelp(): void {
+  process.stdout.write(
+    [
+      'Usage: peek sessions import <bundle-file> [options]',
+      '',
+      'Import a *.peekbundle archive (created by `peek sessions export --format bundle`)',
+      'into the local session store. Integrity is verified before anything is written.',
+      '',
+      'Options:',
+      '  --keep-id   Keep the original session id from the bundle (default: mint a new id)',
+      '  --force     With --keep-id: overwrite an existing session of the same id',
+      '  --help      Show this help and exit',
+      '',
+    ].join('\n'),
+  );
+}
+
+/**
+ * Binary bundle import — reads a *.peekbundle, verifies its integrity (fails
+ * closed on tampered/corrupt bundles), then writes the session into the local
+ * store via importSessionBundle. By default mints a new id so importing the
+ * same bundle twice is safe.
+ */
+function runImport(argv: string[]): number {
+  const { values, positionals } = parseArgs({
+    args: argv,
+    options: {
+      'keep-id': { type: 'boolean' },
+      force: { type: 'boolean' },
+      help: { type: 'boolean' },
+    },
+    allowPositionals: true,
+  });
+  if (values.help) {
+    printImportHelp();
+    return 0;
+  }
+  const file = positionals[0];
+  if (!file) {
+    process.stderr.write('peek sessions import: missing <bundle-file>\n');
+    return 1;
+  }
+  let bundle: ReturnType<typeof unpackBundle>;
+  try {
+    bundle = unpackBundle(file);
+    verifyBundle(bundle);
+  } catch (err) {
+    process.stderr.write(
+      `peek sessions import: ${err instanceof Error ? err.message : String(err)}\n`,
+    );
+    return 1;
+  }
+  const db = open();
+  try {
+    const id = importSessionBundle(db, bundle, {
+      newId: values['keep-id'] !== true,
+      force: values.force === true,
+    });
+    process.stdout.write(`Imported session ${id} (run: peek sessions show ${id})\n`);
+    return 0;
+  } catch (err) {
+    process.stderr.write(
+      `peek sessions import: ${err instanceof Error ? err.message : String(err)}\n`,
+    );
+    return 1;
+  } finally {
+    db.close();
+  }
+}
+
+/**
+ * Binary bundle export — writes a gzipped tar (*.peekbundle) containing the
+ * session metadata rows, all console/network events, and the raw rrweb event
+ * stream. Bypasses `formatSession` (which returns a string); this path writes a
+ * file directly and never streams binary to stdout.
+ */
+function runBundleExport(id: string, out: string | undefined): number {
+  const db = open();
+  try {
+    const session = getSession(db, id);
+    if (!session) {
+      process.stderr.write(`peek sessions export: no session with id '${id}'\n`);
+      return 1;
+    }
+    const blobPath = session.eventsBlobPath ?? id;
+    const events = loadSessionEvents(blobPath, rrwebEventsDir());
+    // The bundle must carry EVERY stored row, faithfully — not the triage subset
+    // the MCP tools surface. getConsoleEvents/getNetworkEvents are lossy here:
+    // the network triage query filters `status >= 0 OR error_text IS NOT NULL`
+    // (which still DROPS pending requests with NULL status AND NULL error_text),
+    // caps at a default row limit, and never selects `request_id`. The dedicated
+    // getAll* export queries select every row (no filter, no cap, ordered) and
+    // carry `request_id` so the importer's column round-trips.
+    const consoleRows = getAllConsoleEvents(db, id);
+    const networkRows = getAllNetworkEvents(db, id);
+    const outPath = out ?? `${id}.peekbundle`;
+    // db.ts returns camelCase rows; the bundle's canonical shape is snake_case
+    // (matching the DB columns + import-session.ts's reads). Map explicitly —
+    // a blind `as unknown as` cast would ship camelCase keys the importer can't
+    // read, silently resetting created_at/user_agent/ts_ms/status_text on import.
+    packBundle(outPath, {
+      session: {
+        id: session.id,
+        created_at: session.createdAt,
+        updated_at: session.updatedAt,
+        url: session.url,
+        title: session.title,
+        origin: session.origin,
+        user_agent: session.userAgent,
+        status: session.status,
+      },
+      consoleEvents: consoleRows.map((c) => ({
+        ts_ms: c.ts,
+        level: c.level,
+        message: c.message,
+        stack: c.stack,
+        url: c.url,
+      })),
+      networkEvents: networkRows.map((n) => ({
+        ts_ms: n.ts,
+        method: n.method,
+        url: n.url,
+        status: n.status,
+        status_text: n.statusText,
+        request_id: n.requestId,
+        resource_type: n.resourceType,
+        duration_ms: n.durationMs,
+        error_text: n.errorText,
+      })),
+      events,
+    });
+    process.stderr.write(`${FULLSNAPSHOT_CAVEAT}\n`);
+    process.stdout.write(`Wrote ${outPath}\n`);
+    return 0;
+  } finally {
+    db.close();
+  }
 }
 
 function printDeleteHelp(): void {
@@ -284,6 +436,10 @@ function runExport(argv: string[]): number {
   }
   const format: ExportFormat = formatRaw;
 
+  if (format === 'bundle') {
+    return runBundleExport(id, values.out);
+  }
+
   const db = open();
   try {
     const detail = getSessionDetail(db, id);
@@ -387,6 +543,8 @@ export function runSessions(argv: string[]): number {
       return runShow(rest);
     case 'export':
       return runExport(rest);
+    case 'import':
+      return runImport(rest);
     case 'delete':
       return runDelete(rest);
     case undefined:

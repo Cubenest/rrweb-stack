@@ -286,6 +286,88 @@ export function getNetworkEvents(
   }));
 }
 
+/**
+ * A network row for the full-fidelity bundle export. Unlike {@link NetworkEventRow}
+ * this also carries `requestId` (the `request_id` column the importer round-trips).
+ */
+export interface NetworkExportRow {
+  readonly ts: number;
+  readonly method: string;
+  readonly url: string;
+  readonly status: number | null;
+  readonly statusText: string | null;
+  readonly requestId: string | null;
+  readonly resourceType: string | null;
+  readonly durationMs: number | null;
+  readonly errorText: string | null;
+}
+
+/**
+ * EVERY network row for a session, oldest first — no status filter, no row cap.
+ * The bundle export must round-trip the full session faithfully, so it cannot
+ * use {@link getNetworkEvents} (which drops NULL-status + NULL-error rows like
+ * pending requests, caps at 50, and never selects `request_id`).
+ */
+export function getAllNetworkEvents(db: Database, id: string): NetworkExportRow[] {
+  const rows = db
+    .prepare(
+      `SELECT ts_ms, method, url, status, status_text, request_id, resource_type, duration_ms, error_text
+         FROM network_events
+        WHERE session_id = ?
+        ORDER BY ts_ms ASC`,
+    )
+    .all(id) as Array<{
+    ts_ms: number;
+    method: string;
+    url: string;
+    status: number | null;
+    status_text: string | null;
+    request_id: string | null;
+    resource_type: string | null;
+    duration_ms: number | null;
+    error_text: string | null;
+  }>;
+  return rows.map((r) => ({
+    ts: r.ts_ms,
+    method: r.method,
+    url: r.url,
+    status: r.status,
+    statusText: r.status_text,
+    requestId: r.request_id,
+    resourceType: r.resource_type,
+    durationMs: r.duration_ms,
+    errorText: r.error_text,
+  }));
+}
+
+/**
+ * EVERY console row for a session, oldest first — no level filter, no row cap.
+ * Full-fidelity counterpart to {@link getConsoleEvents} for the bundle export.
+ */
+export function getAllConsoleEvents(db: Database, id: string): ConsoleEventRow[] {
+  const rows = db
+    .prepare(
+      `SELECT ts_ms, level, message, stack, url
+         FROM console_events
+        WHERE session_id = ?
+        ORDER BY ts_ms ASC`,
+    )
+    .all(id) as Array<{
+    ts_ms: number;
+    level: string;
+    message: string;
+    stack: string | null;
+    url: string | null;
+  }>;
+  return rows.map((r) => ({
+    ts: r.ts_ms,
+    level: r.level,
+    message: r.message,
+    stack: r.stack,
+    url: r.url,
+  }));
+}
+
 /** Hydrate one session fully for `show` / `export`. Returns `undefined` if no such id. */
 export function getSessionDetail(db: Database, id: string): SessionDetail | undefined {
   const session = getSession(db, id);
