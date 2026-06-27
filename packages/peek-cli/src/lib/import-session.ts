@@ -37,6 +37,22 @@ export function importSessionBundle(db: Database, b: UnpackedBundle, opts: Impor
   const src = b.session.session as Record<string, unknown>;
   const targetId = opts.newId ? `s_${randomUUID().replace(/-/g, '')}` : String(src.id ?? '');
   if (targetId.length === 0) throw new Error('bundle session has no id');
+  // SECURITY: with newId:false the kept id flows straight into
+  // join(rrwebEventsDir(), targetId) for mkdir/write/rm. A malicious bundle
+  // with id '../../evil' (or one carrying a path separator / NUL) would escape
+  // the rrweb-events dir. Validate BEFORE any filesystem use. Minted ids are
+  // always `s_<hex>` and always pass; this only ever fires on a kept id.
+  if (
+    /[/\\]/.test(targetId) ||
+    targetId.split(/[/\\]/).includes('..') ||
+    targetId.includes('\0') ||
+    targetId === '.' ||
+    targetId === '..'
+  ) {
+    throw new Error(
+      `refusing to import: unsafe session id '${targetId}' (contains path separators or traversal)`,
+    );
+  }
 
   const exists = db.prepare('SELECT 1 FROM sessions WHERE id = ?').get(targetId);
   if (exists) {
@@ -48,7 +64,19 @@ export function importSessionBundle(db: Database, b: UnpackedBundle, opts: Impor
     // mid-overwrite drops the old session but is fully recoverable — this path is
     // user-initiated and re-runnable since the source bundle survives. Mirrors the
     // file-then-rows ordering rationale in native-host/ingest.ts.
+    // Read the OLD row's stored blob path BEFORE the delete: it may differ from
+    // the assumed <id> dir (legacy single `.gz` file, or a relative path under a
+    // different name). loadSessionEvents supports both layouts, so removing only
+    // the <id> dir would orphan the old captured blob on disk.
+    const oldRow = db.prepare('SELECT events_blob_path FROM sessions WHERE id = ?').get(targetId) as
+      | { events_blob_path: string | null }
+      | undefined;
     db.prepare('DELETE FROM sessions WHERE id = ?').run(targetId);
+    if (oldRow?.events_blob_path) {
+      rmSync(join(rrwebEventsDir(), oldRow.events_blob_path), { recursive: true, force: true });
+    }
+    // Belt-and-suspenders for the common id == path case (and to clear the dir
+    // we're about to re-create below).
     rmSync(join(rrwebEventsDir(), targetId), { recursive: true, force: true });
   }
 

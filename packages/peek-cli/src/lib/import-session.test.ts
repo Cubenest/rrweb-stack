@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync } from 'node:fs';
+import { existsSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { openDb } from '@peekdev/mcp/db';
@@ -98,6 +98,24 @@ describe('importSessionBundle', () => {
       expect(
         db.prepare("SELECT COUNT(*) c FROM events_chunks WHERE session_id = 's_orig'").get(),
       ).toEqual({ c: 1 });
+    } finally {
+      db.close();
+    }
+  });
+
+  it('refuses a malicious kept id with path traversal and writes nothing', () => {
+    const db = openDb({ path: join(home, 'sessions.db') });
+    try {
+      const evil = bundle();
+      evil.session.session.id = '../../evil';
+      expect(() => importSessionBundle(db, evil, { newId: false })).toThrow(
+        /unsafe|traversal|path/i,
+      );
+      // No session row landed and no blob escaped the rrweb-events dir.
+      expect(db.prepare("SELECT COUNT(*) c FROM sessions WHERE id = '../../evil'").get()).toEqual({
+        c: 0,
+      });
+      expect(existsSync(join(home, '..', 'evil'))).toBe(false);
     } finally {
       db.close();
     }
