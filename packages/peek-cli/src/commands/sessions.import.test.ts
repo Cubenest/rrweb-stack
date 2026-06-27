@@ -34,8 +34,13 @@ function seed(): void {
       'INSERT INTO console_events (session_id, ts_ms, level, message) VALUES (?, ?, ?, ?)',
     ).run('s_x', 1000, 'error', 'boom');
     db.prepare(
-      'INSERT INTO network_events (session_id, ts_ms, method, url, status, status_text) VALUES (?, ?, ?, ?, ?, ?)',
-    ).run('s_x', 1001, 'GET', 'https://app.test/x', 500, 'Internal Server Error');
+      'INSERT INTO network_events (session_id, ts_ms, method, url, status, status_text, request_id) VALUES (?, ?, ?, ?, ?, ?, ?)',
+    ).run('s_x', 1001, 'GET', 'https://app.test/x', 500, 'Internal Server Error', 'req-1');
+    // A pending request: NULL status AND NULL error_text. The old triage query
+    // (status >= 400 OR error_text IS NOT NULL) would DROP this row on export.
+    db.prepare(
+      'INSERT INTO network_events (session_id, ts_ms, method, url, status, error_text) VALUES (?, ?, ?, ?, ?, ?)',
+    ).run('s_x', 1002, 'GET', 'https://app.test/pending', null, null);
     db.prepare(
       'INSERT INTO events_chunks (session_id, seq, start_ts_ms, end_ts_ms, event_count, byte_offset, byte_length, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
     ).run('s_x', 0, 1000, 1000, 1, 0, 0, '2026-06-27T00:00:00.000Z');
@@ -61,7 +66,7 @@ beforeEach(() => {
   seed();
 });
 afterEach(() => {
-  if (origHome === undefined) process.env.PEEK_HOME = '';
+  if (origHome === undefined) Reflect.deleteProperty(process.env, 'PEEK_HOME');
   else process.env.PEEK_HOME = origHome;
   rmSync(home, { recursive: true, force: true });
 });
@@ -107,9 +112,22 @@ describe('peek sessions import', () => {
       // Network ts_ms + status_text must survive (camelCase keys would null them).
       expect(
         db
-          .prepare('SELECT ts_ms, status, status_text FROM network_events WHERE session_id = ?')
+          .prepare(
+            'SELECT ts_ms, status, status_text FROM network_events WHERE session_id = ? AND ts_ms = 1001',
+          )
           .get(newId),
       ).toEqual({ ts_ms: 1001, status: 500, status_text: 'Internal Server Error' });
+      // Full-fidelity export: BOTH network rows must round-trip, including the
+      // pending request (NULL status AND NULL error_text) that the old triage
+      // query dropped. The request_id column must also survive.
+      expect(
+        db.prepare('SELECT COUNT(*) c FROM network_events WHERE session_id = ?').get(newId),
+      ).toEqual({ c: 2 });
+      expect(
+        db
+          .prepare('SELECT request_id FROM network_events WHERE session_id = ? AND ts_ms = 1001')
+          .get(newId),
+      ).toEqual({ request_id: 'req-1' });
     } finally {
       db.close();
     }

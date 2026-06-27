@@ -21,8 +21,8 @@ import type { Database } from 'better-sqlite3';
 import {
   deleteSession,
   deleteSessionsOlderThan,
-  getConsoleEvents,
-  getNetworkEvents,
+  getAllConsoleEvents,
+  getAllNetworkEvents,
   getSession,
   getSessionDetail,
   listSessions,
@@ -205,14 +205,15 @@ function runBundleExport(id: string, out: string | undefined): number {
     }
     const blobPath = session.eventsBlobPath ?? id;
     const events = loadSessionEvents(blobPath, rrwebEventsDir());
-    // The bundle must carry EVERY stored row, not the triage subset the MCP
-    // tools surface: getConsoleEvents defaults to limit=50, getNetworkEvents
-    // defaults to statusGte=400 (failures only) + limit=50. Lift both filters
-    // so an export round-trips the full session (statusGte=0 keeps successful
-    // requests; the high limit defeats the row cap).
-    const ALL_ROWS = 1_000_000;
-    const consoleRows = getConsoleEvents(db, id, { errorsOnly: false, limit: ALL_ROWS });
-    const networkRows = getNetworkEvents(db, id, { statusGte: 0, limit: ALL_ROWS });
+    // The bundle must carry EVERY stored row, faithfully — not the triage subset
+    // the MCP tools surface. getConsoleEvents/getNetworkEvents are lossy here:
+    // the network triage query filters `status >= 0 OR error_text IS NOT NULL`
+    // (which still DROPS pending requests with NULL status AND NULL error_text),
+    // caps at a default row limit, and never selects `request_id`. The dedicated
+    // getAll* export queries select every row (no filter, no cap, ordered) and
+    // carry `request_id` so the importer's column round-trips.
+    const consoleRows = getAllConsoleEvents(db, id);
+    const networkRows = getAllNetworkEvents(db, id);
     const outPath = out ?? `${id}.peekbundle`;
     // db.ts returns camelCase rows; the bundle's canonical shape is snake_case
     // (matching the DB columns + import-session.ts's reads). Map explicitly —
@@ -242,6 +243,7 @@ function runBundleExport(id: string, out: string | undefined): number {
         url: n.url,
         status: n.status,
         status_text: n.statusText,
+        request_id: n.requestId,
         resource_type: n.resourceType,
         duration_ms: n.durationMs,
         error_text: n.errorText,
