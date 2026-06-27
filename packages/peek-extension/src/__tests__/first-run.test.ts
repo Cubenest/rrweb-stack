@@ -19,8 +19,8 @@ describe('first-run dismissal state', () => {
     expect(await readFirstRunDismissed()).toBe(true);
   });
 
-  it('reads false (fail toward non-intrusive) when the stored value is not a boolean true', async () => {
+  it('throws on a malformed stored value (so the hook fails toward hidden, not re-onboarding)', async () => {
     await fakeBrowser.storage.local.set({ [FIRST_RUN_DISMISSED_KEY]: 'yes' });
-    expect(await readFirstRunDismissed()).toBe(false);
+    await expect(readFirstRunDismissed()).rejects.toThrow();
   });
 });

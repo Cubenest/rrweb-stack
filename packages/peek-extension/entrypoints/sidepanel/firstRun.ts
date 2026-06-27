@@ -9,10 +9,20 @@ import { useEffect, useState } from 'react';
 /** chrome.storage.local key holding the first-run dismissal flag. */
 export const FIRST_RUN_DISMISSED_KEY = 'peek:firstRunDismissed';
 
-/** True only when the explainer has been explicitly dismissed. */
+/**
+ * True only when the explainer has been explicitly dismissed.
+ *
+ * Distinguishes three cases so the hook can fail toward non-intrusive:
+ *  - unset (`undefined`) → `false` (legitimate first run; show the card)
+ *  - `true` → `true` (already dismissed; stay hidden)
+ *  - anything else (malformed) → throw, so `useFirstRun`'s `.catch` keeps the
+ *    card hidden rather than re-onboarding a returning user.
+ */
 export async function readFirstRunDismissed(): Promise<boolean> {
-  const got = await chrome.storage.local.get(FIRST_RUN_DISMISSED_KEY);
-  return got[FIRST_RUN_DISMISSED_KEY] === true;
+  const value = (await chrome.storage.local.get(FIRST_RUN_DISMISSED_KEY))[FIRST_RUN_DISMISSED_KEY];
+  if (value === undefined) return false;
+  if (value === true) return true;
+  throw new Error('Unexpected first-run dismissal value');
 }
 
 /** Persist that the user dismissed the explainer. */
