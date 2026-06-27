@@ -1,7 +1,7 @@
 {
   "name": "@peekdev/cli",
   "version": "0.1.0-alpha.28",
-  "description": "peek command-line tool. A thin read-mostly client of the native host's ~/.peek/sessions.db: status, sessions list/show/export/delete, the `peek init` MCP-client wizard, `peek audit log`, and `peek audit verify`.",
+  "description": "peek command-line tool for the local-first browser-session forensics workflow — a thin read-mostly client of ~/.peek/sessions.db: status, sessions list/show/export/delete, the `peek init` MCP-client wizard, `peek audit log`, and `peek audit verify`.",
   "keywords": [
     "peek",
     "mcp",
