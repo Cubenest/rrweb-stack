@@ -205,13 +205,47 @@ function runBundleExport(id: string, out: string | undefined): number {
     }
     const blobPath = session.eventsBlobPath ?? id;
     const events = loadSessionEvents(blobPath, rrwebEventsDir());
-    const consoleEvents = getConsoleEvents(db, id, { errorsOnly: false });
-    const networkEvents = getNetworkEvents(db, id);
+    // The bundle must carry EVERY stored row, not the triage subset the MCP
+    // tools surface: getConsoleEvents defaults to limit=50, getNetworkEvents
+    // defaults to statusGte=400 (failures only) + limit=50. Lift both filters
+    // so an export round-trips the full session (statusGte=0 keeps successful
+    // requests; the high limit defeats the row cap).
+    const ALL_ROWS = 1_000_000;
+    const consoleRows = getConsoleEvents(db, id, { errorsOnly: false, limit: ALL_ROWS });
+    const networkRows = getNetworkEvents(db, id, { statusGte: 0, limit: ALL_ROWS });
     const outPath = out ?? `${id}.peekbundle`;
+    // db.ts returns camelCase rows; the bundle's canonical shape is snake_case
+    // (matching the DB columns + import-session.ts's reads). Map explicitly —
+    // a blind `as unknown as` cast would ship camelCase keys the importer can't
+    // read, silently resetting created_at/user_agent/ts_ms/status_text on import.
     packBundle(outPath, {
-      session: session as unknown as Record<string, unknown>,
-      consoleEvents: consoleEvents as unknown as Record<string, unknown>[],
-      networkEvents: networkEvents as unknown as Record<string, unknown>[],
+      session: {
+        id: session.id,
+        created_at: session.createdAt,
+        updated_at: session.updatedAt,
+        url: session.url,
+        title: session.title,
+        origin: session.origin,
+        user_agent: session.userAgent,
+        status: session.status,
+      },
+      consoleEvents: consoleRows.map((c) => ({
+        ts_ms: c.ts,
+        level: c.level,
+        message: c.message,
+        stack: c.stack,
+        url: c.url,
+      })),
+      networkEvents: networkRows.map((n) => ({
+        ts_ms: n.ts,
+        method: n.method,
+        url: n.url,
+        status: n.status,
+        status_text: n.statusText,
+        resource_type: n.resourceType,
+        duration_ms: n.durationMs,
+        error_text: n.errorText,
+      })),
       events,
     });
     process.stderr.write(`${FULLSNAPSHOT_CAVEAT}\n`);

@@ -15,8 +15,8 @@ function seed(): void {
   const db = openDb({ path: join(home, 'sessions.db') });
   try {
     db.prepare(
-      `INSERT INTO sessions (id, created_at, updated_at, url, title, origin, event_count, bytes, status, events_blob_path)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO sessions (id, created_at, updated_at, url, title, origin, user_agent, event_count, bytes, status, events_blob_path)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     ).run(
       's_x',
       '2026-06-27T00:00:00.000Z',
@@ -24,6 +24,7 @@ function seed(): void {
       'https://app.test',
       'T',
       'https://app.test',
+      'Mozilla/5.0 (peek-test)',
       1,
       50,
       'finalized',
@@ -33,8 +34,8 @@ function seed(): void {
       'INSERT INTO console_events (session_id, ts_ms, level, message) VALUES (?, ?, ?, ?)',
     ).run('s_x', 1000, 'error', 'boom');
     db.prepare(
-      'INSERT INTO network_events (session_id, ts_ms, method, url, status) VALUES (?, ?, ?, ?, ?)',
-    ).run('s_x', 1001, 'GET', 'https://app.test/x', 500);
+      'INSERT INTO network_events (session_id, ts_ms, method, url, status, status_text) VALUES (?, ?, ?, ?, ?, ?)',
+    ).run('s_x', 1001, 'GET', 'https://app.test/x', 500, 'Internal Server Error');
     db.prepare(
       'INSERT INTO events_chunks (session_id, seq, start_ts_ms, end_ts_ms, event_count, byte_offset, byte_length, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
     ).run('s_x', 0, 1000, 1000, 1, 0, 0, '2026-06-27T00:00:00.000Z');
@@ -89,9 +90,26 @@ describe('peek sessions import', () => {
       expect(db.prepare('SELECT event_count FROM sessions WHERE id = ?').get(newId)).toEqual({
         event_count: 1,
       });
+      // Field fidelity: the bundle must carry snake_case rows so the importer
+      // preserves created_at / user_agent (would reset/null with camelCase keys).
       expect(
-        db.prepare('SELECT COUNT(*) c FROM console_events WHERE session_id = ?').get(newId),
-      ).toEqual({ c: 1 });
+        db.prepare('SELECT created_at, user_agent FROM sessions WHERE id = ?').get(newId),
+      ).toEqual({
+        created_at: '2026-06-27T00:00:00.000Z',
+        user_agent: 'Mozilla/5.0 (peek-test)',
+      });
+      // Console ts_ms must survive (camelCase `ts` would have landed as 0).
+      expect(
+        db
+          .prepare('SELECT ts_ms, level, message FROM console_events WHERE session_id = ?')
+          .get(newId),
+      ).toEqual({ ts_ms: 1000, level: 'error', message: 'boom' });
+      // Network ts_ms + status_text must survive (camelCase keys would null them).
+      expect(
+        db
+          .prepare('SELECT ts_ms, status, status_text FROM network_events WHERE session_id = ?')
+          .get(newId),
+      ).toEqual({ ts_ms: 1001, status: 500, status_text: 'Internal Server Error' });
     } finally {
       db.close();
     }
