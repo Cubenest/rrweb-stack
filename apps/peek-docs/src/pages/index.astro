@@ -6,12 +6,12 @@ const jsonLd = {
   '@type': 'SoftwareApplication',
   name: 'peek',
   description:
-    'Open-source, local-first browser companion for AI coding agents. Records a masked, authenticated browser session to a local SQLite store and turns it into a runnable Playwright repro the agent can re-run to verify its own fix, plus MCP read tools for console, network, and DOM. Ships as a Chrome MV3 extension, a stdio MCP server, and a CLI.',
+    'Open-source, local-first browser-session forensics for AI coding agents. Passively records a masked, authenticated session of your real browser to a local SQLite store and exposes it — DOM history, console/network errors, and the action right before an error — to your agent over MCP, then turns it into a runnable Playwright repro the agent can re-run to verify its own fix. Ships as a Chrome MV3 extension, a stdio MCP server, and a CLI.',
   applicationCategory: 'DeveloperApplication',
   operatingSystem: 'macOS, Linux, Windows',
   softwareVersion: 'alpha',
   releaseNotes:
-    'Pre-1.0 alpha; APIs may shift before 1.0. The Chrome extension is loaded unpacked during alpha (Chrome Web Store listing pending).',
+    'Pre-1.0 alpha; APIs may shift before 1.0. The Chrome extension is available on the Chrome Web Store.',
   license: 'https://www.apache.org/licenses/LICENSE-2.0',
   url: 'https://peek.cubenest.in',
   offers: { '@type': 'Offer', price: '0', priceCurrency: 'USD' },
@@ -25,11 +25,11 @@ const jsonLd = {
 ---
 
 <Layout
-  title="peek — turn a browser bug into a Playwright repro your AI agent can re-run"
+  title="peek — let your AI coding agent debug what already happened in your real browser"
   description="peek records a masked browser session locally and turns it into a Playwright repro your AI agent can re-run over MCP. Local-first, redacted by default, no cloud."
 >
   <h1>peek</h1>
-  <p class="tagline">Turn a browser bug into a Playwright repro your AI agent can re-run &mdash; and verify its own fix actually worked.</p>
+  <p class="tagline">Let your AI coding agent debug what already happened in your real browser &mdash; peek turns your locally-recorded sessions (DOM history, console &amp; network errors, the action right before a failure) into a runnable Playwright repro it can re-run to verify its own fix.</p>
 
   <div class="badges">
     <span class="badge">Apache 2.0</span>
@@ -67,8 +67,16 @@ const jsonLd = {
   <h2>What it does</h2>
   <div class="feature-grid">
     <div class="feature">
+      <h3>What happened before the error</h3>
+      <p><code>get_user_action_before_error</code> assembles the causal chain &mdash; the clicks, DOM mutations, and network/console errors right before a failure &mdash; into one timeline with a narrative. With <code>query_dom_history</code>, <code>get_session_console_errors</code>, and <code>get_session_network_errors</code>, your agent debugs what already happened instead of guessing from a description.</p>
+    </div>
+    <div class="feature">
+      <h3>Forensic read tools for agents</h3>
+      <p><code>list_recent_sessions</code> / <code>get_session_summary</code> to orient, <code>get_dom_snapshot</code> / <code>query_dom_history</code> to inspect the DOM as it was at any moment, and <code>get_page_view</code> / <code>get_element_detail</code> for the live page. All over standard MCP &mdash; works with any MCP-aware client.</p>
+    </div>
+    <div class="feature">
       <h3>Replayable Playwright repro</h3>
-      <p><code>generate_playwright_repro</code> turns a recorded session &mdash; the actual clicks, console, and network &mdash; into a runnable Playwright test. The agent re-runs it to verify a fix actually worked, instead of guessing from a description of the bug.</p>
+      <p><code>generate_playwright_repro</code> turns a recorded session &mdash; the actual clicks, console, and network &mdash; into a runnable Playwright test. The agent re-runs it to verify a fix actually worked, and can seed a console-error-absence assertion so the bug can&apos;t silently come back.</p>
     </div>
     <div class="feature">
       <h3>Per-site, opt-in capture</h3>
@@ -76,19 +84,15 @@ const jsonLd = {
     </div>
     <div class="feature">
       <h3>Five-level permission model</h3>
-      <p>From Level 1 (observe-only, default) to Level 4 (YOLO, time-boxed) &mdash; per origin. Destructive actions always prompt, even at YOLO.</p>
+      <p>From Level 1 (read-only, default) to Level 4 (Auto) &mdash; per origin. Destructive actions always prompt, even at Auto.</p>
     </div>
     <div class="feature">
       <h3>Local SQLite store</h3>
-      <p>Sessions, console events, network metadata, and audit logs live in <code>~/.peek/sessions.db</code>. Delete or export with the <code>peek</code> CLI.</p>
+      <p>Sessions, console events, network metadata, and a tamper-evident audit log live in <code>~/.peek/sessions.db</code>. Delete or export with the <code>peek</code> CLI.</p>
     </div>
     <div class="feature">
       <h3>Redacted by default</h3>
       <p>Auth and cookie headers are deny-listed; form values and PII (cards, SSNs, JWTs, emails) are masked in the page before anything leaves the tab. Response bodies aren&apos;t captured unless you opt a single origin into Deep capture (off by default) &mdash; and even then they&apos;re masked and capped at 256&nbsp;KB. Apache-2.0, so you can audit the masking yourself.</p>
-    </div>
-    <div class="feature">
-      <h3>MCP read tools for agents</h3>
-      <p>List, fetch, and search sessions. Inspect console + network. Replay recent rrweb frames. All over standard MCP &mdash; works with any MCP-aware client.</p>
     </div>
     <div class="feature">
       <h3>Level-3 write tools (opt-in)</h3>
@@ -100,7 +104,7 @@ const jsonLd = {
   <ul>
     <li><code>@peekdev/mcp</code> &mdash; the native host + stdio MCP server. <a href="https://www.npmjs.com/package/@peekdev/mcp" rel="noopener">npm</a></li>
     <li><code>@peekdev/cli</code> &mdash; <code>peek init</code>, <code>peek status</code>, sessions list/show/export/delete, audit log. <a href="https://www.npmjs.com/package/@peekdev/cli" rel="noopener">npm</a></li>
-    <li><code>@peekdev/extension</code> &mdash; the Chrome MV3 extension. Loaded unpacked during alpha &mdash; the Chrome Web Store listing is Phase 5.</li>
+    <li><code>@peekdev/extension</code> &mdash; the Chrome MV3 extension, <a href="https://chromewebstore.google.com/detail/peek/dmgpmkeneheenpdnfmpjjahnkknkaejb" rel="noopener">available on the Chrome Web Store</a>.</li>
   </ul>
 
   <h2>Privacy</h2>
@@ -111,10 +115,10 @@ const jsonLd = {
   </p>
 
   <div class="callout">
-    <strong>Alpha note.</strong> The Chrome extension is loaded unpacked today
-    (see <a href="/getting-started">Getting started</a>). The Chrome Web Store
-    listing is part of Phase&nbsp;5; once published, the &ldquo;Install&rdquo; step will
-    collapse to a single button.
+    <strong>Alpha note.</strong> peek is pre-1.0 &mdash; APIs may shift before 1.0.
+    The Chrome extension is <a href="https://chromewebstore.google.com/detail/peek/dmgpmkeneheenpdnfmpjjahnkknkaejb" rel="noopener">on the Chrome Web Store</a>;
+    you can also load it unpacked for development (see
+    <a href="/getting-started">Getting started</a>).
   </div>
 
   <p style="color: var(--fg-muted); font-size: 0.9rem; margin-top: 2rem;">
