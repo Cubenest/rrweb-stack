@@ -83,7 +83,9 @@ export function App(): React.JSX.Element {
     <main className="peek-panel">
       <header className="peek-header">
         <h1 className="peek-title">peek</h1>
-        <span className="peek-tagline">browser session capture for AI agents</span>
+        <span className="peek-tagline">
+          records your real browser so your agent can debug what happened
+        </span>
       </header>
 
       <FirstRunCard />

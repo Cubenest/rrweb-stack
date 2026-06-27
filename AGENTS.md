@@ -16,9 +16,11 @@ on a shared substrate:
   end-to-end suites (WebdriverIO today, Playwright + Cypress on the roadmap).
   Captures rrweb session + console + failed-network responses, ships a
   self-contained HTML report on failure. Apache-2.0.
-- **peek** (npm scope `@peekdev`) — browser companion for AI coding agents.
-  Records masked browser sessions to a local SQLite store via a native host
-  and exposes them to coding agents through an MCP server. Apache-2.0.
+- **peek** (npm scope `@peekdev`) — local-first browser-session forensics +
+  repro for AI coding agents. Passively records masked sessions of your real
+  browser to a local SQLite store via a native host, and exposes them — DOM
+  history, console/network errors, the action before an error, and
+  session→Playwright repro — to coding agents through an MCP server. Apache-2.0.
 - **@cubenest/rrweb-core** — the shared rrweb fork used by both products
   (PostHog's fork + a framework-agnostic network plugin).
 
