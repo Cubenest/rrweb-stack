@@ -73,9 +73,14 @@ describe('redaction bank — fuzz invariants', () => {
     expect(luhn(card)).toBe(true);
     fc.assert(
       fc.property(fc.string({ maxLength: 256 }), fc.string({ maxLength: 256 }), (pre, post) => {
-        // Spaces isolate the card so digits in pre/post can't fuse onto it and
-        // push its length out of the 13-19 digit window.
-        const haystack = `${pre} ${card} ${post}`;
+        // Isolate the card with NEWLINES, not spaces. CREDIT_CARD_REGEX is
+        // /\b\d(?:[ -]?\d){12,18}\b/ — it absorbs spaces and dashes *between*
+        // digits, so a space would NOT isolate: a digit-suffixed `pre` fuses
+        // through it (`123 4111111111111111` matches as one 16-digit candidate
+        // that fails Luhn and is therefore left unredacted, defeating the
+        // assertion). The regex cannot cross a newline, so newline boundaries
+        // keep the card a standalone candidate that always matches and redacts.
+        const haystack = `${pre}\n${card}\n${post}`;
         expect(maskTextContent(haystack).includes(card)).toBe(false);
       }),
       { numRuns: 500 },
