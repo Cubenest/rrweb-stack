@@ -35,9 +35,15 @@ import {
   formatSession,
   isExportFormat,
 } from '../lib/format/index.js';
+import { importSessionBundle } from '../lib/import-session.js';
 import { formatBytes, pad } from '../lib/output.js';
 import { defaultDbPath, rrwebEventsDir } from '../lib/peek-home.js';
-import { FULLSNAPSHOT_CAVEAT, packBundle } from '../lib/session-bundle.js';
+import {
+  FULLSNAPSHOT_CAVEAT,
+  packBundle,
+  unpackBundle,
+  verifyBundle,
+} from '../lib/session-bundle.js';
 
 /** Open the shared DB for reading (migrations applied so a fresh DB is valid). */
 function open(): Database {
@@ -53,6 +59,7 @@ function printUsage(): void {
       '  list [--origin <url>] [--limit 20] [--json]   List recent sessions (newest first)',
       '  show <session-id>                              Show one session (metadata + errors)',
       `  export <session-id> --format <${EXPORT_FORMATS.join('|')}> [--out <file>]`,
+      '  import <bundle-file> [--keep-id] [--force]    Import a *.peekbundle into the local store',
       '  delete <session-id>                            Delete one session',
       '  delete --all-older-than <dur>                  Delete sessions older than e.g. 7d',
       '',
@@ -110,6 +117,76 @@ function printExportHelp(): void {
       '',
     ].join('\n'),
   );
+}
+
+function printImportHelp(): void {
+  process.stdout.write(
+    [
+      'Usage: peek sessions import <bundle-file> [options]',
+      '',
+      'Import a *.peekbundle archive (created by `peek sessions export --format bundle`)',
+      'into the local session store. Integrity is verified before anything is written.',
+      '',
+      'Options:',
+      '  --keep-id   Keep the original session id from the bundle (default: mint a new id)',
+      '  --force     With --keep-id: overwrite an existing session of the same id',
+      '  --help      Show this help and exit',
+      '',
+    ].join('\n'),
+  );
+}
+
+/**
+ * Binary bundle import — reads a *.peekbundle, verifies its integrity (fails
+ * closed on tampered/corrupt bundles), then writes the session into the local
+ * store via importSessionBundle. By default mints a new id so importing the
+ * same bundle twice is safe.
+ */
+function runImport(argv: string[]): number {
+  const { values, positionals } = parseArgs({
+    args: argv,
+    options: {
+      'keep-id': { type: 'boolean' },
+      force: { type: 'boolean' },
+      help: { type: 'boolean' },
+    },
+    allowPositionals: true,
+  });
+  if (values.help) {
+    printImportHelp();
+    return 0;
+  }
+  const file = positionals[0];
+  if (!file) {
+    process.stderr.write('peek sessions import: missing <bundle-file>\n');
+    return 1;
+  }
+  let bundle: ReturnType<typeof unpackBundle>;
+  try {
+    bundle = unpackBundle(file);
+    verifyBundle(bundle);
+  } catch (err) {
+    process.stderr.write(
+      `peek sessions import: ${err instanceof Error ? err.message : String(err)}\n`,
+    );
+    return 1;
+  }
+  const db = open();
+  try {
+    const id = importSessionBundle(db, bundle, {
+      newId: values['keep-id'] !== true,
+      force: values.force === true,
+    });
+    process.stdout.write(`Imported session ${id} (run: peek sessions show ${id})\n`);
+    return 0;
+  } catch (err) {
+    process.stderr.write(
+      `peek sessions import: ${err instanceof Error ? err.message : String(err)}\n`,
+    );
+    return 1;
+  } finally {
+    db.close();
+  }
 }
 
 /**
@@ -430,6 +507,8 @@ export function runSessions(argv: string[]): number {
       return runShow(rest);
     case 'export':
       return runExport(rest);
+    case 'import':
+      return runImport(rest);
     case 'delete':
       return runDelete(rest);
     case undefined:
