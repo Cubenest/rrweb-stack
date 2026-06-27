@@ -74,6 +74,10 @@ export function maskElementDetail(detail: ElementDetail): ElementDetail {
     text?: string;
     context?: { heading?: string; landmark?: string };
     children?: { ref: string; role: string; name: string }[];
+    computedStyles?: Record<string, string>;
+    description?: string;
+    effectiveAriaHidden?: boolean;
+    effectiveAriaDisabled?: boolean;
   } = {
     ok: true,
     ref: detail.ref,
@@ -104,6 +108,30 @@ export function maskElementDetail(detail: ElementDetail): ElementDetail {
       role: c.role,
       name: maskTextContent(c.name),
     }));
+  }
+  if (detail.description !== undefined) out.description = maskTextContent(detail.description);
+  if (detail.effectiveAriaHidden !== undefined)
+    out.effectiveAriaHidden = detail.effectiveAriaHidden;
+  if (detail.effectiveAriaDisabled !== undefined)
+    out.effectiveAriaDisabled = detail.effectiveAriaDisabled;
+  if (detail.computedStyles !== undefined) {
+    const styles: Record<string, string> = {};
+    for (const [k, v] of Object.entries(detail.computedStyles)) {
+      // Only backgroundImage can carry a data-bearing url(...); everything else is
+      // layout/paint values (display, color, fontSize, …) — pass through untouched.
+      if (k === 'backgroundImage') {
+        // Mask EVERY url() — CSS allows comma-separated multi-backgrounds and
+        // getComputedStyle returns them in one string; a query secret in any
+        // layer must not escape this masking boundary.
+        styles[k] = v.replace(
+          /url\((['"]?)([^'")]+)\1\)/g,
+          (_full, q, u) => `url(${q}${maskUrl(u)}${q})`,
+        );
+      } else {
+        styles[k] = v;
+      }
+    }
+    out.computedStyles = styles;
   }
   return out;
 }
