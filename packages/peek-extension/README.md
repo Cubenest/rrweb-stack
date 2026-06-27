@@ -2,7 +2,7 @@
 
 # @peekdev/extension
 
-> Let your AI coding agent debug what already happened in your real browser — peek passively records masked sessions to a local store and exposes them to your agent over MCP. With explicit per-site consent, the agent can also act. Nothing leaves your machine to a vendor.
+> Let your AI coding agent debug what already happened in your real browser — peek passively records masked sessions to a local store and exposes them to your agent over MCP. With explicit per-site consent, the agent can also act. Local-first: peek uploads nothing — what your MCP client does with the data is up to you.
 
 [![CI](https://github.com/Cubenest/rrweb-stack/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/Cubenest/rrweb-stack/actions/workflows/ci.yml)
 [![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/Cubenest/rrweb-stack/badge)](https://scorecard.dev/viewer/?uri=github.com/Cubenest/rrweb-stack)

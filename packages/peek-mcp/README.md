@@ -2,7 +2,7 @@
 
 # @peekdev/mcp
 
-> Let your AI coding agent debug what already happened in your real browser — peek reads your locally-recorded sessions (DOM history, console & network errors, the action right before a failure) over MCP and turns them into a runnable Playwright repro. Local-first; nothing leaves your machine to a vendor.
+> Let your AI coding agent debug what already happened in your real browser — peek reads your locally-recorded sessions (DOM history, console & network errors, the action right before a failure) over MCP and turns them into a runnable Playwright repro. Local-first: peek uploads nothing — what your MCP client does with the data is up to you.
 
 [![npm](https://img.shields.io/npm/v/@peekdev/mcp.svg)](https://www.npmjs.com/package/@peekdev/mcp)
 [![downloads](https://img.shields.io/npm/dw/@peekdev/mcp.svg)](https://www.npmjs.com/package/@peekdev/mcp)
