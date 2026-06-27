@@ -108,8 +108,8 @@ export function TrustDial({ origin }: { origin: string | null }): React.JSX.Elem
           {pendingAuto ? (
             <div className="peek-auto-warning" role="alertdialog" aria-label="Enable auto-approve?">
               <p>
-                Auto-approve lets your agent act without asking. It turns off after 60 minutes or
-                when you close the tab. Destructive actions still ask first.
+                Auto-approve lets your agent act on this site without asking, and stays on until you
+                turn it off or lower the trust level. Destructive actions still ask first.
                 {origin ? (
                   <>
                     {' '}

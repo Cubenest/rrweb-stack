@@ -138,7 +138,10 @@ export function StatusHeader({ origin }: { origin: string | null }): React.JSX.E
       </div>
       {isAutoActive(level) ? (
         <output className="peek-auto-active">
-          <span>⚡ Auto-approve active — turns off when you close this tab (or after 60 min)</span>
+          <span>
+            ⚡ Auto-approve active for this site — stays on until you turn it off or lower the trust
+            level
+          </span>
           <button
             type="button"
             className="peek-btn peek-btn-danger"

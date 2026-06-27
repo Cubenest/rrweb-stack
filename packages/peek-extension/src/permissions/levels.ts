@@ -57,9 +57,9 @@ export const PERMISSION_LEVELS: readonly PermissionLevelInfo[] = [
     name: 'YOLO this session',
     short: 'Auto',
     behavior:
-      'No prompts; auto-expires on tab close or 60 min. Destructive blocklist still applies.',
+      'No prompts; stays on until you lower the trust level. Destructive blocklist still applies.',
     summary:
-      'Your agent acts on its own, no prompts. Ends when you close the tab or after 60 minutes. Destructive actions still ask first.',
+      'Your agent acts on its own, no prompts, until you lower the trust level. Destructive actions still ask first.',
   },
 ] as const;
 
