@@ -60,16 +60,17 @@ import { buildSessionSummary } from './summary.js';
 
 export const SERVER_NAME = 'peek-mcp';
 export const SERVER_INSTRUCTIONS =
-  'Inspect locally-recorded browser sessions and (Level 3+) execute actions ' +
-  "in the user's browser. Start with list_recent_sessions, then drill in by " +
-  'sessionId: get_session_summary for a narrative, get_session_console_errors / ' +
-  'get_session_network_errors for failures, get_user_action_before_error to ' +
-  'see what the user did before an error, get_dom_snapshot / query_dom_history ' +
-  'to inspect the DOM over time, and generate_playwright_repro to turn a ' +
-  'session into a Playwright test. The write tools — execute_action and ' +
-  'request_authorization — are gated by a five-level per-origin permission ' +
-  'model with a destructive-action override; consult the user via ' +
-  'request_authorization before high-impact actions.';
+  "Forensic read access to the user's own locally-recorded browser sessions — " +
+  'debug what already happened in their real browser. Start with ' +
+  'list_recent_sessions, then drill in by sessionId: get_session_summary for a ' +
+  'narrative, get_session_console_errors / get_session_network_errors for ' +
+  'failures, get_user_action_before_error to see what the user did right before ' +
+  'an error, get_dom_snapshot / query_dom_history to inspect the DOM over time, ' +
+  'and generate_playwright_repro to turn a session into a runnable Playwright ' +
+  'test. The write tools — execute_action and request_authorization (Level 3+) ' +
+  '— are gated by a five-level per-origin permission model with a ' +
+  'destructive-action override; consult the user via request_authorization ' +
+  'before high-impact actions.';
 
 /** A `content: [{ type: 'text' }]` MCP tool result wrapping `value` as pretty JSON. */
 function jsonResult(value: unknown): { content: Array<{ type: 'text'; text: string }> } {
@@ -210,7 +211,7 @@ export function createPeekMcpServer(options: CreatePeekMcpServerOptions = {}): P
       {
         title: 'List recent browser sessions',
         description:
-          "List the user's recorded browser sessions, newest first — the entry point for the get_session_* and DOM tools. Returns compact JSON rows ({ sessionId, origin, url, title, startedAt, ... }); free-text fields are clipped (origin 100, url 300, title 200 chars). If the MCP client scoped roots to specific origins and no origin filter is given, results are restricted to the client's scoped origins. Start here to obtain a sessionId, then call get_session_summary.",
+          "List the user's recorded browser sessions, newest first — the entry point for debugging what already happened (the get_session_* and DOM tools). Returns compact JSON rows ({ sessionId, origin, url, title, startedAt, ... }); free-text fields are clipped (origin 100, url 300, title 200 chars). If the MCP client scoped roots to specific origins and no origin filter is given, results are restricted to the client's scoped origins. Start here to obtain a sessionId, then call get_session_summary.",
         inputSchema: {
           limit: z
             .number()
@@ -262,7 +263,7 @@ export function createPeekMcpServer(options: CreatePeekMcpServerOptions = {}): P
       {
         title: 'Summarize a session',
         description:
-          'Get an LLM-readable narrative summary of one session: pages visited, click/input/navigation counts, and error counts. Use this first for an overview before drilling into get_session_console_errors / get_session_network_errors. Returns a structured JSON summary.',
+          'Get an LLM-readable narrative summary of one session — your orientation for debugging what already happened: pages visited, click/input/navigation counts, and error counts. Use this first for an overview before drilling into get_session_console_errors / get_session_network_errors. Returns a structured JSON summary.',
         inputSchema: {
           sessionId: z.string().describe('Session id from list_recent_sessions.'),
         },

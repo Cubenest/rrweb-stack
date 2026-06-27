@@ -1,0 +1,104 @@
+---
+import Layout from '../layouts/Layout.astro';
+---
+
+<Layout
+  title="peek vs Sentry Spotlight"
+  description="peek vs Sentry Spotlight: peek gives your AI coding agent forensic read access to your real, locally-recorded browser sessions; Spotlight surfaces your Sentry events in-app during development. Different jobs."
+>
+  <h1>peek vs Sentry Spotlight</h1>
+  <p class="tagline">
+    Both put debugging context in front of you locally. The delta: peek records
+    your real browser passively and hands the session to your AI coding agent to
+    debug what already happened; Spotlight surfaces the events your Sentry SDK
+    already emits, in-app, for you to read while you develop.
+  </p>
+
+  <p>
+    This page is for the person searching &ldquo;Sentry Spotlight alternative&rdquo;
+    or &ldquo;local error debugging for an AI agent.&rdquo; No FUD &mdash;
+    <a href="https://spotlightjs.com" rel="noopener">Sentry Spotlight</a> is a
+    well-built, free, local dev tool. The two overlap on &ldquo;debug locally,&rdquo;
+    but they capture different things, for a different consumer. The sections
+    below say when each fits.
+  </p>
+
+  <h2>At a glance</h2>
+  <table>
+    <thead>
+      <tr>
+        <th></th>
+        <th>peek</th>
+        <th>Sentry Spotlight</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><strong>Primary consumer</strong></td>
+        <td>Your AI coding agent (over MCP)</td>
+        <td>You, reading an in-app debug overlay</td>
+      </tr>
+      <tr>
+        <td><strong>What it captures</strong></td>
+        <td>The real browser session itself &mdash; rrweb DOM history, console &amp; network errors, the action before an error</td>
+        <td>The events your Sentry SDK emits (errors, traces, spans)</td>
+      </tr>
+      <tr>
+        <td><strong>Instrumentation</strong></td>
+        <td>None &mdash; a browser extension records passively; no SDK in your app</td>
+        <td>Requires the Sentry SDK wired into your app</td>
+      </tr>
+      <tr>
+        <td><strong>Output</strong></td>
+        <td>Forensic answers to your agent + a runnable Playwright repro</td>
+        <td>A live, readable view of Sentry events during dev</td>
+      </tr>
+      <tr>
+        <td><strong>Data location</strong></td>
+        <td>Local: <code>~/.peek/sessions.db</code>. peek uploads nothing; what your MCP client does with the data is up to you.</td>
+        <td>Local during dev; the same events also flow to Sentry if configured</td>
+      </tr>
+      <tr>
+        <td><strong>License</strong></td>
+        <td>Apache-2.0, OSS</td>
+        <td>MIT, OSS</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <h2>When Sentry Spotlight is the right choice</h2>
+  <ul>
+    <li>You already run the Sentry SDK and want its events surfaced in-app while you develop.</li>
+    <li>You want errors, traces, and spans correlated the way Sentry models them.</li>
+    <li>Your debugging is you-reading-events, not an AI agent querying a session.</li>
+  </ul>
+
+  <h2>When peek is the right choice</h2>
+  <ul>
+    <li>You want your AI coding agent to debug a real browser session &mdash; &ldquo;what did the user do right before this error?&rdquo; &mdash; without instrumenting your app.</li>
+    <li>You want the session turned into a runnable Playwright repro the agent can re-run to verify its fix.</li>
+    <li>You want capture to stay local with no SDK and no vendor account.</li>
+  </ul>
+
+  <h2>Can you use both?</h2>
+  <p>
+    Yes &mdash; they sit at different layers. Spotlight shows you the Sentry events
+    your app emits; peek gives your agent the surrounding browser session to
+    reconstruct how the error was reached and to produce a repro. One is for
+    you, one is for your agent.
+  </p>
+
+  <h2>Why this page exists</h2>
+  <p>
+    peek is often mis-filed next to anything labeled &ldquo;local debugging.&rdquo;
+    It isn&apos;t an error-monitoring overlay &mdash; it&apos;s forensic read access to
+    your real, passively-recorded browser sessions, built for an AI coding agent.
+    This page draws that line honestly.
+  </p>
+
+  <p style="color: var(--fg-muted); font-size: 0.9rem; margin-top: 2rem;">
+    Found something inaccurate above? Open a PR on
+    <a href="https://github.com/Cubenest/rrweb-stack/blob/main/apps/peek-docs/src/pages/vs-sentry-spotlight.astro" rel="noopener">this page</a>
+    &mdash; the goal is accuracy, not advocacy.
+  </p>
+</Layout>
