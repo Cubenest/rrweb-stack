@@ -96,7 +96,7 @@ test('setup hint is reachable from a stuck reconnect (native host never register
 
   // The rendered side panel now shows the setup hint. The header polls on a 2s
   // interval, so give it a beat past the threshold crossing to repaint.
-  const hint = panel.locator('.peek-status-hint', { hasText: 'peek init' });
+  const hint = panel.locator('.peek-setup-nudge', { hasText: 'peek init' });
   await expect(hint, 'the "run `peek init`" setup hint is visible').toBeVisible({
     timeout: 10_000,
   });

@@ -1,9 +1,21 @@
 import { useEffect, useState } from 'react';
 import { isReconnectStalled } from '../../../src/background/backoff';
 import type { NativeHostState } from '../../../src/messaging/protocol';
-import { permissionLevelInfo } from '../../../src/permissions/levels';
-import { PERMISSION_LEVELS_KEY, getPermissionLevel } from '../../../src/permissions/store';
+import { type PermissionLevel, permissionLevelInfo } from '../../../src/permissions/levels';
+import {
+  PERMISSION_LEVELS_KEY,
+  getPermissionLevel,
+  setPermissionLevel,
+} from '../../../src/permissions/store';
 import { useNativeHostState } from '../useNativeHostState';
+
+/** The copy-paste command a fresh user runs to register the native host. */
+export const PEEK_INIT_COMMAND = 'npm install -g @peekdev/cli && peek init';
+
+/** True only when the origin's effective level is 4 (Auto) — drives the indicator. */
+export function isAutoActive(level: PermissionLevel | null): boolean {
+  return level === 4;
+}
 
 export type HostTone = 'ok' | 'warn' | 'idle';
 
@@ -63,32 +75,35 @@ export function describeHostState(
 export function StatusHeader({ origin }: { origin: string | null }): React.JSX.Element {
   const { state: hostState, reconnectAttempts, hasEverConnected } = useNativeHostState();
   const view = describeHostState(hostState, reconnectAttempts, hasEverConnected);
-  const [levelShort, setLevelShort] = useState<string | null>(null);
+  const [level, setLevel] = useState<PermissionLevel | null>(null);
+  const [dropError, setDropError] = useState<string | null>(null);
 
-  // The pill mirrors the dial's `short` label so pill + dial share one
-  // vocabulary. Re-read on origin change; the dial's writes go through the
-  // shared usePermissionLevel hook, which also updates this on storage change.
+  // Track the raw numeric level for this origin: the pill derives its `short`
+  // label off it (so pill + dial share one vocabulary) and the auto-active
+  // indicator keys off level === 4. Re-read on origin change; the dial's writes
+  // go through the shared store, so the storage.onChanged listener below also
+  // refreshes this on every level change.
   useEffect(() => {
     let cancelled = false;
     if (!origin) {
-      setLevelShort(null);
+      setLevel(null);
       return;
     }
-    const refreshLevelShort = async (): Promise<void> => {
+    const refreshLevel = async (): Promise<void> => {
       try {
-        const level = await getPermissionLevel(origin);
-        if (!cancelled) setLevelShort(permissionLevelInfo(level).short);
+        const l = await getPermissionLevel(origin);
+        if (!cancelled) setLevel(l);
       } catch {
-        if (!cancelled) setLevelShort(null);
+        if (!cancelled) setLevel(null);
       }
     };
-    void refreshLevelShort();
+    void refreshLevel();
     const onChanged = (
       changes: Record<string, chrome.storage.StorageChange>,
       area: string,
     ): void => {
       if (area !== 'sync' || !(PERMISSION_LEVELS_KEY in changes)) return;
-      void refreshLevelShort();
+      void refreshLevel();
     };
     chrome.storage.onChanged.addListener(onChanged);
     return () => {
@@ -97,6 +112,23 @@ export function StatusHeader({ origin }: { origin: string | null }): React.JSX.E
     };
   }, [origin]);
 
+  const levelShort = level !== null ? permissionLevelInfo(level).short : null;
+
+  const turnOffAuto = async (): Promise<void> => {
+    if (!origin) return;
+    setDropError(null);
+    try {
+      // Drop the persistent level back to Read-only. Effective Level 4 today is
+      // persistent-level-4 (YOLO has no production activation), so this fully
+      // turns auto off; the storage.onChanged listener above refreshes the view.
+      // NOTE: when YOLO session-activation is wired, this must also message the
+      // SW to call YoloSessionStore.revoke() (the panel can't call it directly).
+      await setPermissionLevel(origin, 1);
+    } catch (err) {
+      setDropError(err instanceof Error ? err.message : String(err));
+    }
+  };
+
   return (
     <section className={`peek-status peek-status-${view.tone}`} aria-label="peek status">
       <div className="peek-status-line">
@@ -104,10 +136,37 @@ export function StatusHeader({ origin }: { origin: string | null }): React.JSX.E
         <span className="peek-status-label">{view.label}</span>
         {levelShort ? <span className="peek-status-pill">{levelShort.toUpperCase()}</span> : null}
       </div>
+      {isAutoActive(level) ? (
+        <output className="peek-auto-active">
+          <span>⚡ Auto-approve active — turns off when you close this tab (or after 60 min)</span>
+          <button
+            type="button"
+            className="peek-btn peek-btn-danger"
+            onClick={() => void turnOffAuto()}
+          >
+            Turn off now
+          </button>
+          {dropError ? (
+            <span className="peek-error" role="alert">
+              Couldn&rsquo;t turn off auto-approve: {dropError}
+            </span>
+          ) : null}
+        </output>
+      ) : null}
       {view.showSetupHint ? (
-        <p className="peek-status-hint peek-muted">
-          If you haven&rsquo;t set up peek yet, run <code>peek init</code>.
-        </p>
+        <div className="peek-setup-nudge">
+          <p>
+            <strong>Finish setting up peek.</strong> Run this once to connect the local recorder:
+          </p>
+          <code className="peek-setup-cmd">{PEEK_INIT_COMMAND}</code>
+          <button
+            type="button"
+            className="peek-btn"
+            onClick={() => void navigator.clipboard?.writeText(PEEK_INIT_COMMAND)}
+          >
+            Copy command
+          </button>
+        </div>
       ) : null}
     </section>
   );

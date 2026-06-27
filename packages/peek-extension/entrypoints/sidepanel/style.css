@@ -230,10 +230,6 @@ code {
   padding: 2px 8px;
   border-radius: 20px;
 }
-.peek-status-hint {
-  margin: 0;
-  font-size: 11px;
-}
 
 /* ---- Capture group ---- */
 .peek-rec-dot {
@@ -492,4 +488,32 @@ code {
 }
 .peek-level-legend-list li {
   margin: 3px 0;
+}
+
+/* ---- StatusHeader: auto-active indicator (Level 4) ---- */
+.peek-auto-active {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  border: 1px solid #7f1d1d;
+  border-radius: 6px;
+  padding: 8px 10px;
+  margin-top: 8px;
+  background: #1a0b0b;
+}
+
+/* ---- StatusHeader: prominent setup nudge (replaces inline hint) ---- */
+.peek-setup-nudge {
+  border: 1px solid var(--peek-border);
+  border-radius: 6px;
+  padding: 8px 10px;
+  margin-top: 8px;
+}
+.peek-setup-cmd {
+  display: block;
+  margin: 6px 0;
+  padding: 6px 8px;
+  background: var(--peek-bg);
+  border-radius: 4px;
+  word-break: break-all;
 }
