@@ -57,8 +57,8 @@ dial** in the side panel. Five levels (ADR-0010), defaulting to **Read-only**:
 - **Suggest** — the agent can highlight elements on the page; no mutation.
 - **Confirm** — the agent can click/type/navigate, but you approve each action
   via a side-panel banner (Allow once / Always / Deny).
-- **Auto** — the agent acts without prompts; expires on tab close or after
-  60 min. A destructive-action blocklist still prompts, even here.
+- **Auto** — the agent acts without prompts; stays on for this site until you
+  lower the trust level. A destructive-action blocklist still prompts, even here.
 
 A **Recent actions** disclosure sits under **Agent control** (in-panel preview
 landing soon); meanwhile the MCP server records every act-tool call to
