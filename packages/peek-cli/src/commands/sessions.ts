@@ -16,10 +16,14 @@
 import { writeFileSync } from 'node:fs';
 import { parseArgs } from 'node:util';
 import { openDb } from '@peekdev/mcp/db';
+import { loadSessionEvents } from '@peekdev/mcp/mcp/event-blobs';
 import type { Database } from 'better-sqlite3';
 import {
   deleteSession,
   deleteSessionsOlderThan,
+  getConsoleEvents,
+  getNetworkEvents,
+  getSession,
   getSessionDetail,
   listSessions,
   listSessionsWithCounts,
@@ -32,7 +36,8 @@ import {
   isExportFormat,
 } from '../lib/format/index.js';
 import { formatBytes, pad } from '../lib/output.js';
-import { defaultDbPath } from '../lib/peek-home.js';
+import { defaultDbPath, rrwebEventsDir } from '../lib/peek-home.js';
+import { FULLSNAPSHOT_CAVEAT, packBundle } from '../lib/session-bundle.js';
 
 /** Open the shared DB for reading (migrations applied so a fresh DB is valid). */
 function open(): Database {
@@ -100,10 +105,44 @@ function printExportHelp(): void {
       '  markdown    Structured AI-paste (default)',
       '  json        Machine-readable, same schema as the MCP get_session_* tools',
       '  playwright  Runnable Playwright `test(...)` script (K.2 alpha.7)',
+      '  bundle      Portable *.peekbundle archive (events + rows + integrity hash)',
       '  html        Self-contained replay viewer (deferred — see --help error)',
       '',
     ].join('\n'),
   );
+}
+
+/**
+ * Binary bundle export — writes a gzipped tar (*.peekbundle) containing the
+ * session metadata rows, all console/network events, and the raw rrweb event
+ * stream. Bypasses `formatSession` (which returns a string); this path writes a
+ * file directly and never streams binary to stdout.
+ */
+function runBundleExport(id: string, out: string | undefined): number {
+  const db = open();
+  try {
+    const session = getSession(db, id);
+    if (!session) {
+      process.stderr.write(`peek sessions export: no session with id '${id}'\n`);
+      return 1;
+    }
+    const blobPath = session.eventsBlobPath ?? id;
+    const events = loadSessionEvents(blobPath, rrwebEventsDir());
+    const consoleEvents = getConsoleEvents(db, id, { errorsOnly: false });
+    const networkEvents = getNetworkEvents(db, id);
+    const outPath = out ?? `${id}.peekbundle`;
+    packBundle(outPath, {
+      session: session as unknown as Record<string, unknown>,
+      consoleEvents: consoleEvents as unknown as Record<string, unknown>[],
+      networkEvents: networkEvents as unknown as Record<string, unknown>[],
+      events,
+    });
+    process.stderr.write(`${FULLSNAPSHOT_CAVEAT}\n`);
+    process.stdout.write(`Wrote ${outPath}\n`);
+    return 0;
+  } finally {
+    db.close();
+  }
 }
 
 function printDeleteHelp(): void {
@@ -283,6 +322,10 @@ function runExport(argv: string[]): number {
     return 1;
   }
   const format: ExportFormat = formatRaw;
+
+  if (format === 'bundle') {
+    return runBundleExport(id, values.out);
+  }
 
   const db = open();
   try {
