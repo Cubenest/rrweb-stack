@@ -38,6 +38,7 @@
     "fflate": "^0.8.2"
   },
   "devDependencies": {
+    "fast-check": "^4.8.0",
     "jsdom": "^25.0.1",
     "fake-indexeddb": "^6.0.0"
   },

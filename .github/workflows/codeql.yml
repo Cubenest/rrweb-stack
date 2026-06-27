@@ -1,0 +1,52 @@
+# CodeQL — GitHub's static analysis (SAST) over the JS/TS sources. Runs on
+# every PR to main, every push to main, and weekly so a dependency-introduced
+# or hand-written code-injection / taint flaw surfaces on the code-scanning tab
+# before it ships. This is the SAST signal OpenSSF Scorecard looks for.
+#
+# Pinned to commit SHAs per the workflow security hard rule in CONTRIBUTING.md.
+# Every action below is a 40-character SHA with a `# v<tag>` comment so
+# Renovate's pinDigests + the human reader both know what's running.
+#
+# No build step: javascript-typescript is an interpreted language for CodeQL,
+# so `build-mode: none` extracts straight from source — no pnpm install/build,
+# which keeps the run fast and immune to workspace build flakiness.
+name: CodeQL
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  schedule:
+    - cron: '30 6 * * 1'  # Monday 06:30 UTC (offset from Scorecard's 06:00)
+
+# Workflow-default permissions are minimal — read-only. The analyze job
+# elevates to security-events: write (to upload the SARIF to code scanning)
+# plus actions: read, per the github/codeql-action requirement.
+permissions:
+  contents: read
+
+jobs:
+  analyze:
+    name: Analyze (javascript-typescript)
+    runs-on: ubuntu-latest
+    permissions:
+      security-events: write
+      actions: read
+      contents: read
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4
+        with:
+          persist-credentials: false
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@dd903d2e4f5405488e5ef1422510ee31c8b32357  # v3
+        with:
+          languages: javascript-typescript
+          build-mode: none
+
+      - name: Perform CodeQL analysis
+        uses: github/codeql-action/analyze@dd903d2e4f5405488e5ef1422510ee31c8b32357  # v3
+        with:
+          category: "/language:javascript-typescript"
