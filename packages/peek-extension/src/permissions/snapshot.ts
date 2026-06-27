@@ -86,6 +86,14 @@ export interface ElementDetail {
   readonly text?: string; // clipped own/descendant textContent (SW masks later)
   readonly context?: { heading?: string; landmark?: string };
   readonly children?: { ref: string; role: string; name: string }[]; // interactive descendants (capped at 20)
+  /** Curated, masked computed-style allowlist (SW masks backgroundImage url). */
+  readonly computedStyles?: Record<string, string>;
+  /** Accessible description (aria-describedby resolution / aria-description), clipped; SW masks. */
+  readonly description?: string;
+  /** True if this element or any ancestor sets aria-hidden="true". */
+  readonly effectiveAriaHidden?: boolean;
+  /** True if this element or any ancestor sets aria-disabled="true". */
+  readonly effectiveAriaDisabled?: boolean;
 }
 
 /** Failure shape shared by the ref-resolving R2 reads. */
@@ -863,6 +871,79 @@ export function buildElementDetail(ref: string): ElementDetail | ElementDetailEr
   if ((el as HTMLInputElement).required) state.push('required');
   if ((el as HTMLInputElement).readOnly) state.push('readonly');
 
+  // --- H2.3 enrichments (all inline; keeps the function MAIN-world-serializable) ---
+  // Curated computed-style allowlist — debugging signal without a ~350-property dump.
+  const STYLE_KEYS = [
+    'display',
+    'position',
+    'visibility',
+    'opacity',
+    'zIndex',
+    'width',
+    'height',
+    'margin',
+    'padding',
+    'border',
+    'boxSizing',
+    'overflow',
+    'color',
+    'backgroundColor',
+    'backgroundImage',
+    'fontSize',
+    'fontWeight',
+    'lineHeight',
+    'textAlign',
+  ];
+  const cs = getComputedStyle(el);
+  const computedStyles: Record<string, string> = {};
+  for (const k of STYLE_KEYS) {
+    const v = (cs as unknown as Record<string, string>)[k];
+    if (typeof v === 'string') computedStyles[k] = v;
+  }
+
+  // Accessible description: aria-describedby (id list -> referenced text), else
+  // aria-description. Honors the in-page mask: a masked element leaks no free text,
+  // and a referenced element inside a masked region is redacted per-reference
+  // (mirrors the context.heading precedent below).
+  let description: string | undefined;
+  if (masked) {
+    description = '•••';
+  } else {
+    const describedby = el.getAttribute('aria-describedby');
+    if (describedby) {
+      const parts: string[] = [];
+      for (const id of describedby.split(/\s+/)) {
+        if (!id) continue;
+        const refEl = document.getElementById(id);
+        if (!refEl) continue;
+        if (isPrivacyMasked(refEl)) {
+          parts.push('•••');
+          continue;
+        }
+        const t = refEl.textContent?.trim();
+        if (t) parts.push(t);
+      }
+      if (parts.length > 0) description = parts.join(' ');
+    }
+    if (description === undefined) {
+      const ad = el.getAttribute('aria-description');
+      if (ad?.trim()) description = ad.trim();
+    }
+    if (description !== undefined && description.length > 500)
+      description = description.slice(0, 500);
+  }
+
+  // Effective aria-hidden / aria-disabled (this element or any ancestor).
+  let effectiveAriaHidden = false;
+  let effectiveAriaDisabled = false;
+  for (let node: Element | null = el; node; node = node.parentElement) {
+    if (!effectiveAriaHidden && node.getAttribute('aria-hidden') === 'true')
+      effectiveAriaHidden = true;
+    if (!effectiveAriaDisabled && node.getAttribute('aria-disabled') === 'true')
+      effectiveAriaDisabled = true;
+    if (effectiveAriaHidden && effectiveAriaDisabled) break;
+  }
+
   const detail: {
     ok: true;
     ref: string;
@@ -879,6 +960,10 @@ export function buildElementDetail(ref: string): ElementDetail | ElementDetailEr
     text?: string;
     context?: { heading?: string; landmark?: string };
     children?: { ref: string; role: string; name: string }[];
+    computedStyles: Record<string, string>;
+    description?: string;
+    effectiveAriaHidden: boolean;
+    effectiveAriaDisabled: boolean;
   } = {
     ok: true,
     ref,
@@ -889,6 +974,10 @@ export function buildElementDetail(ref: string): ElementDetail | ElementDetailEr
     aria,
     rect,
     visible,
+    computedStyles,
+    ...(description !== undefined ? { description } : {}),
+    effectiveAriaHidden,
+    effectiveAriaDisabled,
   };
 
   // value — only when present and not a button; sensitive OR masked → '•••'.
