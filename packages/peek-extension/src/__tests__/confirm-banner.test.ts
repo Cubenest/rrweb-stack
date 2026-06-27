@@ -96,6 +96,7 @@ describe('isShowConfirmFromBackground — sender + shape gate for showConfirm', 
     requestId: 'req-1',
     action: { type: 'click', selector: '#x', button: 'left' },
     origin: 'https://example.com',
+    level: 3,
   };
 
   it('accepts a well-formed showConfirm from the extension itself', () => {

@@ -986,6 +986,7 @@ export default defineBackground({
         requestId,
         action: input.request.action,
         origin: input.origin,
+        level: input.effectiveLevel,
         ...(input.destructive.matched && input.destructive.term !== undefined
           ? { destructiveTerm: input.destructive.term }
           : {}),

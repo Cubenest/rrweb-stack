@@ -14,11 +14,9 @@
  * all the logic so they unit-test without React rendering; the component is a
  * thin presentational shell over them.
  */
-import { useEffect, useState } from 'react';
 import type { ConfirmVerdictMessage, ShowConfirmMessage } from '../../../src/messaging/protocol';
 import type { Action } from '../../../src/permissions/action-protocol';
 import { type PermissionLevel, permissionLevelInfo } from '../../../src/permissions/levels';
-import { getPermissionLevel } from '../../../src/permissions/store';
 
 /** The three buttons the banner offers. */
 export type ConfirmChoice = 'allow' | 'always' | 'deny';
@@ -77,10 +75,11 @@ export function describeAction(action: Action): string {
 
 /**
  * Header text naming the trust level that produced this prompt, e.g.
- * "Level 3 · Act-with-confirm". Returns null while the level is still loading.
+ * "Level 3 · Act-with-confirm". Returns null for a missing level — defensive
+ * against a message that somehow slipped the {@link isShowConfirm} guard.
  */
-export function confirmLevelHeader(level: PermissionLevel | null): string | null {
-  if (level === null) return null;
+export function confirmLevelHeader(level: PermissionLevel | null | undefined): string | null {
+  if (level === null || level === undefined) return null;
   return `Level ${level} · ${permissionLevelInfo(level).name}`;
 }
 
@@ -95,21 +94,7 @@ export function ConfirmBanner({ pending, onResolve }: ConfirmBannerProps): React
   const choose = (choice: ConfirmChoice): void => {
     onResolve(nextVerdict(pending.requestId, choice));
   };
-  const [level, setLevel] = useState<PermissionLevel | null>(null);
-  useEffect(() => {
-    let cancelled = false;
-    getPermissionLevel(pending.origin)
-      .then((l) => {
-        if (!cancelled) setLevel(l);
-      })
-      .catch(() => {
-        if (!cancelled) setLevel(null);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [pending.origin]);
-  const levelHeader = confirmLevelHeader(level);
+  const levelHeader = confirmLevelHeader(pending.level);
   return (
     <section
       className="peek-section peek-confirm-banner"

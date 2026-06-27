@@ -14,6 +14,7 @@
  */
 
 import type { Action } from '../permissions/action-protocol';
+import type { PermissionLevel } from '../permissions/levels.js';
 
 /**
  * SW → side panel: surface the Level-3 confirm banner for a pending action.
@@ -30,6 +31,8 @@ export interface ShowConfirmMessage {
   destructiveTerm?: string;
   /** The site the action targets (shown in the banner). */
   origin: string;
+  /** The effective trust level that produced this prompt (snapshot, not re-read). */
+  level: PermissionLevel;
 }
 
 /**
@@ -264,6 +267,7 @@ export function isShowConfirm(message: unknown): message is ShowConfirmMessage {
     requestId?: unknown;
     action?: unknown;
     origin?: unknown;
+    level?: unknown;
   };
   if (m.type !== 'showConfirm') return false;
   if (typeof m.requestId !== 'string' || m.requestId.length === 0) return false;
@@ -271,6 +275,9 @@ export function isShowConfirm(message: unknown): message is ShowConfirmMessage {
   // The action must be an object with a string discriminator `type`.
   if (typeof m.action !== 'object' || m.action === null) return false;
   if (typeof (m.action as { type?: unknown }).type !== 'string') return false;
+  // The snapshot level must be an integer trust level (0–4).
+  if (typeof m.level !== 'number' || !Number.isInteger(m.level) || m.level < 0 || m.level > 4)
+    return false;
   return true;
 }
 
