@@ -47,7 +47,8 @@ peek init                                  # interactive install (see above)
 peek status                                # health check — extension connected? DB writable?
 peek sessions list [--origin <url>] [--limit <n>] [--json]  # list recent sessions
 peek sessions show <id>                    # print one session as Markdown (metadata + errors)
-peek sessions export <id> [--format <markdown|json|playwright>] [--out <file>]  # export (default markdown)
+peek sessions export <id> [--format <markdown|json|playwright|bundle>] [--out <file>]  # export (default markdown); --format bundle writes a portable *.peekbundle
+peek sessions import <file> [--keep-id] [--force]  # import a *.peekbundle into the local store (local-first, masked-at-capture, no cloud)
 peek sessions delete <id>                  # delete one session
 peek sessions delete --all-older-than <dur>  # delete every session older than e.g. 7d
 peek audit log [--since <dur>] [--tool <name>] [--client <name>] [--json]  # act-tool audit log
@@ -55,7 +56,7 @@ peek audit verify [--json]                 # verify the audit log hash chain (ex
 peek <cmd> --help                          # usage for any subcommand
 ```
 
-`--format html` is reserved but not yet implemented (it exits non-zero with a message — use `markdown` or `json`). All commands read `~/.peek/sessions.db` except `sessions delete` (and `peek init`, which writes the install config). Nothing leaves your machine.
+`--format html` is reserved but not yet implemented (it exits non-zero with a message — use `markdown`, `json`, `playwright`, or `bundle`). `--format bundle` produces a self-contained `*.peekbundle` (gzipped tar with a SHA-256 integrity manifest); sessions are masked at capture (passwords, auth/cookie headers, and detected PII are redacted), but a full-page snapshot can still include other on-screen text and non-password field values — review what was on screen before sharing a bundle. All commands read `~/.peek/sessions.db` except `sessions delete` and `sessions import` (and `peek init`, which writes the install config). Nothing leaves your machine.
 
 ### Audit log integrity
 
