@@ -230,10 +230,6 @@ code {
   padding: 2px 8px;
   border-radius: 20px;
 }
-.peek-status-hint {
-  margin: 0;
-  font-size: 11px;
-}
 
 /* ---- Capture group ---- */
 .peek-rec-dot {
@@ -446,4 +442,78 @@ code {
 }
 .peek-pref-row input {
   accent-color: var(--peek-accent);
+}
+
+/* ---- First-run orientation card ---- */
+.peek-firstrun {
+  border: 1px solid var(--peek-border);
+  border-radius: 8px;
+  padding: 12px 14px;
+  margin-bottom: 12px;
+  background: var(--peek-surface);
+}
+.peek-firstrun-lead {
+  margin: 6px 0;
+}
+.peek-firstrun-points {
+  margin: 8px 0 12px;
+  padding-left: 18px;
+}
+.peek-firstrun-points li {
+  margin: 4px 0;
+}
+
+/* ---- Level-4 auto-approve warning ---- */
+.peek-auto-warning {
+  border: 1px solid #7f1d1d;
+  border-radius: 6px;
+  padding: 8px 10px;
+  margin: 8px 0;
+  background: #1a0b0b;
+}
+.peek-auto-warning-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+/* ---- Trust-level legend disclosure ---- */
+.peek-level-legend {
+  margin-top: 8px;
+  font-size: 0.85em;
+}
+.peek-level-legend-list {
+  margin: 6px 0 0;
+  padding-left: 16px;
+}
+.peek-level-legend-list li {
+  margin: 3px 0;
+}
+
+/* ---- StatusHeader: auto-active indicator (Level 4) ---- */
+.peek-auto-active {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  border: 1px solid #7f1d1d;
+  border-radius: 6px;
+  padding: 8px 10px;
+  margin-top: 8px;
+  background: #1a0b0b;
+}
+
+/* ---- StatusHeader: prominent setup nudge (replaces inline hint) ---- */
+.peek-setup-nudge {
+  border: 1px solid var(--peek-border);
+  border-radius: 6px;
+  padding: 8px 10px;
+  margin-top: 8px;
+}
+.peek-setup-cmd {
+  display: block;
+  margin: 6px 0;
+  padding: 6px 8px;
+  background: var(--peek-bg);
+  border-radius: 4px;
+  word-break: break-all;
 }

@@ -48,7 +48,7 @@ export const PERMISSION_LEVELS: readonly PermissionLevelInfo[] = [
     level: 3,
     name: 'Act-with-confirm',
     short: 'Confirm',
-    behavior: 'Each action asks: Allow once / Always for this site / Deny.',
+    behavior: 'Each action asks: Allow once / Always allow (still confirm) / Deny.',
     summary:
       'Your agent can click, type, and navigate — but asks you to approve each action first.',
   },
@@ -57,14 +57,23 @@ export const PERMISSION_LEVELS: readonly PermissionLevelInfo[] = [
     name: 'YOLO this session',
     short: 'Auto',
     behavior:
-      'No prompts; auto-expires on tab close or 60 min. Destructive blocklist still applies.',
+      'No prompts; stays on until you lower the trust level. Destructive blocklist still applies.',
     summary:
-      'Your agent acts on its own, no prompts. Ends when you close the tab or after 60 minutes. Destructive actions still ask first.',
+      'Your agent acts on its own, no prompts, until you lower the trust level. Destructive actions still ask first.',
   },
 ] as const;
 
 /** Default permission level on a freshly-enabled site (ADR-0010). */
 export const DEFAULT_PERMISSION_LEVEL: PermissionLevel = 1;
+
+/**
+ * The level the origin graduates to when the user clicks "Always for this site"
+ * on a confirm prompt. Deliberately Level 3 (act-with-confirm), NOT Level 4
+ * (Auto): a medium-friction confirm-banner button must never silently arm
+ * auto-execute. Level 4 is reachable only via the trust dial's explicit,
+ * warned opt-in.
+ */
+export const ALWAYS_FOR_SITE_LEVEL: PermissionLevel = 3;
 
 /** Look up the level table entry for a level value. Throws on an unknown level. */
 export function permissionLevelInfo(level: PermissionLevel): PermissionLevelInfo {

@@ -4,7 +4,7 @@
  * When the SW receives an `execute_action`/`request_authorization` for a
  * Level-3 origin (and no valid confirmToken skipped it), it opens the side
  * panel and posts a {@link ShowConfirmMessage}. This banner renders the pending
- * action and the user's three choices: Allow once / Always for this site / Deny.
+ * action and the user's three choices: Allow once / Always allow (still confirm) / Deny.
  *
  * Security posture (fail-closed): the verdict reducer + closed-panel default
  * both resolve to DENY for any non-affirmative path, and the typed text of a
@@ -16,6 +16,7 @@
  */
 import type { ConfirmVerdictMessage, ShowConfirmMessage } from '../../../src/messaging/protocol';
 import type { Action } from '../../../src/permissions/action-protocol';
+import { type PermissionLevel, permissionLevelInfo } from '../../../src/permissions/levels';
 
 /** The three buttons the banner offers. */
 export type ConfirmChoice = 'allow' | 'always' | 'deny';
@@ -72,6 +73,16 @@ export function describeAction(action: Action): string {
   }
 }
 
+/**
+ * Header text naming the trust level that produced this prompt, e.g.
+ * "Level 3 · Act-with-confirm". Returns null for a missing level — defensive
+ * against a message that somehow slipped the {@link isShowConfirm} guard.
+ */
+export function confirmLevelHeader(level: PermissionLevel | null | undefined): string | null {
+  if (level === null || level === undefined) return null;
+  return `Level ${level} · ${permissionLevelInfo(level).name}`;
+}
+
 export interface ConfirmBannerProps {
   pending: ShowConfirmMessage;
   /** Invoked with the chosen verdict; the parent posts it to the SW. */
@@ -83,6 +94,7 @@ export function ConfirmBanner({ pending, onResolve }: ConfirmBannerProps): React
   const choose = (choice: ConfirmChoice): void => {
     onResolve(nextVerdict(pending.requestId, choice));
   };
+  const levelHeader = confirmLevelHeader(pending.level);
   return (
     <section
       className="peek-section peek-confirm-banner"
@@ -93,6 +105,7 @@ export function ConfirmBanner({ pending, onResolve }: ConfirmBannerProps): React
       <h2 id="peek-confirm-heading" className="peek-section-title">
         Allow this action?
       </h2>
+      {levelHeader ? <p className="peek-confirm-level peek-muted">{levelHeader}</p> : null}
       <p id="peek-confirm-desc" className="peek-confirm-action">
         {describeAction(pending.action)}
       </p>
@@ -106,8 +119,13 @@ export function ConfirmBanner({ pending, onResolve }: ConfirmBannerProps): React
         <button type="button" className="peek-btn peek-btn-primary" onClick={() => choose('allow')}>
           Allow once
         </button>
-        <button type="button" className="peek-btn" onClick={() => choose('always')}>
-          Always for this site
+        <button
+          type="button"
+          className="peek-btn"
+          title="Let your agent keep acting on this site — peek will still ask you to confirm each action."
+          onClick={() => choose('always')}
+        >
+          Always allow (still confirm)
         </button>
         <button type="button" className="peek-btn peek-btn-danger" onClick={() => choose('deny')}>
           Deny

@@ -24,6 +24,7 @@ import type { Action, ActionRequestMessage, ActionResultMessage } from './action
 import { isDestructive } from './destructive.js';
 import type { HandoffEligibility } from './dispatcher.js';
 import { gate } from './gate.js';
+import type { PermissionLevel } from './levels.js';
 import { getPermissionLevel } from './store.js';
 import type { YoloSessionStore } from './yolo.js';
 
@@ -245,6 +246,8 @@ export interface ActionHandlerDeps {
     origin: string;
     target: DispatchTarget;
     destructive: { matched: boolean; term?: string };
+    /** The effective trust level that produced this prompt (snapshot, not re-read). */
+    effectiveLevel: PermissionLevel;
   }): Promise<
     | { verdict: 'allow' | 'deny'; approvalMs: number; alwaysForSite?: boolean }
     // Item F: a deny carries WHY — a no-response timeout, an explicit user Deny,
@@ -646,6 +649,7 @@ export async function handleActionRequest(
       matched: destructive.matched,
       ...(destructive.term !== undefined ? { term: destructive.term } : {}),
     },
+    effectiveLevel,
   });
 
   if (userVerdict.verdict === 'deny') {

@@ -127,6 +127,7 @@ describe('isShowConfirm — full wire-shape validation', () => {
     requestId: 'req-1',
     action: { type: 'click', selector: '#x', button: 'left' },
     origin: 'https://example.com',
+    level: 3,
   };
 
   it('accepts a well-formed showConfirm', () => {
@@ -135,6 +136,15 @@ describe('isShowConfirm — full wire-shape validation', () => {
 
   it('accepts a destructive variant carrying destructiveTerm', () => {
     expect(isShowConfirm({ ...VALID, destructiveTerm: 'delete' })).toBe(true);
+  });
+
+  it('rejects a missing / non-integer / out-of-range level', () => {
+    const { level: _omit, ...noLevel } = VALID;
+    expect(isShowConfirm(noLevel)).toBe(false);
+    expect(isShowConfirm({ ...VALID, level: 'three' })).toBe(false);
+    expect(isShowConfirm({ ...VALID, level: 2.5 })).toBe(false);
+    expect(isShowConfirm({ ...VALID, level: -1 })).toBe(false);
+    expect(isShowConfirm({ ...VALID, level: 5 })).toBe(false);
   });
 
   it('rejects a non-string / empty requestId', () => {

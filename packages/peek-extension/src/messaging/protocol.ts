@@ -14,6 +14,7 @@
  */
 
 import type { Action } from '../permissions/action-protocol';
+import type { PermissionLevel } from '../permissions/levels.js';
 
 /**
  * SW → side panel: surface the Level-3 confirm banner for a pending action.
@@ -30,13 +31,16 @@ export interface ShowConfirmMessage {
   destructiveTerm?: string;
   /** The site the action targets (shown in the banner). */
   origin: string;
+  /** The effective trust level that produced this prompt (snapshot, not re-read). */
+  level: PermissionLevel;
 }
 
 /**
  * Side panel → SW: the user's verdict for a pending confirm. `alwaysForSite`
- * (Allow + remember) bumps the origin to Level 4 / records an allow-list entry
- * (handled SW-side). A closed/timed-out panel never sends this — the SW
- * fail-closes to deny after its own timeout.
+ * (Allow + remember) graduates the origin to Level 3 (act-with-confirm) so the
+ * agent keeps acting but still asks each time — never silent auto (handled
+ * SW-side; see `ALWAYS_FOR_SITE_LEVEL`). A closed/timed-out panel never sends
+ * this — the SW fail-closes to deny after its own timeout.
  */
 export interface ConfirmVerdictMessage {
   type: 'confirmVerdict';
@@ -221,7 +225,7 @@ export const EMPTY_RECORDER_STATS: RecorderStats = {
  * panel. The SW already gates on `sender.id === chrome.runtime.id`, but that
  * admits ANY extension-origin context (options page, popup, devtools panel),
  * so correlating a verdict only by `requestId` lets a non-banner context
- * approve a pending action (and silently escalate via `alwaysForSite`). We
+ * approve a pending action (and escalate the origin's level via `alwaysForSite`). We
  * additionally require `sender.url` to be the side-panel page.
  *
  * The match is on a URL path boundary: the sidepanel URL itself, or the
@@ -263,6 +267,7 @@ export function isShowConfirm(message: unknown): message is ShowConfirmMessage {
     requestId?: unknown;
     action?: unknown;
     origin?: unknown;
+    level?: unknown;
   };
   if (m.type !== 'showConfirm') return false;
   if (typeof m.requestId !== 'string' || m.requestId.length === 0) return false;
@@ -270,6 +275,9 @@ export function isShowConfirm(message: unknown): message is ShowConfirmMessage {
   // The action must be an object with a string discriminator `type`.
   if (typeof m.action !== 'object' || m.action === null) return false;
   if (typeof (m.action as { type?: unknown }).type !== 'string') return false;
+  // The snapshot level must be an integer trust level (0–4).
+  if (typeof m.level !== 'number' || !Number.isInteger(m.level) || m.level < 0 || m.level > 4)
+    return false;
   return true;
 }
 

@@ -6,6 +6,7 @@ import {
 import {
   type ConfirmChoice,
   closedVerdict,
+  confirmLevelHeader,
   describeAction,
   nextVerdict,
 } from '../../entrypoints/sidepanel/sections/ConfirmBanner';
@@ -95,6 +96,7 @@ describe('isShowConfirmFromBackground — sender + shape gate for showConfirm', 
     requestId: 'req-1',
     action: { type: 'click', selector: '#x', button: 'left' },
     origin: 'https://example.com',
+    level: 3,
   };
 
   it('accepts a well-formed showConfirm from the extension itself', () => {
@@ -111,6 +113,20 @@ describe('isShowConfirmFromBackground — sender + shape gate for showConfirm', 
     expect(isShowConfirmFromBackground({ type: 'somethingElse' }, { id: EXT_ID }, EXT_ID)).toBe(
       false,
     );
+  });
+});
+
+describe('confirmLevelHeader — names the level that produced the prompt', () => {
+  it('formats Level 3 as "Level 3 · Act-with-confirm"', () => {
+    expect(confirmLevelHeader(3)).toBe('Level 3 · Act-with-confirm');
+  });
+
+  it('formats Level 4 as "Level 4 · YOLO this session"', () => {
+    expect(confirmLevelHeader(4)).toBe('Level 4 · YOLO this session');
+  });
+
+  it('returns null for a null level (still loading)', () => {
+    expect(confirmLevelHeader(null)).toBeNull();
   });
 });
 

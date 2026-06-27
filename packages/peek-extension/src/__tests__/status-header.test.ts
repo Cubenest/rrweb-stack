@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { describeHostState } from '../../entrypoints/sidepanel/sections/StatusHeader';
+import {
+  PEEK_INIT_COMMAND,
+  describeHostState,
+  isAutoActive,
+} from '../../entrypoints/sidepanel/sections/StatusHeader';
 import { readHostState } from '../../entrypoints/sidepanel/useNativeHostState';
 import { ServiceWorkerUnavailableError } from '../messaging/protocol';
 
@@ -84,5 +88,22 @@ describe('readHostState — degrades a dead SW to disconnected', () => {
       reconnectAttempts: 0,
       hasEverConnected: false,
     });
+  });
+});
+
+describe('isAutoActive — show the auto-approve indicator only at Level 4', () => {
+  it('is true at Level 4', () => {
+    expect(isAutoActive(4)).toBe(true);
+  });
+  it('is false below Level 4 and for null', () => {
+    expect(isAutoActive(3)).toBe(false);
+    expect(isAutoActive(1)).toBe(false);
+    expect(isAutoActive(null)).toBe(false);
+  });
+});
+
+describe('PEEK_INIT_COMMAND — the copyable first-run setup command', () => {
+  it('is the global install + init one-liner', () => {
+    expect(PEEK_INIT_COMMAND).toBe('npm install -g @peekdev/cli && peek init');
   });
 });

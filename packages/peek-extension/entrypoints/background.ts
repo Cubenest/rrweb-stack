@@ -66,6 +66,7 @@ import {
   resolveTarget as resolveTargetInPage,
 } from '../src/permissions/dispatcher';
 import { type HighlightResult, applyHighlight, clearHighlight } from '../src/permissions/highlight';
+import { ALWAYS_FOR_SITE_LEVEL } from '../src/permissions/levels';
 import { maskElementDetail, maskPageViewNode } from '../src/permissions/mask-view';
 import {
   type ElementDetail,
@@ -985,6 +986,7 @@ export default defineBackground({
         requestId,
         action: input.request.action,
         origin: input.origin,
+        level: input.effectiveLevel,
         ...(input.destructive.matched && input.destructive.term !== undefined
           ? { destructiveTerm: input.destructive.term }
           : {}),
@@ -1009,10 +1011,11 @@ export default defineBackground({
 
       const approvalMs = Date.now();
       if (verdict.verdict === 'allow') {
-        // "Always for this site" persists the origin to Level 4 so future
-        // actions on this origin auto-allow (non-destructive). Best-effort.
+        // "Always for this site" graduates the origin to act-with-confirm
+        // (ALWAYS_FOR_SITE_LEVEL = 3) so future actions are still confirmed —
+        // it never silently arms Level 4 auto-execute. Best-effort.
         if (verdict.alwaysForSite) {
-          void setPermissionLevel(input.origin, 4).catch((err) =>
+          void setPermissionLevel(input.origin, ALWAYS_FOR_SITE_LEVEL).catch((err) =>
             console.warn('[peek] alwaysForSite persist failed:', err),
           );
         }
