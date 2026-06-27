@@ -684,7 +684,7 @@ describe('buildElementDetail (R2)', () => {
     document.body.innerHTML = `
       <div data-private>
         <button id="m" aria-describedby="md">Pay</button>
-        <span id="md">card 4111 1111 1111 1111 for jane@example.com</span>
+        <span id="md">private payment note for masked-user</span>
       </div>
       <button id="u" aria-describedby="ud">Help</button>
       <span id="ud">public help text</span>

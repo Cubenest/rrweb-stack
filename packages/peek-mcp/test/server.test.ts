@@ -772,8 +772,11 @@ describe('peek MCP server: get_element_detail dispatch (on-demand single-element
       // from the details object appear verbatim in the result text.
       expect(textOf(res as never)).toContain('Sign in');
       expect(textOf(res as never)).toContain('level-1-read');
-      expect(textOf(res as never)).toContain('Submits the login form');
-      expect(textOf(res as never)).toContain('display');
+      const parsed = JSON.parse(textOf(res as never)) as {
+        details?: { description?: string; computedStyles?: Record<string, string> };
+      };
+      expect(parsed.details?.description).toBe('Submits the login form');
+      expect(parsed.details?.computedStyles?.display).toBe('inline-block');
     } finally {
       await close();
     }

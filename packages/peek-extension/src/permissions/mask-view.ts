@@ -124,8 +124,14 @@ export function maskElementDetail(detail: ElementDetail): ElementDetail {
         // getComputedStyle returns them in one string; a query secret in any
         // layer must not escape this masking boundary.
         styles[k] = v.replace(
-          /url\((['"]?)([^'")]+)\1\)/g,
-          (_full, q, u) => `url(${q}${maskUrl(u)}${q})`,
+          /url\(\s*(?:"([^"]*)"|'([^']*)'|([^)]*?))\s*\)/g,
+          (_full, doubleQuoted, singleQuoted, unquoted = '') => {
+            let quote = '';
+            if (doubleQuoted !== undefined) quote = '"';
+            else if (singleQuoted !== undefined) quote = "'";
+            const url = doubleQuoted ?? singleQuoted ?? unquoted.trim();
+            return `url(${quote}${maskUrl(url)}${quote})`;
+          },
         );
       } else {
         styles[k] = v;

@@ -1764,6 +1764,17 @@ describe('maskElementDetail — SW masking of an element_detail drill-in', () =>
     expect(bg).toContain('y.test/b.png');
   });
 
+  it('masks a quoted background url whose URL contains parentheses (no leak)', () => {
+    const masked = maskElementDetail({
+      ...base,
+      name: 'x',
+      computedStyles: { backgroundImage: 'url("https://cdn.test/a(b).png?token=paren-secret")' },
+    } as never);
+    const bg = masked.computedStyles?.backgroundImage ?? '';
+    expect(bg).not.toContain('paren-secret');
+    expect(bg).toContain('cdn.test/a(b).png');
+  });
+
   it('passes through non-url backgroundImage values (none, gradients) untouched', () => {
     const masked = maskElementDetail({
       ...base,
