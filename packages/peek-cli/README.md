@@ -37,7 +37,7 @@ Then you install the **Peek Chrome extension** — available on the [Chrome Web 
 ## What this is NOT
 
 - Not a session-replay product for production traffic. Peek is a **developer-side** tool — captures happen on your machine, in your browser, when you explicitly enable them per site.
-- Not Sentry, LogRocket, or FullStory. There is no cloud, no upload, no telemetry, no signup. Captures live in `~/.peek/sessions.db` until you delete them.
+- Not Sentry, LogRocket, or FullStory. There is no cloud, no upload, no telemetry, no signup. Captures live in `~/.peek/sessions.db` until you delete them — or set a retention policy and prune them explicitly (peek never deletes silently; see [Retention](#retention)).
 - Not a screen recorder. Peek captures structured DOM/console/network via rrweb, not pixels. AI agents query JSON, not video frames.
 
 ## Commands
@@ -51,12 +51,28 @@ peek sessions export <id> [--format <markdown|json|playwright|bundle>] [--out <f
 peek sessions import <file> [--keep-id] [--force]  # import a *.peekbundle into the local store (local-first, masked-at-capture, no cloud)
 peek sessions delete <id>                  # delete one session
 peek sessions delete --all-older-than <dur>  # delete every session older than e.g. 7d
+peek retention set [--max-age <dur>] [--max-size <size>] [--keep <n>] | --clear  # configure the prune policy
+peek retention show                        # print the configured policy
+peek retention preview [overrides…]        # dry-run: what the policy would prune (non-destructive)
+peek retention apply [--yes] [--include-stale-active] [overrides…]  # prune per the policy (asks to confirm)
 peek audit log [--since <dur>] [--tool <name>] [--client <name>] [--json]  # act-tool audit log
 peek audit verify [--json]                 # verify the audit log hash chain (exit 0 ok, 1 anomaly, 2 tampered)
 peek <cmd> --help                          # usage for any subcommand
 ```
 
 `--format html` is reserved but not yet implemented (it exits non-zero with a message — use `markdown`, `json`, `playwright`, or `bundle`). `--format bundle` produces a self-contained `*.peekbundle` (gzipped tar with a SHA-256 integrity manifest); sessions are masked at capture (passwords, auth/cookie headers, and detected PII are redacted), but a full-page snapshot can still include other on-screen text and non-password field values — review what was on screen before sharing a bundle. All commands read `~/.peek/sessions.db` except `sessions delete` and `sessions import` (and `peek init`, which writes the install config). Nothing leaves your machine.
+
+### Retention
+
+The local store is unbounded by default. To cap it, configure a policy and prune **explicitly** — peek never deletes silently:
+
+```sh
+peek retention set --max-age 30d --max-size 2GB --keep 20
+peek retention preview        # dry-run: exactly what would be pruned
+peek retention apply          # prune (confirms first; --yes to skip)
+```
+
+A policy can prune by age (`--max-age`), by total event-blob size (`--max-size`, evicting oldest-first), or both, and the `--keep N` floor guarantees the N most-recent sessions are **never** pruned. Pruning never deletes an in-progress (`active`) recording — pass `--include-stale-active` to also remove crashed/abandoned active sessions past the age cutoff. It frees the on-disk event blobs (the bulk of `~/.peek`); the SQLite index file is compacted separately. `peek status` shows total store size and how much is over your policy. The policy lives in `~/.peek/policy.json` (honoring `PEEK_HOME`).
 
 ### Audit log integrity
 
