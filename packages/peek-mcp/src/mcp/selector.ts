@@ -193,7 +193,7 @@ function nthOfType(index: NodeIndex, id: number): number {
  * Playwright scripts — not guaranteed unique on a live page, but stable enough
  * for the recorded snapshot.
  */
-export function selectorFor(index: NodeIndex, id: number): string | undefined {
+function selectorForUncached(index: NodeIndex, id: number): string | undefined {
   const start = index.get(id);
   if (!start || tagName(start.node) === undefined) return undefined;
 
@@ -239,4 +239,21 @@ export function selectorFor(index: NodeIndex, id: number): string | undefined {
 
   if (segments.length === 0) return undefined;
   return segments.join(' > ');
+}
+
+/**
+ * Resolve a stable CSS selector for a node id. Pass a per-NodeIndex `cache`
+ * (Map<id, selector>) to memoize across the O(nodes) callsite loops — the result
+ * is pure for a given (index, id), so the cache is safe only while it shares the
+ * index's lifetime (create a fresh cache whenever the index is rebuilt).
+ */
+export function selectorFor(
+  index: NodeIndex,
+  id: number,
+  cache?: Map<number, string | undefined>,
+): string | undefined {
+  if (cache?.has(id) === true) return cache.get(id);
+  const result = selectorForUncached(index, id);
+  if (cache !== undefined) cache.set(id, result);
+  return result;
 }

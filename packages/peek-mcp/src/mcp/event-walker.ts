@@ -433,16 +433,18 @@ function findBySelector(
   selector: string,
 ): MutableNode | undefined {
   // Rebuild a NodeIndex over the (mutated) tree and compare derived selectors.
+  // The index is built once here, so one cache memoizes both loops below.
   const index = indexNodes(root);
+  const selectorCache = new Map<number, string | undefined>();
   for (const [id, node] of byId) {
-    const derived = selectorFor(index, id);
+    const derived = selectorFor(index, id, selectorCache);
     if (derived === selector) return node;
   }
   // Fallback: match the trailing segment (e.g. "#submit") loosely.
   const tail = selector.split('>').pop()?.trim();
   if (tail) {
     for (const [id, node] of byId) {
-      const derived = selectorFor(index, id);
+      const derived = selectorFor(index, id, selectorCache);
       if (derived?.endsWith(tail)) return node;
     }
   }
@@ -560,9 +562,11 @@ export function queryDomHistory(
   const fullSnapshot = events.find(isFullSnapshot);
   if (!fullSnapshot) return [];
   const index = indexNodes(fullSnapshot.data.node);
+  // The index is built once here, so one cache memoizes the resolution loop.
+  const selectorCache = new Map<number, string | undefined>();
   let targetId: number | undefined;
   for (const [id] of index) {
-    if (selectorFor(index, id) === selector) {
+    if (selectorFor(index, id, selectorCache) === selector) {
       targetId = id;
       break;
     }
