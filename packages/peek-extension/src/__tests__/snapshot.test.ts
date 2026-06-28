@@ -705,4 +705,22 @@ describe('buildElementDetail (R2)', () => {
       'secret note',
     );
   });
+
+  it('redacts a masked element backgroundImage in-page (path included), keeps unmasked', () => {
+    document.body.innerHTML = `
+      <div data-private><button id="m" style="background-image:url('https://cdn.test/user-12345/avatar.png?sig=s')">M</button></div>
+      <button id="u" style="background-image:url('https://cdn.test/public/logo.png')">U</button>`;
+    buildPageView({});
+    const reg = (window as unknown as { __peekRefs?: Map<string, Element> }).__peekRefs;
+    const refOf = (id: string) => {
+      for (const [r, el] of reg?.entries() ?? []) if (el === document.getElementById(id)) return r;
+      return '';
+    };
+    // masked element: backgroundImage redacted in-page (no path/url leaves).
+    const m = buildElementDetail(refOf('m')) as ElementDetail;
+    expect(m.computedStyles?.backgroundImage).toBe('•••');
+    // unmasked element: backgroundImage preserved in-page (SW-side maskUrl handles query later).
+    const u = buildElementDetail(refOf('u')) as ElementDetail;
+    expect(u.computedStyles?.backgroundImage).toContain('cdn.test/public/logo.png');
+  });
 });

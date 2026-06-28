@@ -898,7 +898,13 @@ export function buildElementDetail(ref: string): ElementDetail | ElementDetailEr
   const computedStyles: Record<string, string> = {};
   for (const k of STYLE_KEYS) {
     const v = (cs as unknown as Record<string, string>)[k];
-    if (typeof v === 'string') computedStyles[k] = v;
+    if (typeof v === 'string') {
+      // A masked element's backgroundImage URL must not leave the page: SW-side
+      // maskUrl only redacts the query, not the path (which can carry a user-id /
+      // private path). Redact it in-page like name/text/description. Other style
+      // keys are non-sensitive layout/paint values — keep them.
+      computedStyles[k] = masked && k === 'backgroundImage' && v !== 'none' ? '•••' : v;
+    }
   }
 
   // Accessible description: aria-describedby (id list -> referenced text), else
