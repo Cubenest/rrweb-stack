@@ -1718,6 +1718,71 @@ describe('maskElementDetail — SW masking of an element_detail drill-in', () =>
     expect('context' in masked).toBe(false);
     expect('children' in masked).toBe(false);
   });
+
+  it('masks computedStyles.backgroundImage url + the accessible description; passes through plain styles', () => {
+    const masked = maskElementDetail({
+      ...base,
+      name: 'x',
+      description: 'Contact jane@example.com to proceed',
+      computedStyles: {
+        display: 'flex',
+        color: 'rgb(1, 2, 3)',
+        backgroundImage: 'url("https://cdn.test/a.png?token=sk-live-secret")',
+      },
+    } as never);
+    expect(masked.description).not.toContain('jane@example.com');
+    expect(masked.computedStyles?.backgroundImage).not.toContain('sk-live-secret');
+    expect(masked.computedStyles?.backgroundImage).toContain('cdn.test/a.png');
+    expect(masked.computedStyles?.display).toBe('flex');
+    expect(masked.computedStyles?.color).toBe('rgb(1, 2, 3)');
+  });
+
+  it('passes through effective aria inheritance flags unchanged', () => {
+    const masked = maskElementDetail({
+      ...base,
+      name: 'x',
+      effectiveAriaHidden: true,
+      effectiveAriaDisabled: false,
+    } as never);
+    expect(masked.effectiveAriaHidden).toBe(true);
+    expect(masked.effectiveAriaDisabled).toBe(false);
+  });
+
+  it('masks EVERY url() in a comma-separated multi-background (no layer leaks)', () => {
+    const masked = maskElementDetail({
+      ...base,
+      name: 'x',
+      computedStyles: {
+        backgroundImage:
+          'url("https://x.test/a.png?t=AAA-secret"), url("https://y.test/b.png?t=BBB-secret")',
+      },
+    } as never);
+    const bg = masked.computedStyles?.backgroundImage ?? '';
+    expect(bg).not.toContain('AAA-secret');
+    expect(bg).not.toContain('BBB-secret');
+    expect(bg).toContain('x.test/a.png');
+    expect(bg).toContain('y.test/b.png');
+  });
+
+  it('masks a quoted background url whose URL contains parentheses (no leak)', () => {
+    const masked = maskElementDetail({
+      ...base,
+      name: 'x',
+      computedStyles: { backgroundImage: 'url("https://cdn.test/a(b).png?token=paren-secret")' },
+    } as never);
+    const bg = masked.computedStyles?.backgroundImage ?? '';
+    expect(bg).not.toContain('paren-secret');
+    expect(bg).toContain('cdn.test/a(b).png');
+  });
+
+  it('passes through non-url backgroundImage values (none, gradients) untouched', () => {
+    const masked = maskElementDetail({
+      ...base,
+      name: 'x',
+      computedStyles: { backgroundImage: 'none' },
+    } as never);
+    expect(masked.computedStyles?.backgroundImage).toBe('none');
+  });
 });
 
 // --- Token bookkeeping (InMemoryConfirmTokenStore) -------------------------

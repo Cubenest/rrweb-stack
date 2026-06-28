@@ -629,4 +629,98 @@ describe('buildElementDetail (R2)', () => {
       expect(Array.isArray(detail.state)).toBe(true);
     }
   });
+
+  it('returns a curated computedStyles allowlist (not the full property set)', () => {
+    document.body.innerHTML = `<button id="b" style="display:flex;color:rgb(1,2,3);font-size:14px">Go</button>`;
+    buildPageView({});
+    const reg = (window as unknown as { __peekRefs?: Map<string, Element> }).__peekRefs;
+    let ref = '';
+    for (const [r, el] of reg?.entries() ?? []) if (el === document.getElementById('b')) ref = r;
+    const d = buildElementDetail(ref) as ElementDetail;
+    expect(d.computedStyles).toBeDefined();
+    expect(d.computedStyles).toHaveProperty('display');
+    expect(d.computedStyles).toHaveProperty('color');
+    expect(d.computedStyles).toHaveProperty('fontSize');
+    expect(Object.keys(d.computedStyles as Record<string, string>).length).toBeLessThan(30);
+    expect(d.computedStyles).not.toHaveProperty('alignContent');
+  });
+
+  it('resolves the accessible description from aria-describedby (and aria-description fallback)', () => {
+    document.body.innerHTML = `
+      <button id="b" aria-describedby="h1 h2">Delete</button>
+      <span id="h1">Permanently removes</span><span id="h2">the repository</span>
+      <button id="c" aria-description="inline desc">C</button>`;
+    buildPageView({});
+    const reg = (window as unknown as { __peekRefs?: Map<string, Element> }).__peekRefs;
+    const refOf = (id: string) => {
+      for (const [r, el] of reg?.entries() ?? []) if (el === document.getElementById(id)) return r;
+      return '';
+    };
+    const d = buildElementDetail(refOf('b')) as ElementDetail;
+    expect(d.description).toBe('Permanently removes the repository');
+    const d2 = buildElementDetail(refOf('c')) as ElementDetail;
+    expect(d2.description).toBe('inline desc');
+  });
+
+  it('computes effective aria-hidden / aria-disabled inheritance from ancestors', () => {
+    document.body.innerHTML = `
+      <div aria-hidden="true"><button id="h">Hidden</button></div>
+      <fieldset aria-disabled="true"><button id="d">Disabled</button></fieldset>
+      <button id="n">Normal</button>`;
+    buildPageView({});
+    const reg = (window as unknown as { __peekRefs?: Map<string, Element> }).__peekRefs;
+    const refOf = (id: string) => {
+      for (const [r, el] of reg?.entries() ?? []) if (el === document.getElementById(id)) return r;
+      return '';
+    };
+    expect((buildElementDetail(refOf('h')) as ElementDetail).effectiveAriaHidden).toBe(true);
+    expect((buildElementDetail(refOf('d')) as ElementDetail).effectiveAriaDisabled).toBe(true);
+    const n = buildElementDetail(refOf('n')) as ElementDetail;
+    expect(n.effectiveAriaHidden).toBe(false);
+    expect(n.effectiveAriaDisabled).toBe(false);
+  });
+
+  it('redacts the accessible description inside a masked region (in-page, not just SW-side)', () => {
+    document.body.innerHTML = `
+      <div data-private>
+        <button id="m" aria-describedby="md">Pay</button>
+        <span id="md">private payment note for masked-user</span>
+      </div>
+      <button id="u" aria-describedby="ud">Help</button>
+      <span id="ud">public help text</span>
+      <div data-private><span id="leak">secret note</span></div>
+      <button id="r" aria-describedby="leak">Ref</button>`;
+    buildPageView({});
+    const reg = (window as unknown as { __peekRefs?: Map<string, Element> }).__peekRefs;
+    const refOf = (id: string) => {
+      for (const [r, el] of reg?.entries() ?? []) if (el === document.getElementById(id)) return r;
+      return '';
+    };
+    // masked element: description redacted in-page.
+    expect((buildElementDetail(refOf('m')) as ElementDetail).description).toBe('•••');
+    // unmasked element pointing at unmasked text: returned.
+    expect((buildElementDetail(refOf('u')) as ElementDetail).description).toBe('public help text');
+    // unmasked element pointing at a MASKED referenced node: that reference redacted.
+    expect((buildElementDetail(refOf('r')) as ElementDetail).description).not.toContain(
+      'secret note',
+    );
+  });
+
+  it('redacts a masked element backgroundImage in-page (path included), keeps unmasked', () => {
+    document.body.innerHTML = `
+      <div data-private><button id="m" style="background-image:url('https://cdn.test/user-12345/avatar.png?sig=s')">M</button></div>
+      <button id="u" style="background-image:url('https://cdn.test/public/logo.png')">U</button>`;
+    buildPageView({});
+    const reg = (window as unknown as { __peekRefs?: Map<string, Element> }).__peekRefs;
+    const refOf = (id: string) => {
+      for (const [r, el] of reg?.entries() ?? []) if (el === document.getElementById(id)) return r;
+      return '';
+    };
+    // masked element: backgroundImage redacted in-page (no path/url leaves).
+    const m = buildElementDetail(refOf('m')) as ElementDetail;
+    expect(m.computedStyles?.backgroundImage).toBe('•••');
+    // unmasked element: backgroundImage preserved in-page (SW-side maskUrl handles query later).
+    const u = buildElementDetail(refOf('u')) as ElementDetail;
+    expect(u.computedStyles?.backgroundImage).toContain('cdn.test/public/logo.png');
+  });
 });

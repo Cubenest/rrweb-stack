@@ -920,10 +920,12 @@ export function createPeekMcpServer(options: CreatePeekMcpServerOptions = {}): P
         title: 'Get full masked detail for one element by ref',
         description:
           'Given a `ref` from get_page_view, return the FULL masked detail of that single element ' +
-          '(role, accessible name, all aria-*, state, value, href, position, nearby heading, and its ' +
-          'interactive descendants with their refs, capped). The compact get_page_view stays cheap; call this only for ' +
-          'the one element you need to disambiguate or act on. Refs expire on navigation. Level 1+; non-mutating; ' +
-          'audited. Values for password/email/PII inputs are masked; free-text values may be returned (like the recorder).',
+          '(role, accessible name, accessible description, all aria-*, effective aria-hidden/disabled, a curated ' +
+          'computed-style bag, state, value, href, position, nearby heading, and its interactive descendants with ' +
+          'their refs, capped). The compact get_page_view stays cheap; call this only for the one element you need to ' +
+          'disambiguate or act on. Refs expire on navigation. Level 1+; non-mutating; audited. Values for ' +
+          'password/email/PII inputs are masked; free-text values may be returned (like the recorder). For live ' +
+          'console/network state use get_session_console_errors / get_session_network_errors.',
         inputSchema: {
           sessionId: z.string().describe('Session id (origin context) from list_recent_sessions.'),
           ref: z

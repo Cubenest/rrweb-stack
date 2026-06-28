@@ -759,13 +759,24 @@ describe('peek MCP server: get_element_detail dispatch (on-demand single-element
           tag: 'button',
           role: 'button',
           name: 'Sign in',
+          description: 'Submits the login form',
+          effectiveAriaHidden: false,
+          effectiveAriaDisabled: false,
+          computedStyles: { display: 'inline-block', color: 'rgb(0, 0, 0)' },
           state: [],
         },
       });
       const res = await callP;
       // The full masked detail is surfaced to the agent in the result body's details.
+      // jsonResult JSON.stringifies the entire body (including details), so all fields
+      // from the details object appear verbatim in the result text.
       expect(textOf(res as never)).toContain('Sign in');
       expect(textOf(res as never)).toContain('level-1-read');
+      const parsed = JSON.parse(textOf(res as never)) as {
+        details?: { description?: string; computedStyles?: Record<string, string> };
+      };
+      expect(parsed.details?.description).toBe('Submits the login form');
+      expect(parsed.details?.computedStyles?.display).toBe('inline-block');
     } finally {
       await close();
     }
