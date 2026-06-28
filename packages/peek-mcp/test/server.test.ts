@@ -3,9 +3,11 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'nod
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { PassThrough } from 'node:stream';
+import { compress } from '@cubenest/rrweb-core';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { openDb } from '../src/db/open.js';
 import { LocalSocketHostBridge, RegistryBackedHostBridge } from '../src/mcp/host-bridge.js';
 import { PEEK_MCP_TOOLS, createPeekMcpServer } from '../src/mcp/server.js';
 import type { ActionResultMessage } from '../src/native-host/action-protocol.js';
@@ -19,6 +21,8 @@ import {
   fullSnapshot,
   inputEvent,
   metaNav,
+  mutationEvent,
+  text,
 } from './fixtures/rrweb.js';
 import { seedStore } from './fixtures/seed.js';
 
@@ -54,6 +58,53 @@ function loginSession() {
     consoleErrors: [{ ts: 1300, message: 'TypeError: x is undefined', stack: 'at foo()' }],
     networkErrors: [{ ts: 1250, method: 'POST', url: 'https://app.test/api/login', status: 500 }],
   };
+}
+
+/**
+ * Seed a MULTI-CHUNK session into an already-seeded store so the server's range
+ * loader (loadEventsUpToTs) has an `events_chunks` index to exploit. Writes one
+ * gzipped `<seq>.json.gz` per chunk under `<eventsDir>/<sid>/`, an `events_chunks`
+ * row per chunk (FK → sessions, includes `created_at`), and a `sessions` row
+ * whose `events_blob_path` is the chunk DIRECTORY (`<sid>`). Re-opens the same
+ * dbPath the harness built, writably, and closes before the server connects
+ * read-only on its first tool call (lazy getDb).
+ */
+function seedMultiChunkSession(
+  store: { dbPath: string; eventsDir: string },
+  sid: string,
+  chunks: Array<{ timestamp: number }[]>,
+): void {
+  const db = openDb({ path: store.dbPath });
+  try {
+    const now = '2026-05-27T00:00:00.000Z';
+    db.prepare(
+      `INSERT INTO sessions
+         (id, created_at, updated_at, url, title, origin, events_blob_path, event_count, bytes, status)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, 'finalized')`,
+    ).run(
+      sid,
+      now,
+      now,
+      'https://app.test/mc',
+      'Multi-chunk',
+      'https://app.test',
+      sid, // events_blob_path = the chunk directory (relative to eventsDir)
+      chunks.reduce((n, c) => n + c.length, 0),
+    );
+    const chunkDir = join(store.eventsDir, sid);
+    mkdirSync(chunkDir, { recursive: true });
+    chunks.forEach((events, seq) => {
+      writeFileSync(join(chunkDir, `${seq}.json.gz`), compress(events as never));
+      const ts = events.map((e) => e.timestamp);
+      db.prepare(
+        `INSERT INTO events_chunks
+           (session_id, seq, start_ts_ms, end_ts_ms, event_count, byte_offset, byte_length, created_at)
+         VALUES (?, ?, ?, ?, ?, 0, 0, ?)`,
+      ).run(sid, seq, Math.min(...ts), Math.max(...ts), events.length, now);
+    });
+  } finally {
+    db.close();
+  }
 }
 
 /** Connect an in-memory client to a freshly-built server over the seeded store. */
@@ -245,6 +296,40 @@ describe('peek MCP server: read tools over a seeded store', () => {
       expect(out.baseSnapshotTs).toBe(1000);
       expect(out.html).toContain('<button id="login">');
       expect(out.html).toContain('<input name="email">');
+    } finally {
+      await close();
+    }
+  });
+
+  it('get_dom_snapshot reconstructs from the range loader over a multi-chunk session', async () => {
+    const store = seedStore(dir, [loginSession()]);
+    // chunk0 = FullSnapshot(<h1>A</h1>)@100; chunk1 = attr-mutation on the h1
+    // (id 2) @200; chunk2 = FullSnapshot(<h1>B</h1>)@300. For ts 250 the base is
+    // the t100 snapshot with the t200 attribute mutation applied — i.e. the
+    // range loader must load chunk0 + chunk1 (and NOT need chunk2) and yield the
+    // same reconstruction whole-load would.
+    freshIds(); // text('A')=id1, h1=id2, body=id3, html=id4, doc=id5
+    const chunk0 = [fullSnapshot(documentWith([el('h1', { children: [text('A')] })]), 100)];
+    const chunk1 = [
+      mutationEvent({ attributes: [{ id: 2, attributes: { 'data-step': '1' } }] }, 200),
+    ];
+    freshIds();
+    const chunk2 = [fullSnapshot(documentWith([el('h1', { children: [text('B')] })]), 300)];
+    seedMultiChunkSession(store, 's_mc', [chunk0, chunk1, chunk2]);
+
+    const { client, close } = await connectClient(store);
+    try {
+      const res = await client.callTool({
+        name: 'get_dom_snapshot',
+        arguments: { sessionId: 's_mc', ts: 250 },
+      });
+      const out = parseJson(res as never) as { html: string; baseSnapshotTs: number };
+      // Base is the t100 (A) snapshot — NOT the later t300 (B) one.
+      expect(out.baseSnapshotTs).toBe(100);
+      // The t200 attribute mutation is applied on top of the t100 tree.
+      expect(out.html).toContain('data-step="1"');
+      expect(out.html).toContain('A');
+      expect(out.html).not.toContain('B');
     } finally {
       await close();
     }
