@@ -11,9 +11,9 @@ import {
   loadExtensionIds,
   resolveInstallTargets,
 } from '@peekdev/mcp/native-host';
-import { formatBytes } from '../lib/output.js';
 import { defaultDbPath } from '../lib/peek-home.js';
-import { type StatusReport, gatherStatus } from '../lib/status.js';
+import { loadPolicy } from '../lib/retention.js';
+import { gatherStatus, renderStatus } from '../lib/status.js';
 
 const SUPPORTED: readonly SupportedPlatform[] = ['darwin', 'linux', 'win32'];
 
@@ -23,45 +23,6 @@ function fileSize(path: string): number | null {
   } catch {
     return null;
   }
-}
-
-function renderStatus(report: StatusReport): string {
-  const lines: string[] = [];
-  lines.push('peek status');
-  lines.push('');
-
-  lines.push('Database (~/.peek/sessions.db):');
-  lines.push(`  path:    ${report.dbPath}`);
-  if (report.dbExists) {
-    lines.push(`  size:    ${formatBytes(report.dbBytes)}`);
-    lines.push(`  schema:  v${report.schemaVersion ?? '?'}`);
-    lines.push(`  sessions: ${report.sessionCount ?? '?'}`);
-  } else {
-    lines.push('  size:    (not created yet — record a session to initialize)');
-  }
-  lines.push('');
-
-  lines.push('Native messaging host:');
-  lines.push(`  binary:  ${report.hostBinaryPath}`);
-  lines.push(
-    report.anyManifestInstalled
-      ? '  status:  registered'
-      : '  status:  not registered (run `peek init` to register with consent)',
-  );
-  for (const t of report.manifestTargets) {
-    const mark = t.installed ? '✔' : '·';
-    lines.push(`    ${mark} ${t.browser}: ${t.location}`);
-  }
-  lines.push('');
-
-  lines.push('Browser extension:');
-  const conn =
-    report.extensionConnection === 'unknown'
-      ? 'unknown (connection check requires the extension; see https://github.com/Cubenest/rrweb-stack)'
-      : report.extensionConnection;
-  lines.push(`  connection: ${conn}`);
-
-  return lines.join('\n');
 }
 
 export function runStatus(): number {
@@ -96,6 +57,8 @@ export function runStatus(): number {
         return null;
       }
     },
+    policy: loadPolicy(),
+    now: Date.now(),
   });
 
   process.stdout.write(`${renderStatus(report)}\n`);

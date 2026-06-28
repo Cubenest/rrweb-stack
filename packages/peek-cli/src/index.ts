@@ -13,6 +13,7 @@
 
 import { runAudit } from './commands/audit.js';
 import { runInit } from './commands/init.js';
+import { runRetention } from './commands/retention.js';
 import { runSessions } from './commands/sessions.js';
 import { runStatus } from './commands/status.js';
 import { isDirectInvocation } from './lib/entrypoint.js';
@@ -31,6 +32,7 @@ Commands:
   init                         Interactive wizard: configure MCP clients + native host
   audit log                    Show the act-tool audit log (--since/--tool/--client)
   audit verify                 Verify the audit log hash chain (exit 0 ok, 1 anomaly, 2 tampered)
+  retention <set|show|preview|apply>  Manage the storage retention policy (prune old sessions)
 
 Run \`peek <command> --help\` for command-specific options.
 
@@ -48,6 +50,8 @@ export async function run(argv: readonly string[]): Promise<number> {
       return runSessions(rest);
     case 'audit':
       return runAudit(rest);
+    case 'retention':
+      return runRetention(rest);
     case 'init':
       return runInit(rest);
     case 'version':

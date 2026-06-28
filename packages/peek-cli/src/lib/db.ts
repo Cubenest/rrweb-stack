@@ -10,7 +10,9 @@
 import { rmSync } from 'node:fs';
 import { join } from 'node:path';
 import type { Database } from 'better-sqlite3';
+import { parseDuration } from './duration.js';
 import { rrwebEventsDir } from './peek-home.js';
+import type { RetentionPolicy } from './retention.js';
 
 /** A row of the `sessions` table, as the CLI presents it. */
 export interface SessionRow {
@@ -423,4 +425,129 @@ export function deleteSessionsOlderThan(
     rmSync(join(rrwebBaseDir, id), { recursive: true, force: true });
   }
   return ids.length;
+}
+
+/** Total on-disk event bytes summed across all sessions. */
+export function sumSessionBytes(db: Database): number {
+  const row = db.prepare('SELECT COALESCE(SUM(bytes), 0) AS total FROM sessions').get() as {
+    total: number;
+  };
+  return row.total;
+}
+
+/**
+ * Delete the given sessions: rows (children CASCADE; audit_log SET NULL) in one transaction,
+ * then rmSync each blob dir after the transaction (mirrors deleteSession's discipline).
+ * Returns the number of session rows removed.
+ */
+export function pruneSessions(
+  db: Database,
+  ids: readonly string[],
+  rrwebBaseDir: string = rrwebEventsDir(),
+): number {
+  if (ids.length === 0) return 0;
+  const removeIds = db.transaction((toRemove: readonly string[]): number => {
+    const del = db.prepare('DELETE FROM sessions WHERE id = ?');
+    let changes = 0;
+    for (const id of toRemove) changes += del.run(id).changes;
+    return changes;
+  });
+  const deleted = removeIds(ids);
+  for (const id of ids) {
+    rmSync(join(rrwebBaseDir, id), { recursive: true, force: true });
+  }
+  return deleted;
+}
+
+export interface PruneCandidate {
+  readonly id: string;
+  readonly updatedAt: string;
+  readonly bytes: number;
+  /** Why this session was selected — 'age' and/or 'disk'. */
+  readonly reasons: readonly ('age' | 'disk')[];
+}
+
+interface PruneRow {
+  id: string;
+  updated_at: string;
+  bytes: number;
+  status: string;
+}
+
+/**
+ * Decide which sessions a policy would prune. Pure read (no deletion). Single source of
+ * truth for both `preview` and `apply`. Loads the full session list (small) and decides
+ * in-memory, so no index/migration is needed.
+ */
+export function selectPruneCandidates(
+  db: Database,
+  policy: RetentionPolicy,
+  nowMs: number = Date.now(),
+  opts: { includeStaleActive?: boolean } = {},
+): PruneCandidate[] {
+  const rows = db
+    .prepare('SELECT id, updated_at, bytes, status FROM sessions ORDER BY updated_at DESC, id DESC')
+    .all() as PruneRow[];
+
+  // keepLast floor: rows are DESC, so the first N are the most-recent — protected.
+  const keep = policy.keepLast ?? 0;
+  const protectedIds = new Set(rows.slice(0, keep).map((r) => r.id));
+
+  let ageCutoffIso: string | undefined;
+  if (policy.maxAge !== undefined) {
+    const cutoffMs = nowMs - parseDuration(policy.maxAge);
+    if (!Number.isFinite(cutoffMs) || cutoffMs < -8_640_000_000_000_000) {
+      throw new Error(`maxAge "${policy.maxAge}" is too large`);
+    }
+    ageCutoffIso = new Date(cutoffMs).toISOString();
+  }
+
+  // Eligible pool: not protected; active excluded unless includeStaleActive AND past the age cutoff.
+  const eligible = rows.filter((r) => {
+    if (protectedIds.has(r.id)) return false;
+    if (r.status === 'active') {
+      if (!opts.includeStaleActive) return false;
+      if (ageCutoffIso === undefined || r.updated_at >= ageCutoffIso) return false;
+    }
+    return true;
+  });
+
+  const reasons = new Map<string, Set<'age' | 'disk'>>();
+  const mark = (id: string, why: 'age' | 'disk'): void => {
+    const set = reasons.get(id) ?? new Set<'age' | 'disk'>();
+    set.add(why);
+    reasons.set(id, set);
+  };
+
+  // Age rule.
+  if (ageCutoffIso !== undefined) {
+    for (const r of eligible) {
+      if (r.updated_at < ageCutoffIso) mark(r.id, 'age');
+    }
+  }
+
+  // Disk rule: total over ALL sessions minus those already age-pruned; evict oldest eligible
+  // (protected + non-stale-active count toward the total but are never evicted).
+  if (policy.maxSizeBytes !== undefined) {
+    let total = rows.reduce((sum, r) => sum + (reasons.has(r.id) ? 0 : r.bytes), 0);
+    if (total > policy.maxSizeBytes) {
+      const oldestFirst = eligible.filter((r) => !reasons.has(r.id)).reverse();
+      for (const r of oldestFirst) {
+        if (total <= policy.maxSizeBytes) break;
+        mark(r.id, 'disk');
+        total -= r.bytes;
+      }
+    }
+  }
+
+  // Build candidates oldest-first (rows are DESC → reverse).
+  return rows
+    .filter((r) => reasons.has(r.id))
+    .reverse()
+    .map((r) => ({
+      id: r.id,
+      updatedAt: r.updated_at,
+      bytes: r.bytes,
+      reasons: [...(reasons.get(r.id) ?? new Set<'age' | 'disk'>())],
+    }));
 }
