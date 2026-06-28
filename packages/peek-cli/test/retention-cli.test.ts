@@ -4,7 +4,10 @@ import { join } from 'node:path';
 import { openDb } from '@peekdev/mcp/db';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { runRetention } from '../src/commands/retention.js';
+import { confirm } from '../src/lib/prompt.js';
 import { loadPolicy } from '../src/lib/retention.js';
+
+vi.mock('../src/lib/prompt.js', () => ({ confirm: vi.fn() }));
 
 let home: string;
 let orig: string | undefined;
@@ -48,6 +51,7 @@ beforeEach(() => {
   orig = process.env.PEEK_HOME;
   process.env.PEEK_HOME = home;
   mkdirSync(home, { recursive: true });
+  vi.mocked(confirm).mockReset();
 });
 afterEach(() => {
   if (orig === undefined) Reflect.deleteProperty(process.env, 'PEEK_HOME');
@@ -102,5 +106,40 @@ describe('peek retention', () => {
     const res = await cap(['apply', '--yes']);
     expect(res.code).toBe(1);
     expect(res.err).toMatch(/no .*policy|configure/i);
+  });
+
+  it('apply (no --yes) deletes nothing when the prompt is declined', async () => {
+    seed('old', '2020-01-01T00:00:00.000Z');
+    vi.mocked(confirm).mockResolvedValueOnce(false);
+    const res = await cap(['apply', '--max-age', '30d']);
+    expect(res.code).toBe(0);
+    const db = openDb({ path: join(home, 'sessions.db') });
+    try {
+      expect(db.prepare('SELECT COUNT(*) c FROM sessions').get()).toEqual({ c: 1 });
+    } finally {
+      db.close();
+    }
+  });
+
+  it('apply does not delete a session that became active during the confirm pause', async () => {
+    seed('old', '2020-01-01T00:00:00.000Z');
+    // While "confirming", a concurrent writer flips the candidate to active.
+    vi.mocked(confirm).mockImplementationOnce(async () => {
+      const db = openDb({ path: join(home, 'sessions.db') });
+      try {
+        db.prepare("UPDATE sessions SET status='active' WHERE id='old'").run();
+      } finally {
+        db.close();
+      }
+      return true;
+    });
+    const res = await cap(['apply', '--max-age', '30d']);
+    expect(res.code).toBe(0);
+    const db = openDb({ path: join(home, 'sessions.db') });
+    try {
+      expect(db.prepare("SELECT COUNT(*) c FROM sessions WHERE id='old'").get()).toEqual({ c: 1 });
+    } finally {
+      db.close();
+    }
   });
 });

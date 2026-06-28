@@ -50,8 +50,9 @@ function flagsToPolicy(values: {
   return policy;
 }
 
-function isEmpty(p: RetentionPolicy): boolean {
-  return p.maxAge === undefined && p.maxSizeBytes === undefined;
+/** True when the effective policy specifies nothing at all (no rule AND no floor). */
+function isUnconfigured(p: RetentionPolicy): boolean {
+  return p.maxAge === undefined && p.maxSizeBytes === undefined && p.keepLast === undefined;
 }
 
 function describePolicy(p: RetentionPolicy): string {
@@ -181,7 +182,7 @@ function runPreview(values: {
   'include-stale-active'?: boolean;
 }): number {
   const policy = effectivePolicy(values);
-  if (isEmpty(policy)) {
+  if (isUnconfigured(policy)) {
     process.stderr.write(
       'peek retention preview: no policy — set one or pass --max-age/--max-size\n',
     );
@@ -213,7 +214,7 @@ async function runApply(values: {
   'include-stale-active'?: boolean;
 }): Promise<number> {
   const policy = effectivePolicy(values);
-  if (isEmpty(policy)) {
+  if (isUnconfigured(policy)) {
     process.stderr.write(
       'peek retention apply: no policy — set one or pass --max-age/--max-size\n',
     );
@@ -221,17 +222,16 @@ async function runApply(values: {
   }
   const db = openDb({ path: defaultDbPath() });
   try {
-    const candidates = selectPruneCandidates(db, policy, Date.now(), {
-      includeStaleActive: values['include-stale-active'] === true,
-    });
-    if (candidates.length === 0) {
+    const opts = { includeStaleActive: values['include-stale-active'] === true };
+    const shown = selectPruneCandidates(db, policy, Date.now(), opts);
+    if (shown.length === 0) {
       process.stdout.write('Nothing to prune.\n');
       return 0;
     }
-    const bytes = candidates.reduce((s, c) => s + c.bytes, 0);
+    const shownBytes = shown.reduce((s, c) => s + c.bytes, 0);
     if (values.yes !== true) {
       const ok = await confirm(
-        `Delete ${candidates.length} session(s) (${formatBytes(bytes)})?`,
+        `Delete ${shown.length} session(s) (${formatBytes(shownBytes)})?`,
         false,
       );
       if (!ok) {
@@ -239,13 +239,25 @@ async function runApply(values: {
         return 0;
       }
     }
+    // Re-evaluate after the (possible) confirmation pause: only delete sessions that
+    // were shown AND still match the policy now (never delete one that became active/
+    // protected, nor one the user did not see).
+    const shownIds = new Set(shown.map((c) => c.id));
+    const finalCandidates = selectPruneCandidates(db, policy, Date.now(), opts).filter((c) =>
+      shownIds.has(c.id),
+    );
+    if (finalCandidates.length === 0) {
+      process.stdout.write('Nothing to prune (candidates changed since preview).\n');
+      return 0;
+    }
+    const freed = finalCandidates.reduce((s, c) => s + c.bytes, 0);
     const deleted = pruneSessions(
       db,
-      candidates.map((c) => c.id),
+      finalCandidates.map((c) => c.id),
       rrwebEventsDir(),
     );
     process.stdout.write(
-      `Pruned ${deleted} session(s), freed ${formatBytes(bytes)} of event data.\n`,
+      `Pruned ${deleted} session(s), freed ${formatBytes(freed)} of event data.\n`,
     );
     return 0;
   } finally {

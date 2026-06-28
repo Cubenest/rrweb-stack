@@ -26,7 +26,7 @@ const PolicySchema = z
         }
       }, 'maxAge must be a duration like 30d/1h/7d')
       .optional(),
-    maxSizeBytes: z.number().int().positive().optional(),
+    maxSizeBytes: z.number().int().nonnegative().optional(),
     keepLast: z.number().int().nonnegative().optional(),
   })
   .strict();

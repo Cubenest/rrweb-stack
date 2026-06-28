@@ -103,4 +103,14 @@ describe('selectPruneCandidates', () => {
     // newbig (100) alone is <=150 after oldbig is age-freed, so it is NOT disk-evicted.
     expect(byId.newbig).toBeUndefined();
   });
+
+  it('attributes a pure disk eviction with reason [disk]', () => {
+    seed('a', daysAgo(3), 100);
+    seed('b', daysAgo(2), 100);
+    seed('c', daysAgo(1), 100);
+    // No age rule; cap 250 → total 300 → evict the oldest (a) → 200 <= 250.
+    const cands = selectPruneCandidates(db, { maxSizeBytes: 250 }, NOW);
+    expect(cands.map((x) => x.id)).toEqual(['a']);
+    expect(cands[0]?.reasons).toEqual(['disk']);
+  });
 });
