@@ -427,6 +427,38 @@ export function deleteSessionsOlderThan(
   return ids.length;
 }
 
+/** Total on-disk event bytes summed across all sessions. */
+export function sumSessionBytes(db: Database): number {
+  const row = db.prepare('SELECT COALESCE(SUM(bytes), 0) AS total FROM sessions').get() as {
+    total: number;
+  };
+  return row.total;
+}
+
+/**
+ * Delete the given sessions: rows (children CASCADE; audit_log SET NULL) in one transaction,
+ * then rmSync each blob dir after the transaction (mirrors deleteSession's discipline).
+ * Returns the number of session rows removed.
+ */
+export function pruneSessions(
+  db: Database,
+  ids: readonly string[],
+  rrwebBaseDir: string = rrwebEventsDir(),
+): number {
+  if (ids.length === 0) return 0;
+  const removeIds = db.transaction((toRemove: readonly string[]): number => {
+    const del = db.prepare('DELETE FROM sessions WHERE id = ?');
+    let changes = 0;
+    for (const id of toRemove) changes += del.run(id).changes;
+    return changes;
+  });
+  const deleted = removeIds(ids);
+  for (const id of ids) {
+    rmSync(join(rrwebBaseDir, id), { recursive: true, force: true });
+  }
+  return deleted;
+}
+
 export interface PruneCandidate {
   readonly id: string;
   readonly updatedAt: string;
