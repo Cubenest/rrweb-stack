@@ -562,11 +562,11 @@ export function queryDomHistory(
   const fullSnapshot = events.find(isFullSnapshot);
   if (!fullSnapshot) return [];
   const index = indexNodes(fullSnapshot.data.node);
-  // The index is built once here, so one cache memoizes the resolution loop.
-  const selectorCache = new Map<number, string | undefined>();
+  // Single pass over the index — each id is resolved at most once, so a memo
+  // cache would never hit here (it only helps multi-pass loops like findBySelector).
   let targetId: number | undefined;
   for (const [id] of index) {
-    if (selectorFor(index, id, selectorCache) === selector) {
+    if (selectorFor(index, id) === selector) {
       targetId = id;
       break;
     }
