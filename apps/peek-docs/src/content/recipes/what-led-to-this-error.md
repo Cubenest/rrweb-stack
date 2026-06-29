@@ -55,4 +55,4 @@ Once you understand the trigger, capture it as a test with [Generate a Playwrigh
 
 ## Trust & data handling
 
-Read-tier (Level 1), local-only. The chain is assembled from your own recorded session in `~/.peek`; nothing is uploaded; captured values are masked at record time.
+Read-tier (Level 1): the chain is assembled from your recorded session in `~/.peek`, non-mutating. Local-first: peek uploads nothing — what your MCP client does with the data is up to you. Captured values are masked at record time.

@@ -49,4 +49,4 @@ Pair this with [See the causal chain that led to an error](/recipes/what-led-to-
 
 ## Trust & data handling
 
-Read-tier (Level 1), local-only. peek reads the recorded DOM history from `~/.peek`; nothing leaves your machine; captured values are masked at record time.
+Read-tier (Level 1): non-mutating reads of the recorded DOM history in `~/.peek`. Local-first: peek uploads nothing — what your MCP client does with the data is up to you. Captured values are masked at record time.

@@ -55,4 +55,4 @@ Reproduce the failure deterministically with [Generate a Playwright repro from a
 
 ## Trust & data handling
 
-Read-tier (Level 1), local-only. peek reads your recorded session from `~/.peek`; nothing leaves your machine; auth and cookie headers and detected PII are masked at record time.
+Read-tier (Level 1): non-mutating reads of your recorded session in `~/.peek`. Local-first: peek uploads nothing — what your MCP client does with the data is up to you. Request and response bodies are masked, and URLs and error text are clipped, at record time.

@@ -51,4 +51,4 @@ Turn a confirmed error into a runnable regression test with [Generate a Playwrig
 
 ## Trust & data handling
 
-Everything here is read-tier (Level 1) and local: peek reads your own recorded session from `~/.peek`, nothing is sent to a vendor, and captured values are masked (passwords, auth headers, and detected PII are scrubbed at record time).
+These tools are read-tier (Level 1) — they only read your recorded session in `~/.peek`, never act on the page. Local-first: peek uploads nothing — what your MCP client does with the data is up to you. Captured values are masked at record time (passwords, auth headers, and detected PII are scrubbed).
