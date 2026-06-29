@@ -5,6 +5,7 @@ description: "Use peek's Level-4 control shield + input handoff so an MCP agent 
 type: hero
 status: published
 publishedAt: 2026-06-15
+updatedAt: 2026-06-29
 integrations: [claude-code, cursor, security]
 relatedRecipes: [use-peek-with-per-action-approval, security-review-flow-with-ai-agent, generate-playwright-repro-from-real-browser-session]
 ---
@@ -65,6 +66,8 @@ Two visual cues tell you what is happening:
 
 If the banner ever stops matching what you expect, Stop first and ask questions second.
 
+After each fill the agent re-reads to confirm it took before advancing the banner — see [Verifying each applied step](#verifying-each-applied-step).
+
 ## Step 4 — your-turn moments
 
 When the agent reaches something it should not or cannot do, it hands the keyboard back. There are two shapes of handoff:
@@ -77,6 +80,16 @@ Page-scope is full takeover: while it is active you are driving the entire page 
 ## Step 5 — finish
 
 You perform the final submit yourself, from a page-scope handoff, after reviewing what the agent filled. Then lower the dial (or hit Stop) to bring the shield down and return the origin to a normal level.
+
+## Verifying each applied step
+
+"Apply **and re-verify**": the agent should confirm each field actually took before moving to the next — not fire-and-forget.
+
+1. After it fills a field (`execute_action` type), it re-reads that element with `get_element_detail` and checks the value now matches what it intended.
+2. It calls `get_page_view` to confirm no validation or error appeared near the field (wrong format, "already taken", required-but-empty, …).
+3. Only then does it advance the `set_intent` banner to the next step. If a step didn't take, it **stops and tells you on the banner** instead of retrying blindly — so you see exactly where it got stuck and can take over.
+
+Heads-up: `password`/email/PII field values come back **masked** (the same masking the recorder applies), so the agent can't confirm those by value — it verifies them by the *absence* of an error instead.
 
 ## Safety recap — honest about what is enforced vs convention
 
