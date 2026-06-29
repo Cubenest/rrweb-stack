@@ -43,6 +43,12 @@ Read on if you're configuring the MCP server manually, building tooling against 
 - Not a write-by-default tool. Read tools are unauthenticated. The write tools (`execute_action`, `request_authorization`) are gated by the per-origin permission model (off by default) + the destructive blocklist + the audit-log writer. The cross-process IPC that delivers them to the browser native host (`LocalSocketHostBridge` ↔ `HostSocketServer` over `~/.peek/host.sock`) is now wired: at **Level 3** every action prompts the side-panel confirm banner before it runs. The real-browser MAIN-world dispatch + banner UX are covered by the Playwright E2E (`e2e/smoke.spec.ts`); the bridge, relay, dispatcher, and confirm logic are unit-tested.
 - Not a wrapper around Chrome DevTools Protocol. The server reads recorded events from SQLite; the extension owns capture. No live `chrome.debugger` access from the MCP server.
 
+## One-click install (Cursor)
+
+[![Add peek to Cursor](https://cursor.com/deeplink/mcp-install-dark.svg)](cursor://anysphere.cursor-deeplink/mcp/install?name=peek&config=eyJjb21tYW5kIjoibnB4IiwiYXJncyI6WyIteSIsIkBwZWVrZGV2L21jcEBsYXRlc3QiXX0=)
+
+Click the button (or paste the link into Cursor) and Cursor prompts to add peek to `~/.cursor/mcp.json` — no terminal needed. This wires the **MCP server** only; to capture sessions you still run `peek init` once (registers the native messaging host) and install the [Chrome extension](https://chromewebstore.google.com/detail/peek/dmgpmkeneheenpdnfmpjjahnkknkaejb).
+
 ## Manual MCP-client config
 
 If `peek init` doesn't recognize your client, paste this into your client's MCP server registry:
