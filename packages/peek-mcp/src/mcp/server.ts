@@ -70,7 +70,13 @@ export const SERVER_INSTRUCTIONS =
   'test. The write tools — execute_action and request_authorization (Level 3+) ' +
   '— are gated by a five-level per-origin permission model with a ' +
   'destructive-action override; consult the user via request_authorization ' +
-  'before high-impact actions.';
+  'before high-impact actions. When you act, verify each step before advancing: ' +
+  'after a mutating action, re-read the target with get_element_detail to confirm ' +
+  'it now holds the value you intended, and get_page_view to confirm no validation ' +
+  'error appeared, before moving on (e.g. set_intent to the next step). If it did ' +
+  'not take, stop and report via set_intent rather than retrying blindly. ' +
+  'Password/email/PII field values come back masked, so verify those by the ' +
+  'absence of an error, not by value.';
 
 /** A `content: [{ type: 'text' }]` MCP tool result wrapping `value` as pretty JSON. */
 function jsonResult(value: unknown): { content: Array<{ type: 'text'; text: string }> } {
@@ -669,7 +675,7 @@ export function createPeekMcpServer(options: CreatePeekMcpServerOptions = {}): P
       {
         title: 'Execute a browser action',
         description:
-          "Execute an action (click/type/navigate/...) in the user's live browser. Requires per-origin permission Level 3+: Level 3 raises a confirm banner unless a valid confirmToken from request_authorization is passed; Level 4 auto-allows non-destructive actions; Level <3 denies. The destructive-action override (delete/remove/transfer/send/pay/purchase/buy/confirm/subscribe/logout/sign out/unsubscribe/cancel subscription/wire/withdraw) always prompts, even at Level 4. Every call is recorded to ~/.peek/audit.log.",
+          "Execute an action (click/type/navigate/...) in the user's live browser. Requires per-origin permission Level 3+: Level 3 raises a confirm banner unless a valid confirmToken from request_authorization is passed; Level 4 auto-allows non-destructive actions; Level <3 denies. The destructive-action override (delete/remove/transfer/send/pay/purchase/buy/confirm/subscribe/logout/sign out/unsubscribe/cancel subscription/wire/withdraw) always prompts, even at Level 4. Every call is recorded to ~/.peek/audit.log. After a mutating action, re-read to confirm it took: get_element_detail on the target (its value should match what you intended) and get_page_view (no validation error should have appeared) before advancing; if it did not take, stop and report rather than blind-retrying. Password/email/PII values return masked — verify those by the absence of an error.",
         inputSchema: {
           sessionId: z
             .string()
@@ -781,7 +787,7 @@ export function createPeekMcpServer(options: CreatePeekMcpServerOptions = {}): P
       {
         title: 'Set the control-shield banner text',
         description:
-          "Set the agent's status banner shown on the control shield (e.g. 'Applying to Senior Frontend · step 2/4'), so the user can follow what you're doing. Up to 80 chars, plain text. Requires the origin at Level 4 with the shield up; auto-allowed. Recorded to ~/.peek/audit.log.",
+          "Set the agent's status banner shown on the control shield (e.g. 'Applying to Senior Frontend · step 2/4'), so the user can follow what you're doing. Up to 80 chars, plain text. Requires the origin at Level 4 with the shield up; auto-allowed. Recorded to ~/.peek/audit.log. Advance the step only after the previous step verified (re-read it took); on a failure, set a 'stopped — <what> didn't take' status instead of advancing.",
         inputSchema: {
           sessionId: z
             .string()
