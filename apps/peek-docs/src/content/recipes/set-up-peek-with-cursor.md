@@ -23,6 +23,12 @@ A working peek MCP server registered with Cursor at `~/.cursor/mcp.json`, verifi
 
 ## Steps
 
+### 0. One-click (fastest) — Add to Cursor
+
+[![Add peek to Cursor](https://cursor.com/deeplink/mcp-install-dark.svg)](cursor://anysphere.cursor-deeplink/mcp/install?name=peek&config=eyJjb21tYW5kIjoibnB4IiwiYXJncyI6WyIteSIsIkBwZWVrZGV2L21jcEBsYXRlc3QiXX0=)
+
+Click the button (or paste the link into your browser). Cursor prompts to add peek to `~/.cursor/mcp.json` — no terminal, no wizard. This wires the **MCP server** so the agent can read your sessions. You still need the native messaging host (Step 2's `peek init`, run once) and the Chrome extension (Prerequisites) before there are sessions to read — so after clicking, run `peek init` once and skip to [Verify](#4-verify).
+
 ### 1. Install the CLI
 
 ```bash
