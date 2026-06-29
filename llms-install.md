@@ -1,8 +1,8 @@
 # Installing peek — instructions for an AI coding agent
 
 You are setting up **peek** for the user: a local-first browser-session forensics
-MCP server. Follow these steps in order. Everything runs locally — peek uploads
-nothing.
+MCP server. Follow these steps in order. Local-first: peek uploads nothing —
+what your MCP client does with the data is up to you.
 
 ## What peek is
 
