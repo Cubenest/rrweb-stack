@@ -113,6 +113,38 @@ export const SHIELD_CSS = `
   transform: translate(-50%, 0);
 }
 @media print { .peek-shield-scrim, .peek-shield-border, .peek-shield-banner, .peek-shield-card { display: none !important; } }
+.peek-shield-warn {
+  all: initial;
+  position: fixed;
+  bottom: 24px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 2147483647;
+  max-width: min(92vw, 460px);
+  box-sizing: border-box;
+  padding: 10px 16px;
+  border-radius: 10px;
+  background: #7c2d12;
+  color: #fff;
+  font: 500 13px/1.4 system-ui, -apple-system, sans-serif;
+  text-align: center;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.35);
+  pointer-events: none;
+}
+@media (prefers-reduced-motion: no-preference) {
+  .peek-shield-warn {
+    animation: peek-shield-warn 2200ms ease-out forwards;
+  }
+  @keyframes peek-shield-warn {
+    0% { opacity: 0; transform: translate(-50%, 8px); }
+    8% { opacity: 1; transform: translate(-50%, 0); }
+    85% { opacity: 1; }
+    100% { opacity: 0; }
+  }
+}
+@media print {
+  .peek-shield-warn { display: none !important; }
+}
 `;
 
 /** Events the capture listener inspects. Scroll/wheel/touchmove deliberately excluded. */
