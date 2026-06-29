@@ -8,7 +8,8 @@
 
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import { isAbsolute, join } from 'node:path';
-import { decompress, type eventWithTime } from '@cubenest/rrweb-core';
+import { EventType, decompress, type eventWithTime } from '@cubenest/rrweb-core';
+import type { Database } from 'better-sqlite3';
 import { peekHomeDir } from '../db/open.js';
 
 /**
@@ -79,6 +80,84 @@ export function loadSessionEvents(
     return loadChunkedDir(abs, blobPath);
   }
   return decodeOne(abs, blobPath);
+}
+
+/**
+ * Load the minimal contiguous event subset needed to reconstruct the DOM at
+ * `ts`: the chunk holding the latest FullSnapshot <= ts, forward through the
+ * chunk holding ts. Uses the `events_chunks` index to decompress ONLY those
+ * chunk files, skipping every chunk after `ts` and every chunk strictly before
+ * the chosen base snapshot.
+ *
+ * `reconstructDomAt(subset, ts)` is byte-identical to
+ * `reconstructDomAt(whole, ts)` because reconstructDomAt picks the latest
+ * FullSnapshot at or before `ts` as its base and replays only mutations up to
+ * `ts` — events after `ts` and before that base are inert. This loader returns
+ * exactly that inert-trimmed window. It relies on the recorder invariant that
+ * chunk `seq` ascending == time ascending (one gzipped chunk per append batch,
+ * `<events-dir>/<sessionId>/<seq>.json.gz`), so the latest FullSnapshot <= ts
+ * lives in the latest seq whose `start_ts_ms <= ts` that actually contains one.
+ *
+ * Falls back to the whole-blob loader, preserving its degradation contract,
+ * when the chunk index or a needed file is unavailable:
+ *   • null/undefined/empty blobPath, or a missing path -> `[]`.
+ *   • a legacy single-file blob -> decode that one file.
+ *   • a chunk directory with no `events_chunks` rows -> whole-dir load.
+ *   • a referenced chunk file missing on disk -> whole-dir load (safe superset).
+ *   • a `ts` before the first chunk's start -> `[]` (no base snapshot exists).
+ *
+ * @param db        an open better-sqlite3 handle (read access to `events_chunks`)
+ * @param sessionId the `events_chunks.session_id` to index by
+ * @param blobPath  the `sessions.events_blob_path` value (relative or absolute)
+ * @param ts        the target timestamp (epoch-millis)
+ * @param baseDir   override the ~/.peek/rrweb-events base (tests)
+ */
+export function loadEventsUpToTs(
+  db: Database,
+  sessionId: string,
+  blobPath: string | null | undefined,
+  ts: number,
+  baseDir: string = rrwebEventsDir(),
+): eventWithTime[] {
+  if (blobPath === null || blobPath === undefined || blobPath.length === 0) return [];
+  const abs = resolveBlobPath(blobPath, baseDir);
+  if (!existsSync(abs)) return [];
+  // Legacy single-file blob: no per-chunk index to exploit, decode the one file.
+  if (!statSync(abs).isDirectory()) return decodeOne(abs, blobPath);
+  const chunks = db
+    .prepare('SELECT seq, start_ts_ms FROM events_chunks WHERE session_id = ? ORDER BY seq ASC')
+    .all(sessionId) as Array<{ seq: number; start_ts_ms: number }>;
+  // Directory without an index (older rows / tests): fall back to whole-dir load.
+  if (chunks.length === 0) return loadChunkedDir(abs, blobPath);
+  // Candidate chunks are those that could begin at or before ts; everything
+  // after is inert for reconstructDomAt and skipped entirely.
+  const candidates = chunks.filter((c) => c.start_ts_ms <= ts);
+  if (candidates.length === 0) return []; // ts precedes all recorded events
+  // Walk candidates from newest to oldest, decoding each, until we find the
+  // chunk that carries a FullSnapshot at or before ts — that's the base chunk.
+  const decoded = new Map<number, eventWithTime[]>();
+  let baseIdx = 0;
+  for (let i = candidates.length - 1; i >= 0; i -= 1) {
+    const c = candidates[i];
+    if (c === undefined) continue;
+    const file = join(abs, `${c.seq}.json.gz`);
+    // A referenced chunk file is missing -> degrade to the safe whole-dir load.
+    if (!existsSync(file)) return loadChunkedDir(abs, blobPath);
+    const events = decodeOne(file, `${blobPath}/${c.seq}.json.gz`);
+    decoded.set(c.seq, events);
+    baseIdx = i;
+    if (events.some((e) => e.type === EventType.FullSnapshot && e.timestamp <= ts)) break;
+  }
+  // Emit base chunk forward through the last candidate, in seq (== time) order.
+  const out: eventWithTime[] = [];
+  for (let i = baseIdx; i < candidates.length; i += 1) {
+    const c = candidates[i];
+    if (c === undefined) continue;
+    const events = decoded.get(c.seq);
+    if (events === undefined) continue;
+    for (const e of events) out.push(e);
+  }
+  return out;
 }
 
 /**

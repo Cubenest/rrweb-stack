@@ -37,7 +37,7 @@ import {
 } from '../native-host/audit.js';
 import { ActionSchema } from './action-schema.js';
 import { buildCausalChain } from './causal-chain.js';
-import { SessionEventsError, loadSessionEvents } from './event-blobs.js';
+import { SessionEventsError, loadEventsUpToTs, loadSessionEvents } from './event-blobs.js';
 import {
   extractDomMutationsInWindow,
   queryDomHistory,
@@ -170,6 +170,33 @@ export function createPeekMcpServer(options: CreatePeekMcpServerOptions = {}): P
     if (!ref) return { ok: true, events: [] };
     try {
       return { ok: true, events: loadSessionEvents(ref.blobPath, options.eventsDir) };
+    } catch (err) {
+      if (err instanceof SessionEventsError) return { ok: false, message: err.message };
+      throw err;
+    }
+  }
+
+  /**
+   * Like {@link eventsFor}, but loads only the minimal contiguous chunk range
+   * needed to reconstruct the DOM at `ts` (the latest FullSnapshot at or before
+   * `ts` forward through the chunk holding `ts`) — used by get_dom_snapshot. The
+   * range loader is byte-identical to a whole-load reconstruction but skips the
+   * chunks after `ts` and before the base snapshot, and degrades to a whole-load
+   * when there's no chunk index / a single-file blob / a missing file.
+   */
+  function eventsUpToTs(
+    sessionId: string,
+    ts: number,
+  ): { ok: true; events: ReturnType<typeof loadSessionEvents> } | { ok: false; message: string } {
+    const handle = getDb();
+    if (!handle) return { ok: true, events: [] };
+    const ref = getSessionBlobRef(handle, sessionId);
+    if (!ref) return { ok: true, events: [] };
+    try {
+      return {
+        ok: true,
+        events: loadEventsUpToTs(handle, sessionId, ref.blobPath, ts, options.eventsDir),
+      };
     } catch (err) {
       if (err instanceof SessionEventsError) return { ok: false, message: err.message };
       throw err;
@@ -506,7 +533,7 @@ export function createPeekMcpServer(options: CreatePeekMcpServerOptions = {}): P
       ({ sessionId, ts, selector }) => {
         const handle = getDb();
         if (!handle) return textResult(NO_DB_MESSAGE);
-        const ev = eventsFor(sessionId);
+        const ev = eventsUpToTs(sessionId, ts);
         if (!ev.ok) return textResult(ev.message);
         const snap = reconstructDomAt(ev.events, ts, selector);
         if (!snap) {
