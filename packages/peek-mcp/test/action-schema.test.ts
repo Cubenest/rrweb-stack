@@ -227,4 +227,32 @@ describe('SetIntentAction + request_user_input scope (Part 2)', () => {
       text: 'hi',
     });
   });
+  it('parses set_intent with status done/failed and preserves it', () => {
+    expect(ActionSchema.parse({ type: 'set_intent', text: 'Submitted', status: 'done' })).toEqual({
+      type: 'set_intent',
+      text: 'Submitted',
+      status: 'done',
+    });
+    expect(
+      ActionSchema.parse({ type: 'set_intent', text: 'stopped — salary field', status: 'failed' }),
+    ).toEqual({ type: 'set_intent', text: 'stopped — salary field', status: 'failed' });
+  });
+  it('omits status when not provided (backward-compatible)', () => {
+    expect(ActionSchema.parse({ type: 'set_intent', text: 'step 2/4' })).toEqual({
+      type: 'set_intent',
+      text: 'step 2/4',
+    });
+  });
+  it('rejects an unknown status value', () => {
+    expect(() => ActionSchema.parse({ type: 'set_intent', text: 'x', status: 'bogus' })).toThrow();
+  });
+  it('redactActionForAudit keeps set_intent status', () => {
+    expect(
+      redactActionForAudit({ type: 'set_intent', text: 'hi', status: 'failed' } as never),
+    ).toEqual({
+      type: 'set_intent',
+      text: 'hi',
+      status: 'failed',
+    });
+  });
 });
