@@ -1,0 +1,146 @@
+---
+import Layout from '../layouts/Layout.astro';
+---
+
+<Layout
+  title="What's new in peek since launch"
+  description="An honest changelog of what shipped in peek since launch: a pre-assembled causal chain for errors, Playwright repros that lock the regression, visible revocable supervision, and a tamper-evident, portable local-first store."
+>
+  <h1>What's new in peek since launch</h1>
+  <p class="tagline">
+    Since launch, peek has grown from a read-only session-forensics MCP into a
+    supervised, auditable, portable forensics tool for AI coding agents &mdash;
+    still local-first, still &ldquo;debug what already happened in your real
+    browser.&rdquo; This is the honest account of what changed, grouped by what
+    it lets your agent do.
+  </p>
+
+  <p>
+    peek is pre-1.0 alpha and side-project&ndash;maintained (Apache&nbsp;2.0).
+    Everything below ships today on npm
+    (<a href="https://www.npmjs.com/package/@peekdev/mcp" rel="noopener"><code>@peekdev/mcp</code></a>,
+    <a href="https://www.npmjs.com/package/@peekdev/cli" rel="noopener"><code>@peekdev/cli</code></a>)
+    and the
+    <a href="https://chromewebstore.google.com/detail/peek/dmgpmkeneheenpdnfmpjjahnkknkaejb" rel="noopener">Chrome&nbsp;Web&nbsp;Store extension</a>.
+    Each section links to a recipe that shows it end to end.
+  </p>
+
+  <h2>1. Deeper forensic reads</h2>
+  <p>
+    The read path got more useful to an agent reasoning about a failure:
+  </p>
+  <ul>
+    <li>
+      <code>get_user_action_before_error</code> now returns a
+      <strong>pre-assembled causal chain</strong> &mdash; the user actions, DOM
+      mutations, and network/console errors in the window before an error,
+      merged into one time-ordered timeline with a deterministic narrative, so
+      the agent reasons over &ldquo;action &rarr; DOM change &rarr; failed
+      request &rarr; error&rdquo; instead of stitching three queries together.
+    </li>
+    <li>
+      <code>query_dom_history</code> gained a <strong>selector-free window
+      mode</strong>: pass a timestamp (and optional window) to get every DOM
+      change around a moment, no selector needed.
+    </li>
+    <li>
+      <code>get_element_detail</code> now returns a curated computed-style bag,
+      the accessible description, and effective <code>aria-hidden</code>/<code>aria-disabled</code>
+      inheritance &mdash; enough to reason about why an element looked or
+      behaved the way it did.
+    </li>
+  </ul>
+  <p>
+    See it: <a href="/recipes/what-led-to-this-error">See the causal chain that led to an error</a>.
+  </p>
+
+  <h2>2. Repros that lock the regression</h2>
+  <p>
+    <code>generate_playwright_repro</code> got harder to break and easier to
+    trust. It now emits resilient <strong>semantic locators</strong>
+    (<code>getByRole</code> / <code>getByTestId</code> / <code>getByPlaceholder</code> /
+    <code>getByText</code>, each uniqueness-checked against the snapshot, with a
+    CSS-selector fallback) instead of brittle deep selectors, and it can seed a
+    <strong>console-error-absence assertion</strong> &mdash; so the generated
+    spec doesn&rsquo;t just replay the steps, it <em>fails</em> if the original
+    error comes back. The agent can re-run it to verify its own fix actually
+    worked.
+  </p>
+  <p>
+    See it: <a href="/recipes/generate-playwright-repro-from-real-browser-session">Generate a Playwright repro from a real browser session</a>.
+  </p>
+
+  <h2>3. Visible, revocable supervision</h2>
+  <p>
+    When you let the agent act on the page (the opt-in write path), the
+    oversight is now first-class and on-screen:
+  </p>
+  <ul>
+    <li>
+      A <strong>Level-4 control shield</strong> &mdash; an overlay that makes it
+      obvious peek is driving, with a one-click <strong>Stop</strong> and an
+      Esc kill-switch that hard-drops the origin back to read-only.
+    </li>
+    <li>
+      A <strong>first-run trust</strong> experience: the permission levels are
+      named and explained, and a persistent indicator shows when
+      &ldquo;auto-approve&rdquo; is active so it can never be on without your
+      knowing.
+    </li>
+    <li>
+      An <strong>apply-and-re-verify</strong> convention: after a step, the
+      agent re-reads the page to confirm the change took (and that no error
+      appeared) before advancing &mdash; with a terminal success/failure banner
+      and a non-blocking heads-up when you&rsquo;re about to click something
+      destructive during a hand-back.
+    </li>
+  </ul>
+  <p>
+    See it: <a href="/recipes/assisted-apply-with-supervision">Assisted apply, with supervision</a>.
+  </p>
+
+  <h2>4. Tamper-evident, and portable</h2>
+  <p>
+    Sessions and the actions taken on them became governable and shareable
+    &mdash; without a cloud:
+  </p>
+  <ul>
+    <li>
+      The action audit log (<code>~/.peek/audit.log</code>) is now a
+      <strong>hash chain</strong>: each entry is linked to the one before it, so
+      <code>peek audit verify</code> can detect any edit, reorder, or truncation
+      after the fact.
+    </li>
+    <li>
+      A <code>*.peekbundle</code> <strong>export/import</strong> packages a
+      session (with an integrity manifest) so a teammate can replay your repro
+      on their machine &mdash; no environment spin-up, no account.
+    </li>
+    <li>
+      An explicit <strong>retention policy</strong> bounds the local store
+      &mdash; it never deletes silently; you set the rules.
+    </li>
+  </ul>
+  <p>
+    See it: <a href="/recipes/reproduce-bug-from-teammate-peek-session">Reproduce a bug from a teammate&rsquo;s peek session</a>.
+  </p>
+
+  <h2>The honest part</h2>
+  <p>
+    peek is local-first: <strong>peek uploads nothing &mdash; what your MCP
+    client does with the data is up to you.</strong> That last clause matters:
+    anything your agent reads from a session becomes context for whatever model
+    your MCP client is using. And while peek masks passwords, PII-class values,
+    and fields you mark private at capture time, the underlying rrweb
+    full-page snapshots can still contain non-password free-text values that
+    were on screen &mdash; so treat a recording, and a <code>*.peekbundle</code>
+    you share, as you would the page itself. The read tools are non-mutating;
+    the write tools require explicit per-origin consent.
+  </p>
+
+  <p style="color: var(--fg-muted); font-size: 0.9rem; margin-top: 2rem;">
+    Something out of date or inaccurate? Open a PR on
+    <a href="https://github.com/Cubenest/rrweb-stack/blob/main/apps/peek-docs/src/pages/whats-new.astro" rel="noopener">this page</a>
+    &mdash; the goal is accuracy, not advocacy.
+  </p>
+</Layout>
