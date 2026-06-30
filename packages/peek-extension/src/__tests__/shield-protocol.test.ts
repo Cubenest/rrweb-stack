@@ -105,6 +105,26 @@ describe('ENTER_HANDOFF scope (Part 2)', () => {
   });
 });
 
+describe('isViewCommand — TERMINAL (Slice B)', () => {
+  it('isViewCommand accepts a well-formed TERMINAL', () => {
+    expect(
+      isViewCommand({ kind: 'TERMINAL', generation: 3, status: 'done', label: 'Submitted' }),
+    ).toBe(true);
+    expect(isViewCommand({ kind: 'TERMINAL', generation: 4, status: 'failed', label: null })).toBe(
+      true,
+    );
+  });
+  it('isViewCommand rejects a TERMINAL with a bad status or label', () => {
+    expect(isViewCommand({ kind: 'TERMINAL', generation: 3, status: 'ok', label: 'x' })).toBe(
+      false,
+    );
+    expect(isViewCommand({ kind: 'TERMINAL', generation: 3, status: 'done', label: 5 })).toBe(
+      false,
+    );
+    expect(isViewCommand({ kind: 'TERMINAL', generation: 3, label: 'x' })).toBe(false);
+  });
+});
+
 describe('isShieldInbound — shield.resume (Plan B)', () => {
   it('accepts shield.resume with and without a value', () => {
     expect(isShieldInbound({ type: 'shield.resume' })).toBe(true);
