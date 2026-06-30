@@ -628,4 +628,21 @@ describe('shield view — terminal banner (Slice B)', () => {
       vi.useRealTimers();
     }
   });
+
+  it('ENTER_HANDOFF resets stale terminal text (no leftover ✗ / failed text in the banner)', () => {
+    tv.apply({ kind: 'RAISE', generation: 1, label: 'Working' });
+    tv.apply({ kind: 'TERMINAL', generation: 2, status: 'failed', label: 'salary' });
+    expect(tv.__test?.bannerText?.()).toContain('salary');
+    tv.apply({
+      kind: 'ENTER_HANDOFF',
+      generation: 3,
+      prompt: 'Enter code',
+      framing: 'peek did not write this',
+    });
+    // The terminal styling is cleared AND the stale terminal text is reset to the
+    // neutral controlling-this-page label (the handoff card carries the real prompt).
+    expect(tv.__test?.terminal?.()).toBeNull();
+    expect(tv.__test?.bannerText?.()).not.toContain('salary');
+    expect(tv.__test?.bannerText?.()).toContain('peek is controlling this page');
+  });
 });

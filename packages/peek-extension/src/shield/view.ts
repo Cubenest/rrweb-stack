@@ -599,7 +599,17 @@ export function createShieldView(deps: ShieldViewDeps): ShieldView {
         break;
       case 'ENTER_HANDOFF':
         if (phase === 'up') {
+          // If a terminal banner was showing, its text (e.g. "✗ <reason>") would
+          // otherwise linger as stale banner copy during the handoff. Capture the
+          // active state BEFORE clearing the styling, then reset the label to the
+          // neutral controlling-this-page text (the handoff card carries the real
+          // prompt). Only reset when a terminal was active — preserves the existing
+          // label-during-handoff behavior in the non-terminal case.
+          const hadTerminal =
+            bannerEl?.classList.contains('peek-shield-terminal--done') === true ||
+            bannerEl?.classList.contains('peek-shield-terminal--failed') === true;
           clearTerminalStyling();
+          if (hadTerminal) setLabel(null);
           phase = 'handoff';
           buildHandoffCard(cmd.prompt, cmd.framing, cmd.selector, cmd.scope);
           setHostPhase('handoff');
