@@ -17,6 +17,7 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "node --test scripts/lib/*.test.mjs",
     "verify-recipes": "pnpm run build && node scripts/verify-recipes.mjs",
     "verify-recipes:live": "pnpm run build && node scripts/verify-recipes-live.mjs",
     "verify-recipes:wdio": "node scripts/verify-recipes-wdio.mjs",
@@ -30,6 +31,7 @@
     "@modelcontextprotocol/sdk": "^1.29.0",
     "@tracelane/report": "workspace:*",
     "js-yaml": "^4.1.1",
-    "playwright": "^1.61.1"
+    "playwright": "^1.61.1",
+    "smol-toml": "^1.4.0"
   }
 }
