@@ -31,6 +31,7 @@ import { basename, dirname, join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import yaml from 'js-yaml';
 import { recipeSchema } from '../dist/index.js';
+import { checkClientConfig } from './lib/check-client-config.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = join(__dirname, '..', '..', '..');
@@ -239,35 +240,6 @@ function checkAspirationalPolicy(body, packages) {
   return { issues, unpublished, aspirational: aspirationalMarker };
 }
 
-function checkMcpWiring(body, siteName) {
-  if (siteName !== 'peek-docs') return [];
-  const issues = [];
-  for (const m of body.matchAll(JSON_BLOCK_PATTERN)) {
-    const raw = m[1];
-    if (!/peek/i.test(raw)) continue;
-    let parsed;
-    try {
-      parsed = JSON.parse(raw);
-    } catch {
-      continue; // jsonBlocks check will catch parse errors
-    }
-    const peekEntry = parsed?.peek ?? parsed?.mcpServers?.peek;
-    if (!peekEntry) continue;
-    const okCommand = peekEntry.command === 'npx';
-    const okArgs =
-      Array.isArray(peekEntry.args) &&
-      peekEntry.args[0] === '-y' &&
-      peekEntry.args[1] === '@peekdev/mcp@latest';
-    if (!okCommand || !okArgs) {
-      issues.push({
-        severity: 'error',
-        detail: `non-canonical peek MCP entry: ${JSON.stringify(peekEntry)} (expected { command: "npx", args: ["-y", "@peekdev/mcp@latest"] })`,
-      });
-    }
-  }
-  return issues;
-}
-
 // per-recipe verification ───────────────────────────────────────────────
 function verifyRecipe(filepath, site, allSlugs, statusBySlug) {
   const slug = basename(filepath, '.md');
@@ -310,7 +282,10 @@ function verifyRecipe(filepath, site, allSlugs, statusBySlug) {
   const aspirationalReport = checkAspirationalPolicy(body, packages);
   for (const i of aspirationalReport.issues) issues.push({ category: 'aspirationalPolicy', ...i });
 
-  for (const i of checkMcpWiring(body, site.name)) issues.push({ category: 'mcpWiring', ...i });
+  if (site.name === 'peek-docs') {
+    for (const i of checkClientConfig(frontmatter.integrations ?? [], body))
+      issues.push({ category: 'mcpWiring', ...i });
+  }
 
   const errorCount = issues.filter((i) => i.severity === 'error').length;
 

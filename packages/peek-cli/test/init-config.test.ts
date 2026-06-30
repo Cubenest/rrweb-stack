@@ -110,6 +110,34 @@ describe('mergePeekConfig', () => {
     expect(Array.isArray(block.args)).toBe(true);
     expect(block.args).not.toBe(PEEK_MCP_BLOCK.args);
   });
+
+  it('writes the `servers` root key when rootKey is "servers" (VS Code)', () => {
+    const merged = mergePeekConfig(undefined, 'servers');
+    expect(merged).toEqual({
+      servers: { peek: { command: 'npx', args: ['-y', '@peekdev/mcp@latest'] } },
+    });
+    expect('mcpServers' in merged).toBe(false);
+  });
+  it('preserves existing entries under the servers key (no clobber)', () => {
+    const existing = { servers: { other: { command: 'x', args: [] } } };
+    const merged = mergePeekConfig(existing, 'servers');
+    const servers = merged.servers as Record<string, unknown>;
+    expect(Object.keys(servers).sort()).toEqual(['other', 'peek']);
+  });
+  it('rootKey defaults to mcpServers (backward-compatible)', () => {
+    expect(mergePeekConfig(undefined)).toEqual({
+      mcpServers: { peek: { command: 'npx', args: ['-y', '@peekdev/mcp@latest'] } },
+    });
+  });
+  it('the vscode CLIENTS entry declares rootKey "servers"', () => {
+    const vscode = CLIENTS.find((c) => c.id === 'vscode');
+    expect(vscode?.rootKey).toBe('servers');
+  });
+  it('hasPeekServer reads the given rootKey', () => {
+    const cfg = { servers: { peek: { command: 'npx', args: [] } } };
+    expect(hasPeekServer(cfg, 'servers')).toBe(true);
+    expect(hasPeekServer(cfg)).toBe(false);
+  });
 });
 
 describe('hasPeekServer', () => {
