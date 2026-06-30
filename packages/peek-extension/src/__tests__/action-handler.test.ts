@@ -1366,6 +1366,19 @@ describe('handleActionRequest — set_intent banner (Part 2)', () => {
     expect(res.verdict).toBe('allow');
     expect(calls).toEqual([{ tabId: 42, text: 'step 2/4' }]);
   });
+
+  it('set_intent forwards status to onSetIntent', async () => {
+    const calls: Array<{ tabId: number; text: string; status?: 'done' | 'failed' }> = [];
+    await enableOriginAtLevel('https://example.com', 4);
+    const ctx = makeDeps();
+    ctx.deps.onSetIntent = (t, x, s) =>
+      calls.push({ tabId: t, text: x, ...(s !== undefined ? { status: s } : {}) });
+    await handleActionRequest(
+      makeRequest({ action: { type: 'set_intent', text: 'Submitted', status: 'done' } }),
+      ctx.deps,
+    );
+    expect(calls).toEqual([{ tabId: expect.any(Number), text: 'Submitted', status: 'done' }]);
+  });
 });
 
 describe('handleActionRequest — pre-conditions', () => {
