@@ -6,7 +6,7 @@ type: short
 status: published
 publishedAt: 2026-06-30
 integrations: [claude-code, cursor, vscode, windsurf, cline, codex]
-relatedRecipes: [set-up-peek-with-claude-code, set-up-peek-with-cursor, set-up-peek-with-cline-windsurf-codex]
+relatedRecipes: [set-up-peek-with-claude-code, set-up-peek-with-cursor, set-up-peek-with-vscode]
 ---
 
 ## When to reach for peek
@@ -24,7 +24,7 @@ Don't reach for peek for: production/remote data, a live debugger at the current
 
 ## The tools, by job
 
-peek exposes 16 MCP tools across four tiers.
+peek exposes 16 MCP tools across five tiers.
 
 - **Read — session forensics (no consent needed):** `list_recent_sessions`, `get_session_summary`, `get_session_console_errors`, `get_session_network_errors`, `get_user_action_before_error`, `get_dom_snapshot`, `query_dom_history`, `generate_playwright_repro`.
 - **Read — live page (Level 1+, non-mutating):** `get_page_view`, `get_element_detail`.
@@ -38,7 +38,7 @@ peek runs entirely on your machine: a Chrome extension records masked rrweb sess
 
 ## Set peek up for your client
 
-- [Claude Code](/recipes/set-up-peek-with-claude-code) · [Cursor](/recipes/set-up-peek-with-cursor) · [Cline / Windsurf / Codex](/recipes/set-up-peek-with-cline-windsurf-codex)
+- [Claude Code](/recipes/set-up-peek-with-claude-code) · [Cursor](/recipes/set-up-peek-with-cursor) · [VS Code](/recipes/set-up-peek-with-vscode) · [Cline / Windsurf / Codex](/recipes/set-up-peek-with-cline-windsurf-codex)
 
 ## Trust & data handling
 

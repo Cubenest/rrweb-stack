@@ -44,3 +44,18 @@ test('a recipe with no peek config fence is a no-op', () => {
     [],
   );
 });
+// Malformed JSON is intentionally fail-OPEN here: this validator only checks the
+// peek block's SHAPE, and the separate `checkJsonBlocks` check in verify-recipes.mjs
+// is the JSON-parse gate that reports a malformed fence. So an unparseable JSON fence
+// returns [] from checkClientConfig (no double-report) — locked in below. (TOML has no
+// such sibling gate, hence TOML is fail-closed above.)
+test('malformed JSON is fail-open (delegated to the checkJsonBlocks parse gate)', () => {
+  const body = '```json\n{ "mcpServers": { "peek": { broken,, } }\n```';
+  assert.deepEqual(checkClientConfig(['cursor'], body), []);
+});
+test('a jsonc fence with comments is skipped (JSON.parse cannot read it)', () => {
+  const body = '```jsonc\n{\n  // peek server\n  "mcpServers": { "peek": ' + JSON.stringify(CANON) + ' }\n}\n```';
+  // Comments make JSON.parse throw → the fence is skipped (no false error). No recipe
+  // uses jsonc-with-comments today; this documents the current behavior.
+  assert.deepEqual(checkClientConfig(['cursor'], body), []);
+});
