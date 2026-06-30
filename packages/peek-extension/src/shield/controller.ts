@@ -156,13 +156,25 @@ export class ShieldController {
     this.#pushLabel(tabId, s);
   }
 
-  /** Agent-set banner string (Part 2). Empty string clears it. Level-gated upstream. */
-  onSetIntent(tabId: number, text: string): void {
+  /** Agent-set banner string (Part 2). Empty clears it. Optional terminal status (Slice B). */
+  onSetIntent(tabId: number, text: string, status?: 'done' | 'failed'): void {
     const s = this.#state(tabId);
-    // Defensive clip to 80 chars at the SW boundary. The MCP zod already enforces
-    // max(80), but a direct/forged set_intent SW message could exceed it. The
-    // banner renders via textContent (no XSS), so this is purely for tidiness.
-    s.intentLabel = text.length > 0 ? text.slice(0, 80) : null;
+    // Defensive clip to 80 chars at the SW boundary (MCP zod already caps; a forged
+    // SW message could exceed). Banner renders via textContent, so this is tidiness.
+    const clipped = text.length > 0 ? text.slice(0, 80) : null;
+    if (status !== undefined) {
+      // Terminal-of-loop: only meaningful while the shield is up. A new command
+      // (LABEL/RAISE/LOWER/…) supersedes it view-side; not stored in TabState.
+      if (s.phase !== 'up') return;
+      this.#deps.commandView(tabId, {
+        kind: 'TERMINAL',
+        generation: ++this.#generation,
+        status,
+        label: clipped,
+      });
+      return;
+    }
+    s.intentLabel = clipped;
     this.#pushLabel(tabId, s);
   }
 
