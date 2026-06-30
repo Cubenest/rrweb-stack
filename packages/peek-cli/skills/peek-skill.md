@@ -1,13 +1,13 @@
 ---
 name: peek
-description: Use when the user mentions a recent browser session, an error they just reproduced, "what was the user doing before X", DOM state at some past moment, or wants to turn a manual repro into a Playwright test. Peek exposes 14 MCP tools backed by a local SQLite store of rrweb-captured browser sessions.
+description: Use when the user mentions a recent browser session, an error they just reproduced, "what was the user doing before X", DOM state at some past moment, or wants to turn a manual repro into a Playwright test. Peek exposes 16 MCP tools backed by a local SQLite store of rrweb-captured browser sessions.
 ---
 
 # peek — local browser-session inspection
 
 Peek is an OSS browser companion for AI coding agents. A Chrome MV3
 extension records masked rrweb sessions to a local SQLite store
-(`~/.peek/sessions.db`); a stdio MCP server exposes 14 tools that let you
+(`~/.peek/sessions.db`); a stdio MCP server exposes 16 tools that let you
 inspect those sessions and (with consent) drive the live browser.
 
 Peek runs entirely on the user's machine. No telemetry, no cloud, no
@@ -38,9 +38,9 @@ Don't reach for peek when:
   not a live debugger
 - The question is about static code, not runtime behavior
 
-## The 14 tools
+## The 16 tools
 
-**Read tools (8) — usable at permission Level 1 (Read-only) and above:**
+**Session-forensics read tools (8) — usable at permission Level 1 (Read-only) and above:**
 
 | Tool | When |
 |---|---|
@@ -52,6 +52,13 @@ Don't reach for peek when:
 | `get_dom_snapshot` | Returns the DOM at a given timestamp as a serialized tree. Use to understand what was on screen when something happened. |
 | `query_dom_history` | Given a CSS selector + sessionId, returns every snapshot where that element changed. Good for "when did this element appear/disappear/change text". |
 | `generate_playwright_repro` | Turns a session (or a slice of one) into a runnable Playwright test stub. Selectors are best-effort from rrweb metadata; surface to the user for review before assuming they'll work. |
+
+**Live-page read tools (2) — Level 1+; non-mutating; for the page open in the browser RIGHT NOW (not a past recording):**
+
+| Tool | When |
+|---|---|
+| `get_page_view` | A compact, masked list of the live page's interactive/labeled elements, each with a stable `ref` (e.g. `e5`). Pass a `ref` to `execute_action` / `request_authorization` instead of authoring a CSS selector — deterministic and far cheaper than `get_dom_snapshot`'s HTML. Refs expire on navigation; re-call after navigating. |
+| `get_element_detail` | Full masked detail for ONE element by its `ref` from `get_page_view` (role, accessible name/description, aria-*, a curated computed-style bag, value, href, nearby heading, interactive descendants). Call only for the element you need to disambiguate or act on. |
 
 **Act tools (2) — Level 3+; every call is audit-logged to `~/.peek/audit.log`:**
 
@@ -164,7 +171,7 @@ manages it via the side panel's trust dial. A freshly-enabled origin defaults
 to **Level 1 (Read-only)**.
 
 - **Level 0 — Off** — tool surface disabled for the origin (recording suppressed)
-- **Level 1 — Read-only** (default) — all 8 read tools; no action execution
+- **Level 1 — Read-only** (default) — all 10 read tools (8 session-forensics + 2 live-page); no action execution
 - **Level 2 — Suggest-only** — read + non-mutating highlight overlay
   (`suggest_element` / `clear_highlight`); no DOM mutation
 - **Level 3 — Act-with-confirm** — read + `execute_action` (click/type/navigate),
@@ -184,7 +191,7 @@ and stop. Don't retry, don't suggest workarounds.
 
 - Never invent sessions. If `list_recent_sessions` returns empty, say so
   and suggest the user record a session via the extension.
-- Never invent tool names. The 14 above are the entire surface.
+- Never invent tool names. The 16 above are the entire surface.
 - Selector results from `generate_playwright_repro` are derived from
   rrweb event metadata. Surface them for review; don't claim a generated
   test is production-ready without the user confirming.

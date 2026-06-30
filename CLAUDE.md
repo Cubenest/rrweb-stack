@@ -26,7 +26,7 @@ Procedure:
    // peek-docs
    {
      "installCommand": "pnpm install --frozen-lockfile",
-     "buildCommand": "pnpm --filter peek-docs run build",
+     "buildCommand": "pnpm --filter peek-docs... run build",
      "outputDirectory": "apps/peek-docs/dist"
    }
    ```
@@ -44,7 +44,7 @@ Procedure:
    ```json
    {
      "installCommand": "pnpm install --frozen-lockfile",
-     "buildCommand": "pnpm --filter tracelane-docs run build",
+     "buildCommand": "pnpm --filter tracelane-docs... run build",
      "outputDirectory": "apps/tracelane-docs/dist"
    }
    ```
@@ -63,3 +63,10 @@ the full repo). CLI deploys from a subdirectory upload only that directory,
 so the monorepo root is unreachable. Deploying from the root with
 `VERCEL_PROJECT_ID` uploads everything (≈15 MB) and `pnpm --filter` runs the
 build with correct PATH for `cross-env` and `astro`.
+
+The trailing `...` in `--filter peek-docs...` (and `tracelane-docs...`) is
+load-bearing: it builds the docs app **plus its workspace dependencies**
+(`@cubenest/docs-shared`, `@peekdev/todomvc-demo`) in topological order first.
+A bare `--filter peek-docs run build` only builds the app, so on a cache-cold
+Vercel runner `@cubenest/docs-shared/dist` is missing and the Astro build fails
+with `Failed to resolve entry for package "@cubenest/docs-shared"`.
