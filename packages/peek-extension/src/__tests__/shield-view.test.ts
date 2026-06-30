@@ -408,3 +408,123 @@ describe('shield view — page-scope handoff (Part 2)', () => {
     expect(click.defaultPrevented).toBe(true);
   });
 });
+
+// H3.1 Slice C: a page-scope, observe-and-warn destructive-click guard. During a
+// full takeover the human is the actor and EVERY trusted event passes — the
+// guard must surface a heads-up cue WITHOUT ever blocking the human's click.
+describe('shield view — page-scope destructive-click warn guard (H3.1 Slice C)', () => {
+  let hv: ReturnType<typeof createShieldView>;
+
+  beforeEach(() => {
+    sent = [];
+    hv = createShieldView({
+      doc: document,
+      win: window,
+      sendToSw: (m) => sent.push(m),
+      exposeTestSeam: true,
+    });
+  });
+  afterEach(() => {
+    hv.dispose();
+  });
+
+  // Drive the view into a page-scope takeover, mirroring the page-scope tests'
+  // RAISE / ENTER_HANDOFF(scope:'page') command shapes exactly.
+  function enterPageScope(): void {
+    hv.apply({ kind: 'RAISE', generation: 1, label: null });
+    hv.apply({ kind: 'ENTER_HANDOFF', generation: 2, prompt: 'p', framing: 'f', scope: 'page' });
+  }
+
+  it('page-scope: a destructive pointerdown is NEVER blocked but DOES warn', () => {
+    document.body.insertAdjacentHTML('beforeend', '<button id="del">Delete account</button>');
+    enterPageScope();
+    const ev = markTrusted(new MouseEvent('pointerdown', { bubbles: true, cancelable: true }));
+    (document.getElementById('del') as HTMLButtonElement).dispatchEvent(ev);
+    // NEVER blocks the human's click.
+    expect(ev.defaultPrevented).toBe(false);
+    // But a heads-up cue is shown in the (closed) shadow.
+    const cue = hv.__test?.warnCue();
+    expect(cue).not.toBeNull();
+    const text = (cue?.textContent ?? '').toLowerCase();
+    expect(text).toContain('destructive');
+    expect(text).toContain('delete');
+  });
+
+  it('page-scope: a benign pointerdown shows no cue', () => {
+    document.body.insertAdjacentHTML('beforeend', '<button id="ok">Save changes</button>');
+    enterPageScope();
+    const ev = markTrusted(new MouseEvent('pointerdown', { bubbles: true, cancelable: true }));
+    (document.getElementById('ok') as HTMLButtonElement).dispatchEvent(ev);
+    expect(ev.defaultPrevented).toBe(false);
+    expect(hv.__test?.warnCue()).toBeNull();
+  });
+
+  it('guard is page-scope-only: no cue in plain up-phase', () => {
+    document.body.insertAdjacentHTML('beforeend', '<button id="del2">Delete account</button>');
+    hv.apply({ kind: 'RAISE', generation: 1, label: null }); // up only — no ENTER_HANDOFF
+    const ev = markTrusted(new MouseEvent('pointerdown', { bubbles: true, cancelable: true }));
+    (document.getElementById('del2') as HTMLButtonElement).dispatchEvent(ev);
+    expect(hv.__test?.warnCue()).toBeNull();
+  });
+
+  it('guard is page-scope-only: no cue in field-scope handoff', () => {
+    document.body.insertAdjacentHTML(
+      'beforeend',
+      '<input id="ff"><button id="del3">Delete account</button>',
+    );
+    hv.apply({ kind: 'RAISE', generation: 1, label: null });
+    hv.apply({ kind: 'ENTER_HANDOFF', generation: 2, prompt: 'p', framing: 'f', selector: '#ff' });
+    const ev = markTrusted(new MouseEvent('pointerdown', { bubbles: true, cancelable: true }));
+    (document.getElementById('del3') as HTMLButtonElement).dispatchEvent(ev);
+    expect(hv.__test?.warnCue()).toBeNull();
+  });
+
+  it('page-scope: two rapid pointerdowns on the SAME destructive control warn ONCE (dedupe)', () => {
+    document.body.insertAdjacentHTML('beforeend', '<button id="del4">Delete account</button>');
+    enterPageScope();
+    const btn = document.getElementById('del4') as HTMLButtonElement;
+    const first = markTrusted(new MouseEvent('pointerdown', { bubbles: true, cancelable: true }));
+    btn.dispatchEvent(first);
+    const second = markTrusted(new MouseEvent('pointerdown', { bubbles: true, cancelable: true }));
+    btn.dispatchEvent(second);
+    expect(first.defaultPrevented).toBe(false);
+    expect(second.defaultPrevented).toBe(false);
+    // Exactly one cue node in the shadow.
+    expect(hv.__test?.warnCueCount()).toBe(1);
+  });
+
+  // Belt-and-suspenders: the try/catch in onCapture's page-scope branch is the real
+  // guarantee. This proves a detector blow-up never escapes to block the human's click.
+  it('a throwing detector never blocks the human click', async () => {
+    const mod = await import('../shield/destructive-target');
+    const spy = vi.spyOn(mod, 'destructiveClickTarget').mockImplementation(() => {
+      throw new Error('boom');
+    });
+    try {
+      document.body.insertAdjacentHTML('beforeend', '<button id="del5">Delete account</button>');
+      enterPageScope();
+      const ev = markTrusted(new MouseEvent('pointerdown', { bubbles: true, cancelable: true }));
+      const btn = document.getElementById('del5') as HTMLButtonElement;
+      expect(() => btn.dispatchEvent(ev)).not.toThrow();
+      expect(ev.defaultPrevented).toBe(false);
+      expect(hv.__test?.warnCue()).toBeNull(); // detector threw → no cue
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it('page-scope: the warn cue auto-dismisses after its timeout', () => {
+    vi.useFakeTimers();
+    try {
+      document.body.insertAdjacentHTML('beforeend', '<button id="del6">Delete account</button>');
+      enterPageScope();
+      const ev = markTrusted(new MouseEvent('pointerdown', { bubbles: true, cancelable: true }));
+      (document.getElementById('del6') as HTMLButtonElement).dispatchEvent(ev);
+      expect(hv.__test?.warnCue()).not.toBeNull();
+      vi.advanceTimersByTime(2200);
+      expect(hv.__test?.warnCue()).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});

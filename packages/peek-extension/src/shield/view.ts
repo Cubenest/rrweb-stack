@@ -1,5 +1,6 @@
 // src/shield/view.ts
 import { SHIELD_HOST_ATTR } from '../constants';
+import { destructiveClickTarget } from './destructive-target';
 import type { ShieldInbound, ViewCommand } from './protocol';
 
 export { SHIELD_HOST_ATTR };
@@ -113,6 +114,38 @@ export const SHIELD_CSS = `
   transform: translate(-50%, 0);
 }
 @media print { .peek-shield-scrim, .peek-shield-border, .peek-shield-banner, .peek-shield-card { display: none !important; } }
+.peek-shield-warn {
+  all: initial;
+  position: fixed;
+  bottom: 24px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 2147483647;
+  max-width: min(92vw, 460px);
+  box-sizing: border-box;
+  padding: 10px 16px;
+  border-radius: 10px;
+  background: #7c2d12;
+  color: #fff;
+  font: 500 13px/1.4 system-ui, -apple-system, sans-serif;
+  text-align: center;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.35);
+  pointer-events: none;
+}
+@media (prefers-reduced-motion: no-preference) {
+  .peek-shield-warn {
+    animation: peek-shield-warn 2200ms ease-out forwards;
+  }
+  @keyframes peek-shield-warn {
+    0% { opacity: 0; transform: translate(-50%, 8px); }
+    8% { opacity: 1; transform: translate(-50%, 0); }
+    85% { opacity: 1; }
+    100% { opacity: 0; }
+  }
+}
+@media print {
+  .peek-shield-warn { display: none !important; }
+}
 `;
 
 /** Events the capture listener inspects. Scroll/wheel/touchmove deliberately excluded. */
@@ -158,12 +191,29 @@ export interface ShieldView {
     clickResume(): void;
     field(): Element | null;
     phase(): 'down' | 'up' | 'handoff';
+    /** Page-scope warn guard: the live heads-up cue (null when none). */
+    warnCue(): Element | null;
+    /** Page-scope warn guard: count of cue nodes in the shadow (for dedupe assertions). */
+    warnCueCount(): number;
   };
 }
 
 export function createShieldView(deps: ShieldViewDeps): ShieldView {
   const doc = deps.doc ?? document;
   const win = deps.win ?? window;
+
+  const showWarnCue = (root: ShadowRoot, term: string): void => {
+    const cue = doc.createElement('div');
+    cue.className = 'peek-shield-warn';
+    cue.setAttribute('aria-hidden', 'true');
+    // `term` comes from the controlled base-destructive list; textContent (NEVER innerHTML).
+    cue.textContent = `Heads-up: this looks like a destructive action (“${term}”) — peek won't stop you.`;
+    // Single-cue invariant: clear any prior cue so two different controls clicked
+    // within the dismiss window can't stack overlapping toasts.
+    for (const stale of root.querySelectorAll('.peek-shield-warn')) stale.remove();
+    root.append(cue);
+    win.setTimeout(() => cue.remove(), 2200);
+  };
 
   let phase: 'down' | 'up' | 'handoff' = 'down';
   let lastGen = 0;
@@ -185,6 +235,10 @@ export function createShieldView(deps: ShieldViewDeps): ShieldView {
   // also drop the scrim's pointer-events so it never intercepts those clicks.
   let scrimEl: HTMLElement | null = null; // the lockout scrim, ref'd to toggle pointer-events
   let handoffScope: 'field' | 'page' = 'field';
+
+  // Page-scope destructive-click guard (warn-only) state.
+  let lastWarnEl: Element | null = null;
+  let lastWarnTs = 0;
 
   const insideOverlay = (t: EventTarget | null): boolean =>
     host !== null && (t === host || (t instanceof Node && host.contains(t)));
@@ -212,6 +266,17 @@ export function createShieldView(deps: ShieldViewDeps): ShieldView {
     e.stopImmediatePropagation();
   };
 
+  const maybeWarnDestructive = (e: Event): void => {
+    if (shadow === null) return;
+    const hit = destructiveClickTarget(e.target);
+    if (!hit) return;
+    const now = Date.now();
+    if (hit.el === lastWarnEl && now - lastWarnTs < 1500) return; // dedupe rapid repeats on the same control
+    lastWarnEl = hit.el;
+    lastWarnTs = now;
+    showWarnCue(shadow, hit.term);
+  };
+
   const onCapture = (e: Event): void => {
     if (phase === 'down' || !e.isTrusted) return; // peek's synthetic events pass
     // Esc is a kill-switch in plain lockout AND during a page-scope takeover (the
@@ -233,7 +298,19 @@ export function createShieldView(deps: ShieldViewDeps): ShieldView {
     // (e.g. solving a CAPTCHA), so allow every OTHER trusted event through. (Esc
     // is handled above; the up-phase Tab focus-trap below guards on
     // `phase === 'up'` and so is unreachable here.)
-    if (phase === 'handoff' && handoffScope === 'page') return;
+    if (phase === 'handoff' && handoffScope === 'page') {
+      // Full takeover: the human is the actor, every trusted event passes. Observe (never block)
+      // pointerdowns to surface a heads-up before a destructive-looking click. Best-effort: a warn
+      // error must never affect the human's click.
+      if (e.type === 'pointerdown') {
+        try {
+          maybeWarnDestructive(e);
+        } catch {
+          // swallow — warn is advisory only
+        }
+      }
+      return;
+    }
     if (e.type === 'keydown') {
       const ke = e as KeyboardEvent;
       // The lockout focus-trap pins focus to Stop. During handoff the field/card
@@ -311,6 +388,9 @@ export function createShieldView(deps: ShieldViewDeps): ShieldView {
     // intercept clicks again. (EXIT_HANDOFF returns to plain `up` lockout.)
     handoffScope = 'field';
     scrimEl?.style.removeProperty('pointer-events');
+    // Drop any stale warn-dedupe ref so it can't leak across handoff sessions.
+    lastWarnEl = null;
+    lastWarnTs = 0;
   };
 
   const teardownHost = (): void => {
@@ -499,6 +579,8 @@ export function createShieldView(deps: ShieldViewDeps): ShieldView {
         win.removeEventListener(type, onCapture, { capture: true });
       teardownHost();
       phase = 'down';
+      lastWarnEl = null;
+      lastWarnTs = 0;
     },
   };
 
@@ -514,6 +596,8 @@ export function createShieldView(deps: ShieldViewDeps): ShieldView {
       clickResume: () => doneButton?.click(),
       field: () => handoffField,
       phase: () => phase,
+      warnCue: () => shadow?.querySelector('.peek-shield-warn') ?? null,
+      warnCueCount: () => shadow?.querySelectorAll('.peek-shield-warn').length ?? 0,
     };
   }
 
