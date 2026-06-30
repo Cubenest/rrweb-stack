@@ -79,7 +79,10 @@ function writeClientConfig(client: DetectedClient): WriteOutcome {
     return { ok: false, jsonc: false, error: err instanceof Error ? err.message : String(err) };
   }
   try {
-    atomicWriteFileSync(client.configPath, serializeConfig(mergePeekConfig(existing)));
+    atomicWriteFileSync(
+      client.configPath,
+      serializeConfig(mergePeekConfig(existing, client.rootKey ?? 'mcpServers')),
+    );
     return { ok: true };
   } catch (err) {
     return { ok: false, jsonc: false, error: err instanceof Error ? err.message : String(err) };
@@ -117,7 +120,7 @@ async function configureClients(homeDir: string, cwd: string): Promise<DetectedC
   for (const client of chosen) {
     const already = (() => {
       try {
-        return hasPeekServer(readConfig(client.configPath));
+        return hasPeekServer(readConfig(client.configPath), client.rootKey ?? 'mcpServers');
       } catch {
         return false;
       }

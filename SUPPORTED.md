@@ -65,12 +65,29 @@ minor of the latest major receives fixes; older majors are best-effort.
   - `2025-03-26` (the first stable spec release — supported as a
     compat layer for older MCP clients).
   - `2025-11-25` (current spec) — primary target.
-  - Transports: **stdio** + **Streamable HTTP**. The deprecated
-    "HTTP + SSE" transport is **not** supported (per the upstream
-    MCP spec which removed it in 2025-11-25).
+  - Transport: **stdio** only. peek is local-first by design, so the
+    HTTP-based MCP transports — Streamable HTTP, and the deprecated
+    "HTTP + SSE" — are **not** supported (see the `@peekdev/mcp` README).
 - Native-messaging host bridge (`peek-mcp --native-host`) bridges the
   Chrome extension's stdio pipe into the same SQLite store used by
   the MCP server — see ADR-0007.
+
+## Supported MCP clients
+
+peek's MCP server speaks stdio and is verified at two honest levels:
+
+- **MCP stdio conformance (CI-tested):** the server's stdio handshake and
+  tool surface are exercised in CI (`packages/peek-mcp/test/stdio-smoke.test.ts`),
+  independent of any client.
+- **Setup config-verified:** each client's setup recipe carries an MCP config
+  block validated against that client's real config schema by `verify-recipes`
+  (the correct root key per client — `servers` for VS Code, `mcpServers` for
+  the others — and the Codex `config.toml` shape): **Claude Code, Cursor,
+  VS Code, Windsurf, Cline, Codex CLI.**
+
+End-to-end "launch peek inside client X" is **not** automated for the GUI
+clients (Cursor / VS Code / Windsurf / Cline); those setup steps are manual.
+We don't claim "tested with X" beyond the two levels above.
 
 ### `@peekdev/cli`
 

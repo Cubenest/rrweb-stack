@@ -54,6 +54,12 @@ export interface ClientDescriptor {
    * §K.5 transcript). `true` ⇒ detection/merge are advisory only.
    */
   readonly manualOnly?: boolean;
+  /**
+   * The top-level key under which MCP servers are registered in this client's
+   * config file. VS Code's `.vscode/mcp.json` uses `"servers"`; every other
+   * supported client uses the default `"mcpServers"`.
+   */
+  readonly rootKey?: 'mcpServers' | 'servers';
 }
 
 /**
@@ -79,6 +85,7 @@ export const CLIENTS: readonly ClientDescriptor[] = [
     label: 'VS Code',
     scope: 'project',
     pathSegments: ['.vscode', 'mcp.json'],
+    rootKey: 'servers',
   },
   {
     id: 'windsurf',
@@ -127,47 +134,61 @@ export function detectClients(
 
 /**
  * Merge the peek MCP block into an existing (possibly undefined) parsed config,
- * returning a NEW object (never mutating the input). Any pre-existing
- * `mcpServers` entries are preserved; only the `peek` key is set/overwritten.
- * Non-`mcpServers` top-level keys (e.g. a user's other Claude Code settings)
+ * returning a NEW object (never mutating the input). Any pre-existing entries
+ * under `rootKey` are preserved; only the `peek` key is set/overwritten.
+ * Non-`rootKey` top-level keys (e.g. a user's other Claude Code settings)
  * are carried through untouched.
  *
- * Throws if `existing` is present but its `mcpServers` is a non-object (a
+ * `rootKey` defaults to `"mcpServers"` (used by Claude Code, Cursor, Windsurf).
+ * Pass `"servers"` for VS Code's `.vscode/mcp.json`.
+ *
+ * Throws if `existing` is present but its `rootKey` value is a non-object (a
  * malformed config the user must fix by hand, rather than us clobbering it).
  */
-export function mergePeekConfig(existing: unknown): Record<string, unknown> {
+export function mergePeekConfig(
+  existing: unknown,
+  rootKey: 'mcpServers' | 'servers' = 'mcpServers',
+): Record<string, unknown> {
   if (existing === undefined || existing === null) {
     return {
-      mcpServers: { [PEEK_SERVER_KEY]: { ...PEEK_MCP_BLOCK, args: [...PEEK_MCP_BLOCK.args] } },
+      [rootKey]: { [PEEK_SERVER_KEY]: { ...PEEK_MCP_BLOCK, args: [...PEEK_MCP_BLOCK.args] } },
     };
   }
   if (typeof existing !== 'object' || Array.isArray(existing)) {
     throw new Error('existing config is not a JSON object');
   }
   const base = existing as Record<string, unknown>;
-  const existingServers = base.mcpServers;
+  const existingServers = base[rootKey];
   if (
     existingServers !== undefined &&
     (typeof existingServers !== 'object' ||
       existingServers === null ||
       Array.isArray(existingServers))
   ) {
-    throw new Error('existing config has a non-object "mcpServers" — refusing to clobber it');
+    throw new Error(`existing config has a non-object "${rootKey}" — refusing to clobber it`);
   }
   const servers = (existingServers as Record<string, unknown> | undefined) ?? {};
   return {
     ...base,
-    mcpServers: {
+    [rootKey]: {
       ...servers,
       [PEEK_SERVER_KEY]: { ...PEEK_MCP_BLOCK, args: [...PEEK_MCP_BLOCK.args] },
     },
   };
 }
 
-/** True if a parsed config already registers a `peek` MCP server. */
-export function hasPeekServer(existing: unknown): boolean {
+/**
+ * True if a parsed config already registers a `peek` MCP server.
+ *
+ * `rootKey` defaults to `"mcpServers"`. Pass `"servers"` for VS Code's
+ * `.vscode/mcp.json`.
+ */
+export function hasPeekServer(
+  existing: unknown,
+  rootKey: 'mcpServers' | 'servers' = 'mcpServers',
+): boolean {
   if (typeof existing !== 'object' || existing === null || Array.isArray(existing)) return false;
-  const servers = (existing as Record<string, unknown>).mcpServers;
+  const servers = (existing as Record<string, unknown>)[rootKey];
   if (typeof servers !== 'object' || servers === null || Array.isArray(servers)) return false;
   return PEEK_SERVER_KEY in (servers as Record<string, unknown>);
 }
