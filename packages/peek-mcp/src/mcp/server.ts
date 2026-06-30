@@ -74,7 +74,7 @@ export const SERVER_INSTRUCTIONS =
   'after a mutating action, re-read the target with get_element_detail to confirm ' +
   'it now holds the value you intended, and get_page_view to confirm no validation ' +
   'error appeared, before moving on (e.g. set_intent to the next step). If it did ' +
-  'not take, stop and report via set_intent rather than retrying blindly. ' +
+  "not take, stop and report via set_intent (status:'failed') rather than retrying blindly; when the whole task is done, call set_intent(status:'done'). " +
   'Password/email/PII field values come back masked, so verify those by the ' +
   'absence of an error, not by value.';
 
@@ -787,7 +787,7 @@ export function createPeekMcpServer(options: CreatePeekMcpServerOptions = {}): P
       {
         title: 'Set the control-shield banner text',
         description:
-          "Set the agent's status banner shown on the control shield (e.g. 'Applying to Senior Frontend · step 2/4'), so the user can follow what you're doing. Up to 80 chars, plain text. Requires the origin at Level 4 with the shield up; auto-allowed. Recorded to ~/.peek/audit.log. Advance the step only after the previous step verified (re-read it took); on a failure, set a 'stopped — <what> didn't take' status instead of advancing.",
+          "Set the agent's status banner shown on the control shield (e.g. 'Applying to Senior Frontend · step 2/4'), so the user can follow what you're doing. Up to 80 chars, plain text. Requires the origin at Level 4 with the shield up; auto-allowed. Recorded to ~/.peek/audit.log. Advance the step only after the previous step verified (re-read it took); on a failure, set a 'stopped — <what> didn't take' status instead of advancing. End an assisted-apply loop with status:'done' (success) or status:'failed' (with a brief reason) so the user sees a clear outcome.",
         inputSchema: {
           sessionId: z
             .string()
@@ -800,6 +800,12 @@ export function createPeekMcpServer(options: CreatePeekMcpServerOptions = {}): P
             .describe(
               'Status text shown in the shield banner (<=80 chars). Pass an empty string to clear it.',
             ),
+          status: z
+            .enum(['done', 'failed'])
+            .optional()
+            .describe(
+              "Set 'done' when the task is fully complete, or 'failed' when you stopped because a step didn't take, to show a terminal banner on the shield. Omit for an ongoing status update.",
+            ),
         },
         annotations: {
           readOnlyHint: false,
@@ -808,11 +814,11 @@ export function createPeekMcpServer(options: CreatePeekMcpServerOptions = {}): P
           openWorldHint: true,
         },
       },
-      async ({ sessionId, text }) => {
+      async ({ sessionId, text, status }) => {
         return await dispatchActTool({
           tool: 'execute_action',
           sessionId,
-          action: { type: 'set_intent', text },
+          action: { type: 'set_intent', text, ...(status !== undefined ? { status } : {}) },
         });
       },
     );

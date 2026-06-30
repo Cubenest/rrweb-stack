@@ -938,6 +938,53 @@ describe('peek MCP server: set_intent dispatch (control-shield banner)', () => {
       await close();
     }
   });
+
+  it('set_intent forwards status into the dispatched action', async () => {
+    const { dbPath, eventsDir } = seedStore(dir, [loginSession()]);
+    const bridge = new RegistryBackedHostBridge();
+    const { client, close } = await connectClient({ dbPath, eventsDir, hostBridge: bridge });
+    try {
+      const callP = client.callTool({
+        name: 'set_intent',
+        arguments: { sessionId: 's_login', text: 'Submitted', status: 'done' },
+      });
+      for (let i = 0; i < 20 && bridge.pending.length === 0; i++) {
+        await new Promise((r) => setTimeout(r, 5));
+      }
+      expect(bridge.pending[0]?.req.tool).toBe('execute_action');
+      expect(bridge.pending[0]?.req.action).toEqual({
+        type: 'set_intent',
+        text: 'Submitted',
+        status: 'done',
+      });
+      bridge.resolveNext({ verdict: 'allow', result: 'ok', approver: 'level-4-auto' });
+      await callP;
+    } finally {
+      await close();
+    }
+  });
+
+  it('set_intent without status dispatches an action with no status key', async () => {
+    const { dbPath, eventsDir } = seedStore(dir, [loginSession()]);
+    const bridge = new RegistryBackedHostBridge();
+    const { client, close } = await connectClient({ dbPath, eventsDir, hostBridge: bridge });
+    try {
+      const callP = client.callTool({
+        name: 'set_intent',
+        arguments: { sessionId: 's_login', text: 'step 2/4' },
+      });
+      for (let i = 0; i < 20 && bridge.pending.length === 0; i++) {
+        await new Promise((r) => setTimeout(r, 5));
+      }
+      const action = bridge.pending[0]?.req.action as Record<string, unknown>;
+      expect(action).toEqual({ type: 'set_intent', text: 'step 2/4' });
+      expect('status' in action).toBe(false);
+      bridge.resolveNext({ verdict: 'allow', result: 'ok', approver: 'level-4-auto' });
+      await callP;
+    } finally {
+      await close();
+    }
+  });
 });
 
 describe('peek MCP server: request_user_input (Plan B input handoff)', () => {
