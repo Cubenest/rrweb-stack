@@ -118,6 +118,9 @@ export type DblClickAction = z.infer<typeof DblClickActionSchema>;
 export const SetIntentActionSchema = z.object({
   type: z.literal('set_intent'),
   text: z.string().max(80),
+  // Terminal of an assisted-apply loop: 'done' (success) / 'failed' (stopped). Optional —
+  // omit for an ongoing status update. Drives the shield's terminal banner (Slice B).
+  status: z.enum(['done', 'failed']).optional(),
 });
 export type SetIntentAction = z.infer<typeof SetIntentActionSchema>;
 
@@ -246,7 +249,11 @@ export function redactActionForAudit(action: Action): Action {
       } as Action;
     case 'set_intent':
       // AI-authored status string (not secret); clipped defensively (schema also caps 80).
-      return { type: 'set_intent', text: action.text.slice(0, 80) } as Action;
+      return {
+        type: 'set_intent',
+        text: action.text.slice(0, 80),
+        ...(action.status !== undefined ? { status: action.status } : {}),
+      } as Action;
     default:
       return action;
   }

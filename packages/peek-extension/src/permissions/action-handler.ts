@@ -282,8 +282,8 @@ export interface ActionHandlerDeps {
    * otherwise dispatch to the Stop button. Optional; defaults to false.
    */
   isShieldActive?(tabId: number): boolean;
-  /** Part 2: set the agent's banner string (Level ≥4; fire-and-forget). */
-  onSetIntent?(tabId: number, text: string): void;
+  /** Part 2: set the agent's banner string (Level ≥4; fire-and-forget). Optional terminal status (Slice B). */
+  onSetIntent?(tabId: number, text: string, status?: 'done' | 'failed'): void;
   /** Plan B: run the handoff (blocks until resume/timeout/stop). */
   enterHandoff?(input: {
     tabId: number;
@@ -500,7 +500,7 @@ export async function handleActionRequest(
         error: `set_intent requires Level 4 (level ${effectiveLevel})`,
       });
     }
-    deps.onSetIntent?.(tab.id, request.action.text);
+    deps.onSetIntent?.(tab.id, request.action.text, request.action.status);
     return result(request, 'allow', 'ok', { approver: 'level-4-auto' });
   }
 

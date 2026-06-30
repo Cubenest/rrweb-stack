@@ -91,6 +91,14 @@ You perform the final submit yourself, from a page-scope handoff, after reviewin
 
 Heads-up: `password`/email/PII field values come back **masked** (the same masking the recorder applies), so the agent can't confirm those by value — it verifies them by the *absence* of an error instead.
 
+## Signal the outcome
+
+When the loop is finished, have the agent end with a clear terminal status so you can see how it went at a glance:
+
+> When you've completed all the steps, call `set_intent` with `status: "done"` and a short summary. If you had to stop because a step didn't take, call `set_intent` with `status: "failed"` and a one-line reason.
+
+The shield shows this as a green "done" banner (which clears itself after a few seconds) or a red "failed" banner that stays up until something supersedes it — you Stop, Resume, or lower the trust level, or the agent moves on with another status — so a failed run never quietly disappears on its own.
+
 ## Safety recap — honest about what is enforced vs convention
 
 It matters to be precise about which protections are real gates and which are just good habits.

@@ -15,6 +15,7 @@ export type ShieldPhase = 'down' | 'up' | 'handoff';
 export type ViewCommand = { generation: number } & (
   | { kind: 'RAISE'; label: string | null }
   | { kind: 'LABEL'; label: string | null }
+  | { kind: 'TERMINAL'; status: 'done' | 'failed'; label: string | null }
   | { kind: 'LOWER' }
   | {
       kind: 'ENTER_HANDOFF';
@@ -43,9 +44,14 @@ export function isViewCommand(msg: unknown): msg is ViewCommand {
     framing?: unknown;
     selector?: unknown;
     scope?: unknown;
+    status?: unknown;
   };
   if (typeof m.generation !== 'number') return false;
   if (m.kind === 'RAISE' || m.kind === 'LABEL') {
+    return m.label === null || typeof m.label === 'string';
+  }
+  if (m.kind === 'TERMINAL') {
+    if (m.status !== 'done' && m.status !== 'failed') return false;
     return m.label === null || typeof m.label === 'string';
   }
   if (m.kind === 'LOWER' || m.kind === 'EXIT_HANDOFF') return true;

@@ -330,4 +330,87 @@ describe('ShieldController — intent + scope (Part 2)', () => {
         .at(-1),
     ).toBe('Z');
   });
+  it('onSetIntent with status:done emits a TERMINAL command (not LABEL)', () => {
+    const h = harness();
+    h.c.onLevelChanged(1, 'https://a.test', 4);
+    h.c.onSetIntent(1, 'Application submitted', 'done');
+    const terminals = h.commands.filter((x) => x.cmd.kind === 'TERMINAL');
+    expect(terminals).toHaveLength(1);
+    expect(terminals[0]?.cmd).toMatchObject({
+      kind: 'TERMINAL',
+      status: 'done',
+      label: 'Application submitted',
+    });
+  });
+  it('onSetIntent with status:failed emits a failed TERMINAL', () => {
+    const h = harness();
+    h.c.onLevelChanged(1, 'https://a.test', 4);
+    h.c.onSetIntent(1, "stopped — salary didn't take", 'failed');
+    expect(h.commands.filter((x) => x.cmd.kind === 'TERMINAL')[0]?.cmd).toMatchObject({
+      status: 'failed',
+      label: "stopped — salary didn't take",
+    });
+  });
+  it('onSetIntent without status still emits a LABEL (backward-compatible)', () => {
+    const h = harness();
+    h.c.onLevelChanged(1, 'https://a.test', 4);
+    h.c.onSetIntent(1, 'step 2/4');
+    expect(h.commands.filter((x) => x.cmd.kind === 'TERMINAL')).toHaveLength(0);
+    expect(h.commands.filter((x) => x.cmd.kind === 'LABEL')).not.toHaveLength(0);
+  });
+  it('onSetIntent with status while down emits nothing', () => {
+    const h = harness();
+    h.c.onSetIntent(1, 'done?', 'done'); // never raised → phase down
+    expect(h.commands.filter((x) => x.cmd.kind === 'TERMINAL')).toHaveLength(0);
+  });
+
+  it('failed terminal is re-emitted after a reconcile (survives SW wake)', async () => {
+    const h = harness();
+    h.c.onLevelChanged(1, 'https://a.test', 4);
+    h.c.onSetIntent(1, 'oops', 'failed');
+    const firstTerminalIdx = h.commands.findIndex((x) => x.cmd.kind === 'TERMINAL');
+    expect(firstTerminalIdx).toBeGreaterThanOrEqual(0);
+    // SW eviction + wake → re-handshake funnels through reconcile → #raise.
+    await h.c.reconcile(1, 'https://a.test');
+    const terminals = h.commands.filter((x) => x.cmd.kind === 'TERMINAL');
+    expect(terminals.length).toBeGreaterThanOrEqual(2);
+    expect(terminals.at(-1)?.cmd).toMatchObject({ status: 'failed', label: 'oops' });
+    // The re-emit lands AFTER a RAISE (the reconcile's #raise repaired the view first).
+    const raiseAfterFirst = h.commands
+      .slice(firstTerminalIdx + 1)
+      .some((x) => x.cmd.kind === 'RAISE');
+    expect(raiseAfterFirst).toBe(true);
+  });
+
+  it('done terminal is NOT re-emitted after a reconcile', async () => {
+    const h = harness();
+    h.c.onLevelChanged(1, 'https://a.test', 4);
+    h.c.onSetIntent(1, 'ok', 'done');
+    await h.c.reconcile(1, 'https://a.test');
+    expect(h.commands.filter((x) => x.cmd.kind === 'TERMINAL')).toHaveLength(1);
+  });
+
+  it('a no-status set_intent clears the persisted failed', async () => {
+    const h = harness();
+    h.c.onLevelChanged(1, 'https://a.test', 4);
+    h.c.onSetIntent(1, 'oops', 'failed');
+    h.c.onSetIntent(1, 'step 2'); // ongoing label supersedes the failed terminal
+    const beforeReconcile = h.commands.filter((x) => x.cmd.kind === 'TERMINAL').length;
+    await h.c.reconcile(1, 'https://a.test');
+    // No NEW terminal after the reconcile — the persisted failed was cleared.
+    expect(h.commands.filter((x) => x.cmd.kind === 'TERMINAL')).toHaveLength(beforeReconcile);
+  });
+
+  it('enterHandoff clears the persisted failed', async () => {
+    const h = harness();
+    h.c.onLevelChanged(1, 'https://a.test', 4);
+    h.c.onSetIntent(1, 'oops', 'failed');
+    // A handoff supersedes the terminal (mirrors the view clearing it on ENTER_HANDOFF).
+    void h.c.enterHandoff(1, { prompt: 'p', framing: 'f', readBack: false, timeoutMs: 1000 });
+    const before = h.commands.filter((x) => x.cmd.kind === 'TERMINAL').length;
+    // A reconcile while in handoff aborts the handoff and re-raises; assert the
+    // re-raise does NOT re-emit a terminal (enterHandoff cleared s.terminal).
+    await h.c.reconcile(1, 'https://a.test');
+    expect(h.commands.filter((x) => x.cmd.kind === 'TERMINAL')).toHaveLength(before);
+  });
 });

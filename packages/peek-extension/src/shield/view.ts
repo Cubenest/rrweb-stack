@@ -43,6 +43,8 @@ export const SHIELD_CSS = `
   font: 13px/1.4 system-ui, sans-serif;
   pointer-events: auto;
 }
+.peek-shield-banner.peek-shield-terminal--done { background: #14532d; }
+.peek-shield-banner.peek-shield-terminal--failed { background: #7f1d1d; }
 .peek-shield-stop {
   all: unset;
   cursor: pointer;
@@ -195,6 +197,8 @@ export interface ShieldView {
     warnCue(): Element | null;
     /** Page-scope warn guard: count of cue nodes in the shadow (for dedupe assertions). */
     warnCueCount(): number;
+    terminal(): 'done' | 'failed' | null;
+    bannerText(): string | null;
   };
 }
 
@@ -222,6 +226,12 @@ export function createShieldView(deps: ShieldViewDeps): ShieldView {
   let stopButton: HTMLButtonElement | null = null;
   let labelEl: HTMLElement | null = null;
   let observer: MutationObserver | null = null;
+
+  // Terminal banner (Slice B): a `done`/`failed` cue rendered into the existing
+  // closed-shadow banner. `done` auto-dismisses; `failed` persists.
+  const TERMINAL_DONE_MS = 5000;
+  let bannerEl: HTMLElement | null = null;
+  let terminalTimer: ReturnType<typeof win.setTimeout> | null = null;
 
   // Plan B handoff state.
   let cardEl: HTMLElement | null = null;
@@ -345,6 +355,7 @@ export function createShieldView(deps: ShieldViewDeps): ShieldView {
 
     const banner = doc.createElement('div');
     banner.className = 'peek-shield-banner';
+    bannerEl = banner;
     banner.setAttribute('role', 'region');
     banner.setAttribute('aria-label', 'peek is controlling this page');
     labelEl = doc.createElement('span');
@@ -395,6 +406,7 @@ export function createShieldView(deps: ShieldViewDeps): ShieldView {
 
   const teardownHost = (): void => {
     teardownHandoffCard();
+    clearTerminalStyling();
     observer?.disconnect();
     observer = null;
     host?.remove();
@@ -402,11 +414,37 @@ export function createShieldView(deps: ShieldViewDeps): ShieldView {
     shadow = null;
     stopButton = null;
     labelEl = null;
+    bannerEl = null;
     scrimEl = null;
   };
 
   const setLabel = (label: string | null): void => {
     if (labelEl) labelEl.textContent = `🟣 ${label ?? 'peek is controlling this page'}`;
+  };
+
+  const clearTerminalStyling = (): void => {
+    if (terminalTimer !== null) {
+      win.clearTimeout(terminalTimer);
+      terminalTimer = null;
+    }
+    bannerEl?.classList.remove('peek-shield-terminal--done', 'peek-shield-terminal--failed');
+    bannerEl?.removeAttribute('aria-live');
+  };
+  const showTerminal = (status: 'done' | 'failed', label: string | null): void => {
+    if (!bannerEl || !labelEl) return;
+    clearTerminalStyling();
+    const glyph = status === 'done' ? '✓' : '✗';
+    labelEl.textContent = label && label.length > 0 ? `${glyph} ${label}` : glyph;
+    bannerEl.classList.add(
+      status === 'done' ? 'peek-shield-terminal--done' : 'peek-shield-terminal--failed',
+    );
+    bannerEl.setAttribute('aria-live', status === 'done' ? 'polite' : 'assertive');
+    if (status === 'done') {
+      terminalTimer = win.setTimeout(() => {
+        clearTerminalStyling();
+        setLabel(null);
+      }, TERMINAL_DONE_MS);
+    }
   };
 
   const setHostPhase = (p: 'down' | 'up' | 'handoff'): void => {
@@ -542,11 +580,18 @@ export function createShieldView(deps: ShieldViewDeps): ShieldView {
         if (phase === 'handoff') teardownHandoffCard();
         phase = 'up';
         buildHost();
+        clearTerminalStyling();
         setLabel(cmd.label);
         setHostPhase('up');
         break;
       case 'LABEL':
-        if (phase === 'up') setLabel(cmd.label);
+        if (phase === 'up') {
+          clearTerminalStyling();
+          setLabel(cmd.label);
+        }
+        break;
+      case 'TERMINAL':
+        if (phase === 'up') showTerminal(cmd.status, cmd.label);
         break;
       case 'LOWER':
         phase = 'down';
@@ -554,6 +599,17 @@ export function createShieldView(deps: ShieldViewDeps): ShieldView {
         break;
       case 'ENTER_HANDOFF':
         if (phase === 'up') {
+          // If a terminal banner was showing, its text (e.g. "✗ <reason>") would
+          // otherwise linger as stale banner copy during the handoff. Capture the
+          // active state BEFORE clearing the styling, then reset the label to the
+          // neutral controlling-this-page text (the handoff card carries the real
+          // prompt). Only reset when a terminal was active — preserves the existing
+          // label-during-handoff behavior in the non-terminal case.
+          const hadTerminal =
+            bannerEl?.classList.contains('peek-shield-terminal--done') === true ||
+            bannerEl?.classList.contains('peek-shield-terminal--failed') === true;
+          clearTerminalStyling();
+          if (hadTerminal) setLabel(null);
           phase = 'handoff';
           buildHandoffCard(cmd.prompt, cmd.framing, cmd.selector, cmd.scope);
           setHostPhase('handoff');
@@ -598,6 +654,13 @@ export function createShieldView(deps: ShieldViewDeps): ShieldView {
       phase: () => phase,
       warnCue: () => shadow?.querySelector('.peek-shield-warn') ?? null,
       warnCueCount: () => shadow?.querySelectorAll('.peek-shield-warn').length ?? 0,
+      terminal: () =>
+        bannerEl?.classList.contains('peek-shield-terminal--done')
+          ? 'done'
+          : bannerEl?.classList.contains('peek-shield-terminal--failed')
+            ? 'failed'
+            : null,
+      bannerText: () => labelEl?.textContent ?? null,
     };
   }
 

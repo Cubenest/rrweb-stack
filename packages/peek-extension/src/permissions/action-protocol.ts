@@ -95,6 +95,8 @@ export interface RequestUserInputAction {
 export interface SetIntentAction {
   type: 'set_intent';
   text: string;
+  /** Terminal-of-loop status (Slice B). Absent = ongoing label. */
+  status?: 'done' | 'failed';
 }
 /** R1 — live page-view snapshot (non-mutating read). Returns nodes in `details`. */
 export interface PageViewAction {

@@ -490,8 +490,8 @@ export default defineBackground({
           },
           // Part 2: agent-set control-shield banner string (Level ≥4;
           // fire-and-forget, pre-gate auto-allow).
-          onSetIntent(tabId, text) {
-            shield.onSetIntent(tabId, text);
+          onSetIntent(tabId, text, status) {
+            shield.onSetIntent(tabId, text, status);
           },
           // Plan B: shield active means up OR already in a handoff — a
           // selector-less `enter` must reject in BOTH (don't dispatch to Stop).

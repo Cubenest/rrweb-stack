@@ -528,3 +528,121 @@ describe('shield view — page-scope destructive-click warn guard (H3.1 Slice C)
     }
   });
 });
+
+describe('shield view — terminal banner (Slice B)', () => {
+  let tv: ReturnType<typeof createShieldView>;
+  beforeEach(() => {
+    sent = [];
+    tv = createShieldView({
+      doc: document,
+      win: window,
+      sendToSw: (m) => sent.push(m),
+      exposeTestSeam: true,
+    });
+  });
+  afterEach(() => tv.dispose());
+
+  it('TERMINAL done → green banner with the text, then auto-dismisses to the default label', () => {
+    vi.useFakeTimers();
+    try {
+      tv.apply({ kind: 'RAISE', generation: 1, label: 'Working' });
+      tv.apply({ kind: 'TERMINAL', generation: 2, status: 'done', label: 'Application submitted' });
+      expect(tv.__test?.terminal?.()).toBe('done');
+      expect(tv.__test?.bannerText?.()).toContain('Application submitted');
+      vi.advanceTimersByTime(5000);
+      expect(tv.__test?.terminal?.()).toBeNull();
+      expect(tv.__test?.bannerText?.()).toContain('peek is controlling this page');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('TERMINAL failed → red banner that persists (no auto-dismiss)', () => {
+    vi.useFakeTimers();
+    try {
+      tv.apply({ kind: 'RAISE', generation: 1, label: 'Working' });
+      tv.apply({ kind: 'TERMINAL', generation: 2, status: 'failed', label: "salary didn't take" });
+      expect(tv.__test?.terminal?.()).toBe('failed');
+      vi.advanceTimersByTime(60000);
+      expect(tv.__test?.terminal?.()).toBe('failed');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('a later LABEL supersedes the terminal banner', () => {
+    tv.apply({ kind: 'RAISE', generation: 1, label: 'Working' });
+    tv.apply({ kind: 'TERMINAL', generation: 2, status: 'failed', label: 'nope' });
+    tv.apply({ kind: 'LABEL', generation: 3, label: 'step 3/4' });
+    expect(tv.__test?.terminal?.()).toBeNull();
+    expect(tv.__test?.bannerText?.()).toContain('step 3/4');
+  });
+
+  it('TERMINAL while down is ignored', () => {
+    tv.apply({ kind: 'TERMINAL', generation: 1, status: 'done', label: 'x' });
+    expect(tv.__test?.terminal?.()).toBeNull();
+  });
+
+  it('ENTER_HANDOFF clears a pending done-terminal so its timer cannot fire mid-handoff', () => {
+    vi.useFakeTimers();
+    try {
+      tv.apply({ kind: 'RAISE', generation: 1, label: 'Working' });
+      tv.apply({ kind: 'TERMINAL', generation: 2, status: 'done', label: 'submitted' });
+      tv.apply({
+        kind: 'ENTER_HANDOFF',
+        generation: 3,
+        prompt: 'Enter code',
+        framing: 'peek did not write this',
+      });
+      expect(tv.__test?.terminal?.()).toBeNull();
+      expect(() => vi.advanceTimersByTime(5000)).not.toThrow();
+      expect(tv.__test?.terminal?.()).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('a LABEL within the done window cancels the timer so it never resets the new label', () => {
+    vi.useFakeTimers();
+    try {
+      tv.apply({ kind: 'RAISE', generation: 1, label: 'Working' });
+      tv.apply({ kind: 'TERMINAL', generation: 2, status: 'done', label: 'submitted' });
+      vi.advanceTimersByTime(2000);
+      tv.apply({ kind: 'LABEL', generation: 3, label: 'step 3/4' });
+      vi.advanceTimersByTime(5000);
+      expect(tv.__test?.bannerText?.()).toContain('step 3/4');
+      expect(tv.__test?.terminal?.()).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('dispose while a done-timer is pending does not throw when the timer would fire', () => {
+    vi.useFakeTimers();
+    try {
+      tv.apply({ kind: 'RAISE', generation: 1, label: 'Working' });
+      tv.apply({ kind: 'TERMINAL', generation: 2, status: 'done', label: 'submitted' });
+      tv.dispose();
+      expect(() => vi.advanceTimersByTime(5000)).not.toThrow();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('ENTER_HANDOFF resets stale terminal text (no leftover ✗ / failed text in the banner)', () => {
+    tv.apply({ kind: 'RAISE', generation: 1, label: 'Working' });
+    tv.apply({ kind: 'TERMINAL', generation: 2, status: 'failed', label: 'salary' });
+    expect(tv.__test?.bannerText?.()).toContain('salary');
+    tv.apply({
+      kind: 'ENTER_HANDOFF',
+      generation: 3,
+      prompt: 'Enter code',
+      framing: 'peek did not write this',
+    });
+    // The terminal styling is cleared AND the stale terminal text is reset to the
+    // neutral controlling-this-page label (the handoff card carries the real prompt).
+    expect(tv.__test?.terminal?.()).toBeNull();
+    expect(tv.__test?.bannerText?.()).not.toContain('salary');
+    expect(tv.__test?.bannerText?.()).toContain('peek is controlling this page');
+  });
+});

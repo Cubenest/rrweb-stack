@@ -38,6 +38,13 @@ interface TabState {
   // Agent-set banner string (Part 2). When non-null it wins over `label` in the
   // banner; cleared on #lower and by onSetIntent('').
   intentLabel: string | null;
+  // Persisted terminal-of-loop (Slice B). Only `failed` is stored: `done`
+  // auto-dismisses view-side after ~5s and needn't survive a re-raise. Re-emitted
+  // from #raise so a `failed` banner survives an MV3 SW eviction + wake (which
+  // funnels through reconcile → #raise → RAISE, and the view's RAISE case clears
+  // the terminal). Cleared by any superseding state (new ongoing label, per-action
+  // label, handoff, lower). `| undefined` (not bare `?`) for exactOptionalPropertyTypes.
+  terminal?: { status: 'failed'; label: string | null } | undefined;
   // `| undefined` (not bare `?`) so the take-and-clear `= undefined` slot reset
   // is legal under exactOptionalPropertyTypes.
   handoff?: HandoffRecord | undefined;
@@ -113,6 +120,18 @@ export class ShieldController {
       generation: ++this.#generation,
       label: this.#effectiveLabel(s),
     });
+    // Re-emit a persisted `failed` terminal AFTER the RAISE (which clears the
+    // view's terminal banner). Keeps a `failed` outcome visible across an MV3 SW
+    // eviction + wake / reconcile / onViewReady re-handshake / onLevelChanged /
+    // onHostConnectionChanged — all of which funnel through here.
+    if (s.terminal) {
+      this.#deps.commandView(tabId, {
+        kind: 'TERMINAL',
+        generation: ++this.#generation,
+        status: s.terminal.status,
+        label: s.terminal.label,
+      });
+    }
   }
 
   #lower(tabId: number, s: TabState): void {
@@ -121,6 +140,7 @@ export class ShieldController {
     s.phase = 'down';
     s.label = null;
     s.intentLabel = null;
+    s.terminal = undefined;
     this.#deps.commandView(tabId, { kind: 'LOWER', generation: ++this.#generation });
   }
 
@@ -151,18 +171,34 @@ export class ShieldController {
     const s = this.#state(tabId);
     if (s.phase !== 'up') return;
     s.label = label;
+    s.terminal = undefined; // a new per-action label supersedes the terminal
     // Route through #pushLabel so a set intent automatically wins over the
     // per-action label.
     this.#pushLabel(tabId, s);
   }
 
-  /** Agent-set banner string (Part 2). Empty string clears it. Level-gated upstream. */
-  onSetIntent(tabId: number, text: string): void {
+  /** Agent-set banner string (Part 2). Empty clears it. Optional terminal status (Slice B). */
+  onSetIntent(tabId: number, text: string, status?: 'done' | 'failed'): void {
     const s = this.#state(tabId);
-    // Defensive clip to 80 chars at the SW boundary. The MCP zod already enforces
-    // max(80), but a direct/forged set_intent SW message could exceed it. The
-    // banner renders via textContent (no XSS), so this is purely for tidiness.
-    s.intentLabel = text.length > 0 ? text.slice(0, 80) : null;
+    // Defensive clip to 80 chars at the SW boundary (MCP zod already caps; a forged
+    // SW message could exceed). Banner renders via textContent, so this is tidiness.
+    const clipped = text.length > 0 ? text.slice(0, 80) : null;
+    if (status !== undefined) {
+      // Terminal-of-loop: only meaningful while the shield is up.
+      if (s.phase !== 'up') return;
+      // Persist ONLY `failed` so it survives a re-raise (SW wake / reconcile);
+      // `done` auto-dismisses view-side and a fresh `done` clears any stored failed.
+      s.terminal = status === 'failed' ? { status, label: clipped } : undefined;
+      this.#deps.commandView(tabId, {
+        kind: 'TERMINAL',
+        generation: ++this.#generation,
+        status,
+        label: clipped,
+      });
+      return;
+    }
+    s.terminal = undefined; // a new ongoing label supersedes a persisted failed terminal
+    s.intentLabel = clipped;
     this.#pushLabel(tabId, s);
   }
 
@@ -237,6 +273,7 @@ export class ShieldController {
       );
       s.handoff = { readBack: input.readBack, scope: input.scope ?? 'field', resolve, timer };
       s.phase = 'handoff';
+      s.terminal = undefined; // a handoff supersedes the terminal (mirrors the view clearing it on ENTER_HANDOFF)
       this.#deps.commandView(tabId, {
         kind: 'ENTER_HANDOFF',
         generation: ++this.#generation,
