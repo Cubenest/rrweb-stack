@@ -3,7 +3,14 @@ import { parse as parseToml } from 'smol-toml';
 const JSON_BLOCK = /```(?:json|jsonc)\n([\s\S]*?)```/g;
 const TOML_BLOCK = /```toml\n([\s\S]*?)```/g;
 
-/** VS Code's .vscode/mcp.json uses `servers`; every other peek-supported client uses `mcpServers`. */
+/**
+ * VS Code's .vscode/mcp.json uses `servers`; every other peek-supported client uses `mcpServers`.
+ * NOTE: this assumes ONE root-key convention per recipe (a recipe is treated as all-`servers` or
+ * all-`mcpServers`). That holds today — the VS Code recipe is the only `servers` one and is
+ * VS-Code-only. If a future recipe ever mixes a VS Code (`servers`) block AND a non-VS-Code
+ * (`mcpServers`) block in the same file, this needs to key off the fence's own client, not the
+ * recipe's `integrations`.
+ */
 function expectedJsonRootKey(integrations) {
   return integrations.includes('vscode') ? 'servers' : 'mcpServers';
 }
