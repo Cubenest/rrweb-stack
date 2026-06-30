@@ -21,7 +21,11 @@ talk to, and the native messaging host the Chrome extension writes through.
 
 ## Step 1 — Register the peek MCP server with this client
 
-Add this server to the MCP configuration of the client you are running inside.
+**This is a config-file edit, not a shell command** — write the JSON below into
+the MCP config file of the client you are running inside (e.g. Cline's
+`cline_mcp_settings.json`, Cursor's `~/.cursor/mcp.json`, Claude Code's
+`~/.claude.json`). Do not try to "run" this step in a terminal.
+
 The `@latest` tag is **required** — peek is in alpha, every published version is
 a prerelease, and a bare `@peekdev/mcp` resolves the implicit `*` range and fails
 with `ETARGET: No matching version found`:
@@ -39,27 +43,40 @@ with `ETARGET: No matching version found`:
 
 After writing the config, reload/restart the client so it spawns the server.
 
-## Step 2 — Verify the server is wired
+## Step 2 — Verify the server is wired (after the client reloads)
 
-Call peek's `list_recent_sessions` tool. The server is correctly registered if the
-tool is **callable and returns anything at all** — either a JSON list of sessions,
-or a short text message such as *"No sessions recorded yet"*. Before Step 3 there
-is no `~/.peek/sessions.db`, so the "no sessions recorded yet" message is the
-**expected** response and means the server is wired — it is **not** a failure.
-Do not retry or report an error; continue to Step 3 to start capturing.
+peek's tools only become available **after the client reloads** the config from
+Step 1 — you usually will **not** see them in the same turn you wrote the config.
+If peek's tools aren't visible yet, that's expected, not a failure: ask the user
+to reload/restart the client, then continue. `list_recent_sessions` is an **MCP
+tool, not a CLI** — never try to run it as a shell command.
+
+Once peek's tools are available, call `list_recent_sessions`. The server is
+correctly registered if it returns anything at all — a JSON list of sessions, or
+a short text message such as *"No sessions recorded yet"*. Before Step 3 there is
+no `~/.peek/sessions.db`, so that "no sessions recorded yet" message is the
+**expected** response and means the server is wired — it is not a failure.
+Continue to Step 3 to start capturing.
 
 ## Step 3 — Enable capture (one terminal command + one manual browser step)
 
 The server above can answer queries, but it has nothing to read until peek is
 capturing sessions. Two more pieces are needed:
 
-1. **Register the native messaging host.** Run:
+1. **Register the native messaging host.** Run these as **two separate commands**
+   — do not join them with `&&` (Windows PowerShell does not support `&&`
+   chaining):
 
    ```bash
-   npm install -g @peekdev/cli && peek init
+   npm install -g @peekdev/cli
    ```
 
-   `peek init` is a short interactive wizard. It auto-detects your installed MCP
+   ```bash
+   peek init
+   ```
+
+   `peek init` is a short **interactive** wizard — if you are running unattended,
+   ask the user to run it. It auto-detects your installed MCP
    clients and offers to write peek's config to each (Claude Code, Cursor, and
    Windsurf directly; a manual block for Cline and Codex CLI) — you can skip that
    since Step 1 already handled this client — and, crucially, it registers peek's
