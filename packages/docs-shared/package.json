@@ -23,7 +23,7 @@
     "gen:security-demo": "node scripts/gen-security-demo.mjs"
   },
   "dependencies": {
-    "zod": "^3.25.76"
+    "zod": "^4.3.6"
   },
   "devDependencies": {
     "@cubenest/rrweb-core": "workspace:*",

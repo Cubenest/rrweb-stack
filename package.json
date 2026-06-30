@@ -28,17 +28,20 @@
     "@biomejs/biome": "^1.9.4",
     "@changesets/cli": "^2.27.10",
     "typescript": "^5.7.2",
-    "vitest": "^2.1.8",
+    "vitest": "^3.2.6",
     "lefthook": "^1.10.10"
   },
   "pnpm": {
     "onlyBuiltDependencies": ["better-sqlite3"],
-    "//overrides": "WXT 0.20 (peek-extension) needs Vite 6 (vite-node@3, @vitejs/plugin-react@5) but the repo's vitest@2 rides Vite 5. These overrides pin WXT's transitive deps to the Vite-6 line so its plugin `filter` API works, without a repo-wide vitest bump. Remove once the repo moves to vitest@3 / Vite 6. The serialize-javascript and tmp overrides patch two high-severity transitive CVEs (GHSA-5c6j-r48x-rmvq via mocha 10.8 → serialize-javascript 6.0.2; GHSA-ph9p-34f9-6g65 via wxt 0.20 → web-ext-run → tmp 0.2.5) — both are dev-only transitives but pinned forward as defense-in-depth (Phase 4a, 2026-05-28).",
+    "//overrides": "The serialize-javascript and tmp overrides patch two high-severity transitive CVEs (GHSA-5c6j-r48x-rmvq via mocha 10.8 → serialize-javascript 6.0.2; GHSA-ph9p-34f9-6g65 via wxt 0.20 → web-ext-run → tmp 0.2.5) — both dev-only transitives pinned forward as defense-in-depth (Phase 4a, 2026-05-28). The js-yaml overrides patch GHSA-h67p-54hq-rp68 (quadratic-complexity DoS in merge-key handling): js-yaml@3.14.2 reaches the tree via changesets → @manypkg/get-packages → read-yaml-file, and js-yaml@4.1.1 via astro markdown-remark + @changesets/parse. The vite@6 and esbuild overrides clear the last two Scorecard advisories that no upstream dep had picked up yet: vite 6.4.2 (GHSA-fx2h-pf6j-xcff / GHSA-v6wh-96g9-6wx3, via vitest@3 + wxt) → 6.4.3, and esbuild 0.27.7 / 0.28.0 (GHSA-g7r4-m6w7-qqqr, via astro@6 + wxt + tsx) → 0.28.1. All dev/build-time transitives; remove each once the parent dependency ships the patched version. WXT 0.20's toolchain stays on the Vite-6 line, so its @wxt-dev/module-react must keep @vitejs/plugin-react on 5.x — plugin-react 6.x imports `vite/internal`, which only exists in vite 7+. The pin is scoped to @wxt-dev/module-react so the todomvc demo (Vite 8) keeps plugin-react 6. vite-node is pinned to the 3.x line shared by vitest@3 and WXT (Scorecard vuln sweep, 2026-06-30).",
     "overrides": {
       "vite-node": "^3.2.4",
-      "@vitejs/plugin-react": "^5.0.4",
+      "@wxt-dev/module-react>@vitejs/plugin-react": "^5.0.4",
       "serialize-javascript": "^7.0.3",
-      "tmp": "^0.2.6"
+      "tmp": "^0.2.6",
+      "js-yaml@3": "^3.15.0",
+      "js-yaml@4": "^4.2.0",
+      "esbuild@>=0.27.0 <0.28.1": "0.28.1"
     }
   }
 }
