@@ -39,6 +39,10 @@ describe('checkMarketplace', () => {
     });
     expect(issues.some((i) => i.severity === 'error')).toBe(true);
   });
+  it('does not throw on a malformed plugins[] element', () => {
+    const issues = checkMarketplace({ ...goodMarketplace, plugins: [null] });
+    expect(issues.some((i) => i.severity === 'error')).toBe(true);
+  });
 });
 
 describe('checkPluginManifest', () => {

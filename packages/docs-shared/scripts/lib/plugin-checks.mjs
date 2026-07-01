@@ -19,7 +19,7 @@ export function checkMarketplace(mp) {
   if (!mp?.owner?.name) {
     issues.push({ severity: 'error', detail: 'marketplace.json: owner.name is required' });
   }
-  const entry = Array.isArray(mp?.plugins) ? mp.plugins.find((p) => p.name === 'peek') : undefined;
+  const entry = Array.isArray(mp?.plugins) ? mp.plugins.find((p) => p?.name === 'peek') : undefined;
   if (!entry) {
     issues.push({ severity: 'error', detail: 'marketplace.json: no plugins[] entry named "peek"' });
   } else if (entry.source !== './plugins/peek') {
