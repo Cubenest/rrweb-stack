@@ -1,0 +1,11 @@
+{
+  "name": "peek",
+  "version": "0.1.0",
+  "description": "Let your AI coding agent debug what already happened in your real browser. peek records masked rrweb sessions of your real browser to a local store and exposes them (DOM history, console/network errors, the action before an error, session-to-Playwright repro) to coding agents over MCP. Local-first, stdio, no telemetry.",
+  "author": { "name": "Cubenest", "url": "https://peek.cubenest.in" },
+  "homepage": "https://peek.cubenest.in",
+  "repository": "https://github.com/Cubenest/rrweb-stack",
+  "license": "Apache-2.0",
+  "keywords": ["mcp", "browser", "rrweb", "session-replay", "debugging", "forensics", "playwright", "coding-agent"],
+  "mcpServers": "./.mcp.json"
+}
