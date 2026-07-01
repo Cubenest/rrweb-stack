@@ -1,12 +1,11 @@
-// The peek MCP server. Builds an `McpServer` and registers the full 16-tool
+// The peek MCP server. Builds an `McpServer` and registers the full 17-tool
 // surface: read-only session/query tools (incl. the Playwright repro
 // generator) plus the Level-1 live read tools (get_page_view,
 // get_element_detail), the act tools (execute_action, request_authorization),
-// the
-// Level-2 Suggest tools (suggest_element, clear_highlight), and the Level-4
-// control tools (set_intent, request_user_input). All write tools are gated at
-// dispatch by the per-origin permission model — see `registerTools` +
-// `dispatchActTool`.
+// the Level-2 Suggest tools (suggest_element, clear_highlight), the Level-4
+// control tools (set_intent, request_user_input), and the audit-log integrity
+// checker (verify_audit_log). All write tools are gated at dispatch by the
+// per-origin permission model — see `registerTools` + `dispatchActTool`.
 //
 // Design notes:
 //   • DB is opened read-only and lazily (openReadonlyDb) so a server can start
@@ -29,10 +28,14 @@ import { openReadonlyDb } from '../db/open.js';
 const _require = createRequire(import.meta.url);
 const _pkg = _require('../../package.json') as { version: string };
 export const SERVER_VERSION = _pkg.version;
+import { existsSync, readFileSync } from 'node:fs';
+import { verifyAuditChain, verifySummary } from '../native-host/audit-chain.js';
+import { auditHeadPath, readHead } from '../native-host/audit-head.js';
 import {
   type AuditResult,
   type AuditTool,
   type AuditWriteOptions,
+  auditLogPath as defaultAuditLogPath,
   recordAuditEntry,
 } from '../native-host/audit.js';
 import { ActionSchema } from './action-schema.js';
@@ -982,6 +985,31 @@ export function createPeekMcpServer(options: CreatePeekMcpServerOptions = {}): P
         });
       },
     );
+
+    // 17. verify_audit_log (read-only integrity check on ~/.peek/audit.log).
+    server.registerTool(
+      'verify_audit_log',
+      {
+        title: 'Verify the action audit log',
+        description:
+          "Verify the integrity of peek's local action audit log (~/.peek/audit.log) — the append-only, hash-chained record of every browser action peek authorized or attempted. Returns JSON { logPresent, status, entriesVerified, prelude, headPresent, brokenAtLine?, expected?, got?, gaps?, summary }. status is one of intact | broken | truncated | tail-tampered | prefix-tampered | incomplete-final | gaps | head-missing. Local and read-only. The log is tamper-EVIDENT, not tamper-proof: it has no cryptographic signature and no external timestamp anchor. Use it to confirm the action trail on this machine has not been altered.",
+        inputSchema: {},
+        annotations: { readOnlyHint: true, openWorldHint: false },
+      },
+      () => {
+        const logPath = options.auditLogPath ?? defaultAuditLogPath();
+        if (!existsSync(logPath)) {
+          return jsonResult({
+            logPresent: false,
+            summary: 'No audit log yet — no actions have been recorded.',
+          });
+        }
+        const logBuf = readFileSync(logPath);
+        const head = readHead(auditHeadPath(logPath));
+        const r = verifyAuditChain(logBuf, head);
+        return jsonResult({ logPresent: true, ...r, summary: verifySummary(r) });
+      },
+    );
   }
 
   // --- Act-tool dispatch (shared between execute_action + request_authorization) ---
@@ -1113,4 +1141,6 @@ export const PEEK_MCP_TOOLS = [
   'request_user_input',
   // Control-shield banner (Part 2 — Level 4 auto-allowed).
   'set_intent',
+  // Audit-log integrity check (read-only; no args).
+  'verify_audit_log',
 ] as const;
