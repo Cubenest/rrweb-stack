@@ -24,6 +24,7 @@
     "lint": "biome check .",
     "lint:fix": "biome check --write .",
     "typecheck": "pnpm -r typecheck",
+    "verify:plugin": "node packages/docs-shared/scripts/check-plugin.mjs",
     "changeset": "changeset",
     "version": "changeset version && biome check --write . && pnpm install --lockfile-only",
     "release": "pnpm build && changeset publish"

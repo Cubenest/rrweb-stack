@@ -49,6 +49,20 @@ Read on if you're configuring the MCP server manually, building tooling against 
 
 Click the button (or paste the link into Cursor) and Cursor prompts to add peek to `~/.cursor/mcp.json` — no terminal needed. This wires the **MCP server** only; to capture sessions you still run `peek init` once (registers the native messaging host) and install the [Chrome extension](https://chromewebstore.google.com/detail/peek/dmgpmkeneheenpdnfmpjjahnkknkaejb).
 
+## Install as a Claude Code plugin
+
+If you use Claude Code, install peek as a plugin in one step:
+
+```
+/plugin marketplace add Cubenest/rrweb-stack
+/plugin install peek@peek
+```
+
+That wires up this MCP server (16 tools) plus the peek skill. You still need the
+recorder — run `npx @peekdev/cli init` once and install the peek Chrome
+extension — before there are sessions to read. Local-first: peek uploads nothing
+— what your MCP client does with the data is up to you.
+
 ## Manual MCP-client config
 
 If `peek init` doesn't recognize your client, paste this into your client's MCP server registry:
