@@ -25,6 +25,25 @@ import Layout from '../layouts/Layout.astro';
     Each section links to a recipe that shows it end to end.
   </p>
 
+  <figure style="margin: 2.25rem 0;">
+    <video
+      controls
+      preload="metadata"
+      playsinline
+      poster="/clips/peek-causal-chain.poster.png"
+      style="width: 100%; height: auto; display: block; border-radius: 12px; border: 1px solid var(--peek-border, #2a2a33);"
+    >
+      <source src="/clips/peek-causal-chain.mp4" type="video/mp4" />
+      Your browser doesn&rsquo;t support embedded video.
+      <a href="/clips/peek-causal-chain.mp4">Download the 34-second clip</a> instead.
+    </video>
+    <figcaption style="color: var(--fg-muted); font-size: 0.9rem; margin-top: 0.6rem;">
+      An agent hits a console error and asks peek what the user did right before it. The
+      answer (open the orders page, open order #1001, click Place order, then the
+      <code>TypeError</code>) is read from a real local recording, not a re-run.
+    </figcaption>
+  </figure>
+
   <h2>1. Deeper forensic reads</h2>
   <p>
     The read path got more useful to an agent reasoning about a failure:
