@@ -6,6 +6,15 @@
   "homepage": "https://peek.cubenest.in",
   "repository": "https://github.com/Cubenest/rrweb-stack",
   "license": "Apache-2.0",
-  "keywords": ["mcp", "browser", "rrweb", "session-replay", "debugging", "forensics", "playwright", "coding-agent"],
+  "keywords": [
+    "mcp",
+    "browser",
+    "rrweb",
+    "session-replay",
+    "debugging",
+    "forensics",
+    "playwright",
+    "coding-agent"
+  ],
   "mcpServers": "./.mcp.json"
 }
