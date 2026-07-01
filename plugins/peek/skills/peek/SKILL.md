@@ -203,5 +203,5 @@ and stop. Don't retry, don't suggest workarounds.
 
 - npm: <https://www.npmjs.com/package/@peekdev/cli> · <https://www.npmjs.com/package/@peekdev/mcp>
 - Source: <https://github.com/Cubenest/rrweb-stack>
-- Docs: <https://cubenest.in/peek>
+- Docs: <https://peek.cubenest.in>
 - Privacy policy: <https://github.com/Cubenest/rrweb-stack/blob/main/docs/peek/PRIVACY_POLICY.md>
