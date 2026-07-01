@@ -1,3 +1,5 @@
+import { isDeepStrictEqual } from 'node:util';
+
 const REQUIRED_PLUGIN_FIELDS = [
   'description',
   'author',
@@ -71,12 +73,12 @@ export function checkMcpParity(pluginMcp, rootMcp) {
       detail: `plugin .mcp.json must contain ONLY the "peek" server (got ${JSON.stringify(keys)})`,
     });
   }
-  const pluginPeek = JSON.stringify(pluginServers.peek);
-  const rootPeek = JSON.stringify(rootMcp?.mcpServers?.peek);
-  if (pluginPeek !== rootPeek) {
+  const pluginPeek = pluginServers.peek;
+  const rootPeek = rootMcp?.mcpServers?.peek;
+  if (!isDeepStrictEqual(pluginPeek, rootPeek)) {
     issues.push({
       severity: 'error',
-      detail: `plugin .mcp.json peek block must match the repo-root .mcp.json peek block (plugin=${pluginPeek} root=${rootPeek})`,
+      detail: `plugin .mcp.json peek block must match the repo-root .mcp.json peek block (plugin=${JSON.stringify(pluginPeek)} root=${JSON.stringify(rootPeek)})`,
     });
   }
   return issues;

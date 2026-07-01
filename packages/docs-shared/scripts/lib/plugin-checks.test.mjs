@@ -85,6 +85,13 @@ test('checkMcpParity flags a shipped dev entry', () => {
   };
   assert.ok(checkMcpParity(withDev, rootMcp).some((i) => i.severity === 'error'));
 });
+test('checkMcpParity is key-order-insensitive for the peek block', () => {
+  const rootMcp = { mcpServers: { peek: { command: 'npx', args: ['-y', '@peekdev/mcp@latest'] } } };
+  const reordered = {
+    mcpServers: { peek: { args: ['-y', '@peekdev/mcp@latest'], command: 'npx' } },
+  };
+  assert.deepEqual(checkMcpParity(reordered, rootMcp), []);
+});
 
 test('checkSkillSync passes identical content', () => {
   assert.deepEqual(checkSkillSync('same\n', 'same\n'), []);
