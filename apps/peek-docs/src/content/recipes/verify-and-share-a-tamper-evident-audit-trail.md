@@ -27,12 +27,16 @@ See [Set up peek with Claude Code](/recipes/set-up-peek-with-claude-code) for th
 
 > Before I share the audit log, verify that peek's local audit chain is intact.
 
-The agent calls `verify_audit_log`. It reads `~/.peek/audit.log` and recomputes the SHA-256 hash chain from scratch, comparing each `prevHash` link and checking the `audit.head.json` sidecar for truncation. You get back a status and an entry count, e.g.:
+The agent calls `verify_audit_log`. It reads `~/.peek/audit.log` and recomputes the SHA-256 hash chain from scratch, comparing each `prevHash` link and checking the `audit.head.json` sidecar for truncation. You get back JSON with a `status`, the number of entries verified, and a one-line `summary`, e.g.:
 
-```
-status: intact
-entries: 42
-message: "Hash chain verified — all 42 entries link correctly and the head matches."
+```json
+{
+  "logPresent": true,
+  "status": "intact",
+  "entriesVerified": 42,
+  "headPresent": true,
+  "summary": "audit chain intact through 42 entries."
+}
 ```
 
 Other possible statuses: `broken` (a mid-chain hash mismatch), `truncated` (head doesn't match the last entry), `tail-tampered`, `prefix-tampered`, `gaps`, `incomplete-final`, or `head-missing`. If the status is anything other than `intact`, investigate before sharing.
@@ -43,7 +47,7 @@ Other possible statuses: `broken` (a mid-chain hash mismatch), `truncated` (head
 peek audit bundle
 ```
 
-This creates a `*.peekaudit` archive (a zip with a SHA-256 integrity manifest) in the current directory. The command prints the output filename, e.g. `peek-audit-2026-07-01T12-00-00.peekaudit`.
+This creates a `*.peekaudit` archive (a gzipped tar with a SHA-256 integrity manifest) in the current directory. The command prints the output filename, e.g. `peek-audit-2026-07-01T12-00-00.peekaudit`.
 
 To write to a specific path:
 
