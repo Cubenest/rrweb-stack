@@ -5,6 +5,7 @@ description: "Install the peek CLI, run peek init, and Claude Code starts seeing
 type: short
 status: published
 publishedAt: 2026-06-15
+updatedAt: 2026-07-01
 integrations: [claude-code, install]
 relatedRecipes: [claude-code-on-staging, set-up-peek-with-cursor, set-up-peek-with-cline-windsurf-codex]
 ---
@@ -22,6 +23,21 @@ A working peek MCP server registered with Claude Code, verified by asking Claude
 - Chrome with the **peek** extension installed — from the [Chrome Web Store](https://chromewebstore.google.com/detail/peek/dmgpmkeneheenpdnfmpjjahnkknkaejb), or loaded unpacked from `packages/peek-extension/chrome-mv3/` for local builds
 
 ## Steps
+
+### 0. One-click — install as a Claude Code plugin (fastest)
+
+If you'd rather not touch the CLI first, install peek as a Claude Code plugin:
+
+```
+/plugin marketplace add Cubenest/rrweb-stack
+/plugin install peek@peek
+```
+
+This wires up the **MCP server** (16 tools) and the peek skill in one step. You
+still need the recorder — the native host and the Chrome extension — so after
+installing the plugin, run `peek init` once (Step 2) and install the extension
+(Prerequisites), then skip to [Verify](#3-verify). Local-first: peek uploads
+nothing — what your MCP client does with the data is up to you.
 
 ### 1. Install the CLI
 
