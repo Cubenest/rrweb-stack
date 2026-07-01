@@ -60,4 +60,32 @@ describe('audit-bundle', () => {
     expect(unpacked.headBuf).toBeNull();
     expect(() => verifyAuditBundleIntegrity(unpacked)).not.toThrow();
   });
+  it('throws on an unsupported formatVersion', () => {
+    const { logBuf, headBuf } = writeChain();
+    const out = join(dir, 'v.peekaudit');
+    packAuditBundle(out, { logBuf, headBuf, head: JSON.parse(headBuf.toString('utf8')) });
+    const unpacked = unpackAuditBundle(out);
+    unpacked.manifest.formatVersion = 2;
+    expect(() => verifyAuditBundleIntegrity(unpacked)).toThrow(/formatVersion/);
+  });
+  it('detects a tampered audit.head.json (sha mismatch)', () => {
+    const { logBuf, headBuf } = writeChain();
+    const out = join(dir, 'h.peekaudit');
+    packAuditBundle(out, { logBuf, headBuf, head: JSON.parse(headBuf.toString('utf8')) });
+    const unpacked = unpackAuditBundle(out);
+    unpacked.headBuf = Buffer.from(`${unpacked.headBuf?.toString('utf8') ?? ''}x`, 'utf8');
+    expect(() => verifyAuditBundleIntegrity(unpacked)).toThrow(
+      /audit\.head\.json sha256 mismatch/i,
+    );
+  });
+  it('throws when the manifest claims a head but the buffer is missing', () => {
+    const { logBuf, headBuf } = writeChain();
+    const out = join(dir, 'm.peekaudit');
+    packAuditBundle(out, { logBuf, headBuf, head: JSON.parse(headBuf.toString('utf8')) });
+    const unpacked = unpackAuditBundle(out);
+    unpacked.headBuf = null;
+    expect(() => verifyAuditBundleIntegrity(unpacked)).toThrow(
+      /audit\.head\.json sha256 mismatch/i,
+    );
+  });
 });
