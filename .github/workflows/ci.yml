@@ -45,6 +45,10 @@ jobs:
       # `/recipes/assets/<slug>.png` hard-fails here. `pnpm build` above has
       # already produced @cubenest/docs-shared's dist/ that this imports.
       - run: STRICT_RECIPE_ASSETS=1 node packages/docs-shared/scripts/verify-recipes.mjs
+      # Plugin/marketplace integrity: manifest shape, mcp-block parity vs the
+      # repo-root .mcp.json, and the bundled skill copy staying byte-identical
+      # to packages/peek-cli/skills/peek-skill.md. Fails the `ci` gate on drift.
+      - run: node packages/docs-shared/scripts/check-plugin.mjs
 
   # @tracelane/wdio browser smoke (Task 2.17). Separate, non-blocking job so a
   # Chrome/chromedriver hiccup can't fail the required `ci` gate. The smoke spec
