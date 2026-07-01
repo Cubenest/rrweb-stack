@@ -1,4 +1,5 @@
-import { describe, expect, it } from 'vitest';
+import assert from 'node:assert/strict';
+import { test } from 'node:test';
 import {
   checkMarketplace,
   checkMcpParity,
@@ -24,72 +25,70 @@ const goodPlugin = {
 };
 const canonicalPeek = { command: 'npx', args: ['-y', '@peekdev/mcp@latest'] };
 
-describe('checkMarketplace', () => {
-  it('passes a well-formed marketplace', () => {
-    expect(checkMarketplace(goodMarketplace)).toEqual([]);
-  });
-  it('flags a wrong marketplace name', () => {
-    const issues = checkMarketplace({ ...goodMarketplace, name: 'nope' });
-    expect(issues.some((i) => i.severity === 'error')).toBe(true);
-  });
-  it('flags a missing/incorrect plugin source', () => {
-    const issues = checkMarketplace({
-      ...goodMarketplace,
-      plugins: [{ name: 'peek', source: './wrong' }],
-    });
-    expect(issues.some((i) => i.severity === 'error')).toBe(true);
-  });
-  it('does not throw on a malformed plugins[] element', () => {
-    const issues = checkMarketplace({ ...goodMarketplace, plugins: [null] });
-    expect(issues.some((i) => i.severity === 'error')).toBe(true);
-  });
+test('checkMarketplace passes a well-formed marketplace', () => {
+  assert.deepEqual(checkMarketplace(goodMarketplace), []);
+});
+test('checkMarketplace flags a wrong marketplace name', () => {
+  assert.ok(
+    checkMarketplace({ ...goodMarketplace, name: 'nope' }).some((i) => i.severity === 'error'),
+  );
+});
+test('checkMarketplace flags a missing/incorrect plugin source', () => {
+  assert.ok(
+    checkMarketplace({ ...goodMarketplace, plugins: [{ name: 'peek', source: './wrong' }] }).some(
+      (i) => i.severity === 'error',
+    ),
+  );
+});
+test('checkMarketplace does not throw on a malformed plugins[] element', () => {
+  assert.ok(
+    checkMarketplace({ ...goodMarketplace, plugins: [null] }).some((i) => i.severity === 'error'),
+  );
 });
 
-describe('checkPluginManifest', () => {
-  it('passes a well-formed manifest', () => {
-    expect(checkPluginManifest(goodPlugin)).toEqual([]);
-  });
-  it('flags a missing version', () => {
-    const { version, ...noVersion } = goodPlugin;
-    expect(checkPluginManifest(noVersion).some((i) => i.severity === 'error')).toBe(true);
-  });
-  it('flags a missing metadata field (license)', () => {
-    const { license, ...noLicense } = goodPlugin;
-    expect(checkPluginManifest(noLicense).some((i) => i.severity === 'error')).toBe(true);
-  });
-  it('flags mcpServers not pointing at ./.mcp.json', () => {
-    expect(
-      checkPluginManifest({ ...goodPlugin, mcpServers: { peek: canonicalPeek } }).some(
-        (i) => i.severity === 'error',
-      ),
-    ).toBe(true);
-  });
+test('checkPluginManifest passes a well-formed manifest', () => {
+  assert.deepEqual(checkPluginManifest(goodPlugin), []);
+});
+test('checkPluginManifest flags a missing version', () => {
+  const { version, ...noVersion } = goodPlugin;
+  assert.ok(checkPluginManifest(noVersion).some((i) => i.severity === 'error'));
+});
+test('checkPluginManifest flags a missing metadata field (license)', () => {
+  const { license, ...noLicense } = goodPlugin;
+  assert.ok(checkPluginManifest(noLicense).some((i) => i.severity === 'error'));
+});
+test('checkPluginManifest flags mcpServers not pointing at ./.mcp.json', () => {
+  assert.ok(
+    checkPluginManifest({ ...goodPlugin, mcpServers: { peek: canonicalPeek } }).some(
+      (i) => i.severity === 'error',
+    ),
+  );
 });
 
-describe('checkMcpParity', () => {
+test('checkMcpParity passes when the plugin peek block matches root and has only peek', () => {
   const rootMcp = {
     mcpServers: { peek: canonicalPeek, 'peek-dev': { command: 'node', args: ['x'] } },
   };
-  it('passes when the plugin peek block matches root and has only peek', () => {
-    expect(checkMcpParity({ mcpServers: { peek: canonicalPeek } }, rootMcp)).toEqual([]);
-  });
-  it('flags a divergent peek block', () => {
-    const drift = { mcpServers: { peek: { command: 'npx', args: ['-y', '@peekdev/mcp@1.0.0'] } } };
-    expect(checkMcpParity(drift, rootMcp).some((i) => i.severity === 'error')).toBe(true);
-  });
-  it('flags a shipped dev entry', () => {
-    const withDev = {
-      mcpServers: { peek: canonicalPeek, 'peek-dev': { command: 'node', args: ['x'] } },
-    };
-    expect(checkMcpParity(withDev, rootMcp).some((i) => i.severity === 'error')).toBe(true);
-  });
+  assert.deepEqual(checkMcpParity({ mcpServers: { peek: canonicalPeek } }, rootMcp), []);
+});
+test('checkMcpParity flags a divergent peek block', () => {
+  const rootMcp = { mcpServers: { peek: canonicalPeek } };
+  const drift = { mcpServers: { peek: { command: 'npx', args: ['-y', '@peekdev/mcp@1.0.0'] } } };
+  assert.ok(checkMcpParity(drift, rootMcp).some((i) => i.severity === 'error'));
+});
+test('checkMcpParity flags a shipped dev entry', () => {
+  const rootMcp = {
+    mcpServers: { peek: canonicalPeek, 'peek-dev': { command: 'node', args: ['x'] } },
+  };
+  const withDev = {
+    mcpServers: { peek: canonicalPeek, 'peek-dev': { command: 'node', args: ['x'] } },
+  };
+  assert.ok(checkMcpParity(withDev, rootMcp).some((i) => i.severity === 'error'));
 });
 
-describe('checkSkillSync', () => {
-  it('passes identical content', () => {
-    expect(checkSkillSync('same\n', 'same\n')).toEqual([]);
-  });
-  it('flags any drift', () => {
-    expect(checkSkillSync('a\n', 'b\n').some((i) => i.severity === 'error')).toBe(true);
-  });
+test('checkSkillSync passes identical content', () => {
+  assert.deepEqual(checkSkillSync('same\n', 'same\n'), []);
+});
+test('checkSkillSync flags any drift', () => {
+  assert.ok(checkSkillSync('a\n', 'b\n').some((i) => i.severity === 'error'));
 });
