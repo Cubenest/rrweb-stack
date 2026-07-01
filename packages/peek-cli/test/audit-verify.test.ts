@@ -1,8 +1,9 @@
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { runAuditVerify } from '../src/commands/audit-verify.js';
+import { packAuditBundle, unpackAuditBundle } from '../src/lib/audit-bundle.js';
 import {
   type AuditHead,
   GENESIS_PREV,
@@ -246,5 +247,50 @@ describe('peek audit verify (command)', () => {
     const code = await runAuditVerify(['--dir', dir, '--json'], (s) => out.push(s));
     expect(code).toBe(0);
     expect(JSON.parse(out.join('')).status).toBe('head-missing');
+  });
+});
+
+describe('peek audit verify --bundle', () => {
+  let tmpDir: string;
+
+  beforeEach(() => {
+    tmpDir = mkdtempSync(join(tmpdir(), 'peek-verify-bundle-'));
+  });
+  afterEach(() => rmSync(tmpDir, { recursive: true, force: true }));
+
+  it('exits 0 with archive-integrity-ok + intact for a good bundle', async () => {
+    const { buf, head } = chainLog(2);
+    const headBuf = Buffer.from(JSON.stringify(head), 'utf8');
+    const bundlePath = join(tmpDir, 'good.peekaudit');
+    packAuditBundle(bundlePath, { logBuf: buf, headBuf, head });
+    const out: string[] = [];
+    const code = await runAuditVerify(['--bundle', bundlePath], (s) => out.push(s));
+    expect(code).toBe(0);
+    const text = out.join('');
+    expect(text).toMatch(/archive integrity ok/i);
+    expect(text).toMatch(/intact/i);
+  });
+
+  it('exits 2 and reports integrity FAILED for a tampered bundle', async () => {
+    const { buf, head } = chainLog(2);
+    const headBuf = Buffer.from(JSON.stringify(head), 'utf8');
+    const bundlePath = join(tmpDir, 'tampered.peekaudit');
+    packAuditBundle(bundlePath, { logBuf: buf, headBuf, head });
+    // Unpack, mutate logBuf, re-pack to a new path to produce a bundle where
+    // the manifest SHA-256 no longer matches the actual content.
+    const unpacked = unpackAuditBundle(bundlePath);
+    unpacked.logBuf = Buffer.from(`${unpacked.logBuf.toString('utf8')}tamper\n`, 'utf8');
+    // Write a re-packed bundle where we directly overwrite the file with mutated
+    // data. We re-use packAuditBundle with no head so the log sha differs from
+    // what the manifest records (the manifest is stale from the original pack).
+    // Simplest tamper: read the raw bytes, flip one byte, write back.
+    const rawBytes = readFileSync(bundlePath);
+    rawBytes[rawBytes.length - 1] = rawBytes[rawBytes.length - 1] === 0 ? 1 : 0;
+    const tamperedPath = join(tmpDir, 'really-tampered.peekaudit');
+    writeFileSync(tamperedPath, rawBytes);
+    const out: string[] = [];
+    const code = await runAuditVerify(['--bundle', tamperedPath], (s) => out.push(s));
+    expect(code).toBe(2);
+    expect(out.join('')).toMatch(/integrity FAILED|sha256 mismatch/i);
   });
 });
