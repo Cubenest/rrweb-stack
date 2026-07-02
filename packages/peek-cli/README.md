@@ -102,7 +102,7 @@ After `peek init`, the `peek-mcp` server is available to your AI client as an MC
 - "find network requests with status >= 400 from the last 5 minutes of recording on `example.com`"
 - "generate a Playwright reproduction script from session `abc123`"
 
-The MCP server exposes 17 tools — listing, session summaries, console/network drill-down, user-action history, DOM reconstruction and history, Playwright-repro generation, a live ref-tagged page view, non-destructive element highlighting, audit-log chain verification, and (with explicit per-origin permission) actions like clicks/inputs/navigation plus a pause-and-hand-back-to-the-user input handoff. See [`@peekdev/mcp`](https://github.com/Cubenest/rrweb-stack/tree/main/packages/peek-mcp) for the tool reference.
+The MCP server exposes 18 tools — listing, session search, session summaries, console/network drill-down, user-action history, DOM reconstruction and history, Playwright-repro generation, a live ref-tagged page view, non-destructive element highlighting, audit-log chain verification, and (with explicit per-origin permission) actions like clicks/inputs/navigation plus a pause-and-hand-back-to-the-user input handoff. See [`@peekdev/mcp`](https://github.com/Cubenest/rrweb-stack/tree/main/packages/peek-mcp) for the tool reference.
 
 ## Privacy
 

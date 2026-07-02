@@ -1,13 +1,13 @@
 ---
 name: peek
-description: Use when the user mentions a recent browser session, an error they just reproduced, "what was the user doing before X", DOM state at some past moment, or wants to turn a manual repro into a Playwright test. Peek exposes 17 MCP tools backed by a local SQLite store of rrweb-captured browser sessions.
+description: Use when the user mentions a recent browser session, an error they just reproduced, "what was the user doing before X", DOM state at some past moment, or wants to turn a manual repro into a Playwright test. Peek exposes 18 MCP tools backed by a local SQLite store of rrweb-captured browser sessions.
 ---
 
 # peek — local browser-session inspection
 
 Peek is an OSS browser companion for AI coding agents. A Chrome MV3
 extension records masked rrweb sessions to a local SQLite store
-(`~/.peek/sessions.db`); a stdio MCP server exposes 17 tools that let you
+(`~/.peek/sessions.db`); a stdio MCP server exposes 18 tools that let you
 inspect those sessions and (with consent) drive the live browser.
 
 Peek itself uploads nothing — no telemetry, no cloud, no account; what
@@ -39,13 +39,14 @@ Don't reach for peek when:
   not a live debugger
 - The question is about static code, not runtime behavior
 
-## The 17 tools
+## The 18 tools
 
-**Session-forensics read tools (8) — usable at permission Level 1 (Read-only) and above:**
+**Session-forensics read tools (9) — usable at permission Level 1 (Read-only) and above:**
 
 | Tool | When |
 |---|---|
 | `list_recent_sessions` | Always the first call. Returns `[{ sessionId, origin, startedAt, endedAt, eventCount, ... }]` for the last N sessions. |
+| `search_sessions` | Find sessions by text in title/URL/origin plus facets (origin, date range, status, console/network errors); read-only, returns the same rows as list_recent_sessions. Use when the user says "find the session where..." or wants to narrow down by origin or date. |
 | `get_session_summary` | Narrative summary of one session — what the user did, top-level errors, key navigations. Start here after `list_recent_sessions` picks the target. |
 | `get_session_console_errors` | All `console.error` / uncaught exceptions in the session, with timestamps. |
 | `get_session_network_errors` | All ≥ 400 responses, with request URL, method, status, and (where deep-capture was enabled) redacted body. |
@@ -181,7 +182,7 @@ manages it via the side panel's trust dial. A freshly-enabled origin defaults
 to **Level 1 (Read-only)**.
 
 - **Level 0 — Off** — tool surface disabled for the origin (recording suppressed)
-- **Level 1 — Read-only** (default) — all 10 read tools (8 session-forensics + 2 live-page); no action execution
+- **Level 1 — Read-only** (default) — all 11 read tools (9 session-forensics + 2 live-page); no action execution
 - **Level 2 — Suggest-only** — read + non-mutating highlight overlay
   (`suggest_element` / `clear_highlight`); no DOM mutation
 - **Level 3 — Act-with-confirm** — read + `execute_action` (click/type/navigate),
@@ -201,7 +202,7 @@ and stop. Don't retry, don't suggest workarounds.
 
 - Never invent sessions. If `list_recent_sessions` returns empty, say so
   and suggest the user record a session via the extension.
-- Never invent tool names. The 17 above are the entire surface.
+- Never invent tool names. The 18 above are the entire surface.
 - Selector results from `generate_playwright_repro` are derived from
   rrweb event metadata. Surface them for review; don't claim a generated
   test is production-ready without the user confirming.

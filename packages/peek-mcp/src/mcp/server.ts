@@ -57,6 +57,7 @@ import {
   getSessionBlobRef,
   getSessionSummaryRow,
   listRecentSessions,
+  searchSessions,
 } from './queries.js';
 import { type RootsScope, resolveRootsScope } from './roots.js';
 import { buildSessionSummary } from './summary.js';
@@ -293,7 +294,91 @@ export function createPeekMcpServer(options: CreatePeekMcpServerOptions = {}): P
       },
     );
 
-    // 2. get_session_summary -------------------------------------------------
+    // 2. search_sessions -------------------------------------------------------
+    server.registerTool(
+      'search_sessions',
+      {
+        title: 'Search recorded sessions',
+        description:
+          "Search your recorded browser sessions by metadata and facets — free text in title/URL/origin (q), exact origin, recorded date range (createdAfter/createdBefore, ISO-8601), status (active/finalized), and whether the session has console errors (hasConsoleErrors) or network errors (hasNetworkErrors). Returns the same compact rows as list_recent_sessions, newest first. Read-only and local. Use it to find a sessionId when you don't already have one, then call get_session_summary. Matches session metadata only — not page content or error-message text. Multiple facets combine with AND (e.g. hasConsoleErrors + hasNetworkErrors returns sessions that have BOTH); to find sessions with either kind of error, search for each separately.",
+        inputSchema: {
+          q: z
+            .string()
+            .optional()
+            .describe(
+              'Free text matched (case-insensitive) against session title, URL, and origin.',
+            ),
+          origin: z
+            .string()
+            .optional()
+            .describe("Exact origin filter, e.g. 'https://app.example.com'."),
+          createdAfter: z
+            .string()
+            .optional()
+            .describe('Only sessions first recorded at or after this ISO-8601 time.'),
+          createdBefore: z
+            .string()
+            .optional()
+            .describe('Only sessions first recorded at or before this ISO-8601 time.'),
+          status: z.enum(['active', 'finalized']).optional().describe('Filter by session status.'),
+          hasConsoleErrors: z
+            .boolean()
+            .optional()
+            .describe('Only sessions with at least one console error.'),
+          hasNetworkErrors: z
+            .boolean()
+            .optional()
+            .describe('Only sessions with a failed/4xx-5xx network request.'),
+          limit: z
+            .number()
+            .int()
+            .min(1)
+            .max(50)
+            .default(10)
+            .describe('Maximum sessions to return (1-50, newest first; default 10).'),
+        },
+        annotations: { readOnlyHint: true, openWorldHint: false },
+      },
+      ({
+        q,
+        origin,
+        createdAfter,
+        createdBefore,
+        status,
+        hasConsoleErrors,
+        hasNetworkErrors,
+        limit,
+      }) => {
+        const handle = getDb();
+        if (!handle) return textResult(NO_DB_MESSAGE);
+        const rows = searchSessions(handle, {
+          limit,
+          ...(q !== undefined ? { q } : {}),
+          ...(origin !== undefined ? { origin } : {}),
+          ...(createdAfter !== undefined ? { createdAfter } : {}),
+          ...(createdBefore !== undefined ? { createdBefore } : {}),
+          ...(status !== undefined ? { status } : {}),
+          ...(hasConsoleErrors !== undefined ? { hasConsoleErrors } : {}),
+          ...(hasNetworkErrors !== undefined ? { hasNetworkErrors } : {}),
+        });
+        const scoped =
+          origin === undefined && rootsScope?.allowedOrigins
+            ? rows.filter(
+                (r) => r.origin !== null && rootsScope?.allowedOrigins?.includes(r.origin),
+              )
+            : rows;
+        return jsonResult(
+          scoped.map((r) => ({
+            ...r,
+            origin: clip(r.origin, 100),
+            url: clip(r.url, 300),
+            title: clip(r.title, 200),
+          })),
+        );
+      },
+    );
+
+    // 3. get_session_summary -------------------------------------------------
     server.registerTool(
       'get_session_summary',
       {
@@ -1121,6 +1206,7 @@ export function createPeekMcpServer(options: CreatePeekMcpServerOptions = {}): P
 export const PEEK_MCP_TOOLS = [
   // Read tools (Phase 3c, Level 1+).
   'list_recent_sessions',
+  'search_sessions',
   'get_session_summary',
   'get_session_console_errors',
   'get_session_network_errors',

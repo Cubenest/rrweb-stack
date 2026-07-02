@@ -27,6 +27,7 @@ import {
   getSessionDetail,
   listSessions,
   listSessionsWithCounts,
+  searchSessions,
 } from '../lib/db.js';
 import { cutoffBefore } from '../lib/duration.js';
 import {
@@ -57,6 +58,7 @@ function printUsage(): void {
       '',
       'Commands:',
       '  list [--origin <url>] [--limit 20] [--json]   List recent sessions (newest first)',
+      '  search [--q <text>] [--errors any|console|network] [--json]  Search sessions by metadata/errors',
       '  show <session-id>                              Show one session (metadata + errors)',
       `  export <session-id> --format <${EXPORT_FORMATS.join('|')}> [--out <file>]`,
       '  import <bundle-file> [--keep-id] [--force]    Import a *.peekbundle into the local store',
@@ -82,6 +84,185 @@ function printListHelp(): void {
       '',
     ].join('\n'),
   );
+}
+
+function printSearchHelp(): void {
+  process.stdout.write(
+    [
+      'Usage: peek sessions search [options]',
+      '',
+      'Options:',
+      '  --q <text>              Substring match against title, url, and origin',
+      '  --origin <url>          Filter to a single origin (scheme://host[:port])',
+      '  --since <dur|iso>       Sessions created after this point (e.g. 7d or ISO timestamp)',
+      '  --until <dur|iso>       Sessions created before this point (e.g. 1h or ISO timestamp)',
+      '  --status <active|finalized>  Filter by session status',
+      '  --errors <console|network|any>  Restrict to sessions with the given error type',
+      '  --limit <n>             Max rows to return (default 20, must be > 0)',
+      '  --json                  Emit rows as a JSON array instead of a table',
+      '  --help                  Show this help and exit',
+      '',
+    ].join('\n'),
+  );
+}
+
+// A literal date/datetime for --since/--until: a 4-digit year `YYYY-MM-DD`
+// with an optional time part. The 4-digit-year anchor matters: `Date.parse`
+// happily reads a 3-digit year (a typo like `202-05-01` parses as year 202),
+// so the NaN check alone would let malformed literals through as a silently
+// bad SQL bound. Requiring the ISO shape *and* a real calendar date rejects
+// both `202-05-01` (bad shape) and `2026-13-99` (in-shape but NaN on parse).
+const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}([T ]\d{2}:\d{2}(:\d{2}(\.\d+)?)?(Z|[+-]\d{2}:?\d{2})?)?$/;
+
+/**
+ * Resolve a --since / --until value to an ISO timestamp string.
+ *
+ * `cutoffBefore` returns epoch milliseconds for a valid duration string
+ * (e.g. "7d", "1h") and throws on anything it can't parse (non-duration
+ * strings). For literal ISO values we validate the shape + calendar date, then
+ * pass them through unchanged. A malformed literal throws so the caller can
+ * fail fast (matching --status/--errors/--limit) rather than turning it into a
+ * bad SQL bound that silently returns zero rows.
+ */
+function resolveTime(raw: string): string {
+  // Try parsing as a duration (e.g. "7d", "30m"). cutoffBefore throws on
+  // non-duration input, so an ISO string passed here will throw; we catch
+  // and fall through to the literal validation.
+  try {
+    const ms = cutoffBefore(raw);
+    if (!Number.isFinite(ms) || ms < -8_640_000_000_000_000) {
+      throw new Error(`duration '${raw}' resolves out of range`);
+    }
+    return new Date(ms).toISOString();
+  } catch {
+    // Not a duration — must be a literal ISO/date timestamp.
+    if (!ISO_DATE_RE.test(raw) || Number.isNaN(Date.parse(raw))) {
+      throw new Error(`invalid --since/--until value: '${raw}'`);
+    }
+    return raw;
+  }
+}
+
+function runSearch(argv: string[]): number {
+  const { values } = parseArgs({
+    args: argv,
+    options: {
+      q: { type: 'string' },
+      origin: { type: 'string' },
+      since: { type: 'string' },
+      until: { type: 'string' },
+      status: { type: 'string' },
+      errors: { type: 'string' },
+      limit: { type: 'string' },
+      json: { type: 'boolean' },
+      help: { type: 'boolean' },
+    },
+    allowPositionals: false,
+  });
+  if (values.help) {
+    printSearchHelp();
+    return 0;
+  }
+
+  const limit = values.limit !== undefined ? Number(values.limit) : 20;
+  if (!Number.isInteger(limit) || limit <= 0) {
+    process.stderr.write('peek sessions search: --limit must be a positive integer\n');
+    return 1;
+  }
+
+  if (values.status !== undefined && values.status !== 'active' && values.status !== 'finalized') {
+    process.stderr.write(`peek sessions search: --status must be 'active' or 'finalized'\n`);
+    return 1;
+  }
+
+  if (
+    values.errors !== undefined &&
+    values.errors !== 'console' &&
+    values.errors !== 'network' &&
+    values.errors !== 'any'
+  ) {
+    process.stderr.write(`peek sessions search: --errors must be 'console', 'network', or 'any'\n`);
+    return 1;
+  }
+
+  // Build the searchSessions options object.
+  const searchOpts: {
+    limit: number;
+    q?: string;
+    origin?: string;
+    createdAfter?: string;
+    createdBefore?: string;
+    status?: 'active' | 'finalized';
+    hasConsoleErrors?: boolean;
+    hasNetworkErrors?: boolean;
+    errorsAny?: boolean;
+  } = { limit };
+
+  if (values.q !== undefined) searchOpts.q = values.q;
+  if (values.origin !== undefined) searchOpts.origin = values.origin;
+
+  // Resolve --since/--until (duration or literal ISO) up front so a typo fails
+  // fast like --status/--errors/--limit, rather than silently becoming a bad
+  // SQL literal that returns zero rows with no error.
+  try {
+    if (values.since !== undefined) searchOpts.createdAfter = resolveTime(values.since);
+    if (values.until !== undefined) searchOpts.createdBefore = resolveTime(values.until);
+  } catch (err) {
+    process.stderr.write(`peek sessions search: ${(err as Error).message}\n`);
+    return 1;
+  }
+
+  if (values.status === 'active' || values.status === 'finalized') {
+    searchOpts.status = values.status;
+  }
+
+  if (values.errors === 'console') {
+    searchOpts.hasConsoleErrors = true;
+  } else if (values.errors === 'network') {
+    searchOpts.hasNetworkErrors = true;
+  } else if (values.errors === 'any') {
+    searchOpts.errorsAny = true;
+  }
+
+  const db = open();
+  try {
+    const rows = searchSessions(db, searchOpts);
+    if (values.json) {
+      const json: SessionListJsonRow[] = rows.map((s) => ({
+        id: s.id,
+        origin: s.origin,
+        url: s.url,
+        created_at: s.createdAt,
+        updated_at: s.updatedAt,
+        event_count: s.eventCount,
+        console_count: s.consoleCount,
+        network_count: s.networkCount,
+        bytes: s.bytes,
+        status: s.status,
+      }));
+      process.stdout.write(`${JSON.stringify(json, null, 2)}\n`);
+      return 0;
+    }
+    if (rows.length === 0) {
+      process.stdout.write('No sessions matched.\n');
+      return 0;
+    }
+    process.stdout.write(
+      `${pad('ID', 22)}${pad('UPDATED', 26)}${pad('EVENTS', 9)}${pad('ERRORS', 8)}${pad('SIZE', 11)}ORIGIN\n`,
+    );
+    for (const s of rows) {
+      const errors = s.consoleCount + s.networkCount;
+      process.stdout.write(
+        `${pad(s.id, 22)}${pad(s.updatedAt, 26)}${pad(String(s.eventCount), 9)}${pad(String(errors), 8)}${pad(
+          formatBytes(s.bytes),
+          11,
+        )}${s.origin ?? '(unknown)'}\n`,
+      );
+    }
+    return 0;
+  } finally {
+    db.close();
+  }
 }
 
 function printShowHelp(): void {
@@ -539,6 +720,8 @@ export function runSessions(argv: string[]): number {
   switch (sub) {
     case 'list':
       return runList(rest);
+    case 'search':
+      return runSearch(rest);
     case 'show':
       return runShow(rest);
     case 'export':

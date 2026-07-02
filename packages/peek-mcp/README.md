@@ -58,7 +58,7 @@ If you use Claude Code, install peek as a plugin in one step:
 /plugin install peek@peek
 ```
 
-That wires up this MCP server (17 tools) plus the peek skill. You still need the
+That wires up this MCP server (18 tools) plus the peek skill. You still need the
 recorder — run `npx @peekdev/cli init` once and install the peek Chrome
 extension — before there are sessions to read. Local-first: peek uploads nothing
 — what your MCP client does with the data is up to you.
@@ -101,6 +101,7 @@ The per-user config paths `peek init` writes to (canonical, see `packages/peek-c
 | Tool | Action | Authorization |
 |---|---|---|
 | `list_recent_sessions` | List recently recorded sessions, newest first (id, origin, ts, event count) | none |
+| `search_sessions` | Find sessions by text in title/URL/origin plus facets (origin, date range, status, console/network errors). Read-only; returns the same rows as `list_recent_sessions`. | none |
 | `get_session_summary` | LLM-readable narrative summary of a session | none |
 | `get_session_console_errors` | List console errors recorded in a session | none |
 | `get_session_network_errors` | List failed/notable network requests in a session | none |
