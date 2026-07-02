@@ -4,7 +4,7 @@ Let your AI coding agent debug what already happened in your real browser.
 
 This plugin bundles two things:
 
-- the **peek MCP server** (`@peekdev/mcp`, run via `npx -y @peekdev/mcp@latest`) — 17 read/act tools over your locally-recorded browser sessions
+- the **peek MCP server** (`@peekdev/mcp`, run via `npx -y @peekdev/mcp@latest`) — 18 read/act tools over your locally-recorded browser sessions
 - the **peek skill** — guidance that tells the agent when and how to reach for those tools
 
 ## Install
