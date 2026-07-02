@@ -106,18 +106,28 @@ function printSearchHelp(): void {
   );
 }
 
+// A literal date/datetime for --since/--until: a 4-digit year `YYYY-MM-DD`
+// with an optional time part. The 4-digit-year anchor matters: `Date.parse`
+// happily reads a 3-digit year (a typo like `202-05-01` parses as year 202),
+// so the NaN check alone would let malformed literals through as a silently
+// bad SQL bound. Requiring the ISO shape *and* a real calendar date rejects
+// both `202-05-01` (bad shape) and `2026-13-99` (in-shape but NaN on parse).
+const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}([T ]\d{2}:\d{2}(:\d{2}(\.\d+)?)?(Z|[+-]\d{2}:?\d{2})?)?$/;
+
 /**
  * Resolve a --since / --until value to an ISO timestamp string.
  *
  * `cutoffBefore` returns epoch milliseconds for a valid duration string
  * (e.g. "7d", "1h") and throws on anything it can't parse (non-duration
- * strings). For literal ISO values we pass them through unchanged — the
- * caller already has the right format.
+ * strings). For literal ISO values we validate the shape + calendar date, then
+ * pass them through unchanged. A malformed literal throws so the caller can
+ * fail fast (matching --status/--errors/--limit) rather than turning it into a
+ * bad SQL bound that silently returns zero rows.
  */
 function resolveTime(raw: string): string {
   // Try parsing as a duration (e.g. "7d", "30m"). cutoffBefore throws on
   // non-duration input, so an ISO string passed here will throw; we catch
-  // and fall through to the literal pass-through.
+  // and fall through to the literal validation.
   try {
     const ms = cutoffBefore(raw);
     if (!Number.isFinite(ms) || ms < -8_640_000_000_000_000) {
@@ -125,7 +135,10 @@ function resolveTime(raw: string): string {
     }
     return new Date(ms).toISOString();
   } catch {
-    // Not a duration — treat as a literal ISO timestamp and pass through.
+    // Not a duration — must be a literal ISO/date timestamp.
+    if (!ISO_DATE_RE.test(raw) || Number.isNaN(Date.parse(raw))) {
+      throw new Error(`invalid --since/--until value: '${raw}'`);
+    }
     return raw;
   }
 }
@@ -188,11 +201,15 @@ function runSearch(argv: string[]): number {
   if (values.q !== undefined) searchOpts.q = values.q;
   if (values.origin !== undefined) searchOpts.origin = values.origin;
 
-  if (values.since !== undefined) {
-    searchOpts.createdAfter = resolveTime(values.since);
-  }
-  if (values.until !== undefined) {
-    searchOpts.createdBefore = resolveTime(values.until);
+  // Resolve --since/--until (duration or literal ISO) up front so a typo fails
+  // fast like --status/--errors/--limit, rather than silently becoming a bad
+  // SQL literal that returns zero rows with no error.
+  try {
+    if (values.since !== undefined) searchOpts.createdAfter = resolveTime(values.since);
+    if (values.until !== undefined) searchOpts.createdBefore = resolveTime(values.until);
+  } catch (err) {
+    process.stderr.write(`peek sessions search: ${(err as Error).message}\n`);
+    return 1;
   }
 
   if (values.status === 'active' || values.status === 'finalized') {

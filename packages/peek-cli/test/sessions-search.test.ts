@@ -47,7 +47,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
-  if (origHome === undefined) process.env.PEEK_HOME = '';
+  if (origHome === undefined) Reflect.deleteProperty(process.env, 'PEEK_HOME');
   else process.env.PEEK_HOME = origHome;
   rmSync(home, { recursive: true, force: true });
 });
@@ -276,6 +276,24 @@ describe('peek sessions search validation', () => {
     const { code, output } = withCaptured(['search', '--limit', 'abc']);
     expect(code).toBe(1);
     expect(output.stderr).toContain('--limit');
+  });
+
+  it('returns 1 and prints error for an invalid --since literal', () => {
+    const { code, output } = withCaptured(['search', '--since', '202-05-01']);
+    expect(code).toBe(1);
+    expect(output.stderr).toContain('--since');
+  });
+
+  it('accepts a valid ISO --since (returns 0)', () => {
+    seedDb();
+    const { code } = withCaptured(['search', '--since', '2026-06-01', '--json']);
+    expect(code).toBe(0);
+  });
+
+  it('accepts a duration --since (returns 0)', () => {
+    seedDb();
+    const { code } = withCaptured(['search', '--since', '7d', '--json']);
+    expect(code).toBe(0);
   });
 });
 
