@@ -1,5 +1,14 @@
 # @tracelane/playwright
 
+## 0.1.0-alpha.9
+
+### Patch Changes
+
+- Updated dependencies [5c736d4]
+- Updated dependencies [a10c445]
+  - @tracelane/core@0.1.0-alpha.18
+  - @tracelane/report@0.1.0-alpha.21
+
 ## 0.1.0-alpha.8
 
 ### Patch Changes
