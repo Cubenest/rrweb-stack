@@ -272,6 +272,71 @@ export function getNetworkErrorsInWindow(
   }));
 }
 
+/** Escape LIKE metacharacters so a user term matches literally under ESCAPE '\'. */
+export function escapeLike(s: string): string {
+  return s.replace(/[\\%_]/g, (ch) => `\\${ch}`);
+}
+
+export interface SearchSessionsOptions extends ListSessionsOptions {
+  readonly q?: string;
+  readonly createdAfter?: string;
+  readonly createdBefore?: string;
+  readonly status?: 'active' | 'finalized';
+  readonly hasConsoleErrors?: boolean;
+  readonly hasNetworkErrors?: boolean;
+}
+
+/**
+ * Search sessions by metadata + facets, newest first. Read-only; parameterized;
+ * LIKE-based (no FTS). All options optional — empty returns recent sessions (a
+ * superset of listRecentSessions). Returns the same SessionSummaryRow shape.
+ */
+export function searchSessions(
+  db: Database,
+  options: SearchSessionsOptions = {},
+): SessionSummaryRow[] {
+  const limit = options.limit ?? 10;
+  const where: string[] = [];
+  const params: Array<string | number> = [];
+  if (options.q !== undefined && options.q !== '') {
+    const like = `%${escapeLike(options.q)}%`;
+    where.push("(title LIKE ? ESCAPE '\\' OR url LIKE ? ESCAPE '\\' OR origin LIKE ? ESCAPE '\\')");
+    params.push(like, like, like);
+  }
+  if (options.origin !== undefined) {
+    where.push('origin = ?');
+    params.push(options.origin);
+  }
+  if (options.createdAfter !== undefined) {
+    where.push('created_at >= ?');
+    params.push(options.createdAfter);
+  }
+  if (options.createdBefore !== undefined) {
+    where.push('created_at <= ?');
+    params.push(options.createdBefore);
+  }
+  if (options.status !== undefined) {
+    where.push('status = ?');
+    params.push(options.status);
+  }
+  if (options.hasConsoleErrors) {
+    where.push(
+      "EXISTS (SELECT 1 FROM console_events c WHERE c.session_id = sessions.id AND c.level = 'error')",
+    );
+  }
+  if (options.hasNetworkErrors) {
+    where.push(
+      'EXISTS (SELECT 1 FROM network_events n WHERE n.session_id = sessions.id AND (n.status >= 400 OR n.error_text IS NOT NULL))',
+    );
+  }
+  let sql = 'SELECT * FROM sessions';
+  if (where.length > 0) sql += ` WHERE ${where.join(' AND ')}`;
+  sql += ' ORDER BY updated_at DESC, created_at DESC LIMIT ?';
+  params.push(limit);
+  const rows = db.prepare(sql).all(...params) as RawSession[];
+  return rows.map((r) => toSummaryRow(db, r));
+}
+
 /** Look up the events blob path + first-event ts for a session (for the walker tools). */
 export function getSessionBlobRef(
   db: Database,
