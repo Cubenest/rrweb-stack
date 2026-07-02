@@ -33,7 +33,7 @@ If you'd rather not touch the CLI first, install peek as a Claude Code plugin:
 /plugin install peek@peek
 ```
 
-This wires up the **MCP server** (16 tools) and the peek skill in one step. You
+This wires up the **MCP server** (17 tools) and the peek skill in one step. You
 still need the recorder — the native host and the Chrome extension — so after
 installing the plugin, run `peek init` once (Step 2) and install the extension
 (Prerequisites), then skip to [Verify](#3-verify). Local-first: peek uploads

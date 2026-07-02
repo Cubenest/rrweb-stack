@@ -15,6 +15,7 @@ import {
 } from '../lib/audit.js';
 import { cutoffBefore } from '../lib/duration.js';
 import { auditLogPath } from '../lib/peek-home.js';
+import { runAuditBundle } from './audit-bundle.js';
 import { runAuditVerify } from './audit-verify.js';
 
 function printUsage(): void {
@@ -25,6 +26,7 @@ function printUsage(): void {
       'Subcommands:',
       '  log     Show the act-tool audit log',
       '  verify  Verify the audit log hash chain',
+      '  bundle  Package the audit log into a portable evidence archive',
       '',
       'peek audit log [options]',
       '  --since <dur>     Only entries newer than e.g. 1h, 30m, 7d',
@@ -36,8 +38,15 @@ function printUsage(): void {
       'peek audit verify [options]',
       '  --dir <path>      Directory containing audit.log + audit.head.json',
       '                    (default: ~/.peek)',
+      '  --bundle <file>   Verify a *.peekaudit archive (mutually exclusive with --dir)',
       '  --json            Emit result as JSON instead of human text',
       '  Exit: 0=intact/no-log, 1=anomaly, 2=tampered',
+      '',
+      'peek audit bundle [options]',
+      '  --dir <path>      Directory containing audit.log + audit.head.json',
+      '                    (default: ~/.peek)',
+      '  --out <file>      Output path (default: ./peek-audit-<date>.peekaudit)',
+      '  --help            Show this help and exit',
       '',
     ].join('\n'),
   );
@@ -64,13 +73,16 @@ export function runAudit(argv: string[]): number | Promise<number> {
   if (sub === 'verify') {
     return runAuditVerify(argv.slice(1));
   }
+  if (sub === 'bundle') {
+    return runAuditBundle(argv.slice(1));
+  }
   if (sub !== 'log') {
     if (sub === undefined || sub === 'help' || sub === '--help' || sub === '-h') {
       printUsage();
       return sub === undefined ? 1 : 0;
     }
     process.stderr.write(
-      `peek audit: unknown subcommand '${sub}' (did you mean 'log' or 'verify'?)\n`,
+      `peek audit: unknown subcommand '${sub}' (did you mean 'log', 'verify', or 'bundle'?)\n`,
     );
     return 1;
   }

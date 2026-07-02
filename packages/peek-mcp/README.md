@@ -58,7 +58,7 @@ If you use Claude Code, install peek as a plugin in one step:
 /plugin install peek@peek
 ```
 
-That wires up this MCP server (16 tools) plus the peek skill. You still need the
+That wires up this MCP server (17 tools) plus the peek skill. You still need the
 recorder — run `npx @peekdev/cli init` once and install the peek Chrome
 extension — before there are sessions to read. Local-first: peek uploads nothing
 — what your MCP client does with the data is up to you.
@@ -116,6 +116,7 @@ The per-user config paths `peek init` writes to (canonical, see `packages/peek-c
 | `clear_highlight` | Remove the highlight overlay | per-origin Level 2+ |
 | `set_intent` | Set the control-shield status banner | per-origin Level 4 |
 | `request_user_input` | Pause and hand a field back to the user, then resume | per-origin Level 4 |
+| `verify_audit_log` | Verify peek's local action audit log (`~/.peek/audit.log`) is an intact, tamper-evident hash chain. Returns status (`intact` / `broken` / `truncated` / `tail-tampered` / `prefix-tampered` / `gaps` / `incomplete-final` / `head-missing`) + entry count and a short message. Read-only. | none |
 
 The full tool list is exposed via the MCP `tools/list` request (spec 2025-11-25 + back-compat for 2025-03-26). Tool docs ship with the binary via `tools/list` response `description` fields.
 

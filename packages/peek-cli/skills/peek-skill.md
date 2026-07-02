@@ -1,13 +1,13 @@
 ---
 name: peek
-description: Use when the user mentions a recent browser session, an error they just reproduced, "what was the user doing before X", DOM state at some past moment, or wants to turn a manual repro into a Playwright test. Peek exposes 16 MCP tools backed by a local SQLite store of rrweb-captured browser sessions.
+description: Use when the user mentions a recent browser session, an error they just reproduced, "what was the user doing before X", DOM state at some past moment, or wants to turn a manual repro into a Playwright test. Peek exposes 17 MCP tools backed by a local SQLite store of rrweb-captured browser sessions.
 ---
 
 # peek — local browser-session inspection
 
 Peek is an OSS browser companion for AI coding agents. A Chrome MV3
 extension records masked rrweb sessions to a local SQLite store
-(`~/.peek/sessions.db`); a stdio MCP server exposes 16 tools that let you
+(`~/.peek/sessions.db`); a stdio MCP server exposes 17 tools that let you
 inspect those sessions and (with consent) drive the live browser.
 
 Peek runs entirely on the user's machine. No telemetry, no cloud, no
@@ -38,7 +38,7 @@ Don't reach for peek when:
   not a live debugger
 - The question is about static code, not runtime behavior
 
-## The 16 tools
+## The 17 tools
 
 **Session-forensics read tools (8) — usable at permission Level 1 (Read-only) and above:**
 
@@ -80,6 +80,12 @@ Don't reach for peek when:
 |---|---|
 | `set_intent` | Set the agent's status-banner text on the control shield (e.g. "Applying to Senior Frontend · step 2/4") so the user can follow what you're doing. |
 | `request_user_input` | Pause the agent and hand the keyboard back to the user for one editable field (or a free-text prompt) — a CAPTCHA, an OTP, a final review — then resume. |
+
+**Audit tool (1) — read-only; no permission level required:**
+
+| Tool | When |
+|---|---|
+| `verify_audit_log` | Verify peek's local action audit log (`~/.peek/audit.log`) is an intact, tamper-evident hash chain. Returns status: `intact`, `broken`, `truncated`, `tail-tampered`, `prefix-tampered`, `gaps`, `incomplete-final`, or `head-missing`. Call when the user asks whether the local audit log is intact or before sharing an audit bundle. To verify a received `*.peekaudit` file, use the CLI: `peek audit verify --bundle <file>`. |
 
 ## Workflow
 
@@ -191,7 +197,7 @@ and stop. Don't retry, don't suggest workarounds.
 
 - Never invent sessions. If `list_recent_sessions` returns empty, say so
   and suggest the user record a session via the extension.
-- Never invent tool names. The 16 above are the entire surface.
+- Never invent tool names. The 17 above are the entire surface.
 - Selector results from `generate_playwright_repro` are derived from
   rrweb event metadata. Surface them for review; don't claim a generated
   test is production-ready without the user confirming.

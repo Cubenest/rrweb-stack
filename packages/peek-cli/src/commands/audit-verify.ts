@@ -11,6 +11,7 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { parseArgs } from 'node:util';
+import { unpackAuditBundle, verifyAuditBundleIntegrity } from '../lib/audit-bundle.js';
 import { type AuditHead, type VerifyResult, verifyAuditChain } from '../lib/audit-chain.js';
 import { peekHomeDir } from '../lib/peek-home.js';
 
@@ -24,6 +25,8 @@ const VERIFY_USAGE = [
   '  --json            Emit result as JSON instead of human text',
   '  --dir <path>      Directory containing audit.log + audit.head.json',
   '                    (default: ~/.peek)',
+  '  --bundle <file>   Verify a *.peekaudit archive (mutually exclusive with --dir;',
+  '                    --bundle wins if both are supplied)',
   '  --help            Show this help and exit',
   '',
   'Exit codes:',
@@ -79,6 +82,7 @@ export async function runAuditVerify(
     options: {
       json: { type: 'boolean' },
       dir: { type: 'string' },
+      bundle: { type: 'string' },
       help: { type: 'boolean' },
     },
     allowPositionals: false,
@@ -88,6 +92,37 @@ export async function runAuditVerify(
   if (values.help) {
     write(VERIFY_USAGE);
     return EXIT.ok;
+  }
+  if (values.bundle) {
+    let unpacked: ReturnType<typeof unpackAuditBundle>;
+    try {
+      unpacked = unpackAuditBundle(values.bundle);
+      verifyAuditBundleIntegrity(unpacked);
+    } catch (err) {
+      const message = (err as Error).message;
+      if (values.json) {
+        write(`${JSON.stringify({ archiveIntegrity: 'failed', error: message })}\n`);
+      } else {
+        write(`archive integrity FAILED: ${message}\n`);
+      }
+      return EXIT.tampered;
+    }
+    let head: AuditHead | null = null;
+    if (unpacked.headBuf) {
+      try {
+        head = JSON.parse(unpacked.headBuf.toString('utf8')) as AuditHead;
+      } catch {
+        head = null; // malformed head → head-missing semantics (matches the --dir path)
+      }
+    }
+    const r = verifyAuditChain(unpacked.logBuf, head);
+    if (values.json) {
+      write(`${JSON.stringify({ archiveIntegrity: 'ok', ...r })}\n`);
+    } else {
+      write('archive integrity ok (SHA-256 manifest matches).\n');
+      write(human(r));
+    }
+    return exitCodeFor(r.status);
   }
   const dir = values.dir ?? peekHomeDir();
   const logPath = join(dir, 'audit.log');
