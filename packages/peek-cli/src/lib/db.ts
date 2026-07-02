@@ -427,6 +427,103 @@ export function deleteSessionsOlderThan(
   return ids.length;
 }
 
+/**
+ * Escape SQLite LIKE special characters (`%`, `_`, `\`) so a user-supplied
+ * query string is treated as a literal substring match. Use with
+ * `LIKE ? ESCAPE '\'`.
+ */
+export function escapeLike(s: string): string {
+  return s.replace(/[\\%_]/g, (ch) => `\\${ch}`);
+}
+
+export interface SearchSessionsOptions extends ListSessionsOptions {
+  /** Case-insensitive substring match against title, url, and origin. */
+  readonly q?: string;
+  /** ISO timestamp lower bound on created_at (inclusive). */
+  readonly createdAfter?: string;
+  /** ISO timestamp upper bound on created_at (inclusive). */
+  readonly createdBefore?: string;
+  /** Filter to a specific session status value. */
+  readonly status?: 'active' | 'finalized';
+  /** Restrict to sessions that have at least one console error row. */
+  readonly hasConsoleErrors?: boolean;
+  /** Restrict to sessions that have at least one network error row. */
+  readonly hasNetworkErrors?: boolean;
+  /** Restrict to sessions with console OR network errors (the CLI `--errors any`). */
+  readonly errorsAny?: boolean;
+}
+
+const CONSOLE_ERR_EXISTS =
+  "EXISTS (SELECT 1 FROM console_events WHERE session_id = s.id AND level = 'error')";
+const NETWORK_ERR_EXISTS =
+  'EXISTS (SELECT 1 FROM network_events WHERE session_id = s.id AND (status >= 400 OR error_text IS NOT NULL))';
+
+/**
+ * Search sessions by metadata + facets (with error counts), newest first.
+ *
+ * Mirrors the shape of {@link listSessionsWithCounts} but adds a full set of
+ * filter knobs: free-text `q` (LIKE across title/url/origin), date range,
+ * status, and error-presence flags. All filters compose with AND; empty
+ * options returns the 20 most-recently-updated sessions (same default as
+ * `listSessionsWithCounts`). Read-only; fully parameterized; LIKE-escaped.
+ */
+export function searchSessions(
+  db: Database,
+  options: SearchSessionsOptions = {},
+): SessionRowWithCounts[] {
+  const limit = options.limit ?? 20;
+  const where: string[] = [];
+  const params: Array<string | number> = [];
+
+  if (options.q !== undefined && options.q !== '') {
+    const like = `%${escapeLike(options.q)}%`;
+    where.push(
+      "(s.title LIKE ? ESCAPE '\\' OR s.url LIKE ? ESCAPE '\\' OR s.origin LIKE ? ESCAPE '\\')",
+    );
+    params.push(like, like, like);
+  }
+  if (options.origin !== undefined) {
+    where.push('s.origin = ?');
+    params.push(options.origin);
+  }
+  if (options.createdAfter !== undefined) {
+    where.push('s.created_at >= ?');
+    params.push(options.createdAfter);
+  }
+  if (options.createdBefore !== undefined) {
+    where.push('s.created_at <= ?');
+    params.push(options.createdBefore);
+  }
+  if (options.status !== undefined) {
+    where.push('s.status = ?');
+    params.push(options.status);
+  }
+  if (options.errorsAny) {
+    where.push(`(${CONSOLE_ERR_EXISTS} OR ${NETWORK_ERR_EXISTS})`);
+  } else {
+    if (options.hasConsoleErrors) where.push(CONSOLE_ERR_EXISTS);
+    if (options.hasNetworkErrors) where.push(NETWORK_ERR_EXISTS);
+  }
+
+  let sql = `
+    SELECT s.*,
+      (SELECT COUNT(*) FROM console_events WHERE session_id = s.id AND level = 'error') AS console_count,
+      (SELECT COUNT(*) FROM network_events WHERE session_id = s.id AND (status >= 400 OR error_text IS NOT NULL)) AS network_count
+    FROM sessions s`;
+  if (where.length > 0) sql += ` WHERE ${where.join(' AND ')}`;
+  sql += ' ORDER BY s.updated_at DESC, s.created_at DESC LIMIT ?';
+  params.push(limit);
+
+  const rows = db.prepare(sql).all(...params) as Array<
+    RawSessionRow & { console_count: number; network_count: number }
+  >;
+  return rows.map((r) => ({
+    ...mapSession(r),
+    consoleCount: r.console_count,
+    networkCount: r.network_count,
+  }));
+}
+
 /** Total on-disk event bytes summed across all sessions. */
 export function sumSessionBytes(db: Database): number {
   const row = db.prepare('SELECT COALESCE(SUM(bytes), 0) AS total FROM sessions').get() as {
