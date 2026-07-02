@@ -34,22 +34,23 @@
     "@changesets/cli": "^2.27.10",
     "lefthook": "^2.1.9",
     "typescript": "^6.0.3",
-    "vitest": "^2.1.8"
+    "vitest": "^3.2.6"
   },
   "pnpm": {
     "onlyBuiltDependencies": ["better-sqlite3"],
-    "//overrides": "WXT 0.20 (peek-extension) needs Vite 6 (vite-node@3, @vitejs/plugin-react@5) but the repo's vitest@2 rides Vite 5. These overrides pin WXT's transitive deps to the Vite-6 line so its plugin `filter` API works, without a repo-wide vitest bump. Remove once the repo moves to vitest@3 / Vite 6. The serialize-javascript and tmp overrides patch two high-severity transitive CVEs (GHSA-5c6j-r48x-rmvq via mocha 10.8 → serialize-javascript 6.0.2; GHSA-ph9p-34f9-6g65 via wxt 0.20 → web-ext-run → tmp 0.2.5) — both are dev-only transitives but pinned forward as defense-in-depth (Phase 4a, 2026-05-28). The remaining entries patch transitive OSV advisories surfaced by `pnpm audit` (Phase 4b, 2026-06-27): `vite@6` → 6.4.3 SCOPED so only the astro/wxt Vite-6 copy moves and vitest@2's Vite-5 copy is left untouched (GHSA-v6wh-96g9-6wx3, GHSA-fx2h-pf6j-xcff); yaml 2.9.0 (GHSA-48c2-rrv3-qjmp); uuid 11.1.1 (GHSA-w5hq-g745-h8pq, dev-only via wxt→web-ext-run); shell-quote 1.8.4 (GHSA-w7jw-789q-3m8p CRITICAL, dev-only via fx-runner→web-ext-run); form-data 4.0.6 (GHSA-hmw2-7cc7-3qxx, dev-only via jsdom); hono 4.12.25 (six advisories incl. GHSA-88fw-hqm2-52qc; runtime via @modelcontextprotocol/sdk's ^4.11.4 range). NOT overridden and tracked as residuals: (1) esbuild — a global pin to 0.28.1 (the only version clearing both GHSA-67mh-4wv8-2f99 and GHSA-g7r4-m6w7-qqqr) breaks the WXT MV3 build (esbuild 0.28 cannot lower for-of destructuring to the chrome87/es2020 target), and both advisories are esbuild-dev-server-only (CORS/SSRF on `esbuild serve`, never invoked in this build-only pipeline), so they are accepted dev-only residuals; (2) astro 5→6 (5 advisories, no patched 5.x exists) and vitest 2→3 (CRITICAL GHSA-5xrq-8626-4rwp, fix only ≥3.2.6, also clears the residual Vite-5 copies) — both need a major bump and ride in their own PRs; (3) js-yaml — the only vulnerable copy is js-yaml@3.14.2 under @changesets/cli's read-yaml-file (declares js-yaml ^3.6.1, does not accept 4.x — v4 removed safeLoad), so forcing 4.x would break the release tooling; tracked until @changesets/cli ships a 4.x-based read-yaml-file.",
+    "//overrides": "vite-node is pinned to the 3.x line shared by vitest@3 and WXT 0.20. @vitejs/plugin-react is pinned to 5.x but SCOPED to @wxt-dev/module-react — plugin-react 6 imports `vite/internal` (vite 7+ only) while WXT 0.20 stays on the Vite-6 line, so the global pin would break; scoping it leaves the todomvc demo (Vite 8) on plugin-react 6. The serialize-javascript and tmp overrides patch two high-severity dev-only transitive CVEs (GHSA-5c6j-r48x-rmvq via mocha 10.8 → serialize-javascript 6.0.2; GHSA-ph9p-34f9-6g65 via wxt 0.20 → web-ext-run → tmp 0.2.5) (Phase 4a, 2026-05-28). Phase 4b OSV patches (2026-06-27): yaml 2.9.0 (GHSA-48c2-rrv3-qjmp); uuid 11.1.1 (GHSA-w5hq-g745-h8pq, dev-only via wxt→web-ext-run); shell-quote 1.8.4 (GHSA-w7jw-789q-3m8p CRITICAL, dev-only); form-data 4.0.6 (GHSA-hmw2-7cc7-3qxx, dev-only via jsdom); hono 4.12.25 (GHSA-88fw-hqm2-52qc + others; runtime via @modelcontextprotocol/sdk). The astro 5→6 / vitest 2→3 major bump (2026-06-30) folded in the rest: the js-yaml overrides clear GHSA-h67p-54hq-rp68 WITHIN the 3.x line — js-yaml@3 → 3.15.0 keeps `safeLoad` for @changesets/cli's read-yaml-file (no 4.x force, release tooling unaffected), js-yaml@4 → 4.2.0 for the astro markdown-remark copy. vite reaches 6.4.3 (GHSA-fx2h-pf6j-xcff, GHSA-v6wh-96g9-6wx3) via peek-extension's direct `vite` dep rather than a `vite@6` override — the override rewrote the vite peer of vitefu / @tailwindcss-vite and broke strict-peer once astro@6 (Vite 7) and the demo (Vite 8) entered the tree. esbuild stays an accepted dev-only residual: a global 0.28.1 pin breaks the WXT MV3 build (esbuild 0.28 cannot lower for-of destructuring to the chrome87/es2020 target), and GHSA-67mh-4wv8-2f99 / GHSA-g7r4-m6w7-qqqr are esbuild-dev-server-only (never invoked in this build-only pipeline).",
     "overrides": {
       "vite-node": "^3.2.4",
-      "@vitejs/plugin-react": "^5.0.4",
+      "@wxt-dev/module-react>@vitejs/plugin-react": "^5.0.4",
       "serialize-javascript": "^7.0.3",
       "tmp": "^0.2.6",
-      "vite@6": "^6.4.3",
       "yaml": "^2.9.0",
       "uuid": "^11.1.1",
       "shell-quote": "^1.8.4",
       "form-data": "^4.0.6",
-      "hono": "^4.12.25"
+      "hono": "^4.12.25",
+      "js-yaml@3": "^3.15.0",
+      "js-yaml@4": "^4.2.0"
     }
   }
 }

@@ -5,6 +5,7 @@
   "description": "Docs site for tracelane — the OSS WDIO/Playwright/Cypress test-recorder. Astro static site.",
   "license": "Apache-2.0",
   "type": "module",
+  "engines": { "node": ">=22.12.0" },
   "scripts": {
     "dev": "cross-env ASTRO_TELEMETRY_DISABLED=1 astro dev",
     "build": "cross-env ASTRO_TELEMETRY_DISABLED=1 astro build",
@@ -15,7 +16,7 @@
   "dependencies": {
     "@astrojs/sitemap": "^3.7.3",
     "@cubenest/docs-shared": "workspace:*",
-    "astro": "^5.18.2"
+    "astro": "^6.4.6"
   },
   "devDependencies": {
     "@astrojs/check": "^0.9.4",
