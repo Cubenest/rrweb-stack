@@ -281,6 +281,7 @@ export interface SearchSessionsOptions extends ListSessionsOptions {
   readonly q?: string;
   readonly createdAfter?: string;
   readonly createdBefore?: string;
+  /** Session lifecycle status. The schema's `status` column only ever holds these two values (see 0001_initial.sql). */
   readonly status?: 'active' | 'finalized';
   readonly hasConsoleErrors?: boolean;
   readonly hasNetworkErrors?: boolean;

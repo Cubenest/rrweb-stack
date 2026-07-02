@@ -443,7 +443,7 @@ export interface SearchSessionsOptions extends ListSessionsOptions {
   readonly createdAfter?: string;
   /** ISO timestamp upper bound on created_at (inclusive). */
   readonly createdBefore?: string;
-  /** Filter to a specific session status value. */
+  /** Session lifecycle status. The schema's `status` column only ever holds these two values (see 0001_initial.sql). */
   readonly status?: 'active' | 'finalized';
   /** Restrict to sessions that have at least one console error row. */
   readonly hasConsoleErrors?: boolean;

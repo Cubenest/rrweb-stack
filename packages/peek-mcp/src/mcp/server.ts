@@ -300,7 +300,7 @@ export function createPeekMcpServer(options: CreatePeekMcpServerOptions = {}): P
       {
         title: 'Search recorded sessions',
         description:
-          "Search your recorded browser sessions by metadata and facets — free text in title/URL/origin (q), exact origin, recorded date range (createdAfter/createdBefore, ISO-8601), status (active/finalized), and whether the session has console errors (hasConsoleErrors) or network errors (hasNetworkErrors). Returns the same compact rows as list_recent_sessions, newest first. Read-only and local. Use it to find a sessionId when you don't already have one, then call get_session_summary. Matches session metadata only — not page content or error-message text.",
+          "Search your recorded browser sessions by metadata and facets — free text in title/URL/origin (q), exact origin, recorded date range (createdAfter/createdBefore, ISO-8601), status (active/finalized), and whether the session has console errors (hasConsoleErrors) or network errors (hasNetworkErrors). Returns the same compact rows as list_recent_sessions, newest first. Read-only and local. Use it to find a sessionId when you don't already have one, then call get_session_summary. Matches session metadata only — not page content or error-message text. Multiple facets combine with AND (e.g. hasConsoleErrors + hasNetworkErrors returns sessions that have BOTH); to find sessions with either kind of error, search for each separately.",
         inputSchema: {
           q: z
             .string()

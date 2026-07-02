@@ -112,4 +112,24 @@ describe('searchSessions (cli)', () => {
     expect(searchSessions(db, {}).map((x) => x.id)).toEqual(['b', 'a']);
     expect(searchSessions(db, { limit: 1 }).map((x) => x.id)).toEqual(['b']);
   });
+  it('combines hasConsoleErrors AND hasNetworkErrors as intersection', () => {
+    addSession(db, { id: 'consoleOnly' });
+    addSession(db, { id: 'networkOnly' });
+    addSession(db, { id: 'both' });
+    db.prepare(
+      "INSERT INTO console_events (session_id, ts_ms, level, message) VALUES ('consoleOnly', 1, 'error', 'x')",
+    ).run();
+    db.prepare(
+      "INSERT INTO console_events (session_id, ts_ms, level, message) VALUES ('both', 1, 'error', 'x')",
+    ).run();
+    db.prepare(
+      "INSERT INTO network_events (session_id, ts_ms, method, url, status) VALUES ('networkOnly', 1, 'GET', 'u', 500)",
+    ).run();
+    db.prepare(
+      "INSERT INTO network_events (session_id, ts_ms, method, url, status) VALUES ('both', 1, 'GET', 'u', 500)",
+    ).run();
+    expect(
+      searchSessions(db, { hasConsoleErrors: true, hasNetworkErrors: true }).map((x) => x.id),
+    ).toEqual(['both']);
+  });
 });
