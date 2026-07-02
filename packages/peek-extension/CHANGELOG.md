@@ -1,5 +1,56 @@
 # @peekdev/extension
 
+## 0.1.0-alpha.20
+
+### Minor Changes
+
+- 34e270e: First-run trust + permission-level legibility: a one-time side-panel explainer
+  card, an inline "what do these levels mean?" legend, the trust level named in
+  each confirm prompt, an explicit warned opt-in for Level 4 (Auto), a persistent
+  "Auto-approve active" indicator with one-click turn-off, and a prominent
+  first-run setup nudge. "Always for this site" now graduates an origin to
+  Level 3 (act-with-confirm) instead of silently enabling Level 4 auto-execute.
+  No permission-model change, no new permissions, no new egress.
+- 9ddf4d1: peek: richer live page-inspection in `get_element_detail`
+
+  `get_element_detail` now returns a curated, masked computed-style bag, the
+  accessible description (resolved from `aria-describedby` / `aria-description`),
+  and effective `aria-hidden` / `aria-disabled` inheritance flags — all Level-1
+  read-tier, DOM-only (no CDP, no eval), and masked (in-page redaction for
+  `.rr-mask`/`[data-private]` regions plus service-worker-side masking of the
+  description text and every `url()` in `background-image`). Live console/network
+  state remains available via the existing `get_session_console_errors` /
+  `get_session_network_errors` tools. Additive; no schema, permission, or tool
+  change.
+
+- 31f6619: peek: heads-up before a destructive click during a page-scope handoff
+
+  When peek hands the whole page to you (a page-scope handoff for a CAPTCHA, final
+  review, or submit), the control shield now flashes a brief, non-blocking heads-up
+  the moment you're about to click a destructive-looking control (delete, pay,
+  transfer, cancel subscription, …). peek never stops the click — you're the actor
+  during a handoff — it just makes the moment visible. The cue is rendered inside
+  the shield's existing overlay (invisible to the recording) and matches the same
+  destructive terms peek already uses for its own actions.
+
+- 12f0464: peek: terminal success/failure banner on the control shield
+
+  When an assisted-apply loop ends with set_intent(status:'done'|'failed'), the
+  control shield now shows a distinct terminal banner — a green "done" banner
+  that auto-dismisses after a few seconds, or a red "failed" banner that persists
+  until you act — so the outcome is legible at the place you're already watching.
+  The banner renders in the shield's existing closed overlay (invisible to the
+  recording). No new tool or permission.
+
+### Patch Changes
+
+- 7718713: Positioning reframe: lead every surface with the read-path forensic story —
+  "debug what already happened in your real browser." Rewrites the MCP server
+  instructions + entry-tool descriptions, the package READMEs and descriptions,
+  and the extension's tagline around forensic read access (sessions you already
+  lived: DOM history, console/network errors, the action before an error) with
+  the Playwright repro as the payoff. No API, schema, or behavior change.
+
 ## 0.1.0-alpha.19
 
 ### Minor Changes

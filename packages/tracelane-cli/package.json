@@ -1,6 +1,6 @@
 {
   "name": "@tracelane/cli",
-  "version": "0.1.0-alpha.13",
+  "version": "0.1.0-alpha.14",
   "description": "tracelane scaffolding CLI. `npx @tracelane/cli init` detects your test runner (WDIO / Playwright / Cypress) and wires the matching adapter (@tracelane/wdio or @tracelane/playwright) into your runner config in one command — the published path from `npm install` + manual conf edit to a single npx invocation.",
   "keywords": [
     "tracelane",
