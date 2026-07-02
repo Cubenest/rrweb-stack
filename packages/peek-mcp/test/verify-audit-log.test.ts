@@ -103,6 +103,26 @@ describe('verify_audit_log tool', () => {
     }
   });
 
+  it('returns logPresent:false + status "truncated" when the log is deleted but a valid head still exists', async () => {
+    // Scenario: audit.log is deleted (trail erased) but audit.head.json survived.
+    // This is the deleted-trail tamper signal — must NOT be treated as benign "no log".
+    const { head } = twoEntryChain();
+    const logPath = join(dir, 'audit.log');
+    const headPath = join(dir, 'audit.head.json');
+    // Write ONLY the head; do NOT create audit.log.
+    writeFileSync(headPath, JSON.stringify(head));
+
+    const { client, close } = await connectClient(logPath);
+    try {
+      const res = await client.callTool({ name: 'verify_audit_log', arguments: {} });
+      const body = parseJson(res as never) as Record<string, unknown>;
+      expect(body.logPresent).toBe(false);
+      expect(body.status).toBe('truncated');
+    } finally {
+      await close();
+    }
+  });
+
   it('returns status "broken" when a middle line body is edited', async () => {
     const { logBuf, head } = twoEntryChain();
     const logPath = join(dir, 'audit.log');

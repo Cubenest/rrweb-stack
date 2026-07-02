@@ -152,7 +152,7 @@ function textOf(result: { content: Array<{ type: string; text?: string }> }): st
 }
 
 describe('peek MCP server: tools/list', () => {
-  it('lists exactly the documented tool surface (8 read + 2 write + 2 suggest + 1 handoff + set_intent + verify_audit_log)', async () => {
+  it('lists exactly the documented tool surface (8 read + 2 live read + 2 write + 2 suggest + 1 handoff + set_intent + verify_audit_log)', async () => {
     const { dbPath, eventsDir } = seedStore(dir, [loginSession()]);
     const { client, close } = await connectClient({ dbPath, eventsDir });
     try {

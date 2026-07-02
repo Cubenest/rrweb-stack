@@ -116,4 +116,38 @@ describe('verifyAuditChain (ported from @peekdev/cli)', () => {
     expect(r.status).toBe('incomplete-final');
     expect(r.entriesVerified).toBe(2);
   });
+  it('gaps for a chained line whose prevHash is LOCK_GAP_PREV', () => {
+    const l1 = JSON.stringify({ ts: 't1', seq: 1, prevHash: GENESIS_PREV });
+    const l2 = JSON.stringify({ ts: 't2', seq: 2, prevHash: LOCK_GAP_PREV });
+    const buf = Buffer.from(`${l1}\n${l2}\n`, 'utf8');
+    const head = {
+      version: 1,
+      prefix: null,
+      seq: 2,
+      headHash: hashLine(l2),
+      gapCount: 1,
+      bytes: buf.length,
+    };
+    const r = verifyAuditChain(buf, head as AuditHead);
+    expect(r.status).toBe('gaps');
+    expect(r.gaps).toEqual([2]);
+  });
+  it('intact when head benignly lags one entry behind the log tail', () => {
+    const { buf } = chainLog(3);
+    const lines = buf.toString('utf8').split('\n').filter(Boolean);
+    // Writer appended line 3 but crashed before advancing the head → head still at seq 2.
+    // biome-ignore lint/style/noNonNullAssertion: lines has 3 entries (filtered)
+    const line2Raw = `${lines[1]!}\n`;
+    const laggingHead: AuditHead = {
+      version: 1,
+      prefix: null,
+      seq: 2,
+      headHash: hashLine(line2Raw),
+      gapCount: 0,
+      bytes: buf.length,
+    };
+    const r = verifyAuditChain(buf, laggingHead);
+    expect(r.status).toBe('intact');
+    expect(r.entriesVerified).toBe(3);
+  });
 });

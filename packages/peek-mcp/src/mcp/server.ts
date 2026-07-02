@@ -998,16 +998,17 @@ export function createPeekMcpServer(options: CreatePeekMcpServerOptions = {}): P
       },
       () => {
         const logPath = options.auditLogPath ?? defaultAuditLogPath();
-        if (!existsSync(logPath)) {
+        const head = readHead(auditHeadPath(logPath));
+        const logPresent = existsSync(logPath);
+        if (!logPresent && head === null) {
           return jsonResult({
             logPresent: false,
             summary: 'No audit log yet — no actions have been recorded.',
           });
         }
-        const logBuf = readFileSync(logPath);
-        const head = readHead(auditHeadPath(logPath));
+        const logBuf = logPresent ? readFileSync(logPath) : Buffer.alloc(0);
         const r = verifyAuditChain(logBuf, head);
-        return jsonResult({ logPresent: true, ...r, summary: verifySummary(r) });
+        return jsonResult({ logPresent, ...r, summary: verifySummary(r) });
       },
     );
   }
