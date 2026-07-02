@@ -10,9 +10,10 @@ extension records masked rrweb sessions to a local SQLite store
 (`~/.peek/sessions.db`); a stdio MCP server exposes 17 tools that let you
 inspect those sessions and (with consent) drive the live browser.
 
-Peek runs entirely on the user's machine. No telemetry, no cloud, no
-account. If `~/.peek/sessions.db` is absent, peek isn't installed yet —
-direct the user to `npx @peekdev/cli init` and stop.
+Peek itself uploads nothing — no telemetry, no cloud, no account; what
+your MCP client does with the session data peek returns is up to you. If
+`~/.peek/sessions.db` is absent, peek isn't installed yet — direct the
+user to `npx @peekdev/cli init` and stop.
 
 ## When to invoke
 
@@ -156,17 +157,20 @@ User: "Write a Playwright test for the bug I just reproduced."
 User: "Click the Save button on the page I have open."
 
 ```
-1. Identify the target origin from list_recent_sessions OR from context
-2. request_authorization({
-     tool: 'execute_action',
-     origin: 'https://app.example.com',
-     action: 'click',
-     selector: '#save-button',
-     destructive: false,
+1. list_recent_sessions → pick the sessionId for the open page's origin
+   (the sessionId carries the origin and its permission level)
+2. get_page_view(sessionId) → find the Save button's stable ref (e.g. e5)
+3. const { confirmToken } = request_authorization({
+     sessionId,
+     action: { type: 'click', ref: 'e5' },
    })
-   → surface the consent prompt to the user
-3. If approved → execute_action with the same args
-4. If declined → say so and stop. Do not retry.
+   → surface the consent prompt; on Allow it returns a one-shot confirmToken
+4. If approved → execute_action({
+     sessionId,
+     action: { type: 'click', ref: 'e5' },
+     confirmToken,
+   })
+5. If declined → say so and stop. Do not retry.
 ```
 
 ## Permission model
