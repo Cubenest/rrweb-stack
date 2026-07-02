@@ -14,9 +14,13 @@ export const AUDIT_BUNDLE_FORMAT_VERSION = 1;
 export const AUDIT_CAVEAT =
   "This archive contains peek's action audit log: the verbs, selectors, prompts, " +
   'and timestamps of browser actions peek authorized or attempted. It does NOT ' +
-  'contain page content, field values, or rrweb recordings. Integrity is a ' +
-  'SHA-256 manifest (corruption/tamper detection); there is no signature and no ' +
-  'external timestamp, so it does not prove who created it or when.';
+  'contain page content, field values, or rrweb recordings. The SHA-256 manifest ' +
+  'inside this archive only detects accidental corruption of these files — it is ' +
+  'NOT tamper-evidence: the manifest travels inside the same unsigned archive, so ' +
+  'anyone who edits the log can recompute it. There is no signature and no external ' +
+  'timestamp, so this bundle does not prove who created it, when, or that it was ' +
+  'not altered. A tamper-evident record would need an integrity root outside the ' +
+  'archive (a signature or an externally published digest).';
 
 const ATTRIBUTION =
   'Exported by peek (https://peek.cubenest.in) — local-first browser-session forensics.';

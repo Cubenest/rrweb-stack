@@ -271,6 +271,21 @@ describe('peek audit verify --bundle', () => {
     expect(text).toMatch(/intact/i);
   });
 
+  it('--bundle --json emits a single JSON document with archiveIntegrity and status', async () => {
+    const { buf, head } = chainLog(2);
+    const headBuf = Buffer.from(JSON.stringify(head), 'utf8');
+    const bundlePath = join(tmpDir, 'good-json.peekaudit');
+    packAuditBundle(bundlePath, { logBuf: buf, headBuf, head });
+    const out: string[] = [];
+    const code = await runAuditVerify(['--bundle', bundlePath, '--json'], (s) => out.push(s));
+    expect(code).toBe(0);
+    const combined = out.join('');
+    // Must be parseable as a single JSON document (no plain-text prefix/suffix).
+    const parsed = JSON.parse(combined) as Record<string, unknown>;
+    expect(parsed.archiveIntegrity).toBe('ok');
+    expect(parsed.status).toBe('intact');
+  });
+
   it('exits 2 and reports integrity FAILED for a tampered bundle', async () => {
     const { buf, head } = chainLog(2);
     const headBuf = Buffer.from(JSON.stringify(head), 'utf8');

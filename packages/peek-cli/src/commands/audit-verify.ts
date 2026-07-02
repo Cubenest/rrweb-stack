@@ -99,17 +99,27 @@ export async function runAuditVerify(
       unpacked = unpackAuditBundle(values.bundle);
       verifyAuditBundleIntegrity(unpacked);
     } catch (err) {
-      write(`archive integrity FAILED: ${(err as Error).message}\n`);
+      const message = (err as Error).message;
+      if (values.json) {
+        write(`${JSON.stringify({ archiveIntegrity: 'failed', error: message })}\n`);
+      } else {
+        write(`archive integrity FAILED: ${message}\n`);
+      }
       return EXIT.tampered;
     }
-    write('archive integrity ok (SHA-256 manifest matches).\n');
-    const head = unpacked.headBuf
-      ? (JSON.parse(unpacked.headBuf.toString('utf8')) as AuditHead)
-      : null;
-    const r: VerifyResult = verifyAuditChain(unpacked.logBuf, head);
+    let head: AuditHead | null = null;
+    if (unpacked.headBuf) {
+      try {
+        head = JSON.parse(unpacked.headBuf.toString('utf8')) as AuditHead;
+      } catch {
+        head = null; // malformed head → head-missing semantics (matches the --dir path)
+      }
+    }
+    const r = verifyAuditChain(unpacked.logBuf, head);
     if (values.json) {
-      write(`${JSON.stringify(r)}\n`);
+      write(`${JSON.stringify({ archiveIntegrity: 'ok', ...r })}\n`);
     } else {
+      write('archive integrity ok (SHA-256 manifest matches).\n');
       write(human(r));
     }
     return exitCodeFor(r.status);
