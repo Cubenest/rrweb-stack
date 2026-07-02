@@ -1,7 +1,7 @@
 ---
 title: "Verify and share a tamper-evident audit trail"
 lede: "When an agent has been acting in my browser, I want proof that the audit log is intact before I share it with a colleague or attach it to a bug report."
-description: "Use verify_audit_log to confirm the audit hash chain is intact, then bundle and share portable tamper-evident evidence with peek audit bundle."
+description: "Use verify_audit_log to confirm the audit hash chain is intact, then bundle and share a portable audit archive with peek audit bundle."
 type: short
 status: published
 publishedAt: 2026-07-01
@@ -11,7 +11,9 @@ relatedRecipes: [use-peek-with-per-action-approval, triage-console-errors-from-a
 
 ## What you'll end up with
 
-A verified `*.peekaudit` archive — a portable, self-contained evidence file that any colleague can inspect offline. The archive embeds the audit log, a SHA-256 integrity manifest, and the head hash used for truncation detection. The agent can verify the chain before bundling; the recipient verifies both the archive integrity and the chain after unwrapping.
+A verified `*.peekaudit` archive — a portable, self-contained file that any colleague can inspect offline. The archive embeds the audit log, a SHA-256 integrity manifest, and the head hash used for truncation detection. The agent can verify the chain before bundling; the recipient verifies both the archive integrity and the chain after unwrapping.
+
+**Integrity model:** The local audit log (`~/.peek/audit.log`) is tamper-evident — its hash chain detects edits, reordering, and truncation. The `*.peekaudit` bundle embeds a SHA-256 manifest that detects accidental corruption in transit, but it is NOT independently tamper-evident: the manifest travels inside the same unsigned archive, so anyone who edits the log can recompute it. For high-stakes evidence (legal, compliance), pair this with an external timestamp anchor or a signed digest published outside the bundle.
 
 ## Prerequisites
 
@@ -69,14 +71,14 @@ peek audit verify --bundle ./peek-audit-2026-07-01T12-00-00.peekaudit
 
 This checks two things:
 
-1. **Archive integrity** — every file's SHA-256 matches the embedded manifest (detects corruption or tampering in transit).
+1. **Archive integrity** — every file's SHA-256 matches the embedded manifest (detects accidental corruption in transit; see the integrity model note above).
 2. **Hash chain** — recomputes the JSONL chain and confirms every `prevHash` link is valid.
 
 A clean result looks like:
 
-```
-Archive integrity: OK
-Hash chain: intact (42 entries)
+```text
+archive integrity ok (SHA-256 manifest matches).
+audit chain intact through 42 entries.
 ```
 
 ## Trust & data handling

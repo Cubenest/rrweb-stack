@@ -85,7 +85,7 @@ Don't reach for peek when:
 
 | Tool | When |
 |---|---|
-| `verify_audit_log` | Verify peek's local action audit log (`~/.peek/audit.log`) is an intact, tamper-evident hash chain. Returns status: `intact`, `broken`, `truncated`, `tail-tampered`, `prefix-tampered`, `gaps`, `incomplete-final`, or `head-missing`. Call when the user asks whether the audit log is intact, before sharing an audit bundle, or after receiving one. |
+| `verify_audit_log` | Verify peek's local action audit log (`~/.peek/audit.log`) is an intact, tamper-evident hash chain. Returns status: `intact`, `broken`, `truncated`, `tail-tampered`, `prefix-tampered`, `gaps`, `incomplete-final`, or `head-missing`. Call when the user asks whether the local audit log is intact or before sharing an audit bundle. To verify a received `*.peekaudit` file, use the CLI: `peek audit verify --bundle <file>`. |
 
 ## Workflow
 
