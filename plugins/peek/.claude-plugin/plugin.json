@@ -1,5 +1,5 @@
 {
-  "name": "peek",
+  "name": "peekdev",
   "version": "0.1.0",
   "description": "Let your AI coding agent debug what already happened in your real browser. peek records masked rrweb sessions of your real browser to a local store and exposes them (DOM history, console/network errors, the action before an error, session-to-Playwright repro) to coding agents over MCP — and, with per-origin consent, can act in the live page (click/type/navigate). Local-first, stdio, no telemetry.",
   "author": { "name": "Cubenest", "url": "https://peek.cubenest.in" },

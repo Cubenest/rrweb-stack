@@ -10,10 +10,10 @@ import {
 const goodMarketplace = {
   name: 'peek',
   owner: { name: 'Cubenest' },
-  plugins: [{ name: 'peek', source: './plugins/peek' }],
+  plugins: [{ name: 'peekdev', source: './plugins/peek' }],
 };
 const goodPlugin = {
-  name: 'peek',
+  name: 'peekdev',
   version: '0.1.0',
   description: 'x'.repeat(60),
   author: { name: 'Cubenest' },
@@ -35,9 +35,10 @@ test('checkMarketplace flags a wrong marketplace name', () => {
 });
 test('checkMarketplace flags a missing/incorrect plugin source', () => {
   assert.ok(
-    checkMarketplace({ ...goodMarketplace, plugins: [{ name: 'peek', source: './wrong' }] }).some(
-      (i) => i.severity === 'error',
-    ),
+    checkMarketplace({
+      ...goodMarketplace,
+      plugins: [{ name: 'peekdev', source: './wrong' }],
+    }).some((i) => i.severity === 'error'),
   );
 });
 test('checkMarketplace does not throw on a malformed plugins[] element', () => {

@@ -13,7 +13,7 @@ From this repo's marketplace:
 
 ```
 /plugin marketplace add Cubenest/rrweb-stack
-/plugin install peek@peek
+/plugin install peekdev@peek
 ```
 
 Or install it from a community Claude Code plugin marketplace once listed.
