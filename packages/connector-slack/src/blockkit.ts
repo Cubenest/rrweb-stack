@@ -11,7 +11,10 @@ export function consentCard(
   conversationId: string,
 ): { blocks: KnownBlock[] } {
   const value = JSON.stringify({ correlationId, conversationId });
-  const body = `*${summary}*\n\`\`\`${JSON.stringify(details, null, 2)}\`\`\``;
+  const json = JSON.stringify(details, null, 2);
+  const MAX_DETAILS = 2800;
+  const shown = json.length > MAX_DETAILS ? `${json.slice(0, MAX_DETAILS)}\n… (truncated)` : json;
+  const body = `*${summary}*\n\`\`\`${shown}\`\`\``;
   return {
     blocks: [
       { type: 'section', text: { type: 'mrkdwn', text: body } },
