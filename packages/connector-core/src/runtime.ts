@@ -26,10 +26,12 @@ export class ConnectorRuntime {
   async start(): Promise<void> {
     const { adapter } = this.deps;
     adapter.onMessage((m) => {
-      void this.handleMessage(m);
+      this.handleMessage(m).catch((err) => console.error('connector handleMessage error:', err));
     });
     adapter.onConsentResponse((r) => {
-      void this.handleConsentResponse(r);
+      this.handleConsentResponse(r).catch((err) =>
+        console.error('connector handleConsentResponse error:', err),
+      );
     });
     await adapter.start();
   }

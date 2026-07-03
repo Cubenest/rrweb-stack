@@ -84,3 +84,45 @@ describe('ConnectorRuntime consent flow', () => {
     expect(callTool).not.toHaveBeenCalled();
   });
 });
+
+describe('ConnectorRuntime handler rejection', () => {
+  it('does not produce an unhandled rejection when handleMessage rejects', async () => {
+    // A brain whose runTurn always rejects
+    const brain: Brain = {
+      newSession: (): Session => ({ history: [] }),
+      appendUserText: () => {},
+      appendToolResult: () => {},
+      runTurn: async () => {
+        throw new Error('brain exploded');
+      },
+    };
+
+    // A FakeAdapter whose postText also rejects — so runLoop's catch handler throws too
+    class FailingAdapter extends FakeAdapter {
+      override async postText(_c: string, _t: string) {
+        throw new Error('postText also failed');
+      }
+    }
+
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      const adapter = new FailingAdapter();
+      const store = new SessionStore(brain.newSession);
+      const mcp = { callTool: vi.fn() } as unknown as import('./mcp.js').PeekMcp;
+      const runtime = new ConnectorRuntime({ adapter, brain, mcp, store });
+      await runtime.start();
+
+      // Fire the handler — this should NOT throw or produce an unhandled rejection
+      adapter.msgHandler?.({ conversationId: 't1', userId: 'u', text: 'hi' });
+
+      // Wait a tick for the async chain to settle
+      await new Promise((r) => setTimeout(r, 20));
+
+      // The test completing without crashing = no unhandled rejection
+      // console.error should have been called with the error
+      expect(errorSpy).toHaveBeenCalled();
+    } finally {
+      errorSpy.mockRestore();
+    }
+  });
+});
