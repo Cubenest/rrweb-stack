@@ -5,6 +5,17 @@ import type { ToolKind } from './types.js';
 
 const ACTION_TOOLS = new Set(['execute_action', 'request_authorization']);
 
+const CONNECT_TIMEOUT_MS = 10_000;
+const CALL_TIMEOUT_MS = 30_000;
+
+export function withTimeout<T>(p: Promise<T>, ms: number, label: string): Promise<T> {
+  let timerId: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<never>((_, reject) => {
+    timerId = setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms);
+  });
+  return Promise.race([p.finally(() => clearTimeout(timerId)), timeout]);
+}
+
 export function classify(toolName: string): ToolKind {
   return ACTION_TOOLS.has(toolName) ? 'action' : 'read';
 }
@@ -44,7 +55,7 @@ export class PeekMcp {
   }
 
   async connect(): Promise<void> {
-    await this.client.connect(this.transport);
+    await withTimeout(this.client.connect(this.transport), CONNECT_TIMEOUT_MS, 'mcp connect');
   }
 
   async listTools(): Promise<Anthropic.Tool[]> {
@@ -59,10 +70,14 @@ export class PeekMcp {
   }
 
   async callTool(name: string, input: unknown): Promise<string> {
-    const result = await this.client.callTool({
-      name,
-      arguments: (input ?? {}) as Record<string, unknown>,
-    });
+    const result = await withTimeout(
+      this.client.callTool({
+        name,
+        arguments: (input ?? {}) as Record<string, unknown>,
+      }),
+      CALL_TIMEOUT_MS,
+      `mcp callTool(${name})`,
+    );
     return mcpResultToText(result as { content: Array<{ type: string; text?: string }> });
   }
 
