@@ -1,1 +1,14 @@
-export {};
+export type { Brain, Session, ActionRequest, AgentOutcome } from './brain.js';
+export type { SurfaceAdapter, InboundMessage, ConsentRequest, ConsentResponse } from './surface.js';
+export type { ToolKind, PendingRecord } from './types.js';
+export type { BrainConfig } from './config.js';
+export type { McpSpawn } from './mcp.js';
+export { PeekMcp, classify, mcpToolToAnthropic, mcpResultToText } from './mcp.js';
+export { loadBrainConfig, loadMcpConfig } from './config.js';
+export { assertNodeVersion } from './node-version.js';
+export { SdkBrain } from './sdk-brain.js';
+export type { SdkBrainDeps } from './sdk-brain.js';
+export { SessionStore } from './store.js';
+export type { StoredSession } from './store.js';
+export { ConnectorRuntime } from './runtime.js';
+export type { RuntimeDeps } from './runtime.js';

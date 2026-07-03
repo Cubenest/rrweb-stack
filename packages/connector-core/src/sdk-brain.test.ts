@@ -73,22 +73,20 @@ describe('SdkBrain.runTurn', () => {
   });
 
   it('suspends on the first action tool without executing', async () => {
-    const createMessage = vi
-      .fn()
-      .mockResolvedValue(
-        msg(
-          [
-            {
-              type: 'tool_use',
-              id: 'u1',
-              name: 'execute_action',
-              input: { a: 1 },
-              caller: { type: 'direct' },
-            },
-          ],
-          'tool_use',
-        ),
-      );
+    const createMessage = vi.fn().mockResolvedValue(
+      msg(
+        [
+          {
+            type: 'tool_use',
+            id: 'u1',
+            name: 'execute_action',
+            input: { a: 1 },
+            caller: { type: 'direct' },
+          },
+        ],
+        'tool_use',
+      ),
+    );
     const callTool = vi.fn();
     const brain = new SdkBrain({
       createMessage,
