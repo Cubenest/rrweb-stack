@@ -144,6 +144,9 @@ importers:
 
   packages/connector-slack:
     dependencies:
+      '@anthropic-ai/sdk':
+        specifier: ^0.106.0
+        version: 0.106.0(zod@4.4.3)
       '@peekdev/connector-core':
         specifier: workspace:*
         version: link:../connector-core
