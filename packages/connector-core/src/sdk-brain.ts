@@ -11,6 +11,8 @@ export interface SdkBrainDeps {
   model: string;
   /** Include Anthropic-only adaptive-thinking/effort params. False when routed via a gateway (e.g. OpenRouter). */
   extendedReasoning: boolean;
+  /** Maximum tool-use turns per runTurn call. Default 16. */
+  maxTurns?: number;
 }
 
 export class SdkBrain implements Brain {
@@ -41,8 +43,11 @@ export class SdkBrain implements Brain {
   async runTurn(session: Session): Promise<AgentOutcome> {
     const history = session.history as Msg[];
     const { createMessage, callTool, tools, model, extendedReasoning } = this.deps;
+    const maxTurns = this.deps.maxTurns ?? 16;
+    let turns = 0;
 
     for (;;) {
+      if (turns++ >= maxTurns) throw new Error(`SdkBrain exceeded ${maxTurns} tool-use turns`);
       const reasoning: Partial<Anthropic.MessageCreateParamsNonStreaming> = extendedReasoning
         ? { thinking: { type: 'adaptive' }, output_config: { effort: 'high' } }
         : {};

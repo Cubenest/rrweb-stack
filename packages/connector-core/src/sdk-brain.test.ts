@@ -136,6 +136,33 @@ describe('SdkBrain.runTurn', () => {
     expect(req?.tool_choice).toEqual({ type: 'auto', disable_parallel_tool_use: true });
   });
 
+  it('throws when tool-use turns exceed maxTurns', async () => {
+    // createMessage always returns a read tool_use (so the loop never exits naturally)
+    const alwaysReadToolUse = vi.fn().mockResolvedValue(
+      msg(
+        [
+          {
+            type: 'tool_use',
+            id: 'u1',
+            name: 'get_session_summary',
+            input: {},
+            caller: { type: 'direct' },
+          },
+        ],
+        'tool_use',
+      ),
+    );
+    const brain = new SdkBrain({
+      createMessage: alwaysReadToolUse,
+      callTool: vi.fn().mockResolvedValue('x'),
+      tools,
+      model: 'm',
+      extendedReasoning: false,
+      maxTurns: 3,
+    });
+    await expect(brain.runTurn(brain.newSession())).rejects.toThrow(/exceeded 3/);
+  });
+
   it('appendToolResult records an error tool_result on deny', () => {
     const brain = new SdkBrain({
       createMessage: vi.fn(),
