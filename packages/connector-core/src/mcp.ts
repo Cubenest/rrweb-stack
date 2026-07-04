@@ -55,7 +55,16 @@ export class PeekMcp {
   }
 
   async connect(): Promise<void> {
-    await withTimeout(this.client.connect(this.transport), CONNECT_TIMEOUT_MS, 'mcp connect');
+    try {
+      await withTimeout(this.client.connect(this.transport), CONNECT_TIMEOUT_MS, 'mcp connect');
+    } catch (err) {
+      // StdioClientTransport spawns the child process during connect; on a
+      // timeout or failed handshake the MCP SDK does not reliably kill it, so
+      // close the transport explicitly to avoid leaking an orphan subprocess.
+      // Cleanup errors are swallowed so they don't mask the original failure.
+      await this.transport.close().catch(() => undefined);
+      throw err;
+    }
   }
 
   async listTools(): Promise<Anthropic.Tool[]> {
