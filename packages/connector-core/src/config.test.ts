@@ -16,17 +16,17 @@ describe('loadMcpConfig', () => {
 });
 
 describe('loadBrainConfig', () => {
-  it('throws when ANTHROPIC_API_KEY is missing', () => {
-    expect(() => loadBrainConfig({})).toThrow(/ANTHROPIC_API_KEY/);
+  it('throws when PEEK_LLM_API_KEY is missing', () => {
+    expect(() => loadBrainConfig({})).toThrow(/PEEK_LLM_API_KEY/);
   });
   it('defaults to Opus natively and Sonnet slug via a gateway base URL', () => {
-    expect(loadBrainConfig({ ANTHROPIC_API_KEY: 'k' }).model).toBe('claude-opus-4-8');
+    expect(loadBrainConfig({ PEEK_LLM_API_KEY: 'k' }).model).toBe('claude-opus-4-8');
     const g = loadBrainConfig({
-      ANTHROPIC_API_KEY: 'k',
-      ANTHROPIC_BASE_URL: 'https://openrouter.ai/api',
+      PEEK_LLM_API_KEY: 'k',
+      PEEK_LLM_BASE_URL: 'https://openrouter.ai/api',
     });
     expect(g.model).toBe('anthropic/claude-sonnet-4.5');
-    expect(g.anthropicBaseURL).toBe('https://openrouter.ai/api');
+    expect(g.baseURL).toBe('https://openrouter.ai/api');
   });
 });
 

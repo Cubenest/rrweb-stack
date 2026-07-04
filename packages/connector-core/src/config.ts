@@ -1,8 +1,17 @@
 import type { McpSpawn } from './mcp.js';
 
+/**
+ * LLM credentials + model for the connector's brain.
+ *
+ * `SdkBrain` speaks the Anthropic Messages API, so `baseURL` may point at any
+ * Anthropic-API-compatible endpoint: Anthropic native (leave `baseURL` unset),
+ * OpenRouter (routes to GPT / Gemini / Llama / etc.), Ollama's
+ * anthropic-compatible endpoint, or LiteLLM in Anthropic mode. The model
+ * defaults to Claude but can be any model the chosen endpoint exposes.
+ */
 export interface BrainConfig {
-  anthropicApiKey: string;
-  anthropicBaseURL: string | undefined;
+  apiKey: string;
+  baseURL: string | undefined;
   model: string;
 }
 
@@ -21,11 +30,11 @@ export function loadMcpConfig(env: NodeJS.ProcessEnv): McpSpawn {
 }
 
 export function loadBrainConfig(env: NodeJS.ProcessEnv): BrainConfig {
-  const anthropicBaseURL = env.ANTHROPIC_BASE_URL || undefined;
-  const defaultModel = anthropicBaseURL ? 'anthropic/claude-sonnet-4.5' : 'claude-opus-4-8';
+  const baseURL = env.PEEK_LLM_BASE_URL || undefined;
+  const defaultModel = baseURL ? 'anthropic/claude-sonnet-4.5' : 'claude-opus-4-8';
   return {
-    anthropicApiKey: required(env, 'ANTHROPIC_API_KEY'),
-    anthropicBaseURL,
-    model: env.ANTHROPIC_MODEL ?? defaultModel,
+    apiKey: required(env, 'PEEK_LLM_API_KEY'),
+    baseURL,
+    model: env.PEEK_LLM_MODEL ?? defaultModel,
   };
 }

@@ -23,15 +23,15 @@ async function main(): Promise<void> {
   const tools = await mcp.listTools();
 
   const anthropic = new Anthropic({
-    apiKey: brainConfig.anthropicApiKey,
-    baseURL: brainConfig.anthropicBaseURL,
+    apiKey: brainConfig.apiKey,
+    baseURL: brainConfig.baseURL,
   });
   const brain = new SdkBrain({
     createMessage: (req) => anthropic.messages.create(req),
     callTool: (name, input) => mcp.callTool(name, input),
     tools,
     model: brainConfig.model,
-    extendedReasoning: !brainConfig.anthropicBaseURL,
+    extendedReasoning: !brainConfig.baseURL,
   });
 
   const store = new SessionStore(() => brain.newSession());
@@ -41,7 +41,7 @@ async function main(): Promise<void> {
 
   console.log(
     `peek-slack running — ${tools.length} peek tools · model ${brainConfig.model}${
-      brainConfig.anthropicBaseURL ? ` via ${brainConfig.anthropicBaseURL}` : ''
+      brainConfig.baseURL ? ` via ${brainConfig.baseURL}` : ''
     }`,
   );
 
