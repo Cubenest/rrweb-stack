@@ -1,9 +1,9 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { type ElicitCapableServer, buildElicitMessage, elicitConsent } from './elicitation.js';
 
 function server(
   caps: unknown,
-  elicitImpl?: () => Promise<{ action: string }>,
+  elicitImpl?: (params: unknown, options?: { timeout?: number }) => Promise<{ action: string }>,
 ): ElicitCapableServer {
   return {
     getClientCapabilities: () => caps as never,
@@ -53,6 +53,20 @@ describe('elicitConsent', () => {
       { timeoutMs: 1000 },
     );
     expect(out).toEqual({ elicited: true, verdict: 'deny', reason: 'error' });
+  });
+  it('threads the timeout budget into elicitInput as options.timeout', async () => {
+    // The SDK uses options.timeout to set its own request deadline, which must
+    // match the module's outer withTimeout budget so a slow-but-valid approval
+    // between ~60s (SDK default) and 120s is honored rather than folded to 'error'.
+    const spy = vi.fn().mockResolvedValue({ action: 'accept' });
+    const srv: ElicitCapableServer = {
+      getClientCapabilities: () => ({ elicitation: { form: {} } }),
+      elicitInput: spy as never,
+    };
+    await elicitConsent(srv, 'Allow?', { timeoutMs: 45_000 });
+    expect(spy).toHaveBeenCalledTimes(1);
+    // Second argument must carry timeout: 45_000
+    expect(spy.mock.calls[0]?.[1]).toEqual({ timeout: 45_000 });
   });
 });
 

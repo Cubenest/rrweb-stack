@@ -13,10 +13,13 @@
  *  SDK's richer types assign under exactOptionalPropertyTypes). */
 export interface ElicitCapableServer {
   getClientCapabilities(): { elicitation?: { form?: unknown } | undefined } | undefined;
-  elicitInput(params: {
-    message: string;
-    requestedSchema: { type: 'object'; properties: Record<string, never> };
-  }): Promise<{ action: 'accept' | 'decline' | 'cancel' }>;
+  elicitInput(
+    params: {
+      message: string;
+      requestedSchema: { type: 'object'; properties: Record<string, never> };
+    },
+    options?: { timeout?: number },
+  ): Promise<{ action: 'accept' | 'decline' | 'cancel' }>;
 }
 
 /** `elicited:false` = the client did not advertise elicitation → the caller
@@ -68,7 +71,10 @@ export async function elicitConsent(
   }
   const timeoutMs = options.timeoutMs ?? DEFAULT_ELICIT_TIMEOUT_MS;
   const raced = await withTimeout(
-    server.elicitInput({ message, requestedSchema: { type: 'object', properties: {} } }),
+    server.elicitInput(
+      { message, requestedSchema: { type: 'object', properties: {} } },
+      { timeout: timeoutMs },
+    ),
     timeoutMs,
   ).catch(() => ({ timedOut: false as const, value: undefined }));
   if (raced.timedOut) return { elicited: true, verdict: 'deny', reason: 'timeout' };

@@ -25,15 +25,28 @@ export class ConnectorRuntime {
   #pendingElicit:
     | { correlationId: string; conversationId: string; resolve: (d: 'approve' | 'deny') => void }
     | undefined;
+  // Serialize turn processing: each new inbound message's body is chained so
+  // turns run strictly one at a time. handleConsentResponse is NOT routed
+  // through this chain — consent responses must remain able to resolve a
+  // #pendingElicit while a turn is parked awaiting consent inside the chain.
+  #turnChain: Promise<void> = Promise.resolve();
 
   constructor(private readonly deps: RuntimeDeps) {}
 
   async start(): Promise<void> {
     const { adapter, mcp } = this.deps;
     adapter.onMessage((m) => {
-      this.handleMessage(m).catch((err) => console.error('connector handleMessage error:', err));
+      // Serialize turn processing: append each new message's body onto the
+      // chain so turns run strictly one at a time. Errors are swallowed so
+      // one failed turn doesn't poison the chain and block all future turns.
+      this.#turnChain = this.#turnChain
+        .then(() => this.handleMessage(m))
+        .catch((err) => console.error('connector handleMessage error:', err));
     });
     adapter.onConsentResponse((r) => {
+      // Consent responses are NOT serialized through #turnChain — they must
+      // remain able to resolve a #pendingElicit while a turn is parked inside
+      // the chain awaiting that consent. Serializing them would deadlock.
       this.handleConsentResponse(r).catch((err) =>
         console.error('connector handleConsentResponse error:', err),
       );

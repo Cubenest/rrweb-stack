@@ -310,6 +310,125 @@ describe('ConnectorRuntime abandoned-elicit wedge (SP3a fix)', () => {
   });
 });
 
+describe('ConnectorRuntime turn serialization (concurrency clobber fix)', () => {
+  class FakeMcpWithElicit {
+    callTool = vi.fn().mockResolvedValue('ok');
+    elicitCb?: (message: string) => Promise<'accept' | 'decline' | 'cancel'>;
+    onElicit(cb: (message: string) => Promise<'accept' | 'decline' | 'cancel'>) {
+      this.elicitCb = cb;
+    }
+  }
+
+  it('does not start the second turn until the first completes', async () => {
+    // Brain records call order and parks on the first turn until unblocked.
+    const runOrder: number[] = [];
+    let unblockFirst!: () => void;
+    let firstStarted = false;
+
+    const brain: Brain = {
+      newSession: (): Session => ({ history: [] }),
+      appendUserText: () => {},
+      appendToolResult: () => {},
+      runTurn: async () => {
+        if (!firstStarted) {
+          firstStarted = true;
+          runOrder.push(1);
+          await new Promise<void>((resolve) => {
+            unblockFirst = resolve;
+          });
+          return { kind: 'done' as const, text: 'first' };
+        }
+        runOrder.push(2);
+        return { kind: 'done' as const, text: 'second' };
+      },
+    };
+
+    const adapter = new FakeAdapter();
+    const store = new SessionStore(brain.newSession);
+    const fakeMcp = new FakeMcpWithElicit();
+    const runtime = new ConnectorRuntime({
+      adapter,
+      brain,
+      mcp: fakeMcp as unknown as import('./mcp.js').PeekMcp,
+      store,
+    });
+    await runtime.start();
+
+    // Dispatch two messages without awaiting the first.
+    adapter.msgHandler?.({ conversationId: 't1', userId: 'u', text: 'first message' });
+    adapter.msgHandler?.({ conversationId: 't1', userId: 'u', text: 'second message' });
+
+    // Give the event loop a tick — first turn should have started, second should NOT yet.
+    await new Promise((r) => setTimeout(r, 10));
+    expect(runOrder).toEqual([1]); // second hasn't started
+
+    // Unblock the first turn and wait for both to complete.
+    unblockFirst();
+    await vi.waitFor(() => expect(adapter.texts).toHaveLength(2));
+    expect(runOrder).toEqual([1, 2]); // strict ordering: 1 before 2
+  });
+
+  it('an elicit fired during turn 1 targets conversation 1, not conversation 2', async () => {
+    // Turn 1 parks at elicitInput; turn 2 is queued. The elicit card must go to conv-1.
+    let unblockFirst!: () => void;
+    let firstStarted = false;
+
+    const brain: Brain = {
+      newSession: (): Session => ({ history: [] }),
+      appendUserText: () => {},
+      appendToolResult: () => {},
+      runTurn: async () => {
+        if (!firstStarted) {
+          firstStarted = true;
+          // Park until unblocked — simulates a long-running turn with in-flight elicit.
+          await new Promise<void>((resolve) => {
+            unblockFirst = resolve;
+          });
+          return { kind: 'done' as const, text: 'first done' };
+        }
+        return { kind: 'done' as const, text: 'second done' };
+      },
+    };
+
+    const adapter = new FakeAdapter();
+    const store = new SessionStore(brain.newSession);
+    const fakeMcp = new FakeMcpWithElicit();
+    const runtime = new ConnectorRuntime({
+      adapter,
+      brain,
+      mcp: fakeMcp as unknown as import('./mcp.js').PeekMcp,
+      store,
+    });
+    await runtime.start();
+
+    // Start turn 1 (conversation c1) — parks inside runTurn.
+    adapter.msgHandler?.({ conversationId: 'c1', userId: 'u', text: 'turn 1' });
+    // Queue turn 2 (conversation c2) — must wait behind turn 1 in the chain.
+    adapter.msgHandler?.({ conversationId: 'c2', userId: 'u', text: 'turn 2' });
+
+    // Give the event loop a tick so turn 1 is active and turn 2 is queued.
+    await new Promise((r) => setTimeout(r, 10));
+
+    // Fire an elicit while turn 1 is active — the consent card MUST go to c1.
+    expect(fakeMcp.elicitCb).toBeDefined();
+    const elicitPromise = fakeMcp.elicitCb?.('Allow action on c1?');
+
+    await vi.waitFor(() => expect(adapter.consents).toHaveLength(1));
+    const targetConvId = adapter.consents[0]?.[0];
+    expect(targetConvId).toBe('c1'); // elicit targeted the active turn's conversation
+
+    // Approve the elicit and confirm it resolves correctly.
+    const correlationId = adapter.consents[0]?.[1].correlationId ?? '';
+    adapter.consentHandler?.({ conversationId: 'c1', correlationId, decision: 'approve' });
+    const elicitResult = await elicitPromise;
+    expect(elicitResult).toBe('accept');
+
+    // Now unblock turn 1 so the chain can proceed.
+    unblockFirst();
+    await vi.waitFor(() => expect(adapter.texts).toHaveLength(2));
+  });
+});
+
 describe('ConnectorRuntime handler rejection', () => {
   it('does not produce an unhandled rejection when handleMessage rejects', async () => {
     // A brain whose runTurn always rejects
