@@ -23,10 +23,15 @@ Works today with: **Anthropic native** (leave `PEEK_LLM_BASE_URL` unset),
 **OpenRouter** (`PEEK_LLM_BASE_URL=https://openrouter.ai/api`, model e.g.
 `openai/gpt-4o`), and **local models** (below).
 
-## Local model (experimental, keyless, zero-egress)
+## Local model (experimental, keyless)
 
-peek can run entirely against a local model — **no cloud LLM, nothing about your
-browser leaves the machine.** Cloud (BYO key) is the default; local is an opt-in.
+Running a local model keeps peek's **reasoning on your machine — no cloud LLM.**
+Cloud (BYO key) is the default; local is an opt-in.
+
+> **Local-first: peek uploads nothing — what your connector and its LLM do with
+> the data is up to you.** A local model keeps the reasoning + your raw peek tool
+> results on-device; a cloud model (or the chat platform your connector bridges
+> to) receives whatever you send it.
 
 1. Install [Ollama](https://ollama.com) **≥ 0.14** (it natively serves the
    Anthropic Messages API at `http://localhost:11434`).
@@ -40,12 +45,13 @@ browser leaves the machine.** Cloud (BYO key) is the default; local is an opt-in
    PEEK_LLM_MODEL=qwen3
    ```
 
-**Honest tradeoff:** the win is **zero peek-data egress** — your message, peek
-tool results (masked DOM / session summaries / errors), tool schemas, and the
-model's reasoning all stay on-device. The cost is **slower** responses and
-**weaker multi-turn** tool-chaining than a frontier cloud model; small local
-models can mis-call or malform tool calls. Treat local as experimental and
-verify against your real workflow.
+**Honest tradeoff:** with a local model, your raw peek tool results (masked DOM /
+session summaries / errors), tool schemas, and the model's reasoning stay
+on-device rather than going to a cloud model provider — the connector still
+exchanges your messages and its replies with your chat platform. The cost is
+**slower** responses and **weaker multi-turn** tool-chaining than a frontier
+cloud model; small local models can mis-call or malform tool calls. Treat local
+as experimental and verify against your real workflow.
 
 **Notes / guardrails:**
 - `tool_choice.disable_parallel_tool_use` is a no-op locally (Ollama lists
