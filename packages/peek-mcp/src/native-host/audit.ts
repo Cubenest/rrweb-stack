@@ -9,7 +9,7 @@
 //   tool          'execute_action' | 'request_authorization'
 //   args          the Action object (passwords / token values redacted)
 //   approvalTs    ISO when the user confirmed (Level 3) — omitted on YOLO auto
-//   approver      'user' | 'allow-list-match' | 'level-4-auto' | 'level-2-suggest' | 'level-1-read'
+//   approver      'user' | 'allow-list-match' | 'level-4-auto' | 'level-2-suggest' | 'level-1-read' | 'connector-elicit'
 //   client        MCP client name from clientInfo (cursor, claude-code, etc.)
 //   sessionId     the recording session id the action targets
 //   result        'ok' | 'denied' | 'error'
@@ -50,7 +50,8 @@ export type AuditApprover =
   | 'allow-list-match'
   | 'level-4-auto'
   | 'level-2-suggest'
-  | 'level-1-read';
+  | 'level-1-read'
+  | 'connector-elicit';
 
 /** Result values. */
 export type AuditResult = 'ok' | 'denied' | 'error';

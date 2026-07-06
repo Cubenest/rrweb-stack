@@ -163,7 +163,13 @@ export interface ActionResultMessage {
   tool: 'execute_action' | 'request_authorization';
   verdict: 'allow' | 'deny';
   result: 'ok' | 'denied' | 'error';
-  approver: 'user' | 'allow-list-match' | 'level-4-auto' | 'level-2-suggest' | 'level-1-read';
+  approver:
+    | 'user'
+    | 'allow-list-match'
+    | 'level-4-auto'
+    | 'level-2-suggest'
+    | 'level-1-read'
+    | 'connector-elicit';
   approvalMs?: number;
   destructiveTerm?: string;
   details?: unknown;

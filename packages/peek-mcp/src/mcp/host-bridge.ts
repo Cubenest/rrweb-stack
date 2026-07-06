@@ -68,7 +68,8 @@ export interface HostActionResponse {
     | 'allow-list-match'
     | 'level-4-auto'
     | 'level-2-suggest'
-    | 'level-1-read';
+    | 'level-1-read'
+    | 'connector-elicit';
   readonly approvalMs?: number;
   readonly destructiveTerm?: string;
   readonly details?: unknown;
