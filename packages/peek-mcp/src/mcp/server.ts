@@ -40,6 +40,7 @@ import {
 } from '../native-host/audit.js';
 import { ActionSchema } from './action-schema.js';
 import { buildCausalChain } from './causal-chain.js';
+import { buildElicitMessage, elicitConsent } from './elicitation.js';
 import { SessionEventsError, loadEventsUpToTs, loadSessionEvents } from './event-blobs.js';
 import {
   extractDomMutationsInWindow,
@@ -792,6 +793,7 @@ export function createPeekMcpServer(options: CreatePeekMcpServerOptions = {}): P
           tool: 'execute_action',
           sessionId,
           action,
+          elicit: true,
           ...(confirmToken !== undefined ? { confirmToken } : {}),
         });
       },
@@ -1111,6 +1113,15 @@ export function createPeekMcpServer(options: CreatePeekMcpServerOptions = {}): P
      * the bridge falls back to its own DEFAULT_BRIDGE_TIMEOUT_MS.
      */
     timeoutMs?: number;
+    /**
+     * SP3a: when true, peek collects delegated per-action consent from the
+     * connecting client (MCP elicitInput) BEFORE dispatching to the SW. Set ONLY
+     * by the execute_action tool handler; the read/suggest ride-alongs
+     * (get_page_view, get_element_detail, highlight, set_intent, request_user_input)
+     * leave it falsy and opt out. peek does NOT classify destructive/act — the SW
+     * gate + destructive-override remain the backstop.
+     */
+    elicit?: boolean;
   }): Promise<ReturnType<typeof jsonResult>> {
     const bridge = options.hostBridge ?? new MissingHostBridge();
     const clientImpl = server.server.getClientVersion();
@@ -1119,25 +1130,41 @@ export function createPeekMcpServer(options: CreatePeekMcpServerOptions = {}): P
 
     let response: import('./host-bridge.js').HostActionResponse;
     let bridgeError: unknown;
-    try {
-      response = await bridge.request({
-        tool: input.tool,
-        sessionId: input.sessionId,
-        action: input.action,
-        client,
-        ...(input.confirmToken !== undefined ? { confirmToken: input.confirmToken } : {}),
-        ...(input.timeoutMs !== undefined ? { timeoutMs: input.timeoutMs } : {}),
-      });
-    } catch (err) {
-      bridgeError = err;
-      // Synthesize a denied/error response so we still audit-log + return a
-      // structured reply.
-      response = {
-        verdict: 'deny',
-        result: 'error',
-        approver: 'user',
-        error: err instanceof Error ? err.message : String(err),
-      };
+
+    // SP3a: delegated consent. Only execute_action sets elicit=true. If the client
+    // advertises elicitation and the human declines on its surface, short-circuit to
+    // a denied response WITHOUT dispatching. On accept (or no elicitation capability)
+    // fall through to the SW gate as normal (Level 4 auto-allows; Level 3 still
+    // banners; destructive is forced to the local banner by the SW — the backstop).
+    const elicitOutcome = input.elicit
+      ? await elicitConsent(server.server, buildElicitMessage(input.action))
+      : { elicited: false as const, reason: 'no-capability' as const };
+
+    if (elicitOutcome.elicited && elicitOutcome.verdict === 'deny') {
+      // approver stays 'user' in SP3a; the dedicated 'connector-elicit' approver +
+      // audit-union widening are SP3b.
+      response = { verdict: 'deny', result: 'denied', approver: 'user' };
+    } else {
+      try {
+        response = await bridge.request({
+          tool: input.tool,
+          sessionId: input.sessionId,
+          action: input.action,
+          client,
+          ...(input.confirmToken !== undefined ? { confirmToken: input.confirmToken } : {}),
+          ...(input.timeoutMs !== undefined ? { timeoutMs: input.timeoutMs } : {}),
+        });
+      } catch (err) {
+        bridgeError = err;
+        // Synthesize a denied/error response so we still audit-log + return a
+        // structured reply.
+        response = {
+          verdict: 'deny',
+          result: 'error',
+          approver: 'user',
+          error: err instanceof Error ? err.message : String(err),
+        };
+      }
     }
 
     // Audit-log the call — even when the bridge errored / denied. The audit
