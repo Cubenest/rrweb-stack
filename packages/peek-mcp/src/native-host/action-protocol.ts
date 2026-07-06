@@ -92,6 +92,12 @@ export interface ActionRequestMessage {
    * banner runs.
    */
   confirmToken?: string;
+  /**
+   * SP3b: set by peek-mcp when a real elicited approval was obtained from an
+   * elicitation-capable connector. The SW skips its Level-3 banner for
+   * non-destructive actions and dispatches banner-less as 'connector-elicit'.
+   */
+  consentDelegated?: boolean;
 }
 
 /** SW → host: the banner is now visible to the user (timing signal). */
