@@ -1,5 +1,6 @@
+import { ElicitRequestSchema } from '@modelcontextprotocol/sdk/types.js';
 import { describe, expect, it } from 'vitest';
-import { classify, mcpResultToText, mcpToolToAnthropic, withTimeout } from './mcp.js';
+import { PeekMcp, classify, mcpResultToText, mcpToolToAnthropic, withTimeout } from './mcp.js';
 
 describe('classify', () => {
   it('marks execute_action and request_authorization as action', () => {
@@ -40,5 +41,25 @@ describe('withTimeout', () => {
   it('rejects with a timed-out error when the promise takes too long', async () => {
     // Use a real 10ms timer — fast, but proves the race fires
     await expect(withTimeout(new Promise<never>(() => {}), 10, 'x')).rejects.toThrow(/timed out/);
+  });
+});
+
+describe('PeekMcp elicitation', () => {
+  it('advertises elicitation.form so peek-mcp will not throw on elicitInput', () => {
+    const mcp = new PeekMcp({ command: 'noop', args: [] }, 'peek-slack');
+    // The Client is private; assert via the capabilities it was constructed with.
+    // Expose a readable getter for the test (see impl): capabilities().
+    expect(mcp.capabilities().elicitation).toEqual({ form: {} });
+  });
+  it('onElicit registers a handler that maps the surface decision to an action', async () => {
+    const mcp = new PeekMcp({ command: 'noop', args: [] }, 'peek-slack');
+    let registered: ((req: unknown) => Promise<{ action: string }>) | undefined;
+    // Stub the client's setRequestHandler to capture the handler (see impl note).
+    mcp.__setRequestHandlerForTest((schema, h) => {
+      if (schema === ElicitRequestSchema) registered = h as never;
+    });
+    mcp.onElicit(async (message) => (message.includes('click') ? 'accept' : 'decline'));
+    const res = await registered?.({ params: { message: 'run "click"' } });
+    expect(res).toEqual({ action: 'accept' });
   });
 });
