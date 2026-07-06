@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import type { Brain, Session } from './brain.js';
+import type { AgentOutcome, Brain, Session } from './brain.js';
 import type { PeekMcp } from './mcp.js';
 import { ConnectorRuntime } from './runtime.js';
 import { SessionStore } from './store.js';
@@ -224,6 +224,89 @@ describe('ConnectorRuntime elicit handler (SP3a delegated consent)', () => {
     // No message sent — no active turn
     const result = await fakeMcp.elicitCb?.('Allow action?');
     expect(result).toBe('cancel');
+  });
+});
+
+describe('ConnectorRuntime abandoned-elicit wedge (SP3a fix)', () => {
+  class FakeMcpWithElicit {
+    callTool = vi.fn().mockResolvedValue('ok');
+    elicitCb?: (message: string) => Promise<'accept' | 'decline' | 'cancel'>;
+    onElicit(cb: (message: string) => Promise<'accept' | 'decline' | 'cancel'>) {
+      this.elicitCb = cb;
+    }
+  }
+
+  it('resolves abandoned pending elicit to decline and unblocks future elicitations when runTurn times out', async () => {
+    // Brain that rejects after a short delay — simulating the 30s callTool timeout
+    // firing while a delegated elicit is still awaiting a human answer.
+    let rejectTurn!: (err: Error) => void;
+    const brain: Brain = {
+      newSession: (): Session => ({ history: [] }),
+      appendUserText: () => {},
+      appendToolResult: () => {},
+      runTurn: async () =>
+        new Promise<AgentOutcome>((_resolve, reject) => {
+          rejectTurn = reject;
+        }),
+    };
+
+    const adapter = new FakeAdapter();
+    const store = new SessionStore(brain.newSession);
+    const fakeMcp = new FakeMcpWithElicit();
+    const runtime = new ConnectorRuntime({
+      adapter,
+      brain,
+      mcp: fakeMcp as unknown as import('./mcp.js').PeekMcp,
+      store,
+    });
+    await runtime.start();
+
+    // Start a turn for conversation t1 — runTurn will park until we call rejectTurn.
+    adapter.msgHandler?.({ conversationId: 't1', userId: 'u', text: 'go' });
+    // Give the event loop a tick so runTurn is actually awaited and #activeConversationId is set.
+    await new Promise((r) => setTimeout(r, 10));
+
+    // Invoke the elicit handler — it should post a consent card and park on the human's answer.
+    expect(fakeMcp.elicitCb).toBeDefined();
+    let abandonedResult: 'accept' | 'decline' | 'cancel' | undefined;
+    const elicitPromise = fakeMcp.elicitCb?.('Allow action?').then((v) => {
+      abandonedResult = v;
+      return v;
+    });
+
+    // Consent card should have been posted.
+    await vi.waitFor(() => expect(adapter.consents).toHaveLength(1));
+
+    // The human never answers. Instead, runTurn times out / rejects.
+    rejectTurn(new Error('callTool timed out after 30000ms'));
+
+    // runLoop's finally should clear #pendingElicit and resolve the abandoned elicit with 'decline'.
+    await elicitPromise;
+    expect(abandonedResult).toBe('decline');
+
+    // (a) The abandoned elicit resolved to 'decline' — safe deny, action did NOT run.
+
+    // (b) Now assert a SUBSEQUENT elicit is NOT blocked.
+    // Start a fresh turn for conversation t1.
+    adapter.msgHandler?.({ conversationId: 't1', userId: 'u', text: 'try again' });
+    await new Promise((r) => setTimeout(r, 10));
+
+    // Trigger a new elicit — it must post a NEW consent card (not return 'cancel').
+    const prevConsentCount = adapter.consents.length;
+    // The fresh turn's runTurn is still parked. We just need to confirm the elicit
+    // handler goes through rather than short-circuits with 'cancel'.
+    const secondElicitPromise = fakeMcp.elicitCb?.('Allow next action?');
+    await vi.waitFor(() => expect(adapter.consents.length).toBeGreaterThan(prevConsentCount));
+
+    // Confirm by resolving the second elicit normally (approve it).
+    const newCorrelationId = adapter.consents[adapter.consents.length - 1]?.[1].correlationId ?? '';
+    adapter.consentHandler?.({
+      conversationId: 't1',
+      correlationId: newCorrelationId,
+      decision: 'approve',
+    });
+    const secondResult = await secondElicitPromise;
+    expect(secondResult).toBe('accept');
   });
 });
 

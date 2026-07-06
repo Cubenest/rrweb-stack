@@ -76,6 +76,16 @@ export class ConnectorRuntime {
         outcome = await brain.runTurn(stored.session);
       } finally {
         this.#activeConversationId = undefined;
+        // If the turn ended (normally or via exception) while a delegated elicit
+        // was still awaiting a human answer, resolve it with 'decline' and free
+        // the slot. This prevents the wedge where #pendingElicit stays set for
+        // the process lifetime and all future elicitations hit the serialization
+        // guard and return 'cancel'.
+        const pe = this.#pendingElicit;
+        if (pe?.conversationId === conversationId) {
+          this.#pendingElicit = undefined;
+          pe.resolve('deny');
+        }
       }
       if (outcome.kind === 'consent') {
         const correlationId = mintCorrelationId();
