@@ -615,6 +615,20 @@ export async function handleActionRequest(
     });
   }
 
+  // ---- 'confirm' verdict, delegated consent (SP3b) ----
+  // The connector already obtained the human's consent off-device (peek-mcp
+  // elicited before dispatch and attached consentDelegated). Skip the local
+  // banner and dispatch banner-less as 'connector-elicit' — but ONLY for
+  // non-destructive actions: a destructive action falls through to the forced
+  // local banner (the safety backstop; peek does not classify destructive, the
+  // SW does). Level is already >= 3 here (gate returned 'confirm');
+  // revalidateAtDispatch (inside dispatchAndRespond) re-checks it at dispatch.
+  if (request.consentDelegated === true && !destructive.matched) {
+    return dispatchAndRespond(request, tab.id, deps, guarded, {
+      approver: 'connector-elicit',
+    });
+  }
+
   // ---- 'confirm' verdict ----
   // execute_action: if a confirmToken is present + valid, consume it and skip
   // the banner. The token is one-shot + bound to the EXACT action fingerprint
