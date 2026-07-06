@@ -2,7 +2,17 @@ import type Anthropic from '@anthropic-ai/sdk';
 import type { AgentOutcome, Brain, Session } from './brain.js';
 import { classify } from './mcp.js';
 
+const DEFERRED_SIBLING =
+  'Not executed — deferred; peek runs at most one action per turn. Re-request if still needed.';
+
 type Msg = Anthropic.MessageParam;
+
+/** SdkBrain-private view of the opaque Session: tracks tool_use ids that were
+ *  deferred when the loop suspended on an action, so appendToolResult can emit
+ *  is_error stubs for them and never leave an orphaned tool_use block. */
+interface SdkSession extends Session {
+  pendingSiblingIds?: string[];
+}
 
 export interface SdkBrainDeps {
   createMessage: (req: Anthropic.MessageCreateParamsNonStreaming) => Promise<Anthropic.Message>;
@@ -19,7 +29,8 @@ export class SdkBrain implements Brain {
   constructor(private readonly deps: SdkBrainDeps) {}
 
   newSession(): Session {
-    return { history: [] };
+    const s: SdkSession = { history: [], pendingSiblingIds: [] };
+    return s;
   }
 
   appendUserText(session: Session, text: string): void {
@@ -27,17 +38,25 @@ export class SdkBrain implements Brain {
   }
 
   appendToolResult(session: Session, toolUseId: string, text: string, isError: boolean): void {
-    (session.history as Msg[]).push({
-      role: 'user',
-      content: [
-        {
-          type: 'tool_result',
-          tool_use_id: toolUseId,
-          content: text,
-          ...(isError ? { is_error: true } : {}),
-        },
-      ],
-    });
+    const s = session as SdkSession;
+    const content: Anthropic.ToolResultBlockParam[] = [
+      {
+        type: 'tool_result',
+        tool_use_id: toolUseId,
+        content: text,
+        ...(isError ? { is_error: true } : {}),
+      },
+    ];
+    for (const siblingId of s.pendingSiblingIds ?? []) {
+      content.push({
+        type: 'tool_result',
+        tool_use_id: siblingId,
+        content: DEFERRED_SIBLING,
+        is_error: true,
+      });
+    }
+    s.pendingSiblingIds = [];
+    (s.history as Msg[]).push({ role: 'user', content });
   }
 
   async runTurn(session: Session): Promise<AgentOutcome> {
@@ -51,6 +70,9 @@ export class SdkBrain implements Brain {
       const reasoning: Partial<Anthropic.MessageCreateParamsNonStreaming> = extendedReasoning
         ? { thinking: { type: 'adaptive' }, output_config: { effort: 'high' } }
         : {};
+      // disable_parallel_tool_use is honored by hosted Claude (guarantees <=1 tool)
+      // but ignored by local endpoints (e.g. Ollama) — the <=1-ACTION guarantee is
+      // enforced below in this loop, not by this flag.
       const message = await createMessage({
         model,
         max_tokens: 16000,
@@ -79,6 +101,12 @@ export class SdkBrain implements Brain {
 
       const action = toolUses.find((t) => classify(t.name) === 'action');
       if (action) {
+        // Local endpoints ignore tool_choice.disable_parallel_tool_use, so a turn
+        // may carry siblings alongside the action. Record them; appendToolResult
+        // emits is_error stubs so the resumed turn is never incomplete.
+        (session as SdkSession).pendingSiblingIds = toolUses
+          .filter((t) => t.id !== action.id)
+          .map((t) => t.id);
         return {
           kind: 'consent',
           action: {
