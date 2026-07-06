@@ -1,6 +1,7 @@
 import type Anthropic from '@anthropic-ai/sdk';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
+import { ElicitRequestSchema } from '@modelcontextprotocol/sdk/types.js';
 import type { ToolKind } from './types.js';
 
 const ACTION_TOOLS = new Set(['execute_action', 'request_authorization']);
@@ -45,13 +46,44 @@ export interface McpSpawn {
   args: string[];
 }
 
+// The elicitation capability we advertise at construction, kept as a constant so
+// capabilities() can reflect it without re-reading private Client internals.
+const ELICITATION_CAPS = { elicitation: { form: {} } } as const;
+
 export class PeekMcp {
   private client: Client;
   private transport: StdioClientTransport;
 
   constructor(spawn: McpSpawn, clientName: string) {
     this.transport = new StdioClientTransport({ command: spawn.command, args: spawn.args });
-    this.client = new Client({ name: clientName, version: '0.1.0' });
+    // Advertise elicitation.form so peek-mcp can drive delegated consent
+    // (server checks _clientCapabilities?.elicitation?.form specifically).
+    this.client = new Client(
+      { name: clientName, version: '0.1.0' },
+      { capabilities: ELICITATION_CAPS },
+    );
+  }
+
+  /** Returns the capability object this client was constructed with (test seam). */
+  capabilities(): typeof ELICITATION_CAPS {
+    return ELICITATION_CAPS;
+  }
+
+  /**
+   * Test seam: replace the client's setRequestHandler so tests can capture
+   * registered handlers without spawning a real transport.
+   * @internal
+   */
+  __setRequestHandlerForTest(override: (schema: unknown, handler: unknown) => void): void {
+    this.client.setRequestHandler = override as typeof this.client.setRequestHandler;
+  }
+
+  /** Register a handler for peek-mcp's server->client elicitInput. `handler`
+   *  returns the human verdict; onElicit maps it into the MCP ElicitResult. */
+  onElicit(handler: (message: string) => Promise<'accept' | 'decline' | 'cancel'>): void {
+    this.client.setRequestHandler(ElicitRequestSchema, async (req) => ({
+      action: await handler(req.params.message),
+    }));
   }
 
   async connect(): Promise<void> {

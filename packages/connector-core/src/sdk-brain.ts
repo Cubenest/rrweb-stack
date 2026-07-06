@@ -23,6 +23,9 @@ export interface SdkBrainDeps {
   extendedReasoning: boolean;
   /** Maximum tool-use turns per runTurn call. Default 16. */
   maxTurns?: number;
+  /** SP3a: when true, run the first action inline (peek elicits consent at dispatch) instead of
+   *  suspending. Default false = SP2 suspend. */
+  delegateActionConsent?: boolean;
 }
 
 export class SdkBrain implements Brain {
@@ -101,12 +104,30 @@ export class SdkBrain implements Brain {
 
       const action = toolUses.find((t) => classify(t.name) === 'action');
       if (action) {
+        const siblings = toolUses.filter((t) => t.id !== action.id);
+        if (this.deps.delegateActionConsent) {
+          // Inline mode (SP3a): run the first action inline — peek elicits consent
+          // at dispatch (callTool -> execute_action -> peek-mcp elicitInput). Preserve
+          // <=1 action per turn by is_error-stubbing the siblings.
+          const content: Anthropic.ToolResultBlockParam[] = [];
+          const actionResult = await callTool(action.name, action.input);
+          content.push({ type: 'tool_result', tool_use_id: action.id, content: actionResult });
+          for (const s of siblings) {
+            content.push({
+              type: 'tool_result',
+              tool_use_id: s.id,
+              content: DEFERRED_SIBLING,
+              is_error: true,
+            });
+          }
+          history.push({ role: 'user', content });
+          continue;
+        }
+        // Suspend mode (SP2 fallback): stash siblings, hand consent to the connector.
         // Local endpoints ignore tool_choice.disable_parallel_tool_use, so a turn
         // may carry siblings alongside the action. Record them; appendToolResult
         // emits is_error stubs so the resumed turn is never incomplete.
-        (session as SdkSession).pendingSiblingIds = toolUses
-          .filter((t) => t.id !== action.id)
-          .map((t) => t.id);
+        (session as SdkSession).pendingSiblingIds = siblings.map((t) => t.id);
         return {
           kind: 'consent',
           action: {

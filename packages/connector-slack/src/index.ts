@@ -32,6 +32,7 @@ async function main(): Promise<void> {
     tools,
     model: brainConfig.model,
     extendedReasoning: !brainConfig.baseURL,
+    delegateActionConsent: true,
   });
 
   const store = new SessionStore(() => brain.newSession());

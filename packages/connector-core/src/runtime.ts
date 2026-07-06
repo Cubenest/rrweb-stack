@@ -1,4 +1,4 @@
-import type { Brain } from './brain.js';
+import type { AgentOutcome, Brain } from './brain.js';
 import type { PeekMcp } from './mcp.js';
 import type { SessionStore } from './store.js';
 import type { ConsentResponse, InboundMessage, SurfaceAdapter } from './surface.js';
@@ -21,19 +21,55 @@ export interface RuntimeDeps {
 }
 
 export class ConnectorRuntime {
+  #activeConversationId: string | undefined;
+  #pendingElicit:
+    | { correlationId: string; conversationId: string; resolve: (d: 'approve' | 'deny') => void }
+    | undefined;
+  // Serialize turn processing: each new inbound message's body is chained so
+  // turns run strictly one at a time. handleConsentResponse is NOT routed
+  // through this chain — consent responses must remain able to resolve a
+  // #pendingElicit while a turn is parked awaiting consent inside the chain.
+  #turnChain: Promise<void> = Promise.resolve();
+
   constructor(private readonly deps: RuntimeDeps) {}
 
   async start(): Promise<void> {
-    const { adapter } = this.deps;
+    const { adapter, mcp } = this.deps;
     adapter.onMessage((m) => {
-      this.handleMessage(m).catch((err) => console.error('connector handleMessage error:', err));
+      // Serialize turn processing: append each new message's body onto the
+      // chain so turns run strictly one at a time. Errors are swallowed so
+      // one failed turn doesn't poison the chain and block all future turns.
+      this.#turnChain = this.#turnChain
+        .then(() => this.handleMessage(m))
+        .catch((err) => console.error('connector handleMessage error:', err));
     });
     adapter.onConsentResponse((r) => {
+      // Consent responses are NOT serialized through #turnChain — they must
+      // remain able to resolve a #pendingElicit while a turn is parked inside
+      // the chain awaiting that consent. Serializing them would deadlock.
       this.handleConsentResponse(r).catch((err) =>
         console.error('connector handleConsentResponse error:', err),
       );
     });
+    mcp.onElicit((message) => this.handleElicit(message));
     await adapter.start();
+  }
+
+  private async handleElicit(message: string): Promise<'accept' | 'decline' | 'cancel'> {
+    const conversationId = this.#activeConversationId;
+    if (!conversationId) return 'cancel'; // no active turn to attribute this to
+    if (this.#pendingElicit) return 'cancel'; // serialization guard: ≤1 in-flight elicitation
+    const correlationId = mintCorrelationId();
+    const decision = await new Promise<'approve' | 'deny'>((resolve) => {
+      this.#pendingElicit = { correlationId, conversationId, resolve };
+      this.deps.adapter
+        .postConsentRequest(conversationId, { correlationId, summary: message, details: {} })
+        .catch(() => {
+          this.#pendingElicit = undefined;
+          resolve('deny');
+        });
+    });
+    return decision === 'approve' ? 'accept' : 'decline';
   }
 
   private async handleMessage(m: InboundMessage): Promise<void> {
@@ -47,7 +83,23 @@ export class ConnectorRuntime {
     const { store, brain, adapter } = this.deps;
     try {
       const stored = store.get(conversationId);
-      const outcome = await brain.runTurn(stored.session);
+      this.#activeConversationId = conversationId;
+      let outcome: AgentOutcome;
+      try {
+        outcome = await brain.runTurn(stored.session);
+      } finally {
+        this.#activeConversationId = undefined;
+        // If the turn ended (normally or via exception) while a delegated elicit
+        // was still awaiting a human answer, resolve it with 'decline' and free
+        // the slot. This prevents the wedge where #pendingElicit stays set for
+        // the process lifetime and all future elicitations hit the serialization
+        // guard and return 'cancel'.
+        const pe = this.#pendingElicit;
+        if (pe?.conversationId === conversationId) {
+          this.#pendingElicit = undefined;
+          pe.resolve('deny');
+        }
+      }
       if (outcome.kind === 'consent') {
         const correlationId = mintCorrelationId();
         store.setPending(conversationId, { ...outcome.action, correlationId });
@@ -67,6 +119,17 @@ export class ConnectorRuntime {
 
   private async handleConsentResponse(r: ConsentResponse): Promise<void> {
     const { store, brain, mcp, adapter } = this.deps;
+
+    // SP3a elicitation path: if a pending elicit matches, resolve it and return.
+    // This runs before the SP2 suspend-path so delegated-consent responses are
+    // handled inline without touching the pending-store.
+    const pe = this.#pendingElicit;
+    if (pe && pe.correlationId === r.correlationId && pe.conversationId === r.conversationId) {
+      this.#pendingElicit = undefined;
+      pe.resolve(r.decision);
+      return; // elicitation path — the brain's inline callTool proceeds on this verdict
+    }
+
     const stored = store.get(r.conversationId);
     const pending = stored.pending;
     if (!pending || pending.correlationId !== r.correlationId) return;

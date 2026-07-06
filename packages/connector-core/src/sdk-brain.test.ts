@@ -314,3 +314,94 @@ describe('SdkBrain multi-tool turn (local-endpoint safety)', () => {
     expect(resultIds).toEqual(toolUseIds);
   });
 });
+
+describe('SdkBrain delegateActionConsent (inline-run)', () => {
+  const oneAction = (): Anthropic.Message =>
+    msg(
+      [
+        {
+          type: 'tool_use',
+          id: 'a1',
+          name: 'execute_action',
+          input: { x: 1 },
+          caller: { type: 'direct' },
+        },
+      ],
+      'tool_use',
+    );
+
+  it('runs the action inline (no suspend) and continues when delegateActionConsent=true', async () => {
+    const createMessage = vi
+      .fn()
+      .mockResolvedValueOnce(oneAction())
+      .mockResolvedValueOnce(msg([{ type: 'text', text: 'done', citations: [] }], 'end_turn'));
+    const callTool = vi.fn().mockResolvedValue('acted');
+    const brain = new SdkBrain({
+      createMessage,
+      callTool,
+      tools,
+      model: 'm',
+      extendedReasoning: false,
+      delegateActionConsent: true,
+    });
+    const out = await brain.runTurn(brain.newSession());
+    expect(callTool).toHaveBeenCalledWith('execute_action', { x: 1 }); // ran inline, no suspend
+    expect(out).toEqual({ kind: 'done', text: 'done' });
+  });
+
+  it('still enforces <=1 action per turn inline: stubs the second action', async () => {
+    const twoActions = msg(
+      [
+        {
+          type: 'tool_use',
+          id: 'a1',
+          name: 'execute_action',
+          input: { x: 1 },
+          caller: { type: 'direct' },
+        },
+        {
+          type: 'tool_use',
+          id: 'a2',
+          name: 'execute_action',
+          input: { y: 2 },
+          caller: { type: 'direct' },
+        },
+      ],
+      'tool_use',
+    );
+    const createMessage = vi
+      .fn()
+      .mockResolvedValueOnce(twoActions)
+      .mockResolvedValueOnce(msg([{ type: 'text', text: 'ok', citations: [] }], 'end_turn'));
+    const callTool = vi.fn().mockResolvedValue('acted');
+    const brain = new SdkBrain({
+      createMessage,
+      callTool,
+      tools,
+      model: 'm',
+      extendedReasoning: false,
+      delegateActionConsent: true,
+    });
+    const s = brain.newSession();
+    await brain.runTurn(s);
+    expect(callTool).toHaveBeenCalledTimes(1); // only a1 executed
+    const userTurn = (s.history as Anthropic.MessageParam[]).find(
+      (m, i) => m.role === 'user' && i > 0 && Array.isArray(m.content),
+    ) as { content: Anthropic.ToolResultBlockParam[] };
+    expect(userTurn.content.map((b) => b.tool_use_id).sort()).toEqual(['a1', 'a2']); // both present
+    expect(userTurn.content.find((b) => b.tool_use_id === 'a2')?.is_error).toBe(true); // a2 stubbed
+  });
+
+  it('still SUSPENDS when delegateActionConsent is falsy (SP2 fallback intact)', async () => {
+    const createMessage = vi.fn().mockResolvedValue(oneAction());
+    const brain = new SdkBrain({
+      createMessage,
+      callTool: vi.fn(),
+      tools,
+      model: 'm',
+      extendedReasoning: false,
+    });
+    const out = await brain.runTurn(brain.newSession());
+    expect(out).toMatchObject({ kind: 'consent', action: { toolUseId: 'a1' } });
+  });
+});
