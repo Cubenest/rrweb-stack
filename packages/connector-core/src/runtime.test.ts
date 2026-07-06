@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { Brain, Session } from './brain.js';
+import type { PeekMcp } from './mcp.js';
 import { ConnectorRuntime } from './runtime.js';
 import { SessionStore } from './store.js';
 import type { ConsentResponse, InboundMessage, SurfaceAdapter } from './surface.js';
@@ -54,7 +55,7 @@ describe('ConnectorRuntime consent flow', () => {
     const adapter = new FakeAdapter();
     const brain = scriptedBrain();
     const store = new SessionStore(brain.newSession);
-    const mcp = { callTool } as unknown as import('./mcp.js').PeekMcp;
+    const mcp = { callTool, onElicit: () => {} } as unknown as import('./mcp.js').PeekMcp;
     const runtime = new ConnectorRuntime({ adapter, brain, mcp, store });
     await runtime.start();
 
@@ -74,7 +75,7 @@ describe('ConnectorRuntime consent flow', () => {
     const adapter = new FakeAdapter();
     const brain = scriptedBrain();
     const store = new SessionStore(brain.newSession);
-    const mcp = { callTool } as unknown as import('./mcp.js').PeekMcp;
+    const mcp = { callTool, onElicit: () => {} } as unknown as import('./mcp.js').PeekMcp;
     const runtime = new ConnectorRuntime({ adapter, brain, mcp, store });
     await runtime.start();
     adapter.msgHandler?.({ conversationId: 't1', userId: 'u', text: 'fix it' });
@@ -82,6 +83,147 @@ describe('ConnectorRuntime consent flow', () => {
     adapter.consentHandler?.({ conversationId: 't1', correlationId: 'WRONG', decision: 'approve' });
     await new Promise((r) => setTimeout(r, 20));
     expect(callTool).not.toHaveBeenCalled();
+  });
+});
+
+describe('ConnectorRuntime elicit handler (SP3a delegated consent)', () => {
+  class FakeMcpWithElicit {
+    callTool = vi.fn().mockResolvedValue('ok');
+    elicitCb?: (message: string) => Promise<'accept' | 'decline' | 'cancel'>;
+    onElicit(cb: (message: string) => Promise<'accept' | 'decline' | 'cancel'>) {
+      this.elicitCb = cb;
+    }
+  }
+
+  // Brain that always returns a consent outcome — simulates delegateActionConsent=false
+  // but we test the elicit path directly by invoking the registered handler.
+  function idleBrain(): Brain {
+    return {
+      newSession: (): Session => ({ history: [] }),
+      appendUserText: () => {},
+      appendToolResult: () => {},
+      runTurn: async () => new Promise(() => {}), // never resolves — keeps turn active
+    };
+  }
+
+  // Brain that returns a done outcome once a turn is awaited
+  function doneBrain(): Brain {
+    return {
+      newSession: (): Session => ({ history: [] }),
+      appendUserText: () => {},
+      appendToolResult: () => {},
+      runTurn: async () => ({ kind: 'done' as const, text: 'done' }),
+    };
+  }
+
+  it('posts a consent card to the active conversationId and resolves to accept on approve', async () => {
+    const adapter = new FakeAdapter();
+    const brain = idleBrain();
+    const store = new SessionStore(brain.newSession);
+    const fakeMcp = new FakeMcpWithElicit();
+    const runtime = new ConnectorRuntime({
+      adapter,
+      brain,
+      mcp: fakeMcp as unknown as import('./mcp.js').PeekMcp,
+      store,
+    });
+    await runtime.start();
+
+    // Simulate a turn starting for conversation t1 — fire a message to make the runtime
+    // set #activeConversationId. The idleBrain never resolves, so the turn stays active.
+    adapter.msgHandler?.({ conversationId: 't1', userId: 'u', text: 'go' });
+    // Give the event loop a tick to enter runTurn (which never resolves)
+    await new Promise((r) => setTimeout(r, 10));
+
+    // Now invoke the registered elicit handler (as peek-mcp would)
+    expect(fakeMcp.elicitCb).toBeDefined();
+    const elicitPromise = fakeMcp.elicitCb?.('Allow peek to click the submit button?');
+
+    // The runtime should post a consent card to t1
+    await vi.waitFor(() => expect(adapter.consents).toHaveLength(1));
+    const postedConvId = adapter.consents[0]?.[0];
+    const postedReq = adapter.consents[0]?.[1];
+    expect(postedConvId).toBe('t1');
+    expect(postedReq?.correlationId).toBeTruthy();
+
+    // Simulate the human approving
+    adapter.consentHandler?.({
+      conversationId: 't1',
+      correlationId: postedReq?.correlationId ?? '',
+      decision: 'approve',
+    });
+    const result = await elicitPromise;
+    expect(result).toBe('accept');
+  });
+
+  it('resolves to decline when the human denies', async () => {
+    const adapter = new FakeAdapter();
+    const brain = idleBrain();
+    const store = new SessionStore(brain.newSession);
+    const fakeMcp = new FakeMcpWithElicit();
+    const runtime = new ConnectorRuntime({
+      adapter,
+      brain,
+      mcp: fakeMcp as unknown as import('./mcp.js').PeekMcp,
+      store,
+    });
+    await runtime.start();
+
+    adapter.msgHandler?.({ conversationId: 't1', userId: 'u', text: 'go' });
+    await new Promise((r) => setTimeout(r, 10));
+
+    const elicitPromise = fakeMcp.elicitCb?.('Allow peek to type into the field?');
+    await vi.waitFor(() => expect(adapter.consents).toHaveLength(1));
+    const correlationId = adapter.consents[0]?.[1].correlationId ?? '';
+
+    adapter.consentHandler?.({ conversationId: 't1', correlationId, decision: 'deny' });
+    const result = await elicitPromise;
+    expect(result).toBe('decline');
+  });
+
+  it('does not resolve the elicit when the correlationId is stale/mismatched', async () => {
+    const adapter = new FakeAdapter();
+    const brain = idleBrain();
+    const store = new SessionStore(brain.newSession);
+    const fakeMcp = new FakeMcpWithElicit();
+    const runtime = new ConnectorRuntime({
+      adapter,
+      brain,
+      mcp: fakeMcp as unknown as import('./mcp.js').PeekMcp,
+      store,
+    });
+    await runtime.start();
+
+    adapter.msgHandler?.({ conversationId: 't1', userId: 'u', text: 'go' });
+    await new Promise((r) => setTimeout(r, 10));
+
+    let resolved = false;
+    fakeMcp.elicitCb?.('Allow action?').then(() => {
+      resolved = true;
+    });
+    await vi.waitFor(() => expect(adapter.consents).toHaveLength(1));
+
+    // Send a response with the WRONG correlationId
+    adapter.consentHandler?.({ conversationId: 't1', correlationId: 'WRONG', decision: 'approve' });
+    await new Promise((r) => setTimeout(r, 20));
+    expect(resolved).toBe(false);
+  });
+
+  it('returns cancel when no turn is active', async () => {
+    const adapter = new FakeAdapter();
+    const brain = doneBrain();
+    const store = new SessionStore(brain.newSession);
+    const fakeMcp = new FakeMcpWithElicit();
+    const runtime = new ConnectorRuntime({
+      adapter,
+      brain,
+      mcp: fakeMcp as unknown as import('./mcp.js').PeekMcp,
+      store,
+    });
+    await runtime.start();
+    // No message sent — no active turn
+    const result = await fakeMcp.elicitCb?.('Allow action?');
+    expect(result).toBe('cancel');
   });
 });
 
@@ -108,7 +250,7 @@ describe('ConnectorRuntime handler rejection', () => {
     try {
       const adapter = new FailingAdapter();
       const store = new SessionStore(brain.newSession);
-      const mcp = { callTool: vi.fn() } as unknown as import('./mcp.js').PeekMcp;
+      const mcp = { callTool: vi.fn(), onElicit: () => {} } as unknown as PeekMcp;
       const runtime = new ConnectorRuntime({ adapter, brain, mcp, store });
       await runtime.start();
 
