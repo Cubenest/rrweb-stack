@@ -26,6 +26,7 @@
 import { fakeBrowser } from '@webext-core/fake-browser';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ShowPairMessage } from '../messaging/protocol';
+import { isPairRequest } from '../permissions/action-protocol';
 import {
   connectorIdFromClientName,
   mintPairingSecret,
@@ -292,5 +293,63 @@ describe('runHandlePairRequest — secret never logged', () => {
     for (const arg of allArgs) {
       expect(arg).not.toContain(capturedSecret);
     }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// isPairRequest — full wire-shape validation
+//
+// The guard is the entry point for the SW pairing flow. A malformed pair.request
+// (empty/missing requestId, clientName, or code) would otherwise destructure
+// undefined/empty values into the ShowPairMessage forwarded to the side panel
+// and defeat the matching-code TOFU check. These cases must FAIL the (type-only)
+// pre-fix guard and PASS after the guard validates the full shape.
+// ---------------------------------------------------------------------------
+describe('isPairRequest — wire-shape validation', () => {
+  const VALID = {
+    type: 'pair.request',
+    requestId: 'req-pair-1',
+    clientName: 'Cursor MCP',
+    code: 'A7F3',
+  };
+
+  it('accepts a fully-valid pair.request', () => {
+    expect(isPairRequest(VALID)).toBe(true);
+  });
+
+  it('rejects an empty requestId (defeats correlation)', () => {
+    expect(isPairRequest({ ...VALID, requestId: '' })).toBe(false);
+  });
+
+  it('rejects a missing requestId', () => {
+    const { requestId: _omit, ...noReq } = VALID;
+    expect(isPairRequest(noReq)).toBe(false);
+  });
+
+  it('rejects a non-string clientName', () => {
+    expect(isPairRequest({ ...VALID, clientName: 42 })).toBe(false);
+  });
+
+  it('rejects an empty clientName', () => {
+    expect(isPairRequest({ ...VALID, clientName: '' })).toBe(false);
+  });
+
+  it('rejects an empty code (defeats the matching-code TOFU check)', () => {
+    expect(isPairRequest({ ...VALID, code: '' })).toBe(false);
+  });
+
+  it('rejects a missing code', () => {
+    const { code: _omit, ...noCode } = VALID;
+    expect(isPairRequest(noCode)).toBe(false);
+  });
+
+  it('rejects the wrong message type', () => {
+    expect(isPairRequest({ ...VALID, type: 'action.request' })).toBe(false);
+  });
+
+  it('rejects null and non-objects', () => {
+    expect(isPairRequest(null)).toBe(false);
+    expect(isPairRequest('pair.request')).toBe(false);
+    expect(isPairRequest(undefined)).toBe(false);
   });
 });

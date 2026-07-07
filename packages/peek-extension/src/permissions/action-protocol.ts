@@ -212,12 +212,27 @@ export interface PairRequestMessage {
   code: string;
 }
 
-/** Discriminator helper for the SW's native-port handleHostMessage. */
+/**
+ * Discriminator helper for the SW's native-port handleHostMessage.
+ *
+ * Validates the full wire shape — a non-empty string `requestId`, a non-empty
+ * `clientName`, and a non-empty `code` — not just `type === 'pair.request'`.
+ * An empty `code` defeats the matching-code TOFU check; a missing `requestId`
+ * or `clientName` would destructure to `undefined` / empty values when the SW
+ * constructs the ShowPairMessage it forwards to the side panel. Mirrors the
+ * validation idiom used by {@link isShowPair} / {@link isPairVerdict}.
+ */
 export function isPairRequest(message: unknown): message is PairRequestMessage {
-  return (
-    typeof message === 'object' &&
-    message !== null &&
-    'type' in message &&
-    (message as { type: unknown }).type === 'pair.request'
-  );
+  if (typeof message !== 'object' || message === null) return false;
+  const m = message as {
+    type?: unknown;
+    requestId?: unknown;
+    clientName?: unknown;
+    code?: unknown;
+  };
+  if (m.type !== 'pair.request') return false;
+  if (typeof m.requestId !== 'string' || m.requestId.length === 0) return false;
+  if (typeof m.clientName !== 'string' || m.clientName.length === 0) return false;
+  if (typeof m.code !== 'string' || m.code.length === 0) return false;
+  return true;
 }
