@@ -358,9 +358,9 @@ describe('peek MCP server: graceful no-DB', () => {
       eventsDir: join(dir, 'rrweb-events'),
     });
     try {
-      // tools/list still works (8 read + search_sessions + get_page_view + get_element_detail + 2 write + 2 suggest + 1 handoff + set_intent + verify_audit_log).
+      // tools/list still works (8 read + search_sessions + get_page_view + get_element_detail + 2 write + 2 suggest + 1 handoff + set_intent + verify_audit_log + request_pairing).
       const { tools } = await client.listTools();
-      expect(tools).toHaveLength(18);
+      expect(tools).toHaveLength(19);
       // and a call returns the friendly message rather than erroring.
       const res = await client.callTool({ name: 'list_recent_sessions', arguments: {} });
       expect(textOf(res as never)).toContain('No sessions recorded yet');
@@ -1273,6 +1273,112 @@ describe('peek MCP server: execute_action over the real LocalSocketHostBridge', 
     } finally {
       await client.close();
       peek.close();
+    }
+  });
+});
+
+describe('peek MCP server: request_pairing tool (SP4)', () => {
+  it('appears in the tool list', async () => {
+    const { dbPath, eventsDir } = seedStore(dir, [loginSession()]);
+    const { client, close } = await connectClient({ dbPath, eventsDir });
+    try {
+      const { tools } = await client.listTools();
+      const names = tools.map((t) => t.name);
+      expect(names).toContain('request_pairing');
+    } finally {
+      await close();
+    }
+  });
+
+  it('approved pairing returns approved:true + secret', async () => {
+    const { dbPath, eventsDir } = seedStore(dir, [loginSession()]);
+    const auditLogPath = join(dir, 'audit-pairing.log');
+    const bridge = new RegistryBackedHostBridge();
+    const { client, close } = await connectClient({
+      dbPath,
+      eventsDir,
+      hostBridge: bridge,
+      auditLogPath,
+    });
+    try {
+      const callP = client.callTool({
+        name: 'request_pairing',
+        arguments: { code: 'ABC-123' },
+      });
+      // Wait for the pairing request to arrive at the bridge.
+      for (let i = 0; i < 20 && bridge.pendingPairings.length === 0; i++) {
+        await new Promise((r) => setTimeout(r, 5));
+      }
+      expect(bridge.pendingPairings).toHaveLength(1);
+      expect(bridge.pendingPairings[0]?.req.code).toBe('ABC-123');
+      // Bridge: client name is derived from getClientVersion (test-client).
+      expect(bridge.pendingPairings[0]?.req.clientName).toBe('test-client');
+      bridge.resolveNextPairing({ approved: true, secret: 'tok_s3cr3t' });
+      const res = await callP;
+      const body = parseJson(res as never) as Record<string, unknown>;
+      expect(body.approved).toBe(true);
+      expect(body.secret).toBe('tok_s3cr3t');
+      // The audit log was written for this pairing attempt.
+      const lines = readFileSync(auditLogPath, 'utf8').split('\n').filter(Boolean);
+      expect(lines).toHaveLength(1);
+      const entry = JSON.parse(lines[0] ?? '') as Record<string, unknown>;
+      expect(entry.tool).toBe('request_pairing');
+      expect(entry.result).toBe('ok');
+      expect(entry.client).toBe('test-client');
+      // CRITICAL: the secret must NOT appear in the audit log.
+      expect(lines[0]).not.toContain('tok_s3cr3t');
+      expect(lines[0]).not.toContain('secret');
+    } finally {
+      await close();
+    }
+  });
+
+  it('denied pairing returns approved:false with no secret', async () => {
+    const { dbPath, eventsDir } = seedStore(dir, [loginSession()]);
+    const auditLogPath = join(dir, 'audit-pairing-deny.log');
+    const bridge = new RegistryBackedHostBridge();
+    const { client, close } = await connectClient({
+      dbPath,
+      eventsDir,
+      hostBridge: bridge,
+      auditLogPath,
+    });
+    try {
+      const callP = client.callTool({
+        name: 'request_pairing',
+        arguments: { code: 'XYZ-999' },
+      });
+      for (let i = 0; i < 20 && bridge.pendingPairings.length === 0; i++) {
+        await new Promise((r) => setTimeout(r, 5));
+      }
+      bridge.resolveNextPairing({ approved: false, error: 'Code mismatch' });
+      const res = await callP;
+      const body = parseJson(res as never) as Record<string, unknown>;
+      expect(body.approved).toBe(false);
+      expect('secret' in body).toBe(false);
+      // The audit log records the denial.
+      const lines = readFileSync(auditLogPath, 'utf8').split('\n').filter(Boolean);
+      expect(lines).toHaveLength(1);
+      const entry = JSON.parse(lines[0] ?? '') as Record<string, unknown>;
+      expect(entry.tool).toBe('request_pairing');
+      expect(entry.result).toBe('denied');
+    } finally {
+      await close();
+    }
+  });
+
+  it('pairing with MissingHostBridge returns approved:false', async () => {
+    const { dbPath, eventsDir } = seedStore(dir, [loginSession()]);
+    const { client, close } = await connectClient({ dbPath, eventsDir });
+    try {
+      const res = await client.callTool({
+        name: 'request_pairing',
+        arguments: { code: 'ABC-123' },
+      });
+      const body = parseJson(res as never) as Record<string, unknown>;
+      expect(body.approved).toBe(false);
+    } finally {
+      await close();
     }
   });
 });
