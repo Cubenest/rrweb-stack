@@ -198,3 +198,26 @@ export function isActionRequest(message: unknown): message is ActionRequestMessa
     (message as { type: unknown }).type === 'action.request'
   );
 }
+
+/**
+ * SP4: host → SW pairing handshake. Extension-side mirror of the
+ * `PairRequestMessage` shape in peek-mcp/src/native-host/action-protocol.ts.
+ * Duplicated (not imported) for the same reason as ActionRequestMessage above
+ * — the extension build cannot pull in node-only packages.
+ */
+export interface PairRequestMessage {
+  type: 'pair.request';
+  requestId: string;
+  clientName: string;
+  code: string;
+}
+
+/** Discriminator helper for the SW's native-port handleHostMessage. */
+export function isPairRequest(message: unknown): message is PairRequestMessage {
+  return (
+    typeof message === 'object' &&
+    message !== null &&
+    'type' in message &&
+    (message as { type: unknown }).type === 'pair.request'
+  );
+}

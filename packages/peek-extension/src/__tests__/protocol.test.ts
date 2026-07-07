@@ -5,8 +5,10 @@ import {
   denyReason,
   isFromSidePanel,
   isNoReceiverError,
+  isPairVerdict,
   isRecordingStateMessage,
   isShowConfirm,
+  isShowPair,
   sendCmd,
 } from '../messaging/protocol';
 
@@ -211,6 +213,78 @@ describe('denyReason — classifies a deny verdict for the audit log', () => {
   it('a timeout takes precedence even if the closed flag is set', () => {
     // The SW's own timeout fired; that's the truth regardless of any flag.
     expect(denyReason(denyVerdict(true), TIMEOUT, TIMEOUT)).toBe('timeout');
+  });
+});
+
+// SP4: isShowPair validates the full wire shape for the pairing trust-dial prompt.
+describe('isShowPair — full wire-shape validation', () => {
+  const VALID = {
+    type: 'showPair',
+    requestId: 'req-pair-1',
+    clientName: 'Cursor MCP',
+    code: 'A7F3',
+  };
+
+  it('accepts a well-formed showPair', () => {
+    expect(isShowPair(VALID)).toBe(true);
+  });
+
+  it('rejects a non-string / empty requestId', () => {
+    expect(isShowPair({ ...VALID, requestId: '' })).toBe(false);
+    expect(isShowPair({ ...VALID, requestId: 123 })).toBe(false);
+    const { requestId: _omit, ...noReq } = VALID;
+    expect(isShowPair(noReq)).toBe(false);
+  });
+
+  it('rejects a non-string clientName', () => {
+    expect(isShowPair({ ...VALID, clientName: 42 })).toBe(false);
+    const { clientName: _omit, ...noClient } = VALID;
+    expect(isShowPair(noClient)).toBe(false);
+  });
+
+  it('rejects a non-string code', () => {
+    expect(isShowPair({ ...VALID, code: 9999 })).toBe(false);
+    const { code: _omit, ...noCode } = VALID;
+    expect(isShowPair(noCode)).toBe(false);
+  });
+
+  it('rejects non-objects and wrong message types', () => {
+    expect(isShowPair(null)).toBe(false);
+    expect(isShowPair('showPair')).toBe(false);
+    expect(isShowPair({ type: 'showConfirm', requestId: 'x', clientName: 'y', code: 'z' })).toBe(
+      false,
+    );
+  });
+});
+
+// SP4: isPairVerdict validates the pairing verdict shape.
+describe('isPairVerdict — wire-shape validation', () => {
+  const VALID_APPROVE: unknown = { type: 'pairVerdict', requestId: 'req-1', approved: true };
+  const VALID_DENY: unknown = { type: 'pairVerdict', requestId: 'req-1', approved: false };
+
+  it('accepts a well-formed approve verdict', () => {
+    expect(isPairVerdict(VALID_APPROVE)).toBe(true);
+  });
+
+  it('accepts a well-formed deny verdict', () => {
+    expect(isPairVerdict(VALID_DENY)).toBe(true);
+  });
+
+  it('rejects a non-string / empty requestId', () => {
+    expect(isPairVerdict({ type: 'pairVerdict', requestId: '', approved: true })).toBe(false);
+    expect(isPairVerdict({ type: 'pairVerdict', requestId: 123, approved: true })).toBe(false);
+    expect(isPairVerdict({ type: 'pairVerdict', approved: true })).toBe(false);
+  });
+
+  it('rejects a non-boolean / missing approved', () => {
+    expect(isPairVerdict({ type: 'pairVerdict', requestId: 'r', approved: 'yes' })).toBe(false);
+    expect(isPairVerdict({ type: 'pairVerdict', requestId: 'r' })).toBe(false);
+  });
+
+  it('rejects non-objects and wrong message types', () => {
+    expect(isPairVerdict(null)).toBe(false);
+    expect(isPairVerdict('pairVerdict')).toBe(false);
+    expect(isPairVerdict({ type: 'confirmVerdict', requestId: 'r', approved: true })).toBe(false);
   });
 });
 
