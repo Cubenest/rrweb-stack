@@ -4,6 +4,8 @@ import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
   FileSecretStore,
+  KeychainSecretStore,
+  type KeyringEntryLike,
   defaultSecretPath,
   loadPairingSecret,
   migrateLegacySecret,
@@ -214,5 +216,134 @@ describe('defaultSecretPath', () => {
     const p = defaultSecretPath('discord');
     expect(p).toContain('peek-discord');
     expect(p.endsWith('pairing.json')).toBe(true);
+  });
+});
+
+// ---- KeychainSecretStore contract (fake entry factory — never touches real keychain) ----
+
+/** Build an in-memory fake keyring factory for tests. */
+function makeFakeFactory(): (service: string, account: string) => KeyringEntryLike {
+  const store = new Map<string, string>();
+  return (service: string, account: string): KeyringEntryLike => ({
+    getPassword(): string | null {
+      return store.get(`${service}:${account}`) ?? null;
+    },
+    setPassword(p: string): void {
+      store.set(`${service}:${account}`, p);
+    },
+    deletePassword(): boolean {
+      return store.delete(`${service}:${account}`);
+    },
+  });
+}
+
+describe('KeychainSecretStore', () => {
+  it('set calls the factory with service=peek-connector and account=connectorId:name', async () => {
+    const calls: Array<{ service: string; account: string }> = [];
+    const factory = (service: string, account: string): KeyringEntryLike => {
+      calls.push({ service, account });
+      const delegate = makeFakeFactory()(service, account);
+      return delegate;
+    };
+    const store = new KeychainSecretStore({ entryFactory: factory });
+    await store.set('slack-abc', 'pairing', 'secret-value');
+    expect(calls[0]).toEqual({ service: 'peek-connector', account: 'slack-abc:pairing' });
+  });
+
+  it('set then get round-trips a secret', async () => {
+    const store = new KeychainSecretStore({ entryFactory: makeFakeFactory() });
+    await store.set('slack-abc', 'pairing', 'my-secret');
+    const val = await store.get('slack-abc', 'pairing');
+    expect(val).toBe('my-secret');
+  });
+
+  it('get on a missing account returns null (no throw)', async () => {
+    const store = new KeychainSecretStore({ entryFactory: makeFakeFactory() });
+    const val = await store.get('no-such-connector', 'pairing');
+    expect(val).toBeNull();
+  });
+
+  it('get when factory entry throws returns null (no throw, error normalized)', async () => {
+    const throwingFactory = (_service: string, _account: string): KeyringEntryLike => ({
+      getPassword(): string | null {
+        throw new Error('simulated keychain read error');
+      },
+      setPassword(_p: string): void {},
+      deletePassword(): boolean {
+        return false;
+      },
+    });
+    const store = new KeychainSecretStore({ entryFactory: throwingFactory });
+    const val = await store.get('any', 'pairing');
+    expect(val).toBeNull();
+  });
+
+  it('delete calls deletePassword on the entry', async () => {
+    const calls: string[] = [];
+    const innerFactory = makeFakeFactory();
+    const factory = (service: string, account: string): KeyringEntryLike => {
+      const inner = innerFactory(service, account);
+      return {
+        getPassword: () => inner.getPassword(),
+        setPassword: (p: string) => inner.setPassword(p),
+        deletePassword: (): boolean | undefined => {
+          calls.push('deletePassword');
+          return inner.deletePassword();
+        },
+      };
+    };
+    const store = new KeychainSecretStore({ entryFactory: factory });
+    await store.set('slack-abc', 'pairing', 'some-secret');
+    await store.delete('slack-abc', 'pairing');
+    expect(calls).toContain('deletePassword');
+  });
+
+  it('delete removes the key (subsequent get returns null)', async () => {
+    const store = new KeychainSecretStore({ entryFactory: makeFakeFactory() });
+    await store.set('slack-abc', 'pairing', 'some-secret');
+    await store.delete('slack-abc', 'pairing');
+    const val = await store.get('slack-abc', 'pairing');
+    expect(val).toBeNull();
+  });
+
+  it('delete on a missing key does not throw', async () => {
+    const store = new KeychainSecretStore({ entryFactory: makeFakeFactory() });
+    await expect(store.delete('no-such', 'pairing')).resolves.toBeUndefined();
+  });
+});
+
+describe('KeychainSecretStore.isAvailable', () => {
+  it('returns true when the factory works', async () => {
+    const result = await KeychainSecretStore.isAvailable(makeFakeFactory());
+    expect(result).toBe(true);
+  });
+
+  it('returns false when the factory throws on construction', async () => {
+    const brokenFactory = (_service: string, _account: string): KeyringEntryLike => {
+      throw new Error('native load failed');
+    };
+    const result = await KeychainSecretStore.isAvailable(brokenFactory);
+    expect(result).toBe(false);
+  });
+
+  it('returns false when getPassword throws during the probe', async () => {
+    const probingFactory = (_service: string, _account: string): KeyringEntryLike => ({
+      getPassword(): string | null {
+        throw new Error('no libsecret backend');
+      },
+      setPassword(_p: string): void {},
+      deletePassword(): boolean {
+        return false;
+      },
+    });
+    const result = await KeychainSecretStore.isAvailable(probingFactory);
+    expect(result).toBe(false);
+  });
+
+  it('does not throw even when the factory is broken', async () => {
+    const brokenFactory = (): KeyringEntryLike => {
+      throw new Error('boom');
+    };
+    await expect(KeychainSecretStore.isAvailable(brokenFactory)).resolves.toBeDefined();
   });
 });
