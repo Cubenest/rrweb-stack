@@ -9,7 +9,7 @@
 //   tool          'execute_action' | 'request_authorization'
 //   args          the Action object (passwords / token values redacted)
 //   approvalTs    ISO when the user confirmed (Level 3) — omitted on YOLO auto
-//   approver      'user' | 'allow-list-match' | 'level-4-auto' | 'level-2-suggest' | 'level-1-read'
+//   approver      'user' | 'allow-list-match' | 'level-4-auto' | 'level-2-suggest' | 'level-1-read' | 'connector-elicit'
 //   client        MCP client name from clientInfo (cursor, claude-code, etc.)
 //   sessionId     the recording session id the action targets
 //   result        'ok' | 'denied' | 'error'
@@ -41,8 +41,8 @@ export function auditLogPath(): string {
   return join(peekHomeDir(), 'audit.log');
 }
 
-/** Tool names that produce audit entries — the two Level-3+ MCP write tools. */
-export type AuditTool = 'execute_action' | 'request_authorization';
+/** Tool names that produce audit entries — the Level-3+ MCP write tools + SP4 pairing. */
+export type AuditTool = 'execute_action' | 'request_authorization' | 'request_pairing';
 
 /** Approver values, ordered by what the dispatcher will record. */
 export type AuditApprover =
@@ -50,7 +50,8 @@ export type AuditApprover =
   | 'allow-list-match'
   | 'level-4-auto'
   | 'level-2-suggest'
-  | 'level-1-read';
+  | 'level-1-read'
+  | 'connector-elicit';
 
 /** Result values. */
 export type AuditResult = 'ok' | 'denied' | 'error';

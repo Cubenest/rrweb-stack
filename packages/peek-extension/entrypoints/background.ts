@@ -34,11 +34,19 @@ import type {
   CmdResponse,
   ConfirmVerdictMessage,
   NativeHostState,
+  PairVerdictMessage,
   RecordingStateMessage,
   RelayAck,
+  RevokePairingMessage,
   ShowConfirmMessage,
+  ShowPairMessage,
 } from '../src/messaging/protocol';
-import { denyReason, isFromSidePanel } from '../src/messaging/protocol';
+import {
+  denyReason,
+  isFromSidePanel,
+  isPairVerdict,
+  isRevokePairing,
+} from '../src/messaging/protocol';
 import {
   type ElementFeedbackArgs,
   FEEDBACK_CSS,
@@ -56,9 +64,10 @@ import {
 import type {
   Action,
   ActionResultMessage,
+  PairRequestMessage,
   ScreenshotAction,
 } from '../src/permissions/action-protocol';
-import { isActionRequest } from '../src/permissions/action-protocol';
+import { isActionRequest, isPairRequest } from '../src/permissions/action-protocol';
 import {
   type HandoffEligibility,
   dispatchAction,
@@ -68,6 +77,16 @@ import {
 import { type HighlightResult, applyHighlight, clearHighlight } from '../src/permissions/highlight';
 import { ALWAYS_FOR_SITE_LEVEL } from '../src/permissions/levels';
 import { maskElementDetail, maskPageViewNode } from '../src/permissions/mask-view';
+import {
+  PAIR_TIMEOUT_MS,
+  connectorIdFromClientName,
+  mintPairingSecret,
+} from '../src/permissions/pair-handler';
+import {
+  clearPairedConnector,
+  putPairedConnector,
+  sha256Hex,
+} from '../src/permissions/pairing-store';
 import {
   type ElementDetail,
   type ElementDetailError,
@@ -399,6 +418,23 @@ export default defineBackground({
       entry.resolve(verdict);
     }
 
+    // Pending SP4 connector-pairing prompts. Keyed by requestId; the side
+    // panel posts a `pairVerdict` that resolves the awaiting promise.
+    // Same fail-closed / in-memory pattern as pendingConfirms above.
+    const pendingPairings = new Map<
+      string,
+      { resolve: (v: PairVerdictMessage) => void; timer: ReturnType<typeof setTimeout> }
+    >();
+
+    /** Resolve a pending pairing by requestId (idempotent). */
+    function resolvePendingPairing(verdict: PairVerdictMessage): void {
+      const entry = pendingPairings.get(verdict.requestId);
+      if (!entry) return;
+      pendingPairings.delete(verdict.requestId);
+      clearTimeout(entry.timer);
+      entry.resolve(verdict);
+    }
+
     // Deep capture (3d-4, Task 3.26). The manager is lazily constructed on
     // first attach because constructing it registers an event listener on
     // `chrome.debugger.onEvent`, and `chrome.debugger` is only present when
@@ -448,6 +484,12 @@ export default defineBackground({
     }
 
     function handleHostMessage(message: unknown): void {
+      // SP4: pairing handshake — checked before the action guard so pair.request
+      // messages never fall through to the act path.
+      if (isPairRequest(message)) {
+        void handlePairRequest(message);
+        return;
+      }
       // Action request from peek-mcp's native-host process (Task 3.24). The
       // handler routes through the permission gate, the destructive matcher,
       // and (for Level 3) the side-panel banner. The result message ID echoes
@@ -990,6 +1032,7 @@ export default defineBackground({
         ...(input.destructive.matched && input.destructive.term !== undefined
           ? { destructiveTerm: input.destructive.term }
           : {}),
+        ...(input.request.client.length > 0 ? { client: input.request.client } : {}),
       };
 
       const verdict = await new Promise<ConfirmVerdictMessage>((resolve) => {
@@ -1030,6 +1073,88 @@ export default defineBackground({
         reason: denyReason(verdict, approvalMs - startedAtMs, CONFIRM_TIMEOUT_MS),
       };
     };
+
+    /**
+     * SP4: Surface the connector-pairing trust-dial prompt in the side panel
+     * and await the user's verdict. Mirrors {@link promptUserConfirmation} in
+     * structure: open the panel, post `showPair`, register a `pendingPairings`
+     * entry + timeout, await the `pairVerdict`.
+     *
+     * On Approve: mints a high-entropy secret (32 random bytes, base64url),
+     * stores ONLY its SHA-256 hash under the derived connectorId, and sends a
+     * `pair.result` with `approved:true` + the plaintext secret back to the
+     * host. The plaintext is returned exactly once and is NEVER logged.
+     *
+     * On Deny / timeout: sends `pair.result` with `approved:false` and stores
+     * nothing.
+     *
+     * connectorId derivation: clientName lowercased, runs of non-alphanumeric
+     * characters collapsed to a single hyphen, leading/trailing hyphens
+     * stripped. Collisions (same derivation) overwrite — latest pairing wins.
+     */
+    async function handlePairRequest(msg: PairRequestMessage): Promise<void> {
+      const { requestId, clientName, code } = msg;
+
+      // Best-effort open the side panel so the user sees the banner.
+      try {
+        await chrome.sidePanel.open({ windowId: chrome.windows.WINDOW_ID_CURRENT });
+      } catch (err) {
+        console.debug('[peek] sidePanel.open (pair) failed (will rely on an open panel):', err);
+      }
+
+      const showPair: ShowPairMessage = { type: 'showPair', requestId, clientName, code };
+
+      const verdict = await new Promise<PairVerdictMessage>((resolve) => {
+        const timer = setTimeout(() => {
+          pendingPairings.delete(requestId);
+          resolve({ type: 'pairVerdict', requestId, approved: false });
+        }, PAIR_TIMEOUT_MS);
+
+        // Register BEFORE posting so a fast verdict can't race ahead of the
+        // map insert (mirrors the pendingConfirms pattern).
+        pendingPairings.set(requestId, { resolve, timer });
+        chrome.runtime.sendMessage(showPair).catch((err) => {
+          console.debug('[peek] showPair post (panel may be opening):', err);
+        });
+      });
+
+      if (!verdict.approved) {
+        // Denied or timed out — store nothing.
+        const result = { type: 'pair.result' as const, requestId, approved: false };
+        const port = nativePort;
+        if (port) {
+          try {
+            port.postMessage(result);
+          } catch (err) {
+            console.warn('[peek] pair.result (deny) post failed:', err);
+          }
+        }
+        return;
+      }
+
+      // Approved: mint a high-entropy secret, hash it, store only the hash.
+      const secret = mintPairingSecret();
+      const hash = await sha256Hex(secret);
+      const connectorId = connectorIdFromClientName(clientName);
+
+      await putPairedConnector(connectorId, { clientName, hash, pairedAtMs: Date.now() }).catch(
+        (err) => {
+          console.warn('[peek] putPairedConnector failed:', err);
+        },
+      );
+
+      // Return the plaintext exactly once; the host forwards it to the
+      // connector and discards it. Never log the secret.
+      const result = { type: 'pair.result' as const, requestId, approved: true, secret };
+      const port = nativePort;
+      if (port) {
+        try {
+          port.postMessage(result);
+        } catch (err) {
+          console.warn('[peek] pair.result (approve) post failed:', err);
+        }
+      }
+    }
 
     // YOLO grants are anchored to tabs; expire when a tab closes (in addition
     // to the 60-min internal timer). The capture-side tabs.onRemoved below
@@ -1377,6 +1502,44 @@ export default defineBackground({
             sendResponse({ ok: false, reason: 'not-from-sidepanel' });
           }
           return false;
+        }
+        // SP4: pairing verdict from the side panel. Same origin-guard as
+        // confirmVerdict — only the extension's OWN side panel may approve or
+        // deny a pairing. A rejected verdict is dropped; the SW timeout
+        // fail-closes the pending handlePairRequest.
+        if (isPairVerdict(message as unknown)) {
+          const verdict = message as unknown as PairVerdictMessage;
+          if (isFromSidePanel(sender, chrome.runtime.getURL('sidepanel.html'))) {
+            resolvePendingPairing(verdict);
+            sendResponse(ackOk());
+          } else {
+            console.warn('[peek] pairVerdict from a non-sidepanel sender rejected:', sender.url);
+            sendResponse({ ok: false, reason: 'not-from-sidepanel' });
+          }
+          return false;
+        }
+        // SP4 Task 7: revoke a paired connector. Same origin-guard as
+        // pairVerdict — only the extension's OWN side panel may revoke a
+        // pairing. Deletes the stored hash; that connector's next act-
+        // verification fails and falls back to the local banner. A rejected
+        // message (non-sidepanel sender or malformed) is dropped silently.
+        if (isRevokePairing(message as unknown)) {
+          if (isFromSidePanel(sender, chrome.runtime.getURL('sidepanel.html'))) {
+            const { connectorId } = message as unknown as RevokePairingMessage;
+            // Await the storage write before acking — the side panel re-reads
+            // immediately after and a fire-and-forget sendResponse races the clear.
+            clearPairedConnector(connectorId)
+              .then(() => sendResponse(ackOk()))
+              .catch((err) => {
+                console.warn('[peek] clearPairedConnector failed:', err);
+                sendResponse({ ok: false, reason: 'clear-failed' });
+              });
+          } else {
+            console.warn('[peek] revokePairing from a non-sidepanel sender rejected:', sender.url);
+            sendResponse({ ok: false, reason: 'not-from-sidepanel' });
+          }
+          // Return true: the response channel must stay open for the async ack above.
+          return true;
         }
         switch (message?.type) {
           case 'getNativeHostState': {

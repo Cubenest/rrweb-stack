@@ -147,6 +147,17 @@ export interface ActionRequestMessage {
    * skip the banner when it matches this request's (sessionId, action.type).
    */
   confirmToken?: string;
+  /**
+   * SP3b: set by peek-mcp when a real elicited approval was obtained from an
+   * elicitation-capable connector. The SW skips its Level-3 banner for
+   * non-destructive actions and dispatches banner-less as 'connector-elicit'.
+   */
+  consentDelegated?: boolean;
+  /**
+   * SP4: the paired-connector secret; the SW verifies it against the stored
+   * hash to authenticate the connector for the banner-less path.
+   */
+  connectorSecret?: string;
 }
 
 /** SW → host: optional timing signal when the banner is shown. */
@@ -163,7 +174,13 @@ export interface ActionResultMessage {
   tool: 'execute_action' | 'request_authorization';
   verdict: 'allow' | 'deny';
   result: 'ok' | 'denied' | 'error';
-  approver: 'user' | 'allow-list-match' | 'level-4-auto' | 'level-2-suggest' | 'level-1-read';
+  approver:
+    | 'user'
+    | 'allow-list-match'
+    | 'level-4-auto'
+    | 'level-2-suggest'
+    | 'level-1-read'
+    | 'connector-elicit';
   approvalMs?: number;
   destructiveTerm?: string;
   details?: unknown;
@@ -180,4 +197,42 @@ export function isActionRequest(message: unknown): message is ActionRequestMessa
     'type' in message &&
     (message as { type: unknown }).type === 'action.request'
   );
+}
+
+/**
+ * SP4: host → SW pairing handshake. Extension-side mirror of the
+ * `PairRequestMessage` shape in peek-mcp/src/native-host/action-protocol.ts.
+ * Duplicated (not imported) for the same reason as ActionRequestMessage above
+ * — the extension build cannot pull in node-only packages.
+ */
+export interface PairRequestMessage {
+  type: 'pair.request';
+  requestId: string;
+  clientName: string;
+  code: string;
+}
+
+/**
+ * Discriminator helper for the SW's native-port handleHostMessage.
+ *
+ * Validates the full wire shape — a non-empty string `requestId`, a non-empty
+ * `clientName`, and a non-empty `code` — not just `type === 'pair.request'`.
+ * An empty `code` defeats the matching-code TOFU check; a missing `requestId`
+ * or `clientName` would destructure to `undefined` / empty values when the SW
+ * constructs the ShowPairMessage it forwards to the side panel. Mirrors the
+ * validation idiom used by {@link isShowPair} / {@link isPairVerdict}.
+ */
+export function isPairRequest(message: unknown): message is PairRequestMessage {
+  if (typeof message !== 'object' || message === null) return false;
+  const m = message as {
+    type?: unknown;
+    requestId?: unknown;
+    clientName?: unknown;
+    code?: unknown;
+  };
+  if (m.type !== 'pair.request') return false;
+  if (typeof m.requestId !== 'string' || m.requestId.length === 0) return false;
+  if (typeof m.clientName !== 'string' || m.clientName.length === 0) return false;
+  if (typeof m.code !== 'string' || m.code.length === 0) return false;
+  return true;
 }

@@ -1,7 +1,7 @@
 // End-to-end stdio smoke (Task 3.11 verification): spawn the BUILT bin over a
 // real child-process stdio pipe, complete the MCP initialize handshake, and
-// assert tools/list returns the documented peek tool surface (18:
-// 8 read + search_sessions + get_page_view + get_element_detail + 2 act + 2 suggest + 1 handoff + 1 set_intent + 1 verify_audit_log). This is the closest thing to how an
+// assert tools/list returns the documented peek tool surface (19:
+// 8 read + search_sessions + get_page_view + get_element_detail + 2 act + 2 suggest + 1 handoff + 1 set_intent + 1 verify_audit_log + 1 pairing). This is the closest thing to how an
 // AI tool (Claude Code / Cursor) actually launches `npx -y @peekdev/mcp`.
 //
 // Requires `dist/index.js` to exist — the test skips with a clear message if the
@@ -73,7 +73,7 @@ afterEach(() => {
 });
 
 describe.skipIf(!built)('peek-mcp stdio smoke (built bin)', () => {
-  it('completes initialize + tools/list over real stdio, returning all 18 tools', async () => {
+  it('completes initialize + tools/list over real stdio, returning all 19 tools', async () => {
     child = spawn(process.execPath, [distEntry], {
       env: { ...process.env, PEEK_HOME: home },
       stdio: ['pipe', 'pipe', 'pipe'],
@@ -111,6 +111,8 @@ describe.skipIf(!built)('peek-mcp stdio smoke (built bin)', () => {
         // Suggest tools (Level 2+ — non-mutating highlight overlay).
         'clear_highlight',
         'suggest_element',
+        // Connector pairing (SP4 Task 3 — initiates native-host pairing flow).
+        'request_pairing',
         // Input handoff (Plan B — Level 4 with the control shield up).
         'request_user_input',
         // Control-shield banner (Part 2 — Level 4 auto-allowed).

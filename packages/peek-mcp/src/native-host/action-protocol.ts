@@ -45,8 +45,14 @@ export interface ActionResultMessage {
   verdict: 'allow' | 'deny';
   /** Final result of the dispatch (or 'denied' if verdict='deny'). */
   result: 'ok' | 'denied' | 'error';
-  /** 'user' | 'allow-list-match' | 'level-4-auto' | 'level-2-suggest' | 'level-1-read'. */
-  approver: 'user' | 'allow-list-match' | 'level-4-auto' | 'level-2-suggest' | 'level-1-read';
+  /** 'user' | 'allow-list-match' | 'level-4-auto' | 'level-2-suggest' | 'level-1-read' | 'connector-elicit'. */
+  approver:
+    | 'user'
+    | 'allow-list-match'
+    | 'level-4-auto'
+    | 'level-2-suggest'
+    | 'level-1-read'
+    | 'connector-elicit';
   /** ms-since-epoch when the user confirmed / denied (Level 3). */
   approvalMs?: number;
   /** The destructive term that fired, if applicable (for the audit log). */
@@ -86,6 +92,17 @@ export interface ActionRequestMessage {
    * banner runs.
    */
   confirmToken?: string;
+  /**
+   * SP3b: set by peek-mcp when a real elicited approval was obtained from an
+   * elicitation-capable connector. The SW skips its Level-3 banner for
+   * non-destructive actions and dispatches banner-less as 'connector-elicit'.
+   */
+  consentDelegated?: boolean;
+  /**
+   * SP4: the paired-connector secret; the SW verifies it against the stored
+   * hash to authenticate the connector for the banner-less path.
+   */
+  connectorSecret?: string;
 }
 
 /** SW → host: the banner is now visible to the user (timing signal). */
@@ -96,5 +113,25 @@ export interface ActionConfirmShownMessage {
   shownAtMs: number;
 }
 
-export type HostToSwMessage = ActionRequestMessage;
-export type SwToHostMessage = ActionResultMessage | ActionConfirmShownMessage;
+export type HostToSwMessage = ActionRequestMessage | PairRequestMessage;
+export type SwToHostMessage = ActionResultMessage | ActionConfirmShownMessage | PairResultMessage;
+
+// SP4: pairing round-trip — separate message kinds so the act-path hard guards
+// (frame.kind !== 'act.request') never mis-route them.
+
+/** host → SW: initiate a connector-pairing handshake. */
+export interface PairRequestMessage {
+  type: 'pair.request';
+  requestId: string;
+  clientName: string;
+  code: string;
+}
+
+/** SW → host: terminal reply to a pair.request. */
+export interface PairResultMessage {
+  type: 'pair.result';
+  requestId: string;
+  approved: boolean;
+  secret?: string;
+  error?: string;
+}

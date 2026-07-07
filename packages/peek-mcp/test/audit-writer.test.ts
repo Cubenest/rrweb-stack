@@ -134,6 +134,38 @@ describe('buildAuditEntry', () => {
     const args = entry.args as { type: 'navigate'; url: string };
     expect(args.url).toContain('%3C%3CREDACTED%3E%3E');
   });
+
+  it('accepts the connector-elicit approver (SP3b delegated consent)', () => {
+    const entry = buildAuditEntry({
+      tool: 'execute_action',
+      action: { type: 'click', selector: '#a', button: 'left' },
+      approver: 'connector-elicit',
+      client: 'cursor',
+      sessionId: 's_elicit',
+      result: 'ok',
+      nowMs: 0,
+    });
+    expect(entry.approver).toBe('connector-elicit');
+  });
+
+  it('accepts tool:request_pairing (SP4 connector pairing)', () => {
+    const entry = buildAuditEntry({
+      tool: 'request_pairing',
+      // request_pairing has no DOM action; args is a neutral marker object.
+      action: { type: 'pair_request' } as never,
+      approver: 'user',
+      client: 'test-connector',
+      sessionId: '',
+      result: 'ok',
+      nowMs: 1716480000000,
+    });
+    expect(entry.tool).toBe('request_pairing');
+    expect(entry.result).toBe('ok');
+    expect(entry.client).toBe('test-connector');
+    // The pairing audit entry must NEVER expose a secret — it has none here.
+    const line = serializeAuditEntry({ ...entry, seq: 1, prevHash: GENESIS_PREV });
+    expect(line).not.toContain('secret');
+  });
 });
 
 describe('serializeAuditEntry', () => {

@@ -33,6 +33,8 @@ export interface ShowConfirmMessage {
   origin: string;
   /** The effective trust level that produced this prompt (snapshot, not re-read). */
   level: PermissionLevel;
+  /** The MCP client that requested this action (shown in the banner). */
+  client?: string;
 }
 
 /**
@@ -336,4 +338,123 @@ export async function sendConfirmVerdict(verdict: ConfirmVerdictMessage): Promis
     // timeout→deny). Swallow — the SW's own timeout handles it.
     if (!isNoReceiverError(err)) throw err;
   }
+}
+
+// ---------------------------------------------------------------------------
+// SP4 Connector Pairing — show-pair prompt + pair-verdict messages
+// ---------------------------------------------------------------------------
+
+/**
+ * SW → side panel: surface the connector-pairing trust-dial prompt. Sent via
+ * `chrome.runtime.sendMessage` after the SW opens the panel. The panel renders
+ * {@link PairBanner} and replies with a {@link PairVerdictMessage}.
+ *
+ * Mirrors {@link ShowConfirmMessage} in structure. The matching code is shown
+ * alongside the client name so the user can verify it matches the connector.
+ */
+export interface ShowPairMessage {
+  type: 'showPair';
+  /** Correlates the verdict back to the awaiting pair.request handler. */
+  requestId: string;
+  /** Human-readable name of the connector client (e.g. "Cursor MCP"). */
+  clientName: string;
+  /** Short matching code to verify the connector identity (e.g. "A7F3"). */
+  code: string;
+}
+
+/**
+ * Side panel → SW: the user's approval or denial of a pending connector-pairing
+ * request. Mirrors {@link ConfirmVerdictMessage}. A closed/timed-out panel never
+ * sends this — the SW fail-closes to deny after its own timeout.
+ */
+export interface PairVerdictMessage {
+  type: 'pairVerdict';
+  requestId: string;
+  approved: boolean;
+}
+
+/**
+ * Type guard: is this inbound runtime message a well-formed
+ * {@link ShowPairMessage}?
+ *
+ * Validates the full wire shape — a non-empty string `requestId`, a string
+ * `clientName`, and a string `code` — not just `type === 'showPair'`. A
+ * malformed payload would otherwise crash the banner render or make cleanup
+ * post a verdict with an invalid requestId.
+ */
+export function isShowPair(message: unknown): message is ShowPairMessage {
+  if (typeof message !== 'object' || message === null) return false;
+  const m = message as {
+    type?: unknown;
+    requestId?: unknown;
+    clientName?: unknown;
+    code?: unknown;
+  };
+  if (m.type !== 'showPair') return false;
+  if (typeof m.requestId !== 'string' || m.requestId.length === 0) return false;
+  if (typeof m.clientName !== 'string') return false;
+  if (typeof m.code !== 'string') return false;
+  return true;
+}
+
+/**
+ * Type guard: is this inbound runtime message a well-formed
+ * {@link PairVerdictMessage}? Mirrors the structure of the confirmVerdict path.
+ * The {@link isFromSidePanel} guard protects the verdict too — the SW must
+ * verify the sender URL before honoring it.
+ */
+export function isPairVerdict(message: unknown): message is PairVerdictMessage {
+  if (typeof message !== 'object' || message === null) return false;
+  const m = message as { type?: unknown; requestId?: unknown; approved?: unknown };
+  if (m.type !== 'pairVerdict') return false;
+  if (typeof m.requestId !== 'string' || m.requestId.length === 0) return false;
+  if (typeof m.approved !== 'boolean') return false;
+  return true;
+}
+
+/**
+ * Post a pair verdict back to the SW. Best-effort; SW fail-closes on no reply.
+ * Mirrors {@link sendConfirmVerdict}.
+ */
+export async function sendPairVerdict(verdict: PairVerdictMessage): Promise<void> {
+  try {
+    await chrome.runtime.sendMessage(verdict);
+  } catch (err) {
+    // The SW may have died; swallow the no-receiver error. The SW's own timeout
+    // handles cleanup in that case.
+    if (!isNoReceiverError(err)) throw err;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// SP4 Connector Pairing — revoke message (Task 7)
+// ---------------------------------------------------------------------------
+
+/**
+ * Side panel → SW: remove a paired connector by id. Deletes the stored hash so
+ * that connector's next act-verification fails and falls back to the local banner.
+ * Protected by {@link isFromSidePanel} on the SW side — same guard as
+ * {@link PairVerdictMessage}.
+ */
+export interface RevokePairingMessage {
+  type: 'revokePairing';
+  /** The connector storage id to remove (e.g. "cursor-mcp"). */
+  connectorId: string;
+}
+
+/**
+ * Type guard: is this inbound runtime message a well-formed
+ * {@link RevokePairingMessage}?
+ *
+ * Validates the full wire shape — a non-empty string `connectorId` — not just
+ * `type === 'revokePairing'`. A malformed payload with an empty id would
+ * otherwise call `clearPairedConnector('')` which is a no-op, silently failing
+ * to revoke the intended connector.
+ */
+export function isRevokePairing(message: unknown): message is RevokePairingMessage {
+  if (typeof message !== 'object' || message === null) return false;
+  const m = message as { type?: unknown; connectorId?: unknown };
+  if (m.type !== 'revokePairing') return false;
+  if (typeof m.connectorId !== 'string' || m.connectorId.length === 0) return false;
+  return true;
 }
