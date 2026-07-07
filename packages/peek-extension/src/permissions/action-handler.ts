@@ -25,6 +25,8 @@ import { isDestructive } from './destructive.js';
 import type { HandoffEligibility } from './dispatcher.js';
 import { gate } from './gate.js';
 import type { PermissionLevel } from './levels.js';
+import { connectorIdFromClientName } from './pair-handler.js';
+import { verifyConnectorSecret as storeVerifyConnectorSecret } from './pairing-store.js';
 import { getPermissionLevel } from './store.js';
 import type { YoloSessionStore } from './yolo.js';
 
@@ -268,6 +270,12 @@ export interface ActionHandlerDeps {
     tabId: number;
     action: Action;
   }): Promise<{ ok: true; details?: unknown } | { ok: false; error: string }>;
+  /**
+   * SP4: verify a connector's pairing secret against the stored hash.
+   * Injected so tests can stub it; defaults to `pairing-store.verifyConnectorSecret`.
+   * Must only be called after guarding `request.connectorSecret !== undefined`.
+   */
+  verifyConnectorSecret?(id: string, secret: string): Promise<boolean>;
   /** Resolve an origin string for the active tab. */
   originForTab?(tab: TabRef): string | null;
   /**
@@ -615,15 +623,24 @@ export async function handleActionRequest(
     });
   }
 
-  // ---- 'confirm' verdict, delegated consent (SP3b) ----
+  // ---- 'confirm' verdict, delegated consent (SP3b + SP4) ----
   // The connector already obtained the human's consent off-device (peek-mcp
   // elicited before dispatch and attached consentDelegated). Skip the local
-  // banner and dispatch banner-less as 'connector-elicit' — but ONLY for
-  // non-destructive actions: a destructive action falls through to the forced
-  // local banner (the safety backstop; peek does not classify destructive, the
-  // SW does). Level is already >= 3 here (gate returned 'confirm');
+  // banner and dispatch banner-less as 'connector-elicit' — but ONLY when ALL
+  // three conditions hold:
+  //   1. consentDelegated === true (strict boolean; forged truthy values are rejected)
+  //   2. The connector presented a valid pairing secret (SP4 security close):
+  //      a presented secret that doesn't match the stored hash → local banner.
+  //      No secret at all → local banner (cannot forge the flag by omitting it).
+  //   3. The action is not destructive: a destructive action falls through to the
+  //      forced local banner (the safety backstop; peek does not classify destructive).
+  // Level is already >= 3 here (gate returned 'confirm');
   // revalidateAtDispatch (inside dispatchAndRespond) re-checks it at dispatch.
-  if (request.consentDelegated === true && !destructive.matched) {
+  const verifyFn = deps.verifyConnectorSecret ?? storeVerifyConnectorSecret;
+  const verifiedPairedConnector =
+    request.connectorSecret !== undefined &&
+    (await verifyFn(connectorIdFromClientName(request.client), request.connectorSecret));
+  if (request.consentDelegated === true && verifiedPairedConnector && !destructive.matched) {
     return dispatchAndRespond(request, tab.id, deps, guarded, {
       approver: 'connector-elicit',
     });
