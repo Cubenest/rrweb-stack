@@ -2,7 +2,13 @@ import { mkdir, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { defaultSecretPath, loadPairingSecret, savePairingSecret } from './secret-store.js';
+import {
+  FileSecretStore,
+  defaultSecretPath,
+  loadPairingSecret,
+  migrateLegacySecret,
+  savePairingSecret,
+} from './secret-store.js';
 
 let testDir: string;
 
@@ -17,6 +23,136 @@ beforeEach(async () => {
 afterEach(async () => {
   await rm(testDir, { recursive: true, force: true });
 });
+
+// ---- FileSecretStore contract ----
+
+describe('FileSecretStore', () => {
+  it('set then get round-trips a secret', async () => {
+    const store = new FileSecretStore({ filePath: join(testDir, 'secrets.json') });
+    await store.set('slack-abc', 'pairing', 's3cr3t');
+    const val = await store.get('slack-abc', 'pairing');
+    expect(val).toBe('s3cr3t');
+  });
+
+  it('get on a missing key returns null', async () => {
+    const store = new FileSecretStore({ filePath: join(testDir, 'secrets.json') });
+    const val = await store.get('no-such-connector', 'pairing');
+    expect(val).toBeNull();
+  });
+
+  it('get on a missing file returns null (no throw)', async () => {
+    const store = new FileSecretStore({
+      filePath: join(testDir, 'nonexistent-dir', 'secrets.json'),
+    });
+    const val = await store.get('any', 'pairing');
+    expect(val).toBeNull();
+  });
+
+  it('get on a malformed file returns null (no throw)', async () => {
+    const filePath = join(testDir, 'secrets.json');
+    await writeFile(filePath, 'not json at all', { mode: 0o600 });
+    const store = new FileSecretStore({ filePath });
+    const val = await store.get('any', 'pairing');
+    expect(val).toBeNull();
+  });
+
+  it('overwrite: second set replaces the value', async () => {
+    const store = new FileSecretStore({ filePath: join(testDir, 'secrets.json') });
+    await store.set('slack-abc', 'pairing', 'first');
+    await store.set('slack-abc', 'pairing', 'second');
+    const val = await store.get('slack-abc', 'pairing');
+    expect(val).toBe('second');
+  });
+
+  it('two names under the same connectorId do not collide', async () => {
+    const store = new FileSecretStore({ filePath: join(testDir, 'secrets.json') });
+    await store.set('slack-abc', 'pairing', 'pairing-secret');
+    await store.set('slack-abc', 'other', 'other-secret');
+    expect(await store.get('slack-abc', 'pairing')).toBe('pairing-secret');
+    expect(await store.get('slack-abc', 'other')).toBe('other-secret');
+  });
+
+  it('delete removes the key (subsequent get returns null)', async () => {
+    const store = new FileSecretStore({ filePath: join(testDir, 'secrets.json') });
+    await store.set('slack-abc', 'pairing', 's3cr3t');
+    await store.delete('slack-abc', 'pairing');
+    const val = await store.get('slack-abc', 'pairing');
+    expect(val).toBeNull();
+  });
+
+  it('delete does not affect a sibling secret', async () => {
+    const store = new FileSecretStore({ filePath: join(testDir, 'secrets.json') });
+    await store.set('slack-abc', 'pairing', 'pairing-secret');
+    await store.set('slack-abc', 'other', 'other-secret');
+    await store.delete('slack-abc', 'pairing');
+    expect(await store.get('slack-abc', 'pairing')).toBeNull();
+    expect(await store.get('slack-abc', 'other')).toBe('other-secret');
+  });
+
+  it('writes the file with mode 0o600', async () => {
+    if (process.platform === 'win32') return;
+    const filePath = join(testDir, 'secrets.json');
+    const store = new FileSecretStore({ filePath });
+    await store.set('slack-abc', 'pairing', 's3cr3t');
+    const info = await stat(filePath);
+    expect(info.mode & 0o777).toBe(0o600);
+  });
+
+  it('creates intermediate directories automatically', async () => {
+    const store = new FileSecretStore({
+      filePath: join(testDir, 'a', 'b', 'c', 'secrets.json'),
+    });
+    await store.set('x', 'pairing', 'val');
+    expect(await store.get('x', 'pairing')).toBe('val');
+  });
+});
+
+// ---- migrateLegacySecret ----
+
+describe('migrateLegacySecret', () => {
+  it('imports secret from legacy file + deletes the legacy file', async () => {
+    const legacyPath = join(testDir, 'pairing.json');
+    await writeFile(
+      legacyPath,
+      JSON.stringify({ connectorId: 'slack-abc', secret: 'legacy-secret' }),
+      { mode: 0o600 },
+    );
+    const store = new FileSecretStore({ filePath: join(testDir, 'secrets.json') });
+
+    await migrateLegacySecret(store, 'slack-abc', legacyPath);
+
+    expect(await store.get('slack-abc', 'pairing')).toBe('legacy-secret');
+    // legacy file must be deleted
+    await expect(stat(legacyPath)).rejects.toMatchObject({ code: 'ENOENT' });
+  });
+
+  it('is a no-op when the legacy file does not exist', async () => {
+    const legacyPath = join(testDir, 'nonexistent.json');
+    const store = new FileSecretStore({ filePath: join(testDir, 'secrets.json') });
+
+    // must not throw
+    await expect(migrateLegacySecret(store, 'slack-abc', legacyPath)).resolves.toBeUndefined();
+    expect(await store.get('slack-abc', 'pairing')).toBeNull();
+  });
+
+  it('does not overwrite an existing store entry', async () => {
+    const legacyPath = join(testDir, 'pairing.json');
+    await writeFile(
+      legacyPath,
+      JSON.stringify({ connectorId: 'slack-abc', secret: 'legacy-secret' }),
+      { mode: 0o600 },
+    );
+    const store = new FileSecretStore({ filePath: join(testDir, 'secrets.json') });
+    await store.set('slack-abc', 'pairing', 'existing-secret');
+
+    await migrateLegacySecret(store, 'slack-abc', legacyPath);
+
+    // store entry unchanged
+    expect(await store.get('slack-abc', 'pairing')).toBe('existing-secret');
+  });
+});
+
+// ---- legacy SP4 API still works (callers in runtime.ts use them until Task 4) ----
 
 describe('savePairingSecret / loadPairingSecret', () => {
   it('round-trips a PairingSecret', async () => {
