@@ -11,4 +11,6 @@ export type { SdkBrainDeps } from './sdk-brain.js';
 export { SessionStore } from './store.js';
 export type { StoredSession } from './store.js';
 export { ConnectorRuntime } from './runtime.js';
-export type { RuntimeDeps } from './runtime.js';
+export type { RuntimeDeps, SecretStoreDeps } from './runtime.js';
+export type { PairingSecret } from './secret-store.js';
+export { loadPairingSecret, savePairingSecret, defaultSecretPath } from './secret-store.js';

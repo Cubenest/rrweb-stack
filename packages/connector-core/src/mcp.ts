@@ -53,6 +53,13 @@ const ELICITATION_CAPS = { elicitation: { form: {} } } as const;
 export class PeekMcp {
   private client: Client;
   private transport: StdioClientTransport;
+  // The connector secret obtained after pairing. When set, it is injected into
+  // every execute_action call so peek-mcp can verify the connector's identity
+  // without showing a banner. The connector ID is derived by peek-mcp from the
+  // MCP client name (clientName arg to constructor, e.g. 'peek-slack') via
+  // connectorIdFromClientName — pairing must use the same client name as the
+  // connection for verification to succeed.
+  #connectorSecret?: string;
 
   constructor(spawn: McpSpawn, clientName: string) {
     this.transport = new StdioClientTransport({ command: spawn.command, args: spawn.args });
@@ -62,6 +69,25 @@ export class PeekMcp {
       { name: clientName, version: '0.1.0' },
       { capabilities: ELICITATION_CAPS },
     );
+  }
+
+  /** Store the connector secret so it is attached to every execute_action call. */
+  setConnectorSecret(secret: string): void {
+    this.#connectorSecret = secret;
+  }
+
+  /**
+   * Request pairing approval from peek-mcp.
+   * Calls the `request_pairing` tool with the provided 4-digit code and
+   * returns the parsed `{ approved, secret? }` response.
+   */
+  async requestPairing(code: string): Promise<{ approved: boolean; secret?: string }> {
+    const text = await this.callTool('request_pairing', { code });
+    try {
+      return JSON.parse(text) as { approved: boolean; secret?: string };
+    } catch {
+      return { approved: false };
+    }
   }
 
   /** Returns the capability object this client was constructed with (test seam). */
@@ -76,6 +102,18 @@ export class PeekMcp {
    */
   __setRequestHandlerForTest(override: (schema: unknown, handler: unknown) => void): void {
     this.client.setRequestHandler = override as typeof this.client.setRequestHandler;
+  }
+
+  /**
+   * Test seam: override what the client sends so tests can capture the
+   * resolved input (after connectorSecret injection) without a real transport.
+   * The override receives the request object as `client.callTool` would.
+   * @internal
+   */
+  __overrideClientCallToolForTest(
+    override: (req: { name: string; arguments: Record<string, unknown> }) => Promise<unknown>,
+  ): void {
+    this.client.callTool = override as typeof this.client.callTool;
   }
 
   /** Register a handler for peek-mcp's server->client elicitInput. `handler`
@@ -111,10 +149,16 @@ export class PeekMcp {
   }
 
   async callTool(name: string, input: unknown): Promise<string> {
+    // Inject connectorSecret into execute_action calls when a secret is set.
+    // Spread a copy so the caller's object is never mutated.
+    const resolvedInput =
+      name === 'execute_action' && this.#connectorSecret !== undefined
+        ? { ...(input as Record<string, unknown>), connectorSecret: this.#connectorSecret }
+        : input;
     const result = await withTimeout(
       this.client.callTool({
         name,
-        arguments: (input ?? {}) as Record<string, unknown>,
+        arguments: (resolvedInput ?? {}) as Record<string, unknown>,
       }),
       CALL_TIMEOUT_MS,
       `mcp callTool(${name})`,
