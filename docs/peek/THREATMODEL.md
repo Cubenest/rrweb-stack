@@ -141,12 +141,16 @@ assumptions. The following limits remain:
   specific action. This is mitigated by SP3b's design: peek initiates and
   correlates the elicitation prompt, so a paired connector cannot pre-fabricate
   approvals for actions the human never saw.
-- **The secret at rest on the connector side is stored in the OS keychain by
-  default** (SP6a; macOS Keychain / Windows Credential Manager / Linux Secret
-  Service), with a `0600` file fallback behind `--insecure-store` or when the
-  keychain is unavailable. A local attacker who can read the keychain entry (or
-  the fallback file) could present a valid secret. The pairing model defends
-  against an unpaired local process, not a fully compromised user account.
+- **Connector secrets at rest are stored in the OS keychain by default**
+  (SP6a; macOS Keychain / Windows Credential Manager / Linux Secret Service),
+  with a `0600` file fallback behind `--insecure-store` or when the keychain is
+  unavailable. This covers both the pairing secret (SP6a) and the connector's
+  platform tokens — Slack `xoxb`/`xapp` (SP6b-1), captured interactively (hidden
+  input, never on argv); an environment variable remains a supported fallback
+  (used as-is, not persisted) for CI/headless. A local attacker who can read the
+  keychain entry (or the fallback file / env) could present a valid secret. The
+  pairing model defends against an unpaired local process, not a fully
+  compromised user account.
 - **The matching code defends the pairing moment against a name-race**, not
   against an attacker who already owns the connector process and its secret
   store.
