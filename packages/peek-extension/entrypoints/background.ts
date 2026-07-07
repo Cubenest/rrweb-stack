@@ -990,6 +990,7 @@ export default defineBackground({
         ...(input.destructive.matched && input.destructive.term !== undefined
           ? { destructiveTerm: input.destructive.term }
           : {}),
+        ...(input.request.client.length > 0 ? { client: input.request.client } : {}),
       };
 
       const verdict = await new Promise<ConfirmVerdictMessage>((resolve) => {

@@ -110,6 +110,7 @@ export function ConfirmBanner({ pending, onResolve }: ConfirmBannerProps): React
         {describeAction(pending.action)}
       </p>
       <p className="peek-muted">on {pending.origin}</p>
+      {pending.client ? <p className="peek-muted">requested by {pending.client}</p> : null}
       {pending.destructiveTerm ? (
         <p className="peek-confirm-warning" role="alert">
           ⚠ This looks destructive ("{pending.destructiveTerm}"). Review carefully.
