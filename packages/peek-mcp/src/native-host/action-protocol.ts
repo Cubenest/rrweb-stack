@@ -113,5 +113,25 @@ export interface ActionConfirmShownMessage {
   shownAtMs: number;
 }
 
-export type HostToSwMessage = ActionRequestMessage;
-export type SwToHostMessage = ActionResultMessage | ActionConfirmShownMessage;
+export type HostToSwMessage = ActionRequestMessage | PairRequestMessage;
+export type SwToHostMessage = ActionResultMessage | ActionConfirmShownMessage | PairResultMessage;
+
+// SP4: pairing round-trip — separate message kinds so the act-path hard guards
+// (frame.kind !== 'act.request') never mis-route them.
+
+/** host → SW: initiate a connector-pairing handshake. */
+export interface PairRequestMessage {
+  type: 'pair.request';
+  requestId: string;
+  clientName: string;
+  code: string;
+}
+
+/** SW → host: terminal reply to a pair.request. */
+export interface PairResultMessage {
+  type: 'pair.result';
+  requestId: string;
+  approved: boolean;
+  secret?: string;
+  error?: string;
+}

@@ -4,6 +4,7 @@ import * as net from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import type { PairRequestMessage } from '../src/native-host/action-protocol.js';
 import {
   HostSocketServer,
   cleanupStaleSocket,
@@ -69,17 +70,20 @@ class FakeNetServer {
 
 function makeServer(overrides?: {
   postToSw?: (msg: unknown) => void;
+  postPairToSw?: (msg: PairRequestMessage) => void;
   loadPolicy?: () => LoadedPolicy;
   ids?: string[];
   maxLineBytes?: number;
   writeScreenshot?: (requestId: string, buf: Buffer) => { path: string; bytes: number };
 }) {
   const posted: unknown[] = [];
+  const postedPair: PairRequestMessage[] = [];
   const net = new FakeNetServer();
   const idQueue = overrides?.ids ? [...overrides.ids] : ['rid-1', 'rid-2', 'rid-3'];
   let n = 0;
   const server = new HostSocketServer({
     postToSw: overrides?.postToSw ?? ((m) => posted.push(m)),
+    postPairToSw: overrides?.postPairToSw ?? ((m) => postedPair.push(m)),
     loadPolicy: overrides?.loadPolicy ?? (() => EMPTY_POLICY),
     generateRequestId: () => idQueue[n++] ?? `rid-${n}`,
     ...(overrides?.maxLineBytes !== undefined ? { maxLineBytes: overrides.maxLineBytes } : {}),
@@ -92,7 +96,7 @@ function makeServer(overrides?: {
     },
   });
   server.listen();
-  return { server, net, posted };
+  return { server, net, posted, postedPair };
 }
 
 /** A 1x1 transparent PNG, base64 (the smallest valid PNG payload). */
@@ -452,6 +456,112 @@ describe('HostSocketServer', () => {
       approver: 'user',
     });
     expect(conn.frames()).toHaveLength(1);
+  });
+
+  // SP4: pair.request / pair.result round-trip — a SEPARATE frame kind so the
+  // hard guard on act.request (frame.kind !== 'act.request') never handles it.
+  it('pair.request frame → postPairToSw receives a PairRequestMessage with a fresh requestId', () => {
+    const { net, postedPair } = makeServer();
+    const conn = net.connect();
+    conn.feed(
+      `${JSON.stringify({
+        kind: 'pair.request',
+        id: 'wire-pair-1',
+        payload: { clientName: 'peek-slack', code: '4821' },
+      })}\n`,
+    );
+
+    expect(postedPair).toHaveLength(1);
+    const msg = postedPair[0] as PairRequestMessage;
+    expect(msg.type).toBe('pair.request');
+    expect(msg.requestId).toBe('rid-1');
+    expect(msg.clientName).toBe('peek-slack');
+    expect(msg.code).toBe('4821');
+  });
+
+  it('pair.result → relay writes a pair.response frame back to the originating connection', () => {
+    const { server, net } = makeServer();
+    const conn = net.connect();
+    conn.feed(
+      `${JSON.stringify({
+        kind: 'pair.request',
+        id: 'wire-pair-2',
+        payload: { clientName: 'peek-slack', code: '4821' },
+      })}\n`,
+    );
+
+    server.onSwMessage({
+      type: 'pair.result',
+      requestId: 'rid-1',
+      approved: true,
+      secret: 'S-secret',
+    });
+
+    const frames = conn.frames();
+    expect(frames).toHaveLength(1);
+    expect(frames[0]?.kind).toBe('pair.response');
+    // The pair.response echoes the ORIGINAL wire id ('wire-pair-2'), not requestId.
+    expect(frames[0]?.id).toBe('wire-pair-2');
+    const payload = frames[0]?.payload as Record<string, unknown>;
+    expect(payload.approved).toBe(true);
+    expect(payload.secret).toBe('S-secret');
+    // The wire-protocol fields type/requestId are dropped from the mapped payload.
+    expect('type' in payload).toBe(false);
+    expect('requestId' in payload).toBe(false);
+  });
+
+  it('pair.result with approved:false and error → relay writes pair.response with error', () => {
+    const { server, net } = makeServer();
+    const conn = net.connect();
+    conn.feed(
+      `${JSON.stringify({
+        kind: 'pair.request',
+        id: 'wire-pair-3',
+        payload: { clientName: 'peek-slack', code: '0000' },
+      })}\n`,
+    );
+
+    server.onSwMessage({
+      type: 'pair.result',
+      requestId: 'rid-1',
+      approved: false,
+      error: 'bad-code',
+    });
+
+    const frames = conn.frames();
+    expect(frames).toHaveLength(1);
+    expect(frames[0]?.kind).toBe('pair.response');
+    expect(frames[0]?.id).toBe('wire-pair-3');
+    const payload = frames[0]?.payload as Record<string, unknown>;
+    expect(payload.approved).toBe(false);
+    expect(payload.error).toBe('bad-code');
+    expect('secret' in payload).toBe(false);
+  });
+
+  it('a pair.request does NOT trigger postToSw (act path)', () => {
+    const { net, posted, postedPair } = makeServer();
+    const conn = net.connect();
+    conn.feed(
+      `${JSON.stringify({
+        kind: 'pair.request',
+        id: 'wire-pair-4',
+        payload: { clientName: 'peek-slack', code: '1234' },
+      })}\n`,
+    );
+    expect(posted).toHaveLength(0); // act path untouched
+    expect(postedPair).toHaveLength(1); // only the pairing path fired
+  });
+
+  it('drops a pair.result for an unknown requestId without throwing', () => {
+    const { server } = makeServer();
+    expect(() =>
+      server.onSwMessage({
+        type: 'pair.result',
+        requestId: 'never-seen-pair',
+        approved: false,
+        error: 'unknown',
+      }),
+    ).not.toThrow();
   });
 });
 

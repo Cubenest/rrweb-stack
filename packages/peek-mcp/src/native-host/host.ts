@@ -11,7 +11,11 @@
 
 import type { Readable, Writable } from 'node:stream';
 import { openDb, peekHomeDir, schemaVersion } from '../db/open.js';
-import type { ActionConfirmShownMessage, ActionResultMessage } from './action-protocol.js';
+import type {
+  ActionConfirmShownMessage,
+  ActionResultMessage,
+  PairResultMessage,
+} from './action-protocol.js';
 import { HostSocketServer } from './host-socket.js';
 import { type IncomingMessage, ingest } from './ingest.js';
 import { hostSocketPath } from './socket-path.js';
@@ -52,8 +56,8 @@ export interface NativeHostOptions {
   readonly startSocketServer?: boolean;
 }
 
-/** Message types the SW sends back on the action-request correlation channel. */
-const ACTION_REPLY_TYPES = new Set(['action.result', 'action.confirm.shown']);
+/** Message types the SW sends back on the action/pairing correlation channel. */
+const ACTION_REPLY_TYPES = new Set(['action.result', 'action.confirm.shown', 'pair.result']);
 
 /** Message-type strings the ingest handler claims. */
 const INGEST_TYPES = new Set([
@@ -99,6 +103,15 @@ export function startNativeHost(options: NativeHostOptions = {}): NativeHostHand
         void write(message).catch((err) => {
           console.error(
             `native host: action.request post failed — ${err instanceof Error ? err.message : String(err)}`,
+          );
+        });
+      },
+      // SP4: postPairToSw writes the pair.request out the native port (host → SW).
+      // The SW handler (Task 5) discriminates pair.request from action.request.
+      postPairToSw: (message) => {
+        void write(message).catch((err) => {
+          console.error(
+            `native host: pair.request post failed — ${err instanceof Error ? err.message : String(err)}`,
           );
         });
       },
@@ -164,7 +177,9 @@ export function startNativeHost(options: NativeHostOptions = {}): NativeHostHand
     // originating MCP-process socket connection. These are NOT acked over the
     // native port (the MCP process is the one awaiting, over the socket).
     if (type !== undefined && ACTION_REPLY_TYPES.has(type)) {
-      socketServer?.onSwMessage(message as ActionResultMessage | ActionConfirmShownMessage);
+      socketServer?.onSwMessage(
+        message as ActionResultMessage | ActionConfirmShownMessage | PairResultMessage,
+      );
       return;
     }
 

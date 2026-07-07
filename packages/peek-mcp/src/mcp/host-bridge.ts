@@ -92,12 +92,27 @@ export interface HostActionResponse {
   readonly confirmToken?: string;
 }
 
+/** SP4: connector-pairing request the MCP tool hands to the bridge. */
+export interface PairingRequest {
+  readonly clientName: string;
+  readonly code: string;
+}
+
+/** SP4: connector-pairing response the bridge yields from the SW. */
+export interface PairingResponse {
+  readonly approved: boolean;
+  readonly secret?: string;
+  readonly error?: string;
+}
+
 /**
  * The bridge contract. The MCP tool handler awaits this; an implementation
  * relays the request to the SW + waits for the verdict.
  */
 export interface HostBridge {
   request(req: HostActionRequest): Promise<HostActionResponse>;
+  /** SP4: initiate a connector-pairing handshake and wait for the SW verdict. */
+  pair(req: PairingRequest): Promise<PairingResponse>;
 }
 
 /**
@@ -121,6 +136,9 @@ export class MissingHostBridge implements HostBridge {
       error: this.#reason,
     };
   }
+  async pair(_req: PairingRequest): Promise<PairingResponse> {
+    return { approved: false, error: this.#reason };
+  }
 }
 
 /**
@@ -133,6 +151,8 @@ export class RegistryBackedHostBridge implements HostBridge {
   readonly #registry: RequestRegistry;
   /** FIFO queue of {id, req} pairs awaiting resolution — exposed for tests. */
   readonly pending: Array<{ id: string; req: HostActionRequest }> = [];
+  /** SP4: FIFO queue of pending pairing requests — exposed for tests. */
+  readonly pendingPairings: Array<{ id: string; req: PairingRequest }> = [];
 
   constructor(registry?: RequestRegistry, deps?: RequestRegistryDeps) {
     this.#registry = registry ?? new RequestRegistry(deps);
@@ -158,6 +178,19 @@ export class RegistryBackedHostBridge implements HostBridge {
     const entry = this.pending.shift();
     if (!entry) return false;
     return this.#registry.reject(entry.id, reason);
+  }
+
+  async pair(req: PairingRequest): Promise<PairingResponse> {
+    const { id, response } = this.#registry.create<PairingResponse>(DEFAULT_BRIDGE_TIMEOUT_MS);
+    this.pendingPairings.push({ id, req });
+    return response;
+  }
+
+  /** SP4 test helper: resolve the first pending pairing request. */
+  resolveNextPairing(payload: PairingResponse): boolean {
+    const entry = this.pendingPairings.shift();
+    if (!entry) return false;
+    return this.#registry.resolve(entry.id, payload);
   }
 }
 
@@ -284,8 +317,10 @@ export class LocalSocketHostBridge implements HostBridge {
         if (line.length > this.#maxLineBytes) continue; // oversized frame — drop it
         try {
           const m = JSON.parse(line) as { kind?: string; id?: string; payload?: unknown };
-          if (m.kind === 'act.response' && typeof m.id === 'string') {
-            this.#registry.resolve(m.id, m.payload);
+          if (typeof m.id === 'string') {
+            if (m.kind === 'act.response' || m.kind === 'pair.response') {
+              this.#registry.resolve(m.id, m.payload);
+            }
           }
         } catch {
           // Drop a malformed frame; a single bad line must not wedge the bridge.
@@ -320,6 +355,20 @@ export class LocalSocketHostBridge implements HostBridge {
         verdict: 'deny',
         result: 'error',
         approver: 'user',
+        error: err instanceof Error ? err.message : String(err),
+      };
+    }
+  }
+
+  async pair(req: PairingRequest): Promise<PairingResponse> {
+    try {
+      const sock = this.#ensure();
+      const { id, response } = this.#registry.create<PairingResponse>(DEFAULT_BRIDGE_TIMEOUT_MS);
+      sock.write(`${JSON.stringify({ kind: 'pair.request', id, payload: req })}\n`);
+      return await response;
+    } catch (err) {
+      return {
+        approved: false,
         error: err instanceof Error ? err.message : String(err),
       };
     }
