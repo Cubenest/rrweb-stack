@@ -71,14 +71,16 @@ export class ConnectorRuntime {
    *
    * Generates a random 4-digit numeric code, surfaces it to the user via
    * `displayCode`, then calls `mcp.requestPairing(code)`. On approval the
-   * returned secret is persisted to disk and armed on the MCP client so
-   * subsequent execute_action calls are banner-less.
+   * returned secret is persisted via the injected `SecretStore` (OS keychain by
+   * default, `0600` file fallback) and armed on the MCP client so subsequent
+   * execute_action calls are banner-less.
    *
    * Note on clientName/connectorId consistency: peek-mcp derives the connector
    * id from the MCP client name (the `clientName` arg to `new PeekMcp(…)`
-   * e.g. `'peek-slack'`). The `PairingSecret.connectorId` stored here must be
-   * consistent with that name so the SW-side verification matches at act time.
-   * Always construct `PeekMcp` with the same client name you pair with.
+   * e.g. `'peek-slack'`). The secret is stored under `mcp.clientName` here and
+   * retrieved under the same key in `start()`, and peek-mcp's SW-side
+   * verification keys on that same client name — so always construct `PeekMcp`
+   * with the same client name you pair with.
    */
   async pair(displayCode: (code: string) => void | Promise<void>): Promise<boolean> {
     const { mcp, secretStore } = this.deps;
