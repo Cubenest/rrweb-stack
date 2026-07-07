@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import type { AgentOutcome, Brain, Session } from './brain.js';
 import type { PeekMcp } from './mcp.js';
 import { ConnectorRuntime } from './runtime.js';
-import type { SecretStoreDeps } from './runtime.js';
+import type { SecretStore } from './secret-store.js';
 import { SessionStore } from './store.js';
 import type { ConsentResponse, InboundMessage, SurfaceAdapter } from './surface.js';
 
@@ -473,8 +473,25 @@ describe('ConnectorRuntime handler rejection', () => {
 });
 
 // ---------------------------------------------------------------------------
-// SP4 pairing tests
+// SP6a pairing tests — runtime uses injected SecretStore keyed by mcp.clientName
 // ---------------------------------------------------------------------------
+
+/** Minimal in-memory SecretStore for tests. */
+class InMemorySecretStore implements SecretStore {
+  readonly #map = new Map<string, string>();
+
+  async get(connectorId: string, name: string): Promise<string | null> {
+    return this.#map.get(`${connectorId}:${name}`) ?? null;
+  }
+
+  async set(connectorId: string, name: string, secret: string): Promise<void> {
+    this.#map.set(`${connectorId}:${name}`, secret);
+  }
+
+  async delete(connectorId: string, name: string): Promise<void> {
+    this.#map.delete(`${connectorId}:${name}`);
+  }
+}
 
 function makeBaseDeps() {
   const brain: Brain = {
@@ -490,6 +507,7 @@ function makeBaseDeps() {
 
 describe('ConnectorRuntime pair()', () => {
   class FakeMcpForPairing {
+    readonly clientName = 'peek-test';
     callTool = vi.fn().mockResolvedValue('ok');
     onElicit = vi.fn();
     setConnectorSecret = vi.fn();
@@ -503,14 +521,7 @@ describe('ConnectorRuntime pair()', () => {
   it('generates a 4-digit numeric code and passes it to displayCode callback', async () => {
     const { brain, adapter, store } = makeBaseDeps();
     const fakeMcp = new FakeMcpForPairing();
-    const savedSecrets: Array<{ path: string; value: unknown }> = [];
-    const secretStore: SecretStoreDeps = {
-      secretPath: '/tmp/fake-pairing.json',
-      load: async () => null,
-      save: async (path, value) => {
-        savedSecrets.push({ path, value });
-      },
-    };
+    const secretStore = new InMemorySecretStore();
 
     const runtime = new ConnectorRuntime({
       adapter,
@@ -533,11 +544,7 @@ describe('ConnectorRuntime pair()', () => {
   it('calls requestPairing with the generated code', async () => {
     const { brain, adapter, store } = makeBaseDeps();
     const fakeMcp = new FakeMcpForPairing();
-    const secretStore: SecretStoreDeps = {
-      secretPath: '/tmp/fake-pairing.json',
-      load: async () => null,
-      save: async () => {},
-    };
+    const secretStore = new InMemorySecretStore();
 
     const runtime = new ConnectorRuntime({
       adapter,
@@ -555,18 +562,11 @@ describe('ConnectorRuntime pair()', () => {
     expect(fakeMcp.requestPairing).toHaveBeenCalledWith(displayedCodes[0]);
   });
 
-  it('persists the secret and calls setConnectorSecret on approval', async () => {
+  it('persists the secret keyed by mcp.clientName and calls setConnectorSecret on approval', async () => {
     const { brain, adapter, store } = makeBaseDeps();
     const fakeMcp = new FakeMcpForPairing();
     fakeMcp.requestPairingResult = { approved: true, secret: 'approved-secret-xyz' };
-    const savedSecrets: Array<{ path: string; value: unknown }> = [];
-    const secretStore: SecretStoreDeps = {
-      secretPath: '/tmp/fake-pairing.json',
-      load: async () => null,
-      save: async (path, value) => {
-        savedSecrets.push({ path, value });
-      },
-    };
+    const secretStore = new InMemorySecretStore();
 
     const runtime = new ConnectorRuntime({
       adapter,
@@ -578,8 +578,8 @@ describe('ConnectorRuntime pair()', () => {
     const result = await runtime.pair((_code) => {});
 
     expect(result).toBe(true);
-    expect(savedSecrets).toHaveLength(1);
-    expect(savedSecrets[0]?.value).toMatchObject({ secret: 'approved-secret-xyz' });
+    // SecretStore keyed by mcp.clientName ('peek-test') + 'pairing'
+    expect(await secretStore.get('peek-test', 'pairing')).toBe('approved-secret-xyz');
     expect(fakeMcp.setConnectorSecret).toHaveBeenCalledWith('approved-secret-xyz');
   });
 
@@ -587,14 +587,7 @@ describe('ConnectorRuntime pair()', () => {
     const { brain, adapter, store } = makeBaseDeps();
     const fakeMcp = new FakeMcpForPairing();
     fakeMcp.requestPairingResult = { approved: false };
-    const savedSecrets: Array<unknown> = [];
-    const secretStore: SecretStoreDeps = {
-      secretPath: '/tmp/fake-pairing.json',
-      load: async () => null,
-      save: async (_path, value) => {
-        savedSecrets.push(value);
-      },
-    };
+    const secretStore = new InMemorySecretStore();
 
     const runtime = new ConnectorRuntime({
       adapter,
@@ -606,27 +599,39 @@ describe('ConnectorRuntime pair()', () => {
     const result = await runtime.pair((_code) => {});
 
     expect(result).toBe(false);
-    expect(savedSecrets).toHaveLength(0);
+    expect(await secretStore.get('peek-test', 'pairing')).toBeNull();
     expect(fakeMcp.setConnectorSecret).not.toHaveBeenCalled();
+  });
+
+  it('throws if secretStore is absent', async () => {
+    const { brain, adapter, store } = makeBaseDeps();
+    const fakeMcp = new FakeMcpForPairing();
+    const runtime = new ConnectorRuntime({
+      adapter,
+      brain,
+      mcp: fakeMcp as unknown as PeekMcp,
+      store,
+      // no secretStore
+    });
+    await expect(runtime.pair((_code) => {})).rejects.toThrow('pair() requires secretStore');
   });
 });
 
 describe('ConnectorRuntime start() loads existing secret', () => {
   class FakeMcpForPairing {
+    readonly clientName = 'peek-test';
     callTool = vi.fn().mockResolvedValue('ok');
     onElicit = vi.fn();
     setConnectorSecret = vi.fn();
     requestPairing = vi.fn();
   }
 
-  it('loads an existing secret from the store and calls setConnectorSecret on start()', async () => {
+  it('loads an existing secret from the store keyed by mcp.clientName and calls setConnectorSecret on start()', async () => {
     const { brain, adapter, store } = makeBaseDeps();
     const fakeMcp = new FakeMcpForPairing();
-    const secretStore: SecretStoreDeps = {
-      secretPath: '/tmp/fake-pairing.json',
-      load: async () => ({ connectorId: 'peek-slack', secret: 'existing-secret-abc' }),
-      save: async () => {},
-    };
+    const secretStore = new InMemorySecretStore();
+    // Pre-populate the store with a secret for 'peek-test'
+    await secretStore.set('peek-test', 'pairing', 'existing-secret-abc');
 
     const runtime = new ConnectorRuntime({
       adapter,
@@ -643,11 +648,7 @@ describe('ConnectorRuntime start() loads existing secret', () => {
   it('does not call setConnectorSecret when no secret exists on start()', async () => {
     const { brain, adapter, store } = makeBaseDeps();
     const fakeMcp = new FakeMcpForPairing();
-    const secretStore: SecretStoreDeps = {
-      secretPath: '/tmp/fake-pairing.json',
-      load: async () => null,
-      save: async () => {},
-    };
+    const secretStore = new InMemorySecretStore(); // empty
 
     const runtime = new ConnectorRuntime({
       adapter,

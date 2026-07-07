@@ -1,6 +1,6 @@
 import type { AgentOutcome, Brain } from './brain.js';
 import type { PeekMcp } from './mcp.js';
-import type { PairingSecret } from './secret-store.js';
+import type { SecretStore } from './secret-store.js';
 import type { SessionStore } from './store.js';
 import type { ConsentResponse, InboundMessage, SurfaceAdapter } from './surface.js';
 
@@ -14,26 +14,13 @@ function mintCorrelationId(): string {
   return `pc-${Date.now()}-${correlationCounter}`;
 }
 
-/**
- * Injected secret-store operations. Connectors supply this at construction so
- * tests can provide fakes (tmp paths, in-memory stubs) without touching disk.
- */
-export interface SecretStoreDeps {
-  /** Absolute path where the pairing secret is persisted. */
-  secretPath: string;
-  /** Load the secret; returns null if absent or malformed. */
-  load(path: string): Promise<PairingSecret | null>;
-  /** Persist the secret. */
-  save(path: string, value: PairingSecret): Promise<void>;
-}
-
 export interface RuntimeDeps {
   adapter: SurfaceAdapter;
   brain: Brain;
   mcp: PeekMcp;
   store: SessionStore;
   /** Optional; when present, pairing + secret-on-start are enabled. */
-  secretStore?: SecretStoreDeps;
+  secretStore?: SecretStore;
 }
 
 export class ConnectorRuntime {
@@ -54,9 +41,9 @@ export class ConnectorRuntime {
     // Load any previously-persisted pairing secret and arm it so every
     // execute_action call includes the connectorSecret header from the start.
     if (secretStore) {
-      const existing = await secretStore.load(secretStore.secretPath);
-      if (existing) {
-        mcp.setConnectorSecret(existing.secret);
+      const s = await secretStore.get(mcp.clientName, 'pairing');
+      if (s) {
+        mcp.setConnectorSecret(s);
       }
     }
     adapter.onMessage((m) => {
@@ -84,14 +71,16 @@ export class ConnectorRuntime {
    *
    * Generates a random 4-digit numeric code, surfaces it to the user via
    * `displayCode`, then calls `mcp.requestPairing(code)`. On approval the
-   * returned secret is persisted to disk and armed on the MCP client so
-   * subsequent execute_action calls are banner-less.
+   * returned secret is persisted via the injected `SecretStore` (OS keychain by
+   * default, `0600` file fallback) and armed on the MCP client so subsequent
+   * execute_action calls are banner-less.
    *
    * Note on clientName/connectorId consistency: peek-mcp derives the connector
    * id from the MCP client name (the `clientName` arg to `new PeekMcp(…)`
-   * e.g. `'peek-slack'`). The `PairingSecret.connectorId` stored here must be
-   * consistent with that name so the SW-side verification matches at act time.
-   * Always construct `PeekMcp` with the same client name you pair with.
+   * e.g. `'peek-slack'`). The secret is stored under `mcp.clientName` here and
+   * retrieved under the same key in `start()`, and peek-mcp's SW-side
+   * verification keys on that same client name — so always construct `PeekMcp`
+   * with the same client name you pair with.
    */
   async pair(displayCode: (code: string) => void | Promise<void>): Promise<boolean> {
     const { mcp, secretStore } = this.deps;
@@ -109,12 +98,7 @@ export class ConnectorRuntime {
       return false;
     }
 
-    // The stored connectorId is a local placeholder ('connector'). It is NOT
-    // transmitted to the extension and NOT used for SW-side verification, which
-    // keys on connectorIdFromClientName(request.client) + the secret. The
-    // requestPairing response never carries a connectorId field.
-    const pairingSecret = { connectorId: 'connector', secret: response.secret };
-    await secretStore.save(secretStore.secretPath, pairingSecret);
+    await secretStore.set(mcp.clientName, 'pairing', response.secret);
     mcp.setConnectorSecret(response.secret);
     return true;
   }

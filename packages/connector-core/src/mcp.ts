@@ -60,8 +60,10 @@ export class PeekMcp {
   // connectorIdFromClientName — pairing must use the same client name as the
   // connection for verification to succeed.
   #connectorSecret?: string;
+  #clientName: string;
 
   constructor(spawn: McpSpawn, clientName: string) {
+    this.#clientName = clientName;
     this.transport = new StdioClientTransport({ command: spawn.command, args: spawn.args });
     // Advertise elicitation.form so peek-mcp can drive delegated consent
     // (server checks _clientCapabilities?.elicitation?.form specifically).
@@ -69,6 +71,15 @@ export class PeekMcp {
       { name: clientName, version: '0.1.0' },
       { capabilities: ELICITATION_CAPS },
     );
+  }
+
+  /**
+   * The MCP client name this instance was constructed with (e.g. 'peek-slack').
+   * Used as the connectorId key in SecretStore so SW-side verification matches
+   * (peek-mcp derives the connectorId from the client name via connectorIdFromClientName).
+   */
+  get clientName(): string {
+    return this.#clientName;
   }
 
   /** Store the connector secret so it is attached to every execute_action call. */

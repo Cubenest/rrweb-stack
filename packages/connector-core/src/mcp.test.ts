@@ -131,6 +131,18 @@ describe('PeekMcp requestPairing', () => {
   });
 });
 
+describe('PeekMcp clientName', () => {
+  it('exposes the constructor clientName via the getter', () => {
+    const mcp = new PeekMcp({ command: 'noop', args: [] }, 'peek-slack');
+    expect(mcp.clientName).toBe('peek-slack');
+  });
+
+  it('returns the exact string passed at construction', () => {
+    const mcp = new PeekMcp({ command: 'noop', args: [] }, 'peek-test');
+    expect(mcp.clientName).toBe('peek-test');
+  });
+});
+
 describe('PeekMcp elicitation', () => {
   it('advertises elicitation.form so peek-mcp will not throw on elicitInput', () => {
     const mcp = new PeekMcp({ command: 'noop', args: [] }, 'peek-slack');
