@@ -33,6 +33,8 @@ export interface ShowConfirmMessage {
   origin: string;
   /** The effective trust level that produced this prompt (snapshot, not re-read). */
   level: PermissionLevel;
+  /** The MCP client that requested this action (shown in the banner). */
+  client?: string;
 }
 
 /**

@@ -147,6 +147,12 @@ export interface ActionRequestMessage {
    * skip the banner when it matches this request's (sessionId, action.type).
    */
   confirmToken?: string;
+  /**
+   * SP3b: set by peek-mcp when a real elicited approval was obtained from an
+   * elicitation-capable connector. The SW skips its Level-3 banner for
+   * non-destructive actions and dispatches banner-less as 'connector-elicit'.
+   */
+  consentDelegated?: boolean;
 }
 
 /** SW → host: optional timing signal when the banner is shown. */
@@ -163,7 +169,13 @@ export interface ActionResultMessage {
   tool: 'execute_action' | 'request_authorization';
   verdict: 'allow' | 'deny';
   result: 'ok' | 'denied' | 'error';
-  approver: 'user' | 'allow-list-match' | 'level-4-auto' | 'level-2-suggest' | 'level-1-read';
+  approver:
+    | 'user'
+    | 'allow-list-match'
+    | 'level-4-auto'
+    | 'level-2-suggest'
+    | 'level-1-read'
+    | 'connector-elicit';
   approvalMs?: number;
   destructiveTerm?: string;
   details?: unknown;

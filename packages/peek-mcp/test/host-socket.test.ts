@@ -167,6 +167,43 @@ describe('HostSocketServer', () => {
     expect((posted[0] as Record<string, unknown>).confirmToken).toBe('tok-abc');
   });
 
+  it('forwards consentDelegated from the wire frame to the SW request (SP3b)', () => {
+    const { net, posted } = makeServer();
+    const conn = net.connect();
+    conn.feed(
+      `${JSON.stringify({
+        kind: 'act.request',
+        id: 'wire-cd',
+        payload: {
+          tool: 'execute_action',
+          sessionId: 's',
+          action: { type: 'click', selector: '#x', button: 'left' },
+          client: 'slack',
+          consentDelegated: true,
+        },
+      })}\n`,
+    );
+    expect((posted[0] as Record<string, unknown>).consentDelegated).toBe(true);
+  });
+
+  it('omits consentDelegated when the frame does not set it', () => {
+    const { net, posted } = makeServer();
+    const conn = net.connect();
+    conn.feed(
+      `${JSON.stringify({
+        kind: 'act.request',
+        id: 'wire-nocd',
+        payload: {
+          tool: 'execute_action',
+          sessionId: 's',
+          action: { type: 'click', selector: '#x', button: 'left' },
+          client: 'cursor',
+        },
+      })}\n`,
+    );
+    expect('consentDelegated' in (posted[0] ?? {})).toBe(false);
+  });
+
   it('writes an act.response back to the originating connection on action.result', () => {
     const { server, net } = makeServer();
     const conn = net.connect();

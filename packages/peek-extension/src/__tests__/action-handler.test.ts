@@ -519,6 +519,97 @@ describe('handleActionRequest — confirmToken consumption (Level 3)', () => {
   });
 });
 
+describe('handleActionRequest — SP3b: banner-less Level-3 dispatch for delegated consent', () => {
+  // (a) L3 non-destructive + consentDelegated → banner-less dispatch, connector-elicit
+  it('SP3b: L3 non-destructive delegated → skips banner, dispatches as connector-elicit', async () => {
+    await enableOriginAtLevel('https://example.com', 3);
+    const ctx = makeDeps();
+    const out = await handleActionRequest(makeRequest({ consentDelegated: true }), ctx.deps);
+    expect(out.verdict).toBe('allow');
+    expect(out.result).toBe('ok');
+    expect(out.approver).toBe('connector-elicit');
+    expect(ctx.promptCalls).toBe(0); // banner skipped
+    expect(ctx.dispatchCalls).toBe(1);
+  });
+
+  // (b) L3 destructive + consentDelegated → banner STILL forced (safety backstop)
+  it('SP3b: L3 destructive delegated → still forces the local banner', async () => {
+    await enableOriginAtLevel('https://example.com', 3);
+    const ctx = makeDeps(
+      {},
+      { target: { text: 'Delete account' }, promptResult: { verdict: 'allow', approvalMs: 1 } },
+    );
+    const out = await handleActionRequest(makeRequest({ consentDelegated: true }), ctx.deps);
+    expect(ctx.promptCalls).toBe(1); // banner WAS shown
+    expect(out.approver).toBe('user'); // banner approval, not connector-elicit
+    expect(out.destructiveTerm).toBe('delete');
+  });
+
+  // (c) L3 non-destructive + consentDelegated but TOCTOU revalidate fails → deny
+  it('SP3b: delegated dispatch still honours revalidateAtDispatch (TOCTOU)', async () => {
+    // consentDelegated=true at gate time; but while the SW processes, the tab
+    // navigates cross-origin — revalidateAtDispatch (inside dispatchAndRespond)
+    // must catch this and deny without dispatching.
+    await enableOriginAtLevel('https://trusted.example', 3);
+    const ctx = makeDeps({
+      getTabFor: async (): Promise<TabRef> => ({
+        id: 42,
+        url: 'https://trusted.example/page',
+        active: true,
+      }),
+      // Dispatch-time re-check: tab navigated to a different origin.
+      getTabById: async (): Promise<TabRef> => ({
+        id: 42,
+        url: 'https://attacker.example/evil',
+        active: true,
+      }),
+    });
+    const out = await handleActionRequest(makeRequest({ consentDelegated: true }), ctx.deps);
+    expect(out.verdict).toBe('deny');
+    expect(ctx.dispatchCalls).toBe(0); // never injected
+    expect(ctx.promptCalls).toBe(0); // no banner either — the delegated path denies via revalidation
+    expect(String(out.error)).toMatch(/origin|changed|navigat/i);
+  });
+
+  // (d) no consentDelegated (direct client) → banner as today (behaviour-neutral)
+  it('SP3b: without consentDelegated the L3 banner still shows', async () => {
+    await enableOriginAtLevel('https://example.com', 3);
+    const ctx = makeDeps({}, { promptResult: { verdict: 'allow', approvalMs: 1 } });
+    const out = await handleActionRequest(makeRequest(), ctx.deps);
+    expect(out.verdict).toBe('allow');
+    expect(ctx.promptCalls).toBe(1); // banner ran
+    expect(out.approver).toBe('user');
+  });
+
+  // (f) Forged truthy-non-`true` consentDelegated → banner STILL shows (strict === true guard)
+  // The relay (host-socket.ts) forwards consentDelegated from wire JSON verbatim; a
+  // malicious local process could forge a truthy-but-not-boolean-true value (e.g. 1 or
+  // "true"). The SW's `=== true` comparison is the real guard. This test fails (promptCalls
+  // stays 0) if that check is weakened to a truthy check, and passes against the current code.
+  it('SP3b: forged truthy consentDelegated (1) does NOT skip the banner', async () => {
+    await enableOriginAtLevel('https://example.com', 3);
+    const ctx = makeDeps({}, { promptResult: { verdict: 'allow', approvalMs: 1 } });
+    const out = await handleActionRequest(
+      makeRequest({ consentDelegated: 1 as unknown as boolean }),
+      ctx.deps,
+    );
+    expect(ctx.promptCalls).toBe(1); // banner MUST have been shown
+    expect(out.approver).toBe('user'); // NOT connector-elicit
+    expect(out.verdict).toBe('allow');
+  });
+
+  // (e) L4 + consentDelegated → still level-4-auto, no banner (SP3b branch must not fire at L4)
+  it('SP3b: L4 remains level-4-auto regardless of consentDelegated', async () => {
+    await enableOriginAtLevel('https://example.com', 4);
+    const ctx = makeDeps();
+    const out = await handleActionRequest(makeRequest({ consentDelegated: true }), ctx.deps);
+    expect(out.verdict).toBe('allow');
+    expect(out.approver).toBe('level-4-auto');
+    expect(ctx.promptCalls).toBe(0); // no banner at L4
+    expect(ctx.dispatchCalls).toBe(1);
+  });
+});
+
 describe('handleActionRequest — Level 4 YOLO', () => {
   it('non-destructive action auto-allows (approver=level-4-auto, no prompt)', async () => {
     await enableOriginAtLevel('https://example.com', 4);

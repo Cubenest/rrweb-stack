@@ -56,6 +56,12 @@ export interface HostActionRequest {
    * it to skip the banner step. NULL/undefined → no token (auth still happens).
    */
   readonly confirmToken?: string;
+  /**
+   * SP3b: set by peek-mcp when a real elicited approval was obtained from an
+   * elicitation-capable connector. The SW skips its Level-3 banner for
+   * non-destructive actions and dispatches banner-less as 'connector-elicit'.
+   */
+  readonly consentDelegated?: boolean;
 }
 
 /** Reply the bridge yields to the MCP tool handler. */
@@ -68,7 +74,8 @@ export interface HostActionResponse {
     | 'allow-list-match'
     | 'level-4-auto'
     | 'level-2-suggest'
-    | 'level-1-read';
+    | 'level-1-read'
+    | 'connector-elicit';
   readonly approvalMs?: number;
   readonly destructiveTerm?: string;
   readonly details?: unknown;

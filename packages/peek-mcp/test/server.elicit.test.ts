@@ -1,7 +1,9 @@
-// SP3a Task 2: Tests for elicitation wiring in dispatchActTool.
+// SP3a Task 2 + SP3b Task 3: Tests for elicitation wiring in dispatchActTool.
 //
 // Tests that execute_action elicits delegated consent from an elicitation-capable
 // client BEFORE dispatching to the bridge, and that read ride-alongs opt out.
+// SP3b Task 3 additionally verifies that consentDelegated is attached to the
+// bridge request iff the human approved (and absent for no-capability clients).
 //
 // Approach: connect via InMemoryTransport, then shadow getClientCapabilities +
 // elicitInput on peek.server.server (the underlying SDK Server instance) so we can
@@ -85,7 +87,7 @@ function unstubElicitation(peek: ReturnType<typeof createPeekMcpServer>): void {
   sdkServer.elicitInput = undefined;
 }
 
-describe('SP3a: execute_action elicitation (Task 2)', () => {
+describe('execute_action elicitation + delegated consent (SP3a Task 2 / SP3b Task 3)', () => {
   it('client advertises + declines → bridge.request NOT called, verdict is deny, audit entry written', async () => {
     const { dbPath, eventsDir } = seedStore(dir, []);
     const auditLogPath = join(dir, 'audit.log');
@@ -175,6 +177,86 @@ describe('SP3a: execute_action elicitation (Task 2)', () => {
       const res = await callP;
       const body = parseJson(res as never) as Record<string, unknown>;
       expect(body.verdict).toBe('allow');
+    } finally {
+      await close();
+    }
+  });
+
+  it('attaches consentDelegated on an elicited approval (SP3b)', async () => {
+    const { dbPath, eventsDir } = seedStore(dir, []);
+    const bridge = new RegistryBackedHostBridge();
+    const { client, peek, close } = await connectClient({ hostBridge: bridge, dbPath, eventsDir });
+    try {
+      stubElicitation(peek, 'accept');
+
+      const callP = client.callTool({
+        name: 'execute_action',
+        arguments: { sessionId: 's_any', action: { type: 'click', selector: '#btn' } },
+      });
+
+      // Poll until the bridge receives the dispatch.
+      for (let i = 0; i < 20 && bridge.pending.length === 0; i++) {
+        await new Promise((r) => setTimeout(r, 5));
+      }
+      expect(bridge.pending).toHaveLength(1);
+
+      // The request handed to the bridge must carry consentDelegated: true.
+      const captured = bridge.pending[0]?.req;
+      expect(captured?.consentDelegated).toBe(true);
+
+      bridge.resolveNext({ verdict: 'allow', result: 'ok', approver: 'user' });
+      await callP;
+    } finally {
+      await close();
+    }
+  });
+
+  it('does NOT attach consentDelegated when the client has no elicitation capability', async () => {
+    const { dbPath, eventsDir } = seedStore(dir, []);
+    const bridge = new RegistryBackedHostBridge();
+    const { client, close } = await connectClient({ hostBridge: bridge, dbPath, eventsDir });
+    try {
+      // No stubElicitation call — the real getClientCapabilities returns undefined
+      // (the in-memory test client doesn't register elicitation capability).
+      const callP = client.callTool({
+        name: 'execute_action',
+        arguments: { sessionId: 's_any', action: { type: 'click', selector: '#btn' } },
+      });
+
+      for (let i = 0; i < 20 && bridge.pending.length === 0; i++) {
+        await new Promise((r) => setTimeout(r, 5));
+      }
+      expect(bridge.pending).toHaveLength(1);
+
+      // consentDelegated must be ABSENT (not just falsy) for no-capability clients.
+      const captured = bridge.pending[0]?.req;
+      expect('consentDelegated' in (captured ?? {})).toBe(false);
+
+      bridge.resolveNext({ verdict: 'allow', result: 'ok', approver: 'level-4-auto' });
+      await callP;
+    } finally {
+      await close();
+    }
+  });
+
+  it('still short-circuits (no dispatch) on an elicited decline (SP3b)', async () => {
+    const { dbPath, eventsDir } = seedStore(dir, []);
+    const bridge = new RegistryBackedHostBridge();
+    const { client, peek, close } = await connectClient({ hostBridge: bridge, dbPath, eventsDir });
+    try {
+      stubElicitation(peek, 'decline');
+
+      // Fire the call and let the short-circuit return a deny response.
+      const res = await client.callTool({
+        name: 'execute_action',
+        arguments: { sessionId: 's_any', action: { type: 'click', selector: '#btn' } },
+      });
+
+      // Bridge must never have been called (SP3a short-circuit intact).
+      expect(bridge.pending).toHaveLength(0);
+
+      const body = parseJson(res as never) as Record<string, unknown>;
+      expect(body.verdict).toBe('deny');
     } finally {
       await close();
     }

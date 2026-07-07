@@ -45,8 +45,14 @@ export interface ActionResultMessage {
   verdict: 'allow' | 'deny';
   /** Final result of the dispatch (or 'denied' if verdict='deny'). */
   result: 'ok' | 'denied' | 'error';
-  /** 'user' | 'allow-list-match' | 'level-4-auto' | 'level-2-suggest' | 'level-1-read'. */
-  approver: 'user' | 'allow-list-match' | 'level-4-auto' | 'level-2-suggest' | 'level-1-read';
+  /** 'user' | 'allow-list-match' | 'level-4-auto' | 'level-2-suggest' | 'level-1-read' | 'connector-elicit'. */
+  approver:
+    | 'user'
+    | 'allow-list-match'
+    | 'level-4-auto'
+    | 'level-2-suggest'
+    | 'level-1-read'
+    | 'connector-elicit';
   /** ms-since-epoch when the user confirmed / denied (Level 3). */
   approvalMs?: number;
   /** The destructive term that fired, if applicable (for the audit log). */
@@ -86,6 +92,12 @@ export interface ActionRequestMessage {
    * banner runs.
    */
   confirmToken?: string;
+  /**
+   * SP3b: set by peek-mcp when a real elicited approval was obtained from an
+   * elicitation-capable connector. The SW skips its Level-3 banner for
+   * non-destructive actions and dispatches banner-less as 'connector-elicit'.
+   */
+  consentDelegated?: boolean;
 }
 
 /** SW → host: the banner is now visible to the user (timing signal). */

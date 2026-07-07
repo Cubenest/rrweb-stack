@@ -134,6 +134,19 @@ describe('buildAuditEntry', () => {
     const args = entry.args as { type: 'navigate'; url: string };
     expect(args.url).toContain('%3C%3CREDACTED%3E%3E');
   });
+
+  it('accepts the connector-elicit approver (SP3b delegated consent)', () => {
+    const entry = buildAuditEntry({
+      tool: 'execute_action',
+      action: { type: 'click', selector: '#a', button: 'left' },
+      approver: 'connector-elicit',
+      client: 'cursor',
+      sessionId: 's_elicit',
+      result: 'ok',
+      nowMs: 0,
+    });
+    expect(entry.approver).toBe('connector-elicit');
+  });
 });
 
 describe('serializeAuditEntry', () => {

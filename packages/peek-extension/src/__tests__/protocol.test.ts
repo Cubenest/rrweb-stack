@@ -172,6 +172,14 @@ describe('isShowConfirm — full wire-shape validation', () => {
     expect(isShowConfirm('showConfirm')).toBe(false);
     expect(isShowConfirm({ type: 'confirmVerdict', requestId: 'x' })).toBe(false);
   });
+
+  it('accepts a ShowConfirm with an optional client (SP3b)', () => {
+    expect(isShowConfirm({ ...VALID, client: 'slack' })).toBe(true);
+  });
+
+  it('still accepts a ShowConfirm without client', () => {
+    expect(isShowConfirm(VALID)).toBe(true);
+  });
 });
 
 // Item F: a deny verdict must report WHY — a no-response timeout, an explicit

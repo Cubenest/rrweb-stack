@@ -1145,6 +1145,7 @@ export function createPeekMcpServer(options: CreatePeekMcpServerOptions = {}): P
       // audit-union widening are SP3b.
       response = { verdict: 'deny', result: 'denied', approver: 'user' };
     } else {
+      const delegated = elicitOutcome.elicited && elicitOutcome.verdict === 'approve';
       try {
         response = await bridge.request({
           tool: input.tool,
@@ -1153,6 +1154,7 @@ export function createPeekMcpServer(options: CreatePeekMcpServerOptions = {}): P
           client,
           ...(input.confirmToken !== undefined ? { confirmToken: input.confirmToken } : {}),
           ...(input.timeoutMs !== undefined ? { timeoutMs: input.timeoutMs } : {}),
+          ...(delegated ? { consentDelegated: true } : {}),
         });
       } catch (err) {
         bridgeError = err;
