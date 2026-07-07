@@ -141,10 +141,12 @@ assumptions. The following limits remain:
   specific action. This is mitigated by SP3b's design: peek initiates and
   correlates the elicitation prompt, so a paired connector cannot pre-fabricate
   approvals for actions the human never saw.
-- **The secret at rest on the connector side is a `0600` file** until SP6's
-  OS-keychain integration. A local attacker who can read that file could present
-  a valid secret. The pairing model defends against an unpaired local process,
-  not a fully compromised user account.
+- **The secret at rest on the connector side is stored in the OS keychain by
+  default** (SP6a; macOS Keychain / Windows Credential Manager / Linux Secret
+  Service), with a `0600` file fallback behind `--insecure-store` or when the
+  keychain is unavailable. A local attacker who can read the keychain entry (or
+  the fallback file) could present a valid secret. The pairing model defends
+  against an unpaired local process, not a fully compromised user account.
 - **The matching code defends the pairing moment against a name-race**, not
   against an attacker who already owns the connector process and its secret
   store.
@@ -176,7 +178,7 @@ independently auditable.
 | Surface | Threat | Grade | Notes |
 |---|---|---|---|
 | `consentDelegated` flag on local socket | Malicious local process forges flag to bypass Level-3 local banner for non-destructive actions | `mitigated` (SP4 pairing) | SW now also requires a valid pairing secret; an unpaired process falls through to the local banner. Unconditional destructive guard + TOCTOU re-check + Level ≥ 3 precondition still apply. |
-| Connector's `0600` secret file | Local attacker reads the file and presents the secret | `accepted` (local-peer-trust class) | Defends against unpaired processes, not a fully compromised user account. SP6 will move the secret to the OS keychain. |
+| Connector secret at rest (OS keychain by default; `0600` file fallback) | Local attacker reads the keychain entry / fallback file and presents the secret | `accepted` (local-peer-trust class) | Defends against unpaired processes, not a fully compromised user account. SP6a moved the secret to the OS keychain by default; `--insecure-store` selects the `0600` file. |
 
 ## Cross-references
 
