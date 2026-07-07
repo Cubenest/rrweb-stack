@@ -108,6 +108,31 @@ describe('FileSecretStore', () => {
     await store.set('x', 'pairing', 'val');
     expect(await store.get('x', 'pairing')).toBe('val');
   });
+
+  it('concurrent set() on different keys loses no writes (no last-writer-clobbers)', async () => {
+    // This test documents the race that existed before the #writeChain fix.
+    // Without serialization, N concurrent set() calls each read the same
+    // initial map and write back only their own key — every loser silently
+    // clobbers the others.  With #withWriteLock they execute sequentially and
+    // all keys survive.
+    const store = new FileSecretStore({ filePath: join(testDir, 'concurrent-secrets.json') });
+
+    // Fire 5 concurrent writes on DIFFERENT keys, no await between them.
+    await Promise.all([
+      store.set('conn', 'a', 'val-a'),
+      store.set('conn', 'b', 'val-b'),
+      store.set('conn', 'c', 'val-c'),
+      store.set('conn', 'd', 'val-d'),
+      store.set('conn', 'e', 'val-e'),
+    ]);
+
+    // Every key must survive — none may be lost to a clobbering write.
+    expect(await store.get('conn', 'a')).toBe('val-a');
+    expect(await store.get('conn', 'b')).toBe('val-b');
+    expect(await store.get('conn', 'c')).toBe('val-c');
+    expect(await store.get('conn', 'd')).toBe('val-d');
+    expect(await store.get('conn', 'e')).toBe('val-e');
+  });
 });
 
 // ---- migrateLegacySecret ----

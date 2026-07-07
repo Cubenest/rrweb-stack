@@ -1,4 +1,4 @@
-import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
 
@@ -78,10 +78,28 @@ export interface SecretStore {
  */
 export class FileSecretStore implements SecretStore {
   readonly #filePath: string;
+  /**
+   * In-process write serializer. Each mutating operation (set/delete) chains
+   * onto this promise so concurrent calls on DIFFERENT keys cannot interleave
+   * their read-modify-write cycles and silently drop one another's updates.
+   * Mirrors the `withWriteLock` pattern in packages/peek-extension/src/permissions/store.ts.
+   * Tail-catches keep the chain live even when a write fails.
+   */
+  #writeChain: Promise<unknown> = Promise.resolve();
 
   constructor(opts?: { filePath?: string }) {
     this.#filePath =
       opts?.filePath ?? join(homedir(), '.config', 'peek', 'connectors', 'secrets.json');
+  }
+
+  /** Serialize a write-critical section onto the instance write chain. */
+  #withWriteLock<T>(critical: () => Promise<T>): Promise<T> {
+    const next = this.#writeChain.then(critical, critical);
+    this.#writeChain = next.then(
+      () => undefined,
+      () => undefined,
+    );
+    return next;
   }
 
   /** Read all secrets from disk. Returns {} on ENOENT or malformed JSON — never throws. */
@@ -103,10 +121,17 @@ export class FileSecretStore implements SecretStore {
     }
   }
 
-  /** Write the full secrets map to disk with mode 0600. Creates dirs as needed. */
+  /**
+   * Write the full secrets map to disk with mode 0600. Creates dirs as needed.
+   * Crash-atomic: writes to a .tmp sidecar first, then renames over the target
+   * so a crash mid-write cannot truncate or corrupt the secret-of-record.
+   * `rename` is atomic on the same filesystem (POSIX guarantee).
+   */
   async #writeAll(map: Record<string, string>): Promise<void> {
+    const tmp = `${this.#filePath}.tmp`;
     await mkdir(dirname(this.#filePath), { recursive: true });
-    await writeFile(this.#filePath, JSON.stringify(map), { mode: 0o600 });
+    await writeFile(tmp, JSON.stringify(map), { mode: 0o600 });
+    await rename(tmp, this.#filePath);
   }
 
   async get(connectorId: string, name: string): Promise<string | null> {
@@ -115,16 +140,20 @@ export class FileSecretStore implements SecretStore {
   }
 
   async set(connectorId: string, name: string, secret: string): Promise<void> {
-    const map = await this.#readAll();
-    map[`${connectorId}:${name}`] = secret;
-    await this.#writeAll(map);
+    return this.#withWriteLock(async () => {
+      const map = await this.#readAll();
+      map[`${connectorId}:${name}`] = secret;
+      await this.#writeAll(map);
+    });
   }
 
   async delete(connectorId: string, name: string): Promise<void> {
-    const map = await this.#readAll();
-    const key = `${connectorId}:${name}`;
-    const { [key]: _omit, ...rest } = map;
-    await this.#writeAll(rest);
+    return this.#withWriteLock(async () => {
+      const map = await this.#readAll();
+      const key = `${connectorId}:${name}`;
+      const { [key]: _omit, ...rest } = map;
+      await this.#writeAll(rest);
+    });
   }
 }
 
