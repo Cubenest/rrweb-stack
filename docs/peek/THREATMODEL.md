@@ -140,7 +140,7 @@ independently auditable.
 
 | Surface | Threat | Grade | Notes |
 |---|---|---|---|
-| `consentDelegated` flag on stdio pipe | Malicious local process forges flag to bypass Level-3 local banner for non-destructive actions | `accepted` (local-peer-trust class) | Unconditional destructive guard + TOCTOU re-check + Level ≥ 3 precondition still apply. Cryptographic close = SP4 (pairing/attestation). |
+| `consentDelegated` flag on local socket | Malicious local process forges flag to bypass Level-3 local banner for non-destructive actions | `accepted` (local-peer-trust class) | Unconditional destructive guard + TOCTOU re-check + Level ≥ 3 precondition still apply. Cryptographic close = SP4 (pairing/attestation). |
 
 ## Cross-references
 

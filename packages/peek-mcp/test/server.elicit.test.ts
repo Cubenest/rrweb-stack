@@ -87,7 +87,7 @@ function unstubElicitation(peek: ReturnType<typeof createPeekMcpServer>): void {
   sdkServer.elicitInput = undefined;
 }
 
-describe('SP3a: execute_action elicitation (Task 2)', () => {
+describe('execute_action elicitation + delegated consent (SP3a Task 2 / SP3b Task 3)', () => {
   it('client advertises + declines → bridge.request NOT called, verdict is deny, audit entry written', async () => {
     const { dbPath, eventsDir } = seedStore(dir, []);
     const auditLogPath = join(dir, 'audit.log');

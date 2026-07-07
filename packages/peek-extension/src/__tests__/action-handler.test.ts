@@ -581,6 +581,23 @@ describe('handleActionRequest — SP3b: banner-less Level-3 dispatch for delegat
     expect(out.approver).toBe('user');
   });
 
+  // (f) Forged truthy-non-`true` consentDelegated → banner STILL shows (strict === true guard)
+  // The relay (host-socket.ts) forwards consentDelegated from wire JSON verbatim; a
+  // malicious local process could forge a truthy-but-not-boolean-true value (e.g. 1 or
+  // "true"). The SW's `=== true` comparison is the real guard. This test fails (promptCalls
+  // stays 0) if that check is weakened to a truthy check, and passes against the current code.
+  it('SP3b: forged truthy consentDelegated (1) does NOT skip the banner', async () => {
+    await enableOriginAtLevel('https://example.com', 3);
+    const ctx = makeDeps({}, { promptResult: { verdict: 'allow', approvalMs: 1 } });
+    const out = await handleActionRequest(
+      makeRequest({ consentDelegated: 1 as unknown as boolean }),
+      ctx.deps,
+    );
+    expect(ctx.promptCalls).toBe(1); // banner MUST have been shown
+    expect(out.approver).toBe('user'); // NOT connector-elicit
+    expect(out.verdict).toBe('allow');
+  });
+
   // (e) L4 + consentDelegated → still level-4-auto, no banner (SP3b branch must not fire at L4)
   it('SP3b: L4 remains level-4-auto regardless of consentDelegated', async () => {
     await enableOriginAtLevel('https://example.com', 4);
