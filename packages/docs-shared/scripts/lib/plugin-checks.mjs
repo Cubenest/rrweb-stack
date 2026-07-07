@@ -21,9 +21,14 @@ export function checkMarketplace(mp) {
   if (!mp?.owner?.name) {
     issues.push({ severity: 'error', detail: 'marketplace.json: owner.name is required' });
   }
-  const entry = Array.isArray(mp?.plugins) ? mp.plugins.find((p) => p?.name === 'peek') : undefined;
+  const entry = Array.isArray(mp?.plugins)
+    ? mp.plugins.find((p) => p?.name === 'peekdev')
+    : undefined;
   if (!entry) {
-    issues.push({ severity: 'error', detail: 'marketplace.json: no plugins[] entry named "peek"' });
+    issues.push({
+      severity: 'error',
+      detail: 'marketplace.json: no plugins[] entry named "peekdev"',
+    });
   } else if (entry.source !== './plugins/peek') {
     issues.push({
       severity: 'error',
@@ -36,10 +41,10 @@ export function checkMarketplace(mp) {
 /** Validate the plugin manifest shape + discovery metadata. */
 export function checkPluginManifest(pm) {
   const issues = [];
-  if (!pm || pm.name !== 'peek') {
+  if (!pm || pm.name !== 'peekdev') {
     issues.push({
       severity: 'error',
-      detail: `plugin.json: name must be "peek" (got ${JSON.stringify(pm?.name)})`,
+      detail: `plugin.json: name must be "peekdev" (got ${JSON.stringify(pm?.name)})`,
     });
   }
   if (typeof pm?.version !== 'string' || pm.version.length === 0) {

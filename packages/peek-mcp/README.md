@@ -55,7 +55,7 @@ If you use Claude Code, install peek as a plugin in one step:
 
 ```
 /plugin marketplace add Cubenest/rrweb-stack
-/plugin install peek@peek
+/plugin install peekdev@peek
 ```
 
 That wires up this MCP server (18 tools) plus the peek skill. You still need the

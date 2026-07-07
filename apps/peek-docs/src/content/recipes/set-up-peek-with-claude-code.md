@@ -30,7 +30,7 @@ If you'd rather not touch the CLI first, install peek as a Claude Code plugin:
 
 ```
 /plugin marketplace add Cubenest/rrweb-stack
-/plugin install peek@peek
+/plugin install peekdev@peek
 ```
 
 This wires up the **MCP server** (18 tools) and the peek skill in one step. You
