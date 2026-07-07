@@ -20,3 +20,4 @@ export {
   migrateLegacySecret,
   defaultSecretPath,
 } from './secret-store.js';
+export { promptSecret } from './prompt.js';
