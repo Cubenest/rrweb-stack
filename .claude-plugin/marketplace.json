@@ -2,6 +2,7 @@
   "name": "peek",
   "owner": { "name": "Cubenest" },
   "description": "peek — local-first browser-session forensics + repro for AI coding agents.",
+  "renames": { "peek": "peekdev" },
   "plugins": [
     {
       "name": "peekdev",
