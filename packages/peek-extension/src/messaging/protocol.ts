@@ -425,3 +425,36 @@ export async function sendPairVerdict(verdict: PairVerdictMessage): Promise<void
     if (!isNoReceiverError(err)) throw err;
   }
 }
+
+// ---------------------------------------------------------------------------
+// SP4 Connector Pairing — revoke message (Task 7)
+// ---------------------------------------------------------------------------
+
+/**
+ * Side panel → SW: remove a paired connector by id. Deletes the stored hash so
+ * that connector's next act-verification fails and falls back to the local banner.
+ * Protected by {@link isFromSidePanel} on the SW side — same guard as
+ * {@link PairVerdictMessage}.
+ */
+export interface RevokePairingMessage {
+  type: 'revokePairing';
+  /** The connector storage id to remove (e.g. "cursor-mcp"). */
+  connectorId: string;
+}
+
+/**
+ * Type guard: is this inbound runtime message a well-formed
+ * {@link RevokePairingMessage}?
+ *
+ * Validates the full wire shape — a non-empty string `connectorId` — not just
+ * `type === 'revokePairing'`. A malformed payload with an empty id would
+ * otherwise call `clearPairedConnector('')` which is a no-op, silently failing
+ * to revoke the intended connector.
+ */
+export function isRevokePairing(message: unknown): message is RevokePairingMessage {
+  if (typeof message !== 'object' || message === null) return false;
+  const m = message as { type?: unknown; connectorId?: unknown };
+  if (m.type !== 'revokePairing') return false;
+  if (typeof m.connectorId !== 'string' || m.connectorId.length === 0) return false;
+  return true;
+}

@@ -37,10 +37,16 @@ import type {
   PairVerdictMessage,
   RecordingStateMessage,
   RelayAck,
+  RevokePairingMessage,
   ShowConfirmMessage,
   ShowPairMessage,
 } from '../src/messaging/protocol';
-import { denyReason, isFromSidePanel, isPairVerdict } from '../src/messaging/protocol';
+import {
+  denyReason,
+  isFromSidePanel,
+  isPairVerdict,
+  isRevokePairing,
+} from '../src/messaging/protocol';
 import {
   type ElementFeedbackArgs,
   FEEDBACK_CSS,
@@ -76,7 +82,11 @@ import {
   connectorIdFromClientName,
   mintPairingSecret,
 } from '../src/permissions/pair-handler';
-import { putPairedConnector, sha256Hex } from '../src/permissions/pairing-store';
+import {
+  clearPairedConnector,
+  putPairedConnector,
+  sha256Hex,
+} from '../src/permissions/pairing-store';
 import {
   type ElementDetail,
   type ElementDetailError,
@@ -1504,6 +1514,24 @@ export default defineBackground({
             sendResponse(ackOk());
           } else {
             console.warn('[peek] pairVerdict from a non-sidepanel sender rejected:', sender.url);
+            sendResponse({ ok: false, reason: 'not-from-sidepanel' });
+          }
+          return false;
+        }
+        // SP4 Task 7: revoke a paired connector. Same origin-guard as
+        // pairVerdict — only the extension's OWN side panel may revoke a
+        // pairing. Deletes the stored hash; that connector's next act-
+        // verification fails and falls back to the local banner. A rejected
+        // message (non-sidepanel sender or malformed) is dropped silently.
+        if (isRevokePairing(message as unknown)) {
+          if (isFromSidePanel(sender, chrome.runtime.getURL('sidepanel.html'))) {
+            const { connectorId } = message as unknown as RevokePairingMessage;
+            void clearPairedConnector(connectorId).catch((err) => {
+              console.warn('[peek] clearPairedConnector failed:', err);
+            });
+            sendResponse(ackOk());
+          } else {
+            console.warn('[peek] revokePairing from a non-sidepanel sender rejected:', sender.url);
             sendResponse({ ok: false, reason: 'not-from-sidepanel' });
           }
           return false;

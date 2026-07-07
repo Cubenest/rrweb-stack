@@ -7,6 +7,7 @@ import {
   isNoReceiverError,
   isPairVerdict,
   isRecordingStateMessage,
+  isRevokePairing,
   isShowConfirm,
   isShowPair,
   sendCmd,
@@ -300,5 +301,33 @@ describe('isRecordingStateMessage', () => {
     expect(isRecordingStateMessage({ type: 'recording.state', recording: 'yes' })).toBe(false);
     expect(isRecordingStateMessage(null)).toBe(false);
     expect(isRecordingStateMessage('recording.state')).toBe(false);
+  });
+});
+
+// SP4 Task 7: isRevokePairing validates the revoke message shape.
+describe('isRevokePairing — wire-shape validation', () => {
+  const VALID = { type: 'revokePairing', connectorId: 'cursor-mcp' };
+
+  it('accepts a well-formed revokePairing message', () => {
+    expect(isRevokePairing(VALID)).toBe(true);
+  });
+
+  it('rejects a non-string connectorId', () => {
+    expect(isRevokePairing({ ...VALID, connectorId: 42 })).toBe(false);
+  });
+
+  it('rejects an empty connectorId', () => {
+    expect(isRevokePairing({ ...VALID, connectorId: '' })).toBe(false);
+  });
+
+  it('rejects a missing connectorId', () => {
+    const { connectorId: _omit, ...noId } = VALID;
+    expect(isRevokePairing(noId)).toBe(false);
+  });
+
+  it('rejects non-objects and wrong message types', () => {
+    expect(isRevokePairing(null)).toBe(false);
+    expect(isRevokePairing('revokePairing')).toBe(false);
+    expect(isRevokePairing({ type: 'pairVerdict', connectorId: 'x' })).toBe(false);
   });
 });
