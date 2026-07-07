@@ -1,11 +1,12 @@
 import { mkdir, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   FileSecretStore,
   KeychainSecretStore,
   type KeyringEntryLike,
+  createSecretStore,
   defaultSecretPath,
   loadPairingSecret,
   migrateLegacySecret,
@@ -345,5 +346,57 @@ describe('KeychainSecretStore.isAvailable', () => {
       throw new Error('boom');
     };
     await expect(KeychainSecretStore.isAvailable(brokenFactory)).resolves.toBeDefined();
+  });
+});
+
+// ---- createSecretStore factory ----
+
+describe('createSecretStore', () => {
+  it('insecureStore:true returns the file store without probing the keychain', async () => {
+    const keychainAvailable = vi.fn(async () => true);
+    const fileStore = new FileSecretStore({ filePath: join(testDir, 'secrets.json') });
+    const makeFile = vi.fn(() => fileStore);
+
+    const result = await createSecretStore({
+      insecureStore: true,
+      keychainAvailable,
+      makeFile,
+    });
+
+    expect(result).toBe(fileStore);
+    expect(keychainAvailable).not.toHaveBeenCalled();
+  });
+
+  it('keychain available → returns the keychain store, warn not called', async () => {
+    const keychainStore = new KeychainSecretStore({ entryFactory: makeFakeFactory() });
+    const makeKeychain = vi.fn(() => keychainStore);
+    const warn = vi.fn();
+
+    const result = await createSecretStore({
+      keychainAvailable: async () => true,
+      makeKeychain,
+      warn,
+    });
+
+    expect(result).toBe(keychainStore);
+    expect(warn).not.toHaveBeenCalled();
+  });
+
+  it('keychain unavailable → returns the file store and warn called once with fallback message', async () => {
+    const fileStore = new FileSecretStore({ filePath: join(testDir, 'secrets.json') });
+    const makeFile = vi.fn(() => fileStore);
+    const warn = vi.fn();
+
+    const result = await createSecretStore({
+      keychainAvailable: async () => false,
+      makeFile,
+      warn,
+    });
+
+    expect(result).toBe(fileStore);
+    expect(warn).toHaveBeenCalledTimes(1);
+    const warnMsg: string = warn.mock.calls[0]?.[0] as string;
+    expect(warnMsg).toContain('0600');
+    expect(warnMsg).toContain('--insecure-store');
   });
 });

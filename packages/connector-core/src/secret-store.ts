@@ -239,6 +239,45 @@ export class KeychainSecretStore implements SecretStore {
   }
 }
 
+// ---- createSecretStore factory ----
+
+export interface CreateSecretStoreOptions {
+  /** Pass --insecure-store to force FileSecretStore without probing the keychain. */
+  insecureStore?: boolean;
+  /** Override the FileSecretStore path (useful in tests). */
+  filePath?: string;
+  /** Override keychain availability probe (useful in tests). */
+  keychainAvailable?: () => Promise<boolean>;
+  /** Override keychain store construction (useful in tests). */
+  makeKeychain?: () => SecretStore;
+  /** Override file store construction (useful in tests). */
+  makeFile?: () => SecretStore;
+  /** Override the warning emitter (useful in tests; default: console.warn). */
+  warn?: (msg: string) => void;
+}
+
+/**
+ * Pick the best available SecretStore for this environment.
+ *
+ * Default: KeychainSecretStore when the OS keychain is accessible, otherwise
+ * FileSecretStore with a one-time console warning.
+ * Pass `insecureStore: true` (--insecure-store CLI flag) to skip the keychain
+ * probe and go straight to the file store without printing the warning.
+ */
+export async function createSecretStore(opts: CreateSecretStoreOptions = {}): Promise<SecretStore> {
+  const warn = opts.warn ?? ((m: string) => console.warn(m));
+  const makeFile =
+    opts.makeFile ??
+    (() => new FileSecretStore(opts.filePath !== undefined ? { filePath: opts.filePath } : {}));
+  if (opts.insecureStore === true) return makeFile();
+  const available = await (opts.keychainAvailable ?? (() => KeychainSecretStore.isAvailable()))();
+  if (available) return (opts.makeKeychain ?? (() => new KeychainSecretStore()))();
+  warn(
+    'peek: OS keychain unavailable — storing connector secrets in a 0600 file. Pass --insecure-store to silence this.',
+  );
+  return makeFile();
+}
+
 /**
  * Best-effort migration from the SP4 per-connector pairing.json to the new
  * FileSecretStore. If the store already has the secret, no-op. Otherwise reads
