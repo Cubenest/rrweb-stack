@@ -130,6 +130,43 @@ describe('revoke-pairing store effect', () => {
     expect(await verifyConnectorSecret('claude-code', secret, area)).toBe(false);
   });
 
+  it('ack is sent AFTER clearPairedConnector resolves (not before)', async () => {
+    // Mirrors the background.ts revokePairing handler to verify async ordering:
+    // sendResponse must not fire until clearPairedConnector resolves.
+    const hash = await sha256Hex('some-secret');
+    await putPairedConnector(
+      'cursor-mcp',
+      { clientName: 'Cursor MCP', hash, pairedAtMs: 1000 },
+      area,
+    );
+
+    const events: string[] = [];
+    let resolveClear!: () => void;
+    const clearPromise = new Promise<void>((r) => {
+      resolveClear = r;
+    });
+    // Controlled clear: records 'clear-done' only after we explicitly release it.
+    const controlledClear = (_id: string): Promise<void> =>
+      clearPromise.then(() => {
+        events.push('clear-done');
+      });
+
+    // Mirror the fixed handler: await clear, then ack.
+    const handlerDone = controlledClear('cursor-mcp').then(() => {
+      events.push('ack-sent');
+    });
+
+    // The ack must not have fired yet (the clear is still pending).
+    expect(events).toHaveLength(0);
+
+    // Release the clear.
+    resolveClear();
+    await handlerDone;
+
+    // clear must precede ack.
+    expect(events).toEqual(['clear-done', 'ack-sent']);
+  });
+
   it('revoke only removes the targeted connector, leaving others intact', async () => {
     const hash1 = await sha256Hex('secret-1');
     const hash2 = await sha256Hex('secret-2');

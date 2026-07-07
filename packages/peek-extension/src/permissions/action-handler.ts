@@ -637,9 +637,17 @@ export async function handleActionRequest(
   // Level is already >= 3 here (gate returned 'confirm');
   // revalidateAtDispatch (inside dispatchAndRespond) re-checks it at dispatch.
   const verifyFn = deps.verifyConnectorSecret ?? storeVerifyConnectorSecret;
-  const verifiedPairedConnector =
-    request.connectorSecret !== undefined &&
-    (await verifyFn(connectorIdFromClientName(request.client), request.connectorSecret));
+  let verifiedPairedConnector = false;
+  if (request.connectorSecret !== undefined) {
+    try {
+      verifiedPairedConnector = await verifyFn(
+        connectorIdFromClientName(request.client),
+        request.connectorSecret,
+      );
+    } catch {
+      verifiedPairedConnector = false; // fail closed → local banner
+    }
+  }
   if (request.consentDelegated === true && verifiedPairedConnector && !destructive.matched) {
     return dispatchAndRespond(request, tab.id, deps, guarded, {
       approver: 'connector-elicit',

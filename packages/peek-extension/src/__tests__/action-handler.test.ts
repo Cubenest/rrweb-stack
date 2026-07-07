@@ -682,6 +682,28 @@ describe('handleActionRequest — SP4: secret verification gate on banner-less L
     expect(ctx.promptCalls).toBe(1); // banner ran
     expect(out.approver).toBe('user');
   });
+
+  // (k) verifyConnectorSecret REJECTS (e.g. SW context invalidated) → fail closed → local banner,
+  //     NOT a hang/throw. The pending MCP call must not hang to the 5-minute bridge timeout.
+  it('SP4 (k): verifyConnectorSecret rejection → fail closed, banner shown, approver=user', async () => {
+    await enableOriginAtLevel('https://example.com', 3);
+    const ctx = makeDeps(
+      {
+        verifyConnectorSecret: async () => {
+          throw new Error('Extension context invalidated.');
+        },
+      },
+      { promptResult: { verdict: 'allow', approvalMs: 1 } },
+    );
+    // Must resolve (not hang), and the banner must have been shown.
+    const out = await handleActionRequest(
+      makeRequest({ consentDelegated: true, connectorSecret: 'some-secret' }),
+      ctx.deps,
+    );
+    expect(ctx.promptCalls).toBe(1); // banner WAS shown — fail closed
+    expect(out.approver).toBe('user'); // NOT connector-elicit
+    expect(out.verdict).toBe('allow');
+  });
 });
 
 describe('handleActionRequest — Level 4 YOLO', () => {

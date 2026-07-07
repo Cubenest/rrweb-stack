@@ -1526,15 +1526,20 @@ export default defineBackground({
         if (isRevokePairing(message as unknown)) {
           if (isFromSidePanel(sender, chrome.runtime.getURL('sidepanel.html'))) {
             const { connectorId } = message as unknown as RevokePairingMessage;
-            void clearPairedConnector(connectorId).catch((err) => {
-              console.warn('[peek] clearPairedConnector failed:', err);
-            });
-            sendResponse(ackOk());
+            // Await the storage write before acking — the side panel re-reads
+            // immediately after and a fire-and-forget sendResponse races the clear.
+            clearPairedConnector(connectorId)
+              .then(() => sendResponse(ackOk()))
+              .catch((err) => {
+                console.warn('[peek] clearPairedConnector failed:', err);
+                sendResponse({ ok: false, reason: 'clear-failed' });
+              });
           } else {
             console.warn('[peek] revokePairing from a non-sidepanel sender rejected:', sender.url);
             sendResponse({ ok: false, reason: 'not-from-sidepanel' });
           }
-          return false;
+          // Return true: the response channel must stay open for the async ack above.
+          return true;
         }
         switch (message?.type) {
           case 'getNativeHostState': {

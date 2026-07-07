@@ -109,11 +109,11 @@ export class ConnectorRuntime {
       return false;
     }
 
-    // The connectorId stored in the secret mirrors what peek-mcp derives from
-    // the MCP client name at connect time. We extract it from the response if
-    // provided, otherwise fall back to the secretPath basename as a stable key.
-    const connectorId = (response as { connectorId?: string }).connectorId ?? 'connector';
-    const pairingSecret = { connectorId, secret: response.secret };
+    // The stored connectorId is a local placeholder ('connector'). It is NOT
+    // transmitted to the extension and NOT used for SW-side verification, which
+    // keys on connectorIdFromClientName(request.client) + the secret. The
+    // requestPairing response never carries a connectorId field.
+    const pairingSecret = { connectorId: 'connector', secret: response.secret };
     await secretStore.save(secretStore.secretPath, pairingSecret);
     mcp.setConnectorSecret(response.secret);
     return true;

@@ -1381,4 +1381,49 @@ describe('peek MCP server: request_pairing tool (SP4)', () => {
       await close();
     }
   });
+
+  it('bridge.pair throw → audit still written (approved:false), tool returns {approved:false}', async () => {
+    // Verify that a bridge.pair rejection does NOT skip the audit-log write.
+    // The audit log is the trust surface and must never miss a write.
+    const { dbPath, eventsDir } = seedStore(dir, [loginSession()]);
+    const auditLogPath = join(dir, 'audit-pairing-throw.log');
+
+    // A bridge where pair() throws unconditionally.
+    const throwingBridge: import('../src/mcp/host-bridge.js').HostBridge = {
+      async request() {
+        throw new Error('not implemented');
+      },
+      async pair() {
+        throw new Error('Transport error: SW context invalidated.');
+      },
+    };
+
+    const { client, close } = await connectClient({
+      dbPath,
+      eventsDir,
+      hostBridge: throwingBridge as never,
+      auditLogPath,
+    });
+    try {
+      const res = await client.callTool({
+        name: 'request_pairing',
+        arguments: { code: 'ERR-000' },
+      });
+      const body = parseJson(res as never) as Record<string, unknown>;
+      // Tool must return a structured denial, not throw.
+      expect(body.approved).toBe(false);
+      // The audit entry must have been written despite the bridge throw.
+      const lines = readFileSync(auditLogPath, 'utf8').split('\n').filter(Boolean);
+      expect(lines).toHaveLength(1);
+      const entry = JSON.parse(lines[0] ?? '') as Record<string, unknown>;
+      expect(entry.tool).toBe('request_pairing');
+      expect(entry.result).toBe('denied');
+      // The error message from the bridge must appear in the audit entry.
+      expect(lines[0]).toContain('SW context invalidated');
+      // CRITICAL: no secret in the log (none was issued).
+      expect(lines[0]).not.toContain('secret');
+    } finally {
+      await close();
+    }
+  });
 });

@@ -1286,7 +1286,18 @@ export function createPeekMcpServer(options: CreatePeekMcpServerOptions = {}): P
     const clientName = clientImpl?.name ?? 'unknown';
     const requestStartedAtMs = Date.now();
 
-    const response = await bridge.pair({ clientName, code: input.code });
+    let response: import('./host-bridge.js').PairingResponse;
+    try {
+      response = await bridge.pair({ clientName, code: input.code });
+    } catch (err) {
+      // bridge.pair threw (e.g. transport error). Synthesize a denied response
+      // so the audit-write block still runs — the audit log must never miss a
+      // write, even on a bridge failure.
+      response = {
+        approved: false,
+        error: err instanceof Error ? err.message : String(err),
+      };
+    }
 
     // Audit-log the pairing attempt — approved or denied.
     // CRITICAL: the secret must NEVER enter the audit log.
