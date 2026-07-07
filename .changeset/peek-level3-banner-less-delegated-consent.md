@@ -1,4 +1,5 @@
 ---
+"@peekdev/extension": patch
 "@peekdev/mcp": patch
 ---
 
