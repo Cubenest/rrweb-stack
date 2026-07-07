@@ -7,7 +7,10 @@ import {
   createSecretStore,
   defaultSecretPath,
   migrateLegacySecret,
+  promptSecret,
 } from '@peekdev/connector-core';
+import type { SlackConfig } from './config.js';
+import { resolveSlackTokens } from './config.js';
 
 /**
  * Injectable overrides forwarded to `createSecretStore`.
@@ -58,4 +61,40 @@ export async function resolvePairedState(
   connectorId: string,
 ): Promise<boolean> {
   return (await store.get(connectorId, 'pairing')) !== null;
+}
+
+/**
+ * Dependencies injected into `buildSlackConfig` (all optional for production
+ * use; required overrides in tests allow unit-testing without live prompts).
+ */
+export interface BuildSlackConfigOptions {
+  env?: NodeJS.ProcessEnv;
+  isTTY?: boolean;
+  prompt?: (label: string) => Promise<string>;
+}
+
+/**
+ * Resolve Slack bot + app tokens using the SecretStore built by
+ * `buildBootstrapStore`.
+ *
+ * Resolution order (per token): store → env var → interactive prompt (TTY only).
+ * Captured prompt values are persisted into the store for future headless runs.
+ *
+ * Extracted from `main()` so the token-resolution step can be unit-tested
+ * without a live Slack connection or MCP client.
+ *
+ * @param store  The SecretStore from `buildBootstrapStore` (must be ready).
+ * @param opts   Injectable overrides for env, isTTY, and prompt function.
+ * @returns      The resolved `SlackConfig` with both tokens populated.
+ */
+export async function buildSlackConfig(
+  store: SecretStore,
+  opts: BuildSlackConfigOptions = {},
+): Promise<SlackConfig> {
+  return resolveSlackTokens({
+    store,
+    env: opts.env ?? process.env,
+    isTTY: opts.isTTY ?? Boolean(process.stdin.isTTY),
+    prompt: opts.prompt ?? promptSecret,
+  });
 }

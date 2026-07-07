@@ -9,8 +9,7 @@ import {
   loadBrainConfig,
   loadMcpConfig,
 } from '@peekdev/connector-core';
-import { buildBootstrapStore, resolvePairedState } from './bootstrap.js';
-import { loadSlackConfig } from './config.js';
+import { buildBootstrapStore, buildSlackConfig, resolvePairedState } from './bootstrap.js';
 import { maybePair } from './pairing.js';
 import { SlackAdapter } from './slack-adapter.js';
 
@@ -18,7 +17,6 @@ async function main(): Promise<void> {
   assertNodeVersion(process.version);
   const brainConfig = loadBrainConfig(process.env);
   const mcpConfig = loadMcpConfig(process.env);
-  const slackConfig = loadSlackConfig(process.env);
 
   // Build the SecretStore (keychain by default; file store when unavailable or
   // PEEK_INSECURE_STORE=1 / --insecure-store flag is set) and silently migrate
@@ -26,6 +24,10 @@ async function main(): Promise<void> {
   const insecureStore =
     process.env.PEEK_INSECURE_STORE === '1' || process.argv.includes('--insecure-store');
   const secretStore = await buildBootstrapStore({ insecureStore });
+
+  // Resolve Slack tokens AFTER the store is ready so captured values can be
+  // persisted, and BEFORE the adapter is constructed so it receives them.
+  const slackConfig = await buildSlackConfig(secretStore);
 
   const mcp = new PeekMcp(mcpConfig, 'peek-slack');
   await mcp.connect();
