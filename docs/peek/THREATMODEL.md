@@ -87,6 +87,61 @@ real threat model is written.
   in [`SUPPORTED.md`](../../SUPPORTED.md); needs an ADR locking in the
   "tool schemas never remove fields, only add" rule before 1.0.
 
+## Delegated consent (connectors — SP3b)
+
+SP3b introduces a **delegated-consent path** for elicitation-capable connectors
+(e.g. a Slack bot). When such a connector obtains a human's approval off-device,
+`peek-mcp` attaches `consentDelegated: true` to the action request, and the
+extension service worker (SW) skips its Level-3 local confirm banner for
+**non-destructive** actions, dispatching banner-less and recording a distinct
+`connector-elicit` approver in the audit log.
+
+### Trust posture
+
+**The Level-3 human checkpoint moves off-device** for the delegated path. The
+local banner — which defends against a local process acting without the human
+noticing — is replaced, for that path, by a human approval on the connector's
+chat surface (e.g. a Slack message the user explicitly approved).
+
+This rests on **local-bridge trust**: the SW trusts the local peer (`peek-mcp`)
+to have faithfully obtained a human's consent before asserting
+`consentDelegated`. A malicious local process could forge the flag. This path is
+therefore **not cryptographically stronger** than the ordinary Level-3 local
+banner without further attestation.
+
+**Cryptographic hardening** (pairing / attestation between the connector and the
+SW) is deferred to **SP4**. Until SP4 ships, the delegated-consent path carries
+the same trust grade as the existing native-messaging stdio bridge — accepted
+risk, local-peer-trust class.
+
+### Unconditional local guards that remain
+
+These guards apply regardless of `consentDelegated` and do not depend on the
+connector:
+
+- **Destructive actions always force the local banner.** The SW, not the
+  connector, classifies actions as destructive. No connector-supplied flag can
+  bypass this gate.
+- **`revalidateAtDispatch` TOCTOU re-check.** Origin and permission level are
+  re-validated at dispatch time (not only at request time), preventing
+  time-of-check/time-of-use races.
+- **Delegation never escalates below Level 3.** `consentDelegated` is only
+  honoured when the origin's trust-dial is already at Level 3 or above; it
+  cannot be used to elevate a Level 1 or 2 origin.
+
+### Auditability
+
+Delegated dispatches are recorded with the approver tag `connector-elicit` in
+`~/.peek/audit.log`, distinct from local-banner approvals (`user`) and
+Level-4 auto-approvals (`level-4-auto`). This makes the delegated path
+independently auditable.
+
+### Attack surface row
+
+| Surface | Threat | Grade | Notes |
+|---|---|---|---|
+| `consentDelegated` flag on stdio pipe | Malicious local process forges flag to bypass Level-3 local banner for non-destructive actions | `accepted` (local-peer-trust class) | Unconditional destructive guard + TOCTOU re-check + Level ≥ 3 precondition still apply. Cryptographic close = SP4 (pairing/attestation). |
+
 ## Cross-references
 
 - [`docs/peek/PRIVACY_POLICY.md`](PRIVACY_POLICY.md)
