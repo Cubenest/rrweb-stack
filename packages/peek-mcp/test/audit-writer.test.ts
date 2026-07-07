@@ -147,6 +147,25 @@ describe('buildAuditEntry', () => {
     });
     expect(entry.approver).toBe('connector-elicit');
   });
+
+  it('accepts tool:request_pairing (SP4 connector pairing)', () => {
+    const entry = buildAuditEntry({
+      tool: 'request_pairing',
+      // request_pairing has no DOM action; args is a neutral marker object.
+      action: { type: 'pair_request' } as never,
+      approver: 'user',
+      client: 'test-connector',
+      sessionId: '',
+      result: 'ok',
+      nowMs: 1716480000000,
+    });
+    expect(entry.tool).toBe('request_pairing');
+    expect(entry.result).toBe('ok');
+    expect(entry.client).toBe('test-connector');
+    // The pairing audit entry must NEVER expose a secret — it has none here.
+    const line = serializeAuditEntry({ ...entry, seq: 1, prevHash: GENESIS_PREV });
+    expect(line).not.toContain('secret');
+  });
 });
 
 describe('serializeAuditEntry', () => {

@@ -2,15 +2,19 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { originFromUrl } from '../../src/activation/origin';
 import {
   type ConfirmVerdictMessage,
+  type PairVerdictMessage,
   type ShowConfirmMessage,
+  type ShowPairMessage,
   sendConfirmVerdict,
 } from '../../src/messaging/protocol';
 import { ConfirmResolutionTracker, isShowConfirmFromBackground } from './confirm-flow';
+import { isShowPairFromBackground } from './pair-flow';
 import { ActionFeedbackToggle } from './sections/ActionFeedbackToggle';
 import { AgentControlSection } from './sections/AgentControlSection';
 import { CaptureSection } from './sections/CaptureSection';
 import { ConfirmBanner, closedVerdict } from './sections/ConfirmBanner';
 import { FirstRunCard } from './sections/FirstRunCard';
+import { PairBanner, sendPairVerdict } from './sections/PairBanner';
 import { RecordingBorderToggle } from './sections/RecordingBorderToggle';
 import { StatusHeader } from './sections/StatusHeader';
 import { useActiveTab } from './useActiveTab';
@@ -38,11 +42,20 @@ export function App(): React.JSX.Element {
   // override an allow the SW acted on.
   const resolution = useRef(new ConfirmResolutionTracker());
 
-  // Only the extension's OWN background SW may surface a confirm banner.
+  // SP4: the connector-pairing banner. The SW posts `showPair` and awaits a
+  // `pairVerdict`; a newer prompt replaces an older one (which times out →
+  // denied SW-side, fail-closed). No closedVerdict pattern needed — the SW
+  // timeout covers the unmount case without a second synthetic message.
+  const [pendingPair, setPendingPair] = useState<ShowPairMessage | null>(null);
+
+  // Only the extension's OWN background SW may surface a confirm or pair banner.
   useEffect(() => {
     const listener = (message: unknown, sender: chrome.runtime.MessageSender): undefined => {
       if (isShowConfirmFromBackground(message, sender, chrome.runtime.id)) {
         setPendingConfirm(message);
+      }
+      if (isShowPairFromBackground(message, sender, chrome.runtime.id)) {
+        setPendingPair(message);
       }
       return undefined;
     };
@@ -79,6 +92,14 @@ export function App(): React.JSX.Element {
     setPendingConfirm(null);
   }, []);
 
+  // SP4: resolve a pending pairing. The SW's own timeout covers the unmount
+  // case (no synthetic deny needed here — mirrors how the SW timeout handles
+  // a panel close without a pairVerdict).
+  const resolvePair = useCallback((verdict: PairVerdictMessage) => {
+    void sendPairVerdict(verdict);
+    setPendingPair(null);
+  }, []);
+
   return (
     <main className="peek-panel">
       <header className="peek-header">
@@ -93,6 +114,8 @@ export function App(): React.JSX.Element {
       {pendingConfirm ? (
         <ConfirmBanner pending={pendingConfirm} onResolve={resolveConfirm} />
       ) : null}
+
+      {pendingPair ? <PairBanner pending={pendingPair} onResolve={resolvePair} /> : null}
 
       <StatusHeader origin={origin} />
       <CaptureSection origin={origin} title={title} tabId={tabId} url={url} />

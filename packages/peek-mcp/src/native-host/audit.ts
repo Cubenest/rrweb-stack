@@ -41,8 +41,8 @@ export function auditLogPath(): string {
   return join(peekHomeDir(), 'audit.log');
 }
 
-/** Tool names that produce audit entries — the two Level-3+ MCP write tools. */
-export type AuditTool = 'execute_action' | 'request_authorization';
+/** Tool names that produce audit entries — the Level-3+ MCP write tools + SP4 pairing. */
+export type AuditTool = 'execute_action' | 'request_authorization' | 'request_pairing';
 
 /** Approver values, ordered by what the dispatcher will record. */
 export type AuditApprover =

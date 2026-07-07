@@ -32,6 +32,8 @@ import type {
   ActionConfirmShownMessage,
   ActionRequestMessage,
   ActionResultMessage,
+  PairRequestMessage,
+  PairResultMessage,
 } from './action-protocol.js';
 import { type LoadedPolicy, loadPolicy } from './policy.js';
 import { hostSocketPath } from './socket-path.js';
@@ -131,6 +133,8 @@ const DEFAULT_MAX_LINE_BYTES = 1024 * 1024;
 export interface HostSocketServerDeps {
   /** Forward an `action.request` to the SW over the native port. */
   postToSw(message: ActionRequestMessage): void;
+  /** SP4: forward a `pair.request` to the SW over the native port. */
+  postPairToSw(message: PairRequestMessage): void;
   /** Read ~/.peek/policy.json (per request — cheap). Defaults to {@link loadPolicy}. */
   loadPolicy?: () => LoadedPolicy;
   /** Generate a fresh native-port requestId. Defaults to crypto.randomUUID. */
@@ -268,6 +272,7 @@ export class HostSocketServer {
   constructor(deps: HostSocketServerDeps) {
     this.#deps = {
       postToSw: deps.postToSw,
+      postPairToSw: deps.postPairToSw,
       loadPolicy: deps.loadPolicy ?? (() => loadPolicy()),
       generateRequestId: deps.generateRequestId ?? (() => globalThis.crypto.randomUUID()),
       socketPath: deps.socketPath ?? hostSocketPath(),
@@ -357,10 +362,28 @@ export class HostSocketServer {
   /**
    * Inbound from the SW over the native port. For a terminal `action.result`,
    * find the originating connection by requestId and write back the mapped
-   * `act.response`. `action.confirm.shown` is a non-terminal timing signal —
-   * the verdict still arrives in a later `action.result` — so we drop it here.
+   * `act.response`. For a `pair.result`, write back a `pair.response`.
+   * `action.confirm.shown` is a non-terminal timing signal — the verdict still
+   * arrives in a later `action.result` — so we drop it here.
    */
-  onSwMessage(message: ActionResultMessage | ActionConfirmShownMessage): void {
+  onSwMessage(message: ActionResultMessage | ActionConfirmShownMessage | PairResultMessage): void {
+    // SP4: pair.result → pair.response relay.
+    if (message.type === 'pair.result') {
+      const inFlight = this.#inFlight.get(message.requestId);
+      if (!inFlight) return; // stale reply — drop, don't throw
+      this.#inFlight.delete(message.requestId);
+      const payload: Record<string, unknown> = { approved: message.approved };
+      if (message.secret !== undefined) payload.secret = message.secret;
+      if (message.error !== undefined) payload.error = message.error;
+      const frame = { kind: 'pair.response', id: inFlight.wireId, payload };
+      try {
+        inFlight.conn.write(`${JSON.stringify(frame)}\n`);
+      } catch {
+        // The MCP process closed the socket mid-flight; nothing to do.
+      }
+      return;
+    }
+
     if (message.type !== 'action.result') return; // confirm.shown: timing only
     const inFlight = this.#inFlight.get(message.requestId);
     if (!inFlight) return; // stale reply after a timeout — drop, don't throw
@@ -428,7 +451,26 @@ export class HostSocketServer {
     } catch {
       return; // malformed — drop, keep the loop alive
     }
-    if (frame.kind !== 'act.request' || typeof frame.id !== 'string') return;
+    if (typeof frame.id !== 'string') return;
+
+    // SP4: pair.request — handled before the act.request guard so it never
+    // falls through to the act path (which hard-guards kind === 'act.request').
+    if (frame.kind === 'pair.request') {
+      const pairPayload = frame.payload as { clientName?: string; code?: string } | undefined;
+      if (!pairPayload || !pairPayload.clientName || !pairPayload.code) return;
+      const requestId = this.#deps.generateRequestId();
+      this.#inFlight.set(requestId, { conn, wireId: frame.id });
+      const pairRequest: PairRequestMessage = {
+        type: 'pair.request',
+        requestId,
+        clientName: pairPayload.clientName,
+        code: pairPayload.code,
+      };
+      this.#deps.postPairToSw(pairRequest);
+      return;
+    }
+
+    if (frame.kind !== 'act.request') return;
     const payload = frame.payload as
       | {
           tool?: 'execute_action' | 'request_authorization';
@@ -438,6 +480,7 @@ export class HostSocketServer {
           tabId?: number;
           confirmToken?: string;
           consentDelegated?: boolean;
+          connectorSecret?: string;
         }
       | undefined;
     if (!payload || payload.tool === undefined || payload.action === undefined) return;
@@ -458,6 +501,9 @@ export class HostSocketServer {
       ...(payload.confirmToken !== undefined ? { confirmToken: payload.confirmToken } : {}),
       ...(payload.consentDelegated !== undefined
         ? { consentDelegated: payload.consentDelegated }
+        : {}),
+      ...(payload.connectorSecret !== undefined
+        ? { connectorSecret: payload.connectorSecret }
         : {}),
     };
     this.#deps.postToSw(request);

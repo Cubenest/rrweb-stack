@@ -1,6 +1,10 @@
 import { PassThrough } from 'node:stream';
 import { describe, expect, it } from 'vitest';
-import { LocalSocketHostBridge } from '../src/mcp/host-bridge.js';
+import {
+  LocalSocketHostBridge,
+  MissingHostBridge,
+  RegistryBackedHostBridge,
+} from '../src/mcp/host-bridge.js';
 import { hostSocketPath } from '../src/native-host/socket-path.js';
 
 describe('hostSocketPath', () => {
@@ -351,5 +355,153 @@ describe('LocalSocketHostBridge', () => {
     });
     const r2 = await p2;
     expect(r2.result).toBe('ok');
+  });
+});
+
+// SP4: pair() on each bridge implementation.
+describe('MissingHostBridge.pair', () => {
+  it('returns { approved:false, error:... } without throwing', async () => {
+    const bridge = new MissingHostBridge();
+    const res = await bridge.pair({ clientName: 'peek-slack', code: '1234' });
+    expect(res.approved).toBe(false);
+    expect(res.error).toMatch(/native-host bridge not wired/i);
+  });
+});
+
+describe('RegistryBackedHostBridge.pair', () => {
+  it('registers a pending pairing + resolves on resolveNextPairing', async () => {
+    const bridge = new RegistryBackedHostBridge();
+    const p = bridge.pair({ clientName: 'peek-slack', code: '7777' });
+    expect(bridge.pendingPairings).toHaveLength(1);
+    const ok = bridge.resolveNextPairing({ approved: true, secret: 'S' });
+    expect(ok).toBe(true);
+    const res = await p;
+    expect(res.approved).toBe(true);
+    expect(res.secret).toBe('S');
+  });
+
+  it('resolveNextPairing returns false when there is nothing pending', () => {
+    const bridge = new RegistryBackedHostBridge();
+    expect(bridge.resolveNextPairing({ approved: false })).toBe(false);
+  });
+});
+
+describe('LocalSocketHostBridge.pair', () => {
+  it('frames a pair.request and resolves on the matching pair.response', async () => {
+    const toServer = new PassThrough();
+    const toClient = new PassThrough();
+    const bridge = new LocalSocketHostBridge({
+      connect: () => fakeDuplex(toServer, toClient) as never,
+    });
+
+    toServer.once('data', (buf: Buffer) => {
+      const msg = JSON.parse(String(buf).trim());
+      expect(msg.kind).toBe('pair.request');
+      expect(msg.payload.clientName).toBe('peek-slack');
+      expect(msg.payload.code).toBe('4821');
+      toClient.write(
+        `${JSON.stringify({
+          kind: 'pair.response',
+          id: msg.id,
+          payload: { approved: true, secret: 'S-secret' },
+        })}\n`,
+      );
+    });
+
+    const res = await bridge.pair({ clientName: 'peek-slack', code: '4821' });
+    expect(res.approved).toBe(true);
+    expect(res.secret).toBe('S-secret');
+  });
+
+  it('resolves pair.response with approved:false and error correctly', async () => {
+    const toServer = new PassThrough();
+    const toClient = new PassThrough();
+    const bridge = new LocalSocketHostBridge({
+      connect: () => fakeDuplex(toServer, toClient) as never,
+    });
+
+    toServer.once('data', (buf: Buffer) => {
+      const msg = JSON.parse(String(buf).trim());
+      toClient.write(
+        `${JSON.stringify({
+          kind: 'pair.response',
+          id: msg.id,
+          payload: { approved: false, error: 'bad-code' },
+        })}\n`,
+      );
+    });
+
+    const res = await bridge.pair({ clientName: 'peek-slack', code: '0000' });
+    expect(res.approved).toBe(false);
+    expect(res.error).toBe('bad-code');
+    expect(res.secret).toBeUndefined();
+  });
+
+  it('pair() and request() can be interleaved — each correlates to its own response kind', async () => {
+    const toServer = new PassThrough();
+    const toClient = new PassThrough();
+    const received: Array<{ id: string; kind: string }> = [];
+    const bridge = new LocalSocketHostBridge({
+      connect: () => fakeDuplex(toServer, toClient) as never,
+    });
+
+    toServer.on('data', (buf: Buffer) => {
+      for (const line of String(buf).split('\n')) {
+        if (!line.trim()) continue;
+        const msg = JSON.parse(line);
+        received.push({ id: msg.id, kind: msg.kind });
+      }
+    });
+
+    const pPair = bridge.pair({ clientName: 'peek-slack', code: '1111' });
+    const pAct = bridge.request({
+      tool: 'execute_action',
+      sessionId: 's',
+      action: { type: 'click', selector: '#x', button: 'left' } as never,
+      client: 'test',
+    });
+
+    // Wait until both frames are on the wire.
+    for (let i = 0; i < 50 && received.length < 2; i++) {
+      await new Promise((r) => setTimeout(r, 2));
+    }
+    expect(received).toHaveLength(2);
+
+    const pairFrame = received.find((r) => r.kind === 'pair.request');
+    const actFrame = received.find((r) => r.kind === 'act.request');
+    expect(pairFrame).toBeDefined();
+    expect(actFrame).toBeDefined();
+
+    // Reply to the act first, then the pair — out of order.
+    toClient.write(
+      `${JSON.stringify({
+        kind: 'act.response',
+        id: actFrame?.id,
+        payload: { verdict: 'allow', result: 'ok', approver: 'user' },
+      })}\n`,
+    );
+    toClient.write(
+      `${JSON.stringify({
+        kind: 'pair.response',
+        id: pairFrame?.id,
+        payload: { approved: true, secret: 'X' },
+      })}\n`,
+    );
+
+    const [rPair, rAct] = await Promise.all([pPair, pAct]);
+    expect(rPair.approved).toBe(true);
+    expect(rPair.secret).toBe('X');
+    expect(rAct.verdict).toBe('allow');
+  });
+
+  it('pair() returns structured error when the socket is unavailable', async () => {
+    const bridge = new LocalSocketHostBridge({
+      connect: () => {
+        throw new Error('ECONNREFUSED');
+      },
+    });
+    const res = await bridge.pair({ clientName: 'peek-slack', code: '1234' });
+    expect(res.approved).toBe(false);
+    expect(res.error).toContain('ECONNREFUSED');
   });
 });

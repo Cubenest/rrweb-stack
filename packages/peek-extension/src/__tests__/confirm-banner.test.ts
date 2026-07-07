@@ -3,6 +3,7 @@ import {
   ConfirmResolutionTracker,
   isShowConfirmFromBackground,
 } from '../../entrypoints/sidepanel/confirm-flow';
+import { isShowPairFromBackground } from '../../entrypoints/sidepanel/pair-flow';
 import {
   type ConfirmChoice,
   closedVerdict,
@@ -155,5 +156,29 @@ describe('ConfirmResolutionTracker — cleanup must not deny an already-resolved
     tracker.markResolved('req-1');
     expect(tracker.shouldSendCloseVerdict('req-1')).toBe(false);
     expect(tracker.shouldSendCloseVerdict('req-2')).toBe(true);
+  });
+});
+
+// SP4: isShowPairFromBackground — sender + shape gate for the pairing banner.
+// Mirrors the isShowConfirmFromBackground test: only the extension's OWN
+// background SW may surface a pairing banner. A page or other extension
+// context must not be able to inject a forged showPair.
+describe('isShowPairFromBackground — sender + shape gate for showPair', () => {
+  const EXT_ID = 'abcd';
+  const SHOW = {
+    type: 'showPair',
+    requestId: 'req-pair-1',
+    clientName: 'Cursor MCP',
+    code: 'A7F3',
+  };
+
+  it('accepts a well-formed showPair from the extension itself', () => {
+    expect(isShowPairFromBackground(SHOW, { id: EXT_ID }, EXT_ID)).toBe(true);
+  });
+
+  it('rejects a showPair from a different sender id (a page / other extension)', () => {
+    expect(isShowPairFromBackground(SHOW, { id: 'evil-extension' }, EXT_ID)).toBe(false);
+    expect(isShowPairFromBackground(SHOW, { id: undefined }, EXT_ID)).toBe(false);
+    expect(isShowPairFromBackground(SHOW, {}, EXT_ID)).toBe(false);
   });
 });

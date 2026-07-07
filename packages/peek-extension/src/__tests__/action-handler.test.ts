@@ -520,11 +520,15 @@ describe('handleActionRequest — confirmToken consumption (Level 3)', () => {
 });
 
 describe('handleActionRequest — SP3b: banner-less Level-3 dispatch for delegated consent', () => {
-  // (a) L3 non-destructive + consentDelegated → banner-less dispatch, connector-elicit
+  // (a) L3 non-destructive + consentDelegated + valid pairing secret → banner-less, connector-elicit
+  // SP4: the secret must be present and verify correctly to reach the banner-less path.
   it('SP3b: L3 non-destructive delegated → skips banner, dispatches as connector-elicit', async () => {
     await enableOriginAtLevel('https://example.com', 3);
-    const ctx = makeDeps();
-    const out = await handleActionRequest(makeRequest({ consentDelegated: true }), ctx.deps);
+    const ctx = makeDeps({ verifyConnectorSecret: async () => true });
+    const out = await handleActionRequest(
+      makeRequest({ consentDelegated: true, connectorSecret: 'valid-secret' }),
+      ctx.deps,
+    );
     expect(out.verdict).toBe('allow');
     expect(out.result).toBe('ok');
     expect(out.approver).toBe('connector-elicit');
@@ -547,11 +551,13 @@ describe('handleActionRequest — SP3b: banner-less Level-3 dispatch for delegat
 
   // (c) L3 non-destructive + consentDelegated but TOCTOU revalidate fails → deny
   it('SP3b: delegated dispatch still honours revalidateAtDispatch (TOCTOU)', async () => {
-    // consentDelegated=true at gate time; but while the SW processes, the tab
-    // navigates cross-origin — revalidateAtDispatch (inside dispatchAndRespond)
-    // must catch this and deny without dispatching.
+    // consentDelegated=true + a valid pairing secret at gate time; but while the
+    // SW processes, the tab navigates cross-origin — revalidateAtDispatch (inside
+    // dispatchAndRespond) must catch this and deny without dispatching.
     await enableOriginAtLevel('https://trusted.example', 3);
     const ctx = makeDeps({
+      // SP4: stub a valid pairing so the delegated path fires and hits dispatchAndRespond.
+      verifyConnectorSecret: async () => true,
       getTabFor: async (): Promise<TabRef> => ({
         id: 42,
         url: 'https://trusted.example/page',
@@ -564,7 +570,10 @@ describe('handleActionRequest — SP3b: banner-less Level-3 dispatch for delegat
         active: true,
       }),
     });
-    const out = await handleActionRequest(makeRequest({ consentDelegated: true }), ctx.deps);
+    const out = await handleActionRequest(
+      makeRequest({ consentDelegated: true, connectorSecret: 'valid-secret' }),
+      ctx.deps,
+    );
     expect(out.verdict).toBe('deny');
     expect(ctx.dispatchCalls).toBe(0); // never injected
     expect(ctx.promptCalls).toBe(0); // no banner either — the delegated path denies via revalidation
@@ -607,6 +616,93 @@ describe('handleActionRequest — SP3b: banner-less Level-3 dispatch for delegat
     expect(out.approver).toBe('level-4-auto');
     expect(ctx.promptCalls).toBe(0); // no banner at L4
     expect(ctx.dispatchCalls).toBe(1);
+  });
+});
+
+describe('handleActionRequest — SP4: secret verification gate on banner-less Level-3 path', () => {
+  // (g) L3 non-destructive + consentDelegated:true + VALID connectorSecret (stub verify→true)
+  //     → banner-less dispatch as 'connector-elicit', promptUserConfirmation NOT called.
+  it('SP4 (g): valid paired connectorSecret → banner-less, approver=connector-elicit', async () => {
+    await enableOriginAtLevel('https://example.com', 3);
+    const ctx = makeDeps({
+      verifyConnectorSecret: async () => true,
+    });
+    const out = await handleActionRequest(
+      makeRequest({ consentDelegated: true, connectorSecret: 'valid-secret' }),
+      ctx.deps,
+    );
+    expect(out.verdict).toBe('allow');
+    expect(out.result).toBe('ok');
+    expect(out.approver).toBe('connector-elicit');
+    expect(ctx.promptCalls).toBe(0); // banner skipped
+    expect(ctx.dispatchCalls).toBe(1);
+  });
+
+  // (h) THE CLOSE: L3 non-destructive + consentDelegated:true but NO/forged connectorSecret
+  //     (verify→false) → promptUserConfirmation IS called (banner shown), approver='user'.
+  //     This test MUST fail if the verifiedPairedConnector requirement is dropped from the branch.
+  it('SP4 (h): absent/forged connectorSecret → banner IS shown, approver=user [fails-on-weakening]', async () => {
+    await enableOriginAtLevel('https://example.com', 3);
+    // Stub verify→false (forged / unrecognised secret).
+    const ctx = makeDeps(
+      { verifyConnectorSecret: async () => false },
+      { promptResult: { verdict: 'allow', approvalMs: 1 } },
+    );
+    const out = await handleActionRequest(
+      makeRequest({ consentDelegated: true, connectorSecret: 'forged-secret' }),
+      ctx.deps,
+    );
+    expect(ctx.promptCalls).toBe(1); // banner MUST have been shown
+    expect(out.approver).toBe('user'); // NOT connector-elicit
+    expect(out.verdict).toBe('allow');
+  });
+
+  // (i) destructive + valid secret + consentDelegated → banner still forced (safety backstop).
+  it('SP4 (i): destructive + valid secret + consentDelegated → banner still forced', async () => {
+    await enableOriginAtLevel('https://example.com', 3);
+    const ctx = makeDeps(
+      { verifyConnectorSecret: async () => true },
+      { target: { text: 'Delete account' }, promptResult: { verdict: 'allow', approvalMs: 1 } },
+    );
+    const out = await handleActionRequest(
+      makeRequest({ consentDelegated: true, connectorSecret: 'valid-secret' }),
+      ctx.deps,
+    );
+    expect(ctx.promptCalls).toBe(1); // banner WAS shown — destructive override beats the pairing
+    expect(out.approver).toBe('user');
+    expect(out.destructiveTerm).toBe('delete');
+  });
+
+  // (j) direct client (no consentDelegated, no connectorSecret) → banner as today (behaviour-neutral).
+  it('SP4 (j): direct client without consentDelegated → banner shown, behaviour-neutral', async () => {
+    await enableOriginAtLevel('https://example.com', 3);
+    const ctx = makeDeps({}, { promptResult: { verdict: 'allow', approvalMs: 1 } });
+    const out = await handleActionRequest(makeRequest(), ctx.deps);
+    expect(out.verdict).toBe('allow');
+    expect(ctx.promptCalls).toBe(1); // banner ran
+    expect(out.approver).toBe('user');
+  });
+
+  // (k) verifyConnectorSecret REJECTS (e.g. SW context invalidated) → fail closed → local banner,
+  //     NOT a hang/throw. The pending MCP call must not hang to the 5-minute bridge timeout.
+  it('SP4 (k): verifyConnectorSecret rejection → fail closed, banner shown, approver=user', async () => {
+    await enableOriginAtLevel('https://example.com', 3);
+    const ctx = makeDeps(
+      {
+        verifyConnectorSecret: async () => {
+          throw new Error('Extension context invalidated.');
+        },
+      },
+      { promptResult: { verdict: 'allow', approvalMs: 1 } },
+    );
+    // Must resolve (not hang), and the banner must have been shown.
+    const out = await handleActionRequest(
+      makeRequest({ consentDelegated: true, connectorSecret: 'some-secret' }),
+      ctx.deps,
+    );
+    expect(ctx.promptCalls).toBe(1); // banner WAS shown — fail closed
+    expect(out.approver).toBe('user'); // NOT connector-elicit
+    expect(out.verdict).toBe('allow');
   });
 });
 
