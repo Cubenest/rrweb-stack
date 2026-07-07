@@ -153,6 +153,11 @@ export interface ActionRequestMessage {
    * non-destructive actions and dispatches banner-less as 'connector-elicit'.
    */
   consentDelegated?: boolean;
+  /**
+   * SP4: the paired-connector secret; the SW verifies it against the stored
+   * hash to authenticate the connector for the banner-less path.
+   */
+  connectorSecret?: string;
 }
 
 /** SW → host: optional timing signal when the banner is shown. */

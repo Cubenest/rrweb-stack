@@ -204,6 +204,43 @@ describe('HostSocketServer', () => {
     expect('consentDelegated' in (posted[0] ?? {})).toBe(false);
   });
 
+  it('forwards connectorSecret from the wire frame to the SW request (SP4)', () => {
+    const { net, posted } = makeServer();
+    const conn = net.connect();
+    conn.feed(
+      `${JSON.stringify({
+        kind: 'act.request',
+        id: 'wire-cs',
+        payload: {
+          tool: 'execute_action',
+          sessionId: 's',
+          action: { type: 'click', selector: '#x', button: 'left' },
+          client: 'slack',
+          connectorSecret: 'sek',
+        },
+      })}\n`,
+    );
+    expect((posted[0] as Record<string, unknown>).connectorSecret).toBe('sek');
+  });
+
+  it('omits connectorSecret when the frame does not set it (SP4)', () => {
+    const { net, posted } = makeServer();
+    const conn = net.connect();
+    conn.feed(
+      `${JSON.stringify({
+        kind: 'act.request',
+        id: 'wire-nocs',
+        payload: {
+          tool: 'execute_action',
+          sessionId: 's',
+          action: { type: 'click', selector: '#x', button: 'left' },
+          client: 'cursor',
+        },
+      })}\n`,
+    );
+    expect('connectorSecret' in (posted[0] ?? {})).toBe(false);
+  });
+
   it('writes an act.response back to the originating connection on action.result', () => {
     const { server, net } = makeServer();
     const conn = net.connect();

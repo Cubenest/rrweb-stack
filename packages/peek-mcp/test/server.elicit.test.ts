@@ -239,6 +239,62 @@ describe('execute_action elicitation + delegated consent (SP3a Task 2 / SP3b Tas
     }
   });
 
+  it('attaches connectorSecret to the HostActionRequest when passed as a tool arg (SP4)', async () => {
+    const { dbPath, eventsDir } = seedStore(dir, []);
+    const bridge = new RegistryBackedHostBridge();
+    const { client, close } = await connectClient({ hostBridge: bridge, dbPath, eventsDir });
+    try {
+      const callP = client.callTool({
+        name: 'execute_action',
+        arguments: {
+          sessionId: 's_any',
+          action: { type: 'click', selector: '#btn' },
+          connectorSecret: 'sek',
+        },
+      });
+
+      for (let i = 0; i < 20 && bridge.pending.length === 0; i++) {
+        await new Promise((r) => setTimeout(r, 5));
+      }
+      expect(bridge.pending).toHaveLength(1);
+
+      // The request handed to the bridge must carry connectorSecret: 'sek'.
+      const captured = bridge.pending[0]?.req;
+      expect(captured?.connectorSecret).toBe('sek');
+
+      bridge.resolveNext({ verdict: 'allow', result: 'ok', approver: 'user' });
+      await callP;
+    } finally {
+      await close();
+    }
+  });
+
+  it('does NOT attach connectorSecret when the tool arg is absent (SP4)', async () => {
+    const { dbPath, eventsDir } = seedStore(dir, []);
+    const bridge = new RegistryBackedHostBridge();
+    const { client, close } = await connectClient({ hostBridge: bridge, dbPath, eventsDir });
+    try {
+      const callP = client.callTool({
+        name: 'execute_action',
+        arguments: { sessionId: 's_any', action: { type: 'click', selector: '#btn' } },
+      });
+
+      for (let i = 0; i < 20 && bridge.pending.length === 0; i++) {
+        await new Promise((r) => setTimeout(r, 5));
+      }
+      expect(bridge.pending).toHaveLength(1);
+
+      // connectorSecret must be ABSENT (not just falsy/undefined) on the HostActionRequest.
+      const captured = bridge.pending[0]?.req;
+      expect('connectorSecret' in (captured ?? {})).toBe(false);
+
+      bridge.resolveNext({ verdict: 'allow', result: 'ok', approver: 'level-4-auto' });
+      await callP;
+    } finally {
+      await close();
+    }
+  });
+
   it('still short-circuits (no dispatch) on an elicited decline (SP3b)', async () => {
     const { dbPath, eventsDir } = seedStore(dir, []);
     const bridge = new RegistryBackedHostBridge();

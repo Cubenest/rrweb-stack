@@ -62,6 +62,11 @@ export interface HostActionRequest {
    * non-destructive actions and dispatches banner-less as 'connector-elicit'.
    */
   readonly consentDelegated?: boolean;
+  /**
+   * SP4: the paired-connector secret; the SW verifies it against the stored
+   * hash to authenticate the connector for the banner-less path.
+   */
+  readonly connectorSecret?: string;
 }
 
 /** Reply the bridge yields to the MCP tool handler. */

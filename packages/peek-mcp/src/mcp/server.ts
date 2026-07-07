@@ -780,6 +780,12 @@ export function createPeekMcpServer(options: CreatePeekMcpServerOptions = {}): P
             .describe(
               'One-shot token from a prior request_authorization Allow, to skip the Level-3 banner. Omit to trigger the banner (Level 3) or rely on Level-4 auto-allow.',
             ),
+          connectorSecret: z
+            .string()
+            .optional()
+            .describe(
+              'SP4: paired-connector secret; presented by connectors, ignored for direct clients.',
+            ),
         },
         annotations: {
           readOnlyHint: false,
@@ -788,13 +794,14 @@ export function createPeekMcpServer(options: CreatePeekMcpServerOptions = {}): P
           openWorldHint: true,
         },
       },
-      async ({ sessionId, action, confirmToken }) => {
+      async ({ sessionId, action, confirmToken, connectorSecret }) => {
         return await dispatchActTool({
           tool: 'execute_action',
           sessionId,
           action,
           elicit: true,
           ...(confirmToken !== undefined ? { confirmToken } : {}),
+          ...(connectorSecret !== undefined ? { connectorSecret } : {}),
         });
       },
     );
@@ -1122,6 +1129,12 @@ export function createPeekMcpServer(options: CreatePeekMcpServerOptions = {}): P
      * gate + destructive-override remain the backstop.
      */
     elicit?: boolean;
+    /**
+     * SP4: paired-connector secret forwarded from the execute_action tool arg.
+     * The SW verifies it against the stored hash to authenticate the connector.
+     * Not an audit field — not recorded to the audit log.
+     */
+    connectorSecret?: string;
   }): Promise<ReturnType<typeof jsonResult>> {
     const bridge = options.hostBridge ?? new MissingHostBridge();
     const clientImpl = server.server.getClientVersion();
@@ -1155,6 +1168,9 @@ export function createPeekMcpServer(options: CreatePeekMcpServerOptions = {}): P
           ...(input.confirmToken !== undefined ? { confirmToken: input.confirmToken } : {}),
           ...(input.timeoutMs !== undefined ? { timeoutMs: input.timeoutMs } : {}),
           ...(delegated ? { consentDelegated: true } : {}),
+          ...(input.connectorSecret !== undefined
+            ? { connectorSecret: input.connectorSecret }
+            : {}),
         });
       } catch (err) {
         bridgeError = err;

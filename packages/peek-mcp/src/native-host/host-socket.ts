@@ -438,6 +438,7 @@ export class HostSocketServer {
           tabId?: number;
           confirmToken?: string;
           consentDelegated?: boolean;
+          connectorSecret?: string;
         }
       | undefined;
     if (!payload || payload.tool === undefined || payload.action === undefined) return;
@@ -458,6 +459,9 @@ export class HostSocketServer {
       ...(payload.confirmToken !== undefined ? { confirmToken: payload.confirmToken } : {}),
       ...(payload.consentDelegated !== undefined
         ? { consentDelegated: payload.consentDelegated }
+        : {}),
+      ...(payload.connectorSecret !== undefined
+        ? { connectorSecret: payload.connectorSecret }
         : {}),
     };
     this.#deps.postToSw(request);
