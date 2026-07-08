@@ -500,7 +500,20 @@ export async function runLogs(rest: string[], deps?: RunLogsDeps): Promise<numbe
   return 0;
 }
 
-export async function runConnect(argv: string[]): Promise<number> {
+/**
+ * Injectable async-subcommand handlers, so tests can drive the routing layer's
+ * error handling (a rejecting handler must be caught, not escape as an unhandled
+ * rejection). Defaults to the real handlers.
+ */
+export interface RunConnectDeps {
+  runStart?: () => Promise<number>;
+  runSupervise?: () => Promise<number>;
+  runStop?: () => Promise<number>;
+  runStatus?: () => Promise<number>;
+  runLogs?: (rest: string[]) => Promise<number>;
+}
+
+export async function runConnect(argv: string[], deps: RunConnectDeps = {}): Promise<number> {
   const sub = argv[0];
   const rest = argv.slice(1);
 
@@ -508,6 +521,12 @@ export async function runConnect(argv: string[]): Promise<number> {
     process.stdout.write(USAGE);
     return sub === undefined ? 1 : 0;
   }
+
+  const start = deps.runStart ?? runStart;
+  const supervise = deps.runSupervise ?? runSupervise;
+  const stop = deps.runStop ?? runStop;
+  const status = deps.runStatus ?? runStatus;
+  const logs = deps.runLogs ?? runLogs;
 
   try {
     switch (sub) {
@@ -518,17 +537,20 @@ export async function runConnect(argv: string[]): Promise<number> {
       case 'remove':
         return runRemove(rest);
       case 'start':
-        return runStart();
+        // `return await` (not bare `return`) so a rejection from an async
+        // subcommand is caught by this try/catch — a bare `return promise`
+        // settles outside the try and would escape as an unhandled rejection.
+        return await start();
       case '__supervise':
         // Hidden subcommand — not shown in USAGE. Invoked by `runStart` as
         // the detached daemon entrypoint.
-        return runSupervise();
+        return await supervise();
       case 'stop':
-        return runStop();
+        return await stop();
       case 'status':
-        return runStatus();
+        return await status();
       case 'logs':
-        return runLogs(rest);
+        return await logs(rest);
       default:
         process.stderr.write(`peek connect: unknown subcommand '${sub}'\n\n`);
         process.stdout.write(USAGE);

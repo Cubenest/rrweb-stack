@@ -676,6 +676,20 @@ describe('peek connect unknown / help', () => {
     expect(code).toBe(0);
     expect(out.join('')).toMatch(/peek connect/);
   });
+
+  it('catches a rejection from an async subcommand (not an unhandled rejection)', async () => {
+    // Guards the `return await` in runConnect: a bare `return handler()` would
+    // settle the promise outside the try/catch, so a rejection would escape as
+    // an unhandled rejection instead of the clean `peek connect: <msg>` + exit 1.
+    const { err } = silenced();
+    const code = await runConnect(['status'], {
+      runStatus: async () => {
+        throw new Error('boom-status');
+      },
+    });
+    expect(code).toBe(1);
+    expect(err.join('')).toMatch(/peek connect: boom-status/);
+  });
 });
 
 // ── top-level routing ──────────────────────────────────────────────────────
