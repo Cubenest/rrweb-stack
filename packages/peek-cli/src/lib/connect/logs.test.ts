@@ -179,7 +179,7 @@ describe('tailLog (no follow)', () => {
 // ── tailLog (follow) ─────────────────────────────────────────────────────────
 
 describe('tailLog (follow)', () => {
-  it('prints tail lines then streams bytes from injected watcher', async () => {
+  it('prints tail lines then streams bytes from injected watcher — promise stays PENDING until close', async () => {
     const content = 'line 1\nline 2\n';
     const written: string[] = [];
     const fakeStdout = {
@@ -189,54 +189,59 @@ describe('tailLog (follow)', () => {
       },
     };
 
-    // A fake watcher: capture the callback and expose `emitChunk` to the test.
-    let capturedCallback: ((chunk: Buffer) => void) | undefined;
-    let closed = false;
+    // Fake watcher: captures onData (passed as watchFn arg) and fires close
+    // listeners registered via .on('close', cb).
+    let capturedOnData: ((chunk: Buffer) => void) | undefined;
+    const closeListeners: Array<() => void> = [];
     const fakeWatcher = {
-      on: (event: string, cb: (chunk: Buffer) => void) => {
-        if (event === 'data') capturedCallback = cb;
+      on(event: string, cb: (() => void) | ((chunk: Buffer) => void)) {
+        if (event === 'close') closeListeners.push(cb as () => void);
         return fakeWatcher;
       },
-      close: () => {
-        closed = true;
+      close() {
+        for (const fn of closeListeners) fn();
       },
     };
 
-    // tailLog with follow=true should return a promise that resolves after we
-    // manually end the stream.  We drive it from outside via the fake watcher.
     const tailPromise = tailLog(
       'peek-slack',
       { follow: true, lines: 2 },
       {
         readFile: async (_p: string) => content,
         watch: (_p: string, _startPos: number, onData: (chunk: Buffer) => void) => {
-          // Capture the callback so the test can emit chunks
-          capturedCallback = onData;
-          return fakeWatcher as ReturnType<typeof fakeWatcher.close> extends void
-            ? typeof fakeWatcher
-            : never;
+          capturedOnData = onData;
+          return fakeWatcher;
         },
         stdout: fakeStdout,
       },
     );
 
-    // Give the initial tail a tick to print, then simulate an appended chunk
+    // Give the initial tail a tick to write the existing lines.
     await Promise.resolve();
     await Promise.resolve();
 
-    const appended = Buffer.from('line 3\n');
-    capturedCallback?.(appended);
+    // (a) The promise must still be PENDING — race it against an already-resolved
+    // sentinel; the sentinel should win.
+    let tailResolved = false;
+    void tailPromise.then(() => {
+      tailResolved = true;
+    });
+    await Promise.resolve();
+    expect(tailResolved).toBe(false);
 
-    // Resolve the follow promise by closing the stream
+    // (b) Simulate a newly appended chunk — it must reach stdout.
+    capturedOnData?.(Buffer.from('line 3\n'));
+    await Promise.resolve();
+
+    // (c) Close the watcher — the promise must now settle.
     fakeWatcher.close();
-    // Allow the implementation to settle (it may use a promise-based teardown)
-    await tailPromise.catch(() => {});
+    await tailPromise;
 
     const combined = written.join('');
     expect(combined).toContain('line 1');
     expect(combined).toContain('line 2');
     expect(combined).toContain('line 3');
-    void closed;
+    expect(tailResolved).toBe(true);
   });
 
   it('does NOT throw when file is absent in follow mode — prints "no logs yet" then watches', async () => {
@@ -249,9 +254,15 @@ describe('tailLog (follow)', () => {
     };
 
     let watchCalled = false;
+    const closeListeners: Array<() => void> = [];
     const fakeWatcher = {
-      on: (_event: string, _cb: unknown) => fakeWatcher,
-      close: () => {},
+      on(event: string, cb: (() => void) | ((chunk: Buffer) => void)) {
+        if (event === 'close') closeListeners.push(cb as () => void);
+        return fakeWatcher;
+      },
+      close() {
+        for (const fn of closeListeners) fn();
+      },
     };
 
     const tailPromise = tailLog(
@@ -272,7 +283,7 @@ describe('tailLog (follow)', () => {
     await Promise.resolve();
     await Promise.resolve();
     fakeWatcher.close();
-    await tailPromise.catch(() => {});
+    await tailPromise;
 
     expect(written.join('')).toMatch(/no logs yet for peek-slack/);
     expect(watchCalled).toBe(true);

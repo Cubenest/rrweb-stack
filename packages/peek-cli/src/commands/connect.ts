@@ -453,7 +453,17 @@ export async function runLogs(rest: string[], deps?: RunLogsDeps): Promise<numbe
   }
 
   const linesRaw = values.lines;
-  const lines = linesRaw !== undefined ? Number.parseInt(linesRaw, 10) : undefined;
+  let lines: number | undefined;
+  if (linesRaw !== undefined) {
+    const parsed = Number.parseInt(linesRaw, 10);
+    if (Number.isNaN(parsed) || parsed <= 0) {
+      process.stderr.write(
+        `peek connect logs: --lines must be a positive integer, got '${linesRaw}'\n`,
+      );
+      return 1;
+    }
+    lines = parsed;
+  }
 
   await tailLog(
     name,

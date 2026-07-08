@@ -2,7 +2,7 @@
 // Task 7 introduces the paths; Task 9 (peek connect logs) extends this module
 // with tail / streaming utilities.
 
-import { createReadStream, readdirSync } from 'node:fs';
+import { createReadStream, watch as fsWatch, readdirSync } from 'node:fs';
 import { readFile as _readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { peekHomeDir } from '../peek-home.js';
@@ -39,6 +39,7 @@ export function listLogs(): string[] {
 /** Minimal readable-stream handle returned by the injectable `watch` dep. */
 export interface LogWatcher {
   on(event: 'data', cb: (chunk: Buffer) => void): this;
+  on(event: 'close', cb: () => void): this;
   close(): void;
 }
 
@@ -91,18 +92,30 @@ export async function tailLog(
   const watchFn =
     deps?.watch ??
     ((path: string, startPos: number, onData: (chunk: Buffer) => void): LogWatcher => {
-      const stream = createReadStream(path, { start: startPos });
-      stream.on('data', (chunk) => {
-        onData(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+      // Track the byte cursor so each change event reads only newly-appended
+      // bytes (createReadStream reads bytes present at open time only and
+      // never sees future appends — fs.watch fires on each write).
+      let pos = startPos;
+      const closeListeners: Array<() => void> = [];
+
+      const watcher = fsWatch(path, () => {
+        const stream = createReadStream(path, { start: pos });
+        stream.on('data', (chunk) => {
+          const buf = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+          pos += buf.length;
+          onData(buf);
+        });
+        stream.on('end', () => stream.destroy());
       });
+
       return {
         on(event, cb) {
-          if (event === 'data')
-            stream.on('data', (chunk) => cb(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk)));
+          if (event === 'close') closeListeners.push(cb as () => void);
           return this;
         },
         close() {
-          stream.destroy();
+          watcher.close();
+          for (const fn of closeListeners) fn();
         },
       };
     });
@@ -149,7 +162,11 @@ export async function tailLog(
   await _watchStream(name, fileSize, watchFn, stdout);
 }
 
-/** Stream newly-appended bytes from `logPath` starting at `startPos`. */
+/** Stream newly-appended bytes from `logPath` starting at `startPos`.
+ * The returned promise stays PENDING while following and settles only when
+ * the watcher emits a `'close'` event (or its `close()` method is called).
+ * In production the caller (or a SIGINT/SIGTERM handler) calls `watcher.close()`
+ * to tear down; in tests the fake watcher fires the `'close'` listener. */
 function _watchStream(
   name: string,
   startPos: number,
@@ -161,16 +178,8 @@ function _watchStream(
       stdout.write(chunk.toString('utf8'));
     });
 
-    // The watcher resolves when closed (signal / test teardown).
-    // We expose close via the returned handle; we listen to 'data' inline
-    // via the onData callback passed to watchFn, so no extra .on() call needed.
-    // To allow the promise to settle in tests, resolve on the next tick after
-    // the watcher object is returned (tests call close() synchronously after
-    // emitting chunks).
-    void watcher; // used only for its close() side-effect (tests call it directly)
-    // Resolve immediately — follow mode in production stays alive because
-    // the real createReadStream keeps the event loop open.  Tests drive
-    // teardown by calling close() and awaiting the returned promise.
-    resolve();
+    // Resolve only when the watcher signals it has been closed — this keeps
+    // the promise (and the CLI process) alive while --follow is active.
+    watcher.on('close', resolve);
   });
 }

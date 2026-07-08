@@ -546,14 +546,21 @@ describe('peek connect logs', () => {
     expect(written.join('')).toContain('line3');
   });
 
-  it('calls tailLog with --follow flag and streams chunks via injected watcher', async () => {
+  it('calls tailLog with --follow flag and streams chunks via injected watcher — promise stays PENDING until close', async () => {
     const content = 'line1\nline2\n';
     const written: string[] = [];
 
     let emitChunk: ((chunk: Buffer) => void) | undefined;
+    // Fake watcher that implements the full on('close') / close() lifecycle.
+    const closeListeners: Array<() => void> = [];
     const fakeWatcher = {
-      on: (_event: string, _cb: unknown) => fakeWatcher,
-      close: () => {},
+      on(event: string, cb: (() => void) | ((chunk: Buffer) => void)) {
+        if (event === 'close') closeListeners.push(cb as () => void);
+        return fakeWatcher;
+      },
+      close() {
+        for (const fn of closeListeners) fn();
+      },
     };
 
     const tailPromise = runLogs(['peek-slack', '--follow'], {
@@ -570,15 +577,44 @@ describe('peek connect logs', () => {
       },
     });
 
+    // Give the initial tail a tick to write existing lines.
     await Promise.resolve();
     await Promise.resolve();
+
+    // The promise must still be PENDING at this point.
+    let resolved = false;
+    void tailPromise.then(() => {
+      resolved = true;
+    });
+    await Promise.resolve();
+    expect(resolved).toBe(false);
+
+    // Emit an appended chunk — it must reach stdout.
     emitChunk?.(Buffer.from('line3\n'));
+    await Promise.resolve();
+
+    // Close the watcher — the promise must now settle.
     fakeWatcher.close();
     await tailPromise;
 
     const combined = written.join('');
     expect(combined).toContain('line1');
     expect(combined).toContain('line3');
+    expect(resolved).toBe(true);
+  });
+
+  it('returns 1 and prints error when --lines is not a valid positive integer', async () => {
+    const { err } = silenced();
+    const code = await runLogs(['peek-slack', '--lines', 'foo']);
+    expect(code).toBe(1);
+    expect(err.join('')).toMatch(/--lines must be a positive integer/);
+  });
+
+  it('returns 1 and prints error when --lines is zero', async () => {
+    const { err } = silenced();
+    const code = await runLogs(['peek-slack', '--lines', '0']);
+    expect(code).toBe(1);
+    expect(err.join('')).toMatch(/--lines must be a positive integer/);
   });
 
   it('routes through runConnect correctly (logs → runLogs)', async () => {
