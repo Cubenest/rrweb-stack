@@ -12,6 +12,7 @@
 // first positional so each subcommand owns its own option schema.
 
 import { runAudit } from './commands/audit.js';
+import { runConnect } from './commands/connect.js';
 import { runInit } from './commands/init.js';
 import { runRetention } from './commands/retention.js';
 import { runSessions } from './commands/sessions.js';
@@ -33,6 +34,7 @@ Commands:
   audit log                    Show the act-tool audit log (--since/--tool/--client)
   audit verify                 Verify the audit log hash chain (exit 0 ok, 1 anomaly, 2 tampered)
   retention <set|show|preview|apply>  Manage the storage retention policy (prune old sessions)
+  connect <add|list|remove|start|stop|status|logs>  Manage connector daemons (SP6b-2)
 
 Run \`peek <command> --help\` for command-specific options.
 
@@ -52,6 +54,8 @@ export async function run(argv: readonly string[]): Promise<number> {
       return runAudit(rest);
     case 'retention':
       return runRetention(rest);
+    case 'connect':
+      return runConnect(rest);
     case 'init':
       return runInit(rest);
     case 'version':
