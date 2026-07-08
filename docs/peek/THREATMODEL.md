@@ -1,8 +1,12 @@
-# peek — threat model (DRAFT)
+# peek — threat model
 
-**Status:** stub. To be filled in before public Chrome Web Store submission
-(Phase 5 launch gate). Existence-tracking only — the gap is intentionally
-visible.
+**Status:** substantive — all eight attack surfaces enumerated, existing
+mitigations documented, and outstanding items tracked with explicit scope
+labels. The extension is live on the Chrome Web Store. Residual gaps
+(content-script isolation hardening, native-host fuzz coverage, CWS
+publisher 2FA recovery, CDP-debugger UX wording, `execute_action` schema
+versioning) are accepted pre-1.0 scope and tracked below under
+[Outstanding mitigations](#outstanding-mitigations).
 
 **Owner:** harry-harish.
 
@@ -11,11 +15,6 @@ mitigations for `@peekdev/extension`, `@peekdev/mcp`, and `@peekdev/cli`.
 Cross-referenced from [`SECURITY.md`](../../SECURITY.md) and the
 project's pre-launch supply-chain hygiene controls (see
 `docs/SUSTAINABILITY.md` §"Pre-launch hygiene controls").
-
-When this stub is replaced, follow the format described in the OSS
-Maintenance Field Manual §5.3 — one surface per row in each table,
-explicit grade (`mitigated` / `partial` / `accepted` / `open`), and a
-"why we live with it" column for any accepted risk.
 
 ## Attack surfaces to cover
 
