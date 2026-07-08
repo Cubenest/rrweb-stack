@@ -1,5 +1,147 @@
 # @peekdev/mcp
 
+## 0.1.0-alpha.23
+
+### Minor Changes
+
+- 4b5eabb: peek: causal-chain enrichment of the forensic read tools
+
+  `get_user_action_before_error` now returns a pre-assembled causal chain — a single time-ordered `timeline` (user action → DOM mutation → network/console error) plus grouped `domMutations`/`networkErrors`, the seed `error`, and a deterministic `narrative` — instead of just the action list. A new `windowMs` parameter bounds the correlated context. `query_dom_history` gains a selector-free window mode (`ts` + `windowMs`) returning DOM changes in a time window with `target` hints. All additive; no LLM, no new egress.
+
+- 945f4f2: peek: faster DOM reconstruction on long sessions
+
+  `get_dom_snapshot` now loads only the event chunks it needs — from the nearest
+  full snapshot at or before the requested timestamp through that timestamp — using
+  the existing per-chunk time index, instead of decompressing the entire session
+  blob. On a long recording this turns an O(n)-decompress into reading a handful of
+  chunks. Output is byte-identical. `selectorFor` is now memoized per snapshot
+  index, speeding selector-based `query_dom_history` lookups. No schema change;
+  falls back to the full load when the chunk index is unavailable.
+
+- 9ddf4d1: peek: richer live page-inspection in `get_element_detail`
+
+  `get_element_detail` now returns a curated, masked computed-style bag, the
+  accessible description (resolved from `aria-describedby` / `aria-description`),
+  and effective `aria-hidden` / `aria-disabled` inheritance flags — all Level-1
+  read-tier, DOM-only (no CDP, no eval), and masked (in-page redaction for
+  `.rr-mask`/`[data-private]` regions plus service-worker-side masking of the
+  description text and every `url()` in `background-image`). Live console/network
+  state remains available via the existing `get_session_console_errors` /
+  `get_session_network_errors` tools. Additive; no schema, permission, or tool
+  change.
+
+- 679d3cf: Add a read-only `search_sessions` MCP tool: find recorded sessions by title/URL/origin text plus facets (origin, date range, status, console/network errors). Returns the same rows as list_recent_sessions.
+- 12f0464: peek: set_intent accepts an optional status
+
+  The set_intent tool now takes an optional status: 'done' | 'failed'. Pass it
+  at the end of an assisted-apply loop to show a clear terminal banner on the
+  control shield — green for done, red for failed. Omitting status keeps the
+  previous behavior (a plain status label).
+
+- 4683ce4: Add a read-only `verify_audit_log` MCP tool that verifies peek's local action audit-log hash chain and reports its integrity (intact / broken / truncated / tail-tampered / prefix-tampered / gaps / incomplete-final / head-missing).
+- 8df4e25: peek: session-to-repro hardening
+
+  `generate_playwright_repro` now emits Playwright semantic locators (`getByTestId` / `getByRole` / `getByPlaceholder` / `getByText`, each uniqueness-checked, with a CSS `page.locator(...)` fallback) instead of bare CSS selectors, and accepts an optional `errorId` that seeds a console-error-absence regression assertion (`page.on('console', …)` + `expect(consoleErrors.join('\n')).not.toContain(<captured message>)`) — so the repro fails while the bug is present and passes once fixed. The shared CSS selector heuristic also prefers `[aria-label]`/`[placeholder]` over `:nth-of-type`, improving the other read tools too. Additive; deterministic; no new egress.
+
+- 7ce7403: peek: tamper-evident (hash-chained) audit log + `peek audit verify`
+
+  The local action audit log (`~/.peek/audit.log`) is now hash-chained — each
+  entry carries a `seq` counter and a `prevHash` field (SHA-256 of the previous
+  line), serialized under a file lock, with a small `audit.head.json` sidecar
+  that records the tail hash for truncation detection. The new `peek audit
+verify` command recomputes the chain and reports whether it is intact, or
+  pinpoints the first broken line.
+
+  The audit log is **tamper-evident, not tamper-proof** — it detects accidental
+  corruption, truncation, reordering, and edits, but does not stop a determined
+  local attacker who recomputes the whole chain. There are no keys, no external
+  anchor, and no egress.
+
+### Patch Changes
+
+- 1b85e5a: chore(deps): bump better-sqlite3 to ^12.11.1.
+
+  Routine runtime-dependency patch for the native SQLite driver (12.10.0 →
+  12.11.1; 12.11.0 was unpublished). Node-22 prebuilt binaries unaffected. Part
+  of the Tier A/C safe minor+patch upgrade batch; all other bumps in that batch
+  are dev-only and not user-visible.
+
+- 7f17ad0: peek: guide agents to re-verify each step of the assisted-apply loop
+
+  The MCP server instructions and the execute_action / set_intent tool descriptions
+  now spell out the "apply and re-verify" convention: after a mutating action, the
+  agent re-reads the target (get_element_detail for the value, get_page_view for a
+  validation error) before advancing the status banner, and stops and reports if a
+  step didn't take rather than retrying blindly. Password/email/PII values stay
+  masked, so those are verified by the absence of an error. Guidance only — no new
+  tool, permission, or behavior change.
+
+- f9fc8c3: Document installing peek as a Claude Code plugin (`/plugin marketplace add
+Cubenest/rrweb-stack` → `/plugin install peek@peek`). README-only; the plugin
+  manifests live at the repo root (`.claude-plugin/marketplace.json`,
+  `plugins/peek/`).
+- 014d7ce: peek: connector pairing / attestation (SP4)
+
+  Connectors now pair with peek via a matching-code trust-dial handshake: the
+  service worker mints a secret, stores only its hash (chrome.storage.local), and
+  returns the plaintext once. The connector presents the secret on each action;
+  the SW verifies it, and the Level-3 banner-less delegated-consent path now
+  requires a verified paired connector — closing the forge-the-flag gap that a
+  bare consentDelegated flag left open. Destructive actions still force the local
+  banner; TOCTOU revalidation still applies; delegation never escalates below
+  Level 3; direct clients are unaffected. Pairings are revocable on the trust
+  dial. No new egress.
+
+- 521cc05: peek: delegated consent via MCP elicitation for the `execute_action` tool
+
+  When an MCP client advertises the `elicitation.form` capability (connectors that
+  relay consent to a human over chat, not the browser confirm banner), the peek
+  MCP server now elicits delegated consent before running `execute_action`:
+  `dispatchActTool` calls a defensive elicitation helper (capability-probe → race a
+  120 s timeout → degrade, never throws) and, on a declined/cancelled/timed-out
+  elicitation, short-circuits to `{ verdict: 'deny', … }` **before** the host bridge
+  runs the action. Clients that do not advertise elicitation (e.g. Claude Code) are
+  unaffected — the server proceeds exactly as before. Uniform for `execute_action`;
+  peek does not classify destructive-vs-safe (the extension gate remains the
+  backstop). No new egress.
+
+- 5c736d4: docs: the peek Chrome extension is now live on the Chrome Web Store.
+
+  Install guidance now leads with the Chrome Web Store listing
+  (<https://chromewebstore.google.com/detail/peek/dmgpmkeneheenpdnfmpjjahnkknkaejb>)
+  as the primary path, with "load unpacked from `packages/peek-extension/chrome-mv3/`"
+  demoted to a contributor/local-build fallback. The `@peekdev/extension` package's
+  npm status is unchanged — it remains `private` and is not published to npm; only
+  the Chrome-Web-Store availability wording changed. Docs-only; no code change.
+
+- 58b4b8c: peek: Level-3 banner-less delegated consent for connectors (SP3b)
+
+  When an elicitation-capable connector obtains a human's approval off-device
+  (SP3a), peek-mcp now attaches `consentDelegated` to the action request, and the
+  extension service worker skips its Level-3 local banner for non-destructive
+  actions — dispatching banner-less and recording a distinct `connector-elicit`
+  approver. Destructive actions still always force the local banner; the
+  dispatch-time TOCTOU re-check still applies; delegation never escalates below
+  Level 3; direct clients (e.g. Claude Code) are unaffected. No new egress.
+
+- 7718713: Positioning reframe: lead every surface with the read-path forensic story —
+  "debug what already happened in your real browser." Rewrites the MCP server
+  instructions + entry-tool descriptions, the package READMEs and descriptions,
+  and the extension's tagline around forensic read access (sessions you already
+  lived: DOM history, console/network errors, the action before an error) with
+  the Playwright repro as the payoff. No API, schema, or behavior change.
+- 475c640: Rename the Claude Code plugin `peek` → `peekdev` (community-catalog
+  de-confliction).
+
+  The bare plugin name `peek` is already held in Anthropic's `claude-community`
+  marketplace by an unrelated project (gopeek.ai), and catalog entry names are
+  globally unique — so our plugin can only be listed under a distinct name. The
+  plugin is renamed in `plugins/peek/.claude-plugin/plugin.json` and the repo
+  marketplace entry, and this package's README "Install as a Claude Code plugin"
+  command is updated to `/plugin install peekdev@peek` to match. The MCP server
+  name (`peek`) and the tool namespace (`mcp__peek__*`) are unchanged; only the
+  plugin's install/skill identity moves to `peekdev`.
+
 ## 0.1.0-alpha.22
 
 ### Minor Changes

@@ -1,6 +1,6 @@
 {
   "name": "@peekdev/mcp",
-  "version": "0.1.0-alpha.22",
+  "version": "0.1.0-alpha.23",
   "mcpName": "io.github.Cubenest/peek-mcp",
   "description": "local-first browser-session forensics + repro for AI coding agents. peek's native messaging host + stdio MCP server — owns ~/.peek/sessions.db (better-sqlite3) and bridges the browser extension, CLI, and AI tools to one local source of truth.",
   "keywords": [
