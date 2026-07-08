@@ -1,5 +1,128 @@
 # @peekdev/cli
 
+## 0.1.0-alpha.29
+
+### Minor Changes
+
+- 4683ce4: Add `peek audit bundle` to package the audit log + head into a portable `*.peekaudit` evidence archive (SHA-256 integrity manifest), and `peek audit verify --bundle <file>` to verify a received archive (archive integrity + hash chain). Skill updated for the new `verify_audit_log` tool (17 tools).
+- 4a22113: peek: `peek connect` — a supervised daemon for running connectors locally
+
+  New `peek connect` command: register connectors (add/list/remove) in
+  ~/.peek/connect/connectors.json, and start/stop/status/logs a detached
+  supervisor that spawns, monitors, and restarts-with-backoff each connector as a
+  subprocess (single-instance lock, per-connector logs). Connectors are launched
+  by a descriptor-default command (e.g. peek-connector-slack) or a per-entry
+  override; peek-cli depends on no connector package. Autostart and a dashboard
+  are future work.
+
+- 68908e6: peek: explicit, configurable session retention
+
+  New `peek retention` command bounds the local store without ever deleting
+  silently. Configure a policy (`set --max-age <dur> --max-size <size> --keep <n>`),
+  see exactly what would be removed (`preview`), then prune (`apply`, with a
+  confirmation unless `--yes`). Pruning is age- and/or disk-based with an absolute
+  "keep the last N most-recent" floor, never removes an active (in-progress)
+  recording (unless you pass `--include-stale-active` for crashed sessions), and
+  frees the on-disk event blobs. `peek status` now reports total store size and how
+  much is over your policy. Local-only; no telemetry.
+
+- b720ccb: Local file-based session export/import: `peek sessions export <id> --format bundle`
+  writes a portable, self-contained `*.peekbundle` (a gzipped tar of the rrweb event
+  stream + console/network rows + metadata, with a SHA-256 integrity manifest and an
+  honest masking caveat), and a new `peek sessions import <file>` reconstructs the
+  session in the local store (mint-new-id by default; `--keep-id`/`--force` to
+  preserve). No cloud, no account — an explicit, local-first file handoff.
+- 679d3cf: Add `peek sessions search` (--q / --origin / --since / --until / --status / --errors / --limit / --json) to search recorded sessions by metadata + facets. Skill updated for the new `search_sessions` tool.
+- 7ce7403: peek: tamper-evident (hash-chained) audit log + `peek audit verify`
+
+  The local action audit log (`~/.peek/audit.log`) is now hash-chained — each
+  entry carries a `seq` counter and a `prevHash` field (SHA-256 of the previous
+  line), serialized under a file lock, with a small `audit.head.json` sidecar
+  that records the tail hash for truncation detection. The new `peek audit
+verify` command recomputes the chain and reports whether it is intact, or
+  pinpoints the first broken line.
+
+  The audit log is **tamper-evident, not tamper-proof** — it detects accidental
+  corruption, truncation, reordering, and edits, but does not stop a determined
+  local attacker who recomputes the whole chain. There are no keys, no external
+  anchor, and no egress.
+
+### Patch Changes
+
+- 1b85e5a: chore(deps): bump better-sqlite3 to ^12.11.1.
+
+  Routine runtime-dependency patch for the native SQLite driver (12.10.0 →
+  12.11.1; 12.11.0 was unpublished). Node-22 prebuilt binaries unaffected. Part
+  of the Tier A/C safe minor+patch upgrade batch; all other bumps in that batch
+  are dev-only and not user-visible.
+
+- c4d65b0: docs(peek-cli): document the peek connect and peek sessions search commands in the README
+- 5c736d4: docs: the peek Chrome extension is now live on the Chrome Web Store.
+
+  Install guidance now leads with the Chrome Web Store listing
+  (<https://chromewebstore.google.com/detail/peek/dmgpmkeneheenpdnfmpjjahnkknkaejb>)
+  as the primary path, with "load unpacked from `packages/peek-extension/chrome-mv3/`"
+  demoted to a contributor/local-build fallback. The `@peekdev/extension` package's
+  npm status is unchanged — it remains `private` and is not published to npm; only
+  the Chrome-Web-Store availability wording changed. Docs-only; no code change.
+
+- 7718713: Positioning reframe: lead every surface with the read-path forensic story —
+  "debug what already happened in your real browser." Rewrites the MCP server
+  instructions + entry-tool descriptions, the package READMEs and descriptions,
+  and the extension's tagline around forensic read access (sessions you already
+  lived: DOM history, console/network errors, the action before an error) with
+  the Playwright repro as the payoff. No API, schema, or behavior change.
+- b12534d: peek skill: document all 16 tools (was 14)
+
+  The bundled Claude Code skill (installed by `peek init`) now lists peek's two
+  live-page read tools — `get_page_view` and `get_element_detail` — and corrects
+  the tool count from 14 to 16. Documentation only; both tools already shipped.
+
+- f9fc8c3: Correct the docs URL in the peek skill (`cubenest.in/peek` → `peek.cubenest.in`)
+  to match the canonical docs host used everywhere else.
+- 240aa3b: peek init: write the correct MCP config key for VS Code
+
+  `peek init` now writes the `servers` root key to `.vscode/mcp.json` for VS Code
+  (VS Code reads MCP servers from `servers`, with `type` inferred as stdio),
+  instead of `mcpServers` — the previous output was silently ignored by VS Code.
+  Other clients are unchanged (they use `mcpServers`).
+
+- 5c736d4: docs: README accuracy pass — peek act surface, CLI commands, and adapter options.
+
+  peek is no longer read-only in the docs: `@peekdev/cli` now states peek reads
+  recorded sessions **and**, with explicit per-origin consent, drives the live
+  page; the MCP tool count is corrected to 16 (adds the live ref-tagged page view
+  alongside the act/handoff tools); and the `Commands` block is rewritten to match
+  the actual CLI — `peek audit log` (with `--since/--tool/--client/--json`),
+  `peek sessions list/export/delete` flags, the `markdown` export default, and a
+  note that `--format html` is reserved/unimplemented.
+
+  Adapter/engine accuracy: `@tracelane/wdio` documents the real default-on
+  `security` option and the `consolePluginOptions` pass-through; `@tracelane/cli`
+  documents the shipped `tracelane index` subcommand; `@tracelane/core` drops the
+  invented "Q4 2026" Cypress ship date (Cypress is "on the roadmap"); and
+  `@tracelane/report` documents the advisory security panel and `buildReport`'s
+  optional `options` argument. Docs-only; no code change.
+
+- Updated dependencies [4b5eabb]
+- Updated dependencies [1b85e5a]
+- Updated dependencies [7f17ad0]
+- Updated dependencies [f9fc8c3]
+- Updated dependencies [014d7ce]
+- Updated dependencies [945f4f2]
+- Updated dependencies [521cc05]
+- Updated dependencies [5c736d4]
+- Updated dependencies [58b4b8c]
+- Updated dependencies [9ddf4d1]
+- Updated dependencies [7718713]
+- Updated dependencies [679d3cf]
+- Updated dependencies [12f0464]
+- Updated dependencies [4683ce4]
+- Updated dependencies [475c640]
+- Updated dependencies [8df4e25]
+- Updated dependencies [7ce7403]
+  - @peekdev/mcp@0.1.0-alpha.23
+
 ## 0.1.0-alpha.28
 
 ### Patch Changes
