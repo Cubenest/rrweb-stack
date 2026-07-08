@@ -1,10 +1,10 @@
-// Tests for the Supervisor core — spawn + monitor + status (SP6b-2 Task 4).
+// Tests for the Supervisor core — spawn + monitor + status (SP6b-2 Task 4 + 5).
 // All I/O is injected: fake spawn returns a controllable ChildLike backed by a
 // tiny EventEmitter stub; writeStatus captures calls; resolveSpawn is a
 // pass-through that returns fixed command/args.
 
 import { EventEmitter } from 'node:events';
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import type { ConnectorEntry } from './registry.js';
 import { type ChildLike, type ConnectorStatus, Supervisor } from './supervisor.js';
 
@@ -35,16 +35,76 @@ function makeChild(pid: number): FakeChild {
   };
 }
 
+// ── Fake timer ─────────────────────────────────────────────────────────────
+
+interface ScheduledTimer {
+  fn: () => void;
+  ms: number;
+  handle: symbol;
+  cancelled: boolean;
+}
+
+interface FakeTimers {
+  scheduled: ScheduledTimer[];
+  /** Invoke the first non-cancelled pending timer (oldest). */
+  advanceNext(): void;
+  /** Invoke all non-cancelled pending timers. */
+  advanceAll(): void;
+}
+
+function makeFakeTimers(): {
+  timers: FakeTimers;
+  setTimer: (fn: () => void, ms: number) => unknown;
+  clearTimer: (t: unknown) => void;
+} {
+  const scheduled: ScheduledTimer[] = [];
+
+  const setTimer = (fn: () => void, ms: number): unknown => {
+    const handle = Symbol('timer');
+    scheduled.push({ fn, ms, handle, cancelled: false });
+    return handle;
+  };
+
+  const clearTimer = (t: unknown): void => {
+    for (const timer of scheduled) {
+      if (timer.handle === t) {
+        timer.cancelled = true;
+      }
+    }
+  };
+
+  const timers: FakeTimers = {
+    scheduled,
+    advanceNext() {
+      const t = scheduled.find((x) => !x.cancelled);
+      if (t) {
+        t.cancelled = true;
+        t.fn();
+      }
+    },
+    advanceAll() {
+      const pending = scheduled.filter((x) => !x.cancelled);
+      for (const t of pending) {
+        t.cancelled = true;
+        t.fn();
+      }
+    },
+  };
+
+  return { timers, setTimer, clearTimer };
+}
+
 // ── Fake deps factory ──────────────────────────────────────────────────────
 
 interface FakeDeps {
   spawnCalls: Array<{ command: string; args: string[]; name: string }>;
   statusSnapshots: Array<Record<string, ConnectorStatus>>;
-  children: Map<string, FakeChild>; // name → child (keyed by 3rd spawn arg)
+  children: Map<string, FakeChild>; // name → most-recently spawned child
   nextPid: number;
+  nowMs: number; // fake wall clock; advance to simulate time passing
 }
 
-function makeDeps(fakeDepsOut: FakeDeps) {
+function makeDeps(fakeDepsOut: FakeDeps, fakeTimers: ReturnType<typeof makeFakeTimers>) {
   // resolveSpawn: return a predictable command from the entry's surface name
   const resolveSpawn = (entry: ConnectorEntry) => ({
     command: `peek-connector-${entry.surface}`,
@@ -68,9 +128,9 @@ function makeDeps(fakeDepsOut: FakeDeps) {
 
   return {
     spawn,
-    now: () => 0,
-    setTimer: vi.fn((_fn: () => void, _ms: number) => undefined as unknown),
-    clearTimer: vi.fn((_t: unknown) => undefined),
+    now: () => fakeDepsOut.nowMs,
+    setTimer: fakeTimers.setTimer,
+    clearTimer: fakeTimers.clearTimer,
     resolveSpawn,
     writeStatus,
   };
@@ -82,7 +142,17 @@ function makeFakeDeps(): FakeDeps {
     statusSnapshots: [],
     children: new Map(),
     nextPid: 100,
+    nowMs: 0,
   };
+}
+
+// Helper: build a complete supervisor + fake deps wired together
+function makeSupFromConnectors(connectors: Record<string, ConnectorEntry>) {
+  const out = makeFakeDeps();
+  const ft = makeFakeTimers();
+  const deps = makeDeps(out, ft);
+  const sup = new Supervisor(connectors, deps);
+  return { sup, out, ft, deps };
 }
 
 // ── Tests ──────────────────────────────────────────────────────────────────
@@ -90,7 +160,8 @@ function makeFakeDeps(): FakeDeps {
 describe('Supervisor.start()', () => {
   it('spawns an enabled connector via resolveSpawn with correct command, args, and name', () => {
     const out = makeFakeDeps();
-    const deps = makeDeps(out);
+    const ft = makeFakeTimers();
+    const deps = makeDeps(out, ft);
     const connectors: Record<string, ConnectorEntry> = {
       'peek-slack': { surface: 'slack', enabled: true },
     };
@@ -109,7 +180,8 @@ describe('Supervisor.start()', () => {
 
   it('does NOT spawn a disabled connector', () => {
     const out = makeFakeDeps();
-    const deps = makeDeps(out);
+    const ft = makeFakeTimers();
+    const deps = makeDeps(out, ft);
     const connectors: Record<string, ConnectorEntry> = {
       'peek-slack': { surface: 'slack', enabled: false },
     };
@@ -122,7 +194,8 @@ describe('Supervisor.start()', () => {
 
   it('calls writeStatus after spawning with state=running and pid set', () => {
     const out = makeFakeDeps();
-    const deps = makeDeps(out);
+    const ft = makeFakeTimers();
+    const deps = makeDeps(out, ft);
     const connectors: Record<string, ConnectorEntry> = {
       'peek-slack': { surface: 'slack', enabled: true },
     };
@@ -145,7 +218,8 @@ describe('Supervisor.start()', () => {
 
   it('spawns both enabled connectors when two are present', () => {
     const out = makeFakeDeps();
-    const deps = makeDeps(out);
+    const ft = makeFakeTimers();
+    const deps = makeDeps(out, ft);
     const connectors: Record<string, ConnectorEntry> = {
       'peek-slack': { surface: 'slack', enabled: true },
       'peek-discord': { surface: 'discord', enabled: true },
@@ -168,7 +242,8 @@ describe('Supervisor.start()', () => {
 
   it('skips disabled connectors but still spawns enabled ones in mixed set', () => {
     const out = makeFakeDeps();
-    const deps = makeDeps(out);
+    const ft = makeFakeTimers();
+    const deps = makeDeps(out, ft);
     const connectors: Record<string, ConnectorEntry> = {
       'peek-slack': { surface: 'slack', enabled: true },
       'peek-teams': { surface: 'teams', enabled: false },
@@ -192,7 +267,8 @@ describe('Supervisor.start()', () => {
 describe('Supervisor — on child exit (Task-4 behavior)', () => {
   it('marks the connector stopped with lastExitCode after child exits', () => {
     const out = makeFakeDeps();
-    const deps = makeDeps(out);
+    const ft = makeFakeTimers();
+    const deps = makeDeps(out, ft);
     const connectors: Record<string, ConnectorEntry> = {
       'peek-slack': { surface: 'slack', enabled: true },
     };
@@ -213,14 +289,15 @@ describe('Supervisor — on child exit (Task-4 behavior)', () => {
     const entry = last['peek-slack'];
     expect(entry).toBeDefined();
     if (!entry) return;
-    expect(entry.state).toBe('stopped');
+    // Task 5: after exit it's backing-off now, not stopped
+    expect(entry.state).toBe('backing-off');
     expect(entry.lastExitCode).toBe(1);
-    expect(entry.restarts).toBe(0);
   });
 
   it('handles a null exit code (process.kill SIGTERM) and omits lastExitCode', () => {
     const out = makeFakeDeps();
-    const deps = makeDeps(out);
+    const ft = makeFakeTimers();
+    const deps = makeDeps(out, ft);
     const connectors: Record<string, ConnectorEntry> = {
       'peek-slack': { surface: 'slack', enabled: true },
     };
@@ -239,7 +316,8 @@ describe('Supervisor — on child exit (Task-4 behavior)', () => {
     const entry = last['peek-slack'];
     expect(entry).toBeDefined();
     if (!entry) return;
-    expect(entry.state).toBe('stopped');
+    // Task 5: after exit it's backing-off now
+    expect(entry.state).toBe('backing-off');
     // `lastExitCode` must be absent (exactOptionalPropertyTypes compliance).
     expect('lastExitCode' in entry).toBe(false);
   });
@@ -248,7 +326,8 @@ describe('Supervisor — on child exit (Task-4 behavior)', () => {
 describe('Supervisor.shutdown()', () => {
   it('does not throw (stub behavior for Task 4)', () => {
     const out = makeFakeDeps();
-    const deps = makeDeps(out);
+    const ft = makeFakeTimers();
+    const deps = makeDeps(out, ft);
     const connectors: Record<string, ConnectorEntry> = {
       'peek-slack': { surface: 'slack', enabled: true },
     };
@@ -256,5 +335,258 @@ describe('Supervisor.shutdown()', () => {
     const sup = new Supervisor(connectors, deps);
     sup.start();
     expect(() => sup.shutdown()).not.toThrow();
+  });
+});
+
+// ── Task 5: restart-with-backoff ───────────────────────────────────────────
+
+describe('Supervisor — restart-with-backoff (Task 5)', () => {
+  it('schedules a restart after 1000ms on first exit', () => {
+    const { sup, out, ft } = makeSupFromConnectors({
+      'peek-slack': { surface: 'slack', enabled: true },
+    });
+    sup.start();
+
+    const child = out.children.get('peek-slack');
+    expect(child).toBeDefined();
+    if (!child) return;
+
+    child.emitExit(1);
+
+    // Should have scheduled exactly one timer for 1000ms
+    const pending = ft.timers.scheduled.filter((t) => !t.cancelled);
+    expect(pending).toHaveLength(1);
+    expect(pending[0]?.ms).toBe(1000);
+
+    // Status should be backing-off
+    const last = out.statusSnapshots[out.statusSnapshots.length - 1];
+    const entry = last?.['peek-slack'];
+    expect(entry?.state).toBe('backing-off');
+    expect(entry?.nextRetryAtMs).toBe(1000);
+  });
+
+  it('respawns the connector when the timer fires', () => {
+    const { sup, out, ft } = makeSupFromConnectors({
+      'peek-slack': { surface: 'slack', enabled: true },
+    });
+    sup.start();
+    expect(out.spawnCalls).toHaveLength(1);
+
+    out.children.get('peek-slack')?.emitExit(1);
+
+    // Advance the clock past 1000ms and fire the timer
+    out.nowMs = 1001;
+    ft.timers.advanceNext();
+
+    // A second spawn should have happened
+    expect(out.spawnCalls).toHaveLength(2);
+
+    // Status should be running again with restarts=1
+    const last = out.statusSnapshots[out.statusSnapshots.length - 1];
+    const entry = last?.['peek-slack'];
+    expect(entry?.state).toBe('running');
+    expect(entry?.restarts).toBe(1);
+  });
+
+  it('doubles the backoff delay on consecutive exits: 1000ms → 2000ms → 4000ms', () => {
+    const { sup, out, ft } = makeSupFromConnectors({
+      'peek-slack': { surface: 'slack', enabled: true },
+    });
+    sup.start();
+
+    // First exit → 1000ms backoff
+    out.children.get('peek-slack')?.emitExit(1);
+    expect(ft.timers.scheduled.filter((t) => !t.cancelled)[0]?.ms).toBe(1000);
+    ft.timers.advanceNext(); // fire → respawn
+
+    // Second exit → 2000ms backoff
+    out.children.get('peek-slack')?.emitExit(1);
+    expect(ft.timers.scheduled.filter((t) => !t.cancelled)[0]?.ms).toBe(2000);
+    ft.timers.advanceNext(); // fire → respawn
+
+    // Third exit → 4000ms backoff
+    out.children.get('peek-slack')?.emitExit(1);
+    expect(ft.timers.scheduled.filter((t) => !t.cancelled)[0]?.ms).toBe(4000);
+  });
+
+  it('caps backoff at 60000ms', () => {
+    const { sup, out, ft } = makeSupFromConnectors({
+      'peek-slack': { surface: 'slack', enabled: true },
+    });
+    sup.start();
+
+    // Trigger many consecutive exits to reach the cap
+    // 1000, 2000, 4000, 8000, 16000, 32000, 64000 → capped at 60000
+    for (let i = 0; i < 6; i++) {
+      out.children.get('peek-slack')?.emitExit(1);
+      ft.timers.advanceNext();
+    }
+
+    // 7th exit: 2^6 = 64, * 1000 = 64000 → capped to 60000
+    out.children.get('peek-slack')?.emitExit(1);
+    const pending = ft.timers.scheduled.filter((t) => !t.cancelled);
+    expect(pending[pending.length - 1]?.ms).toBe(60_000);
+  });
+
+  it('resets attempts when child is stable for ≥30000ms before exiting', () => {
+    const { sup, out, ft } = makeSupFromConnectors({
+      'peek-slack': { surface: 'slack', enabled: true },
+    });
+    sup.start(); // nowMs=0, upSince=0
+
+    // First exit → attempts=1, 1000ms backoff
+    out.children.get('peek-slack')?.emitExit(1);
+    ft.timers.advanceNext(); // respawn at t=0
+
+    // Second exit immediately → attempts=2, 2000ms backoff
+    out.children.get('peek-slack')?.emitExit(1);
+    ft.timers.advanceNext(); // respawn
+
+    // Now advance clock past STABILITY_MS (30_000) and exit
+    out.nowMs = 40_000;
+    out.children.get('peek-slack')?.emitExit(0);
+
+    // attempts should have reset to 0 (child was up >= 30000ms), next delay = 1000ms
+    const pending = ft.timers.scheduled.filter((t) => !t.cancelled);
+    expect(pending[pending.length - 1]?.ms).toBe(1000);
+  });
+
+  it('sets nextRetryAtMs = now + delay in the backing-off status', () => {
+    const { sup, out } = makeSupFromConnectors({
+      'peek-slack': { surface: 'slack', enabled: true },
+    });
+    sup.start();
+
+    out.nowMs = 5000;
+    out.children.get('peek-slack')?.emitExit(1);
+
+    const last = out.statusSnapshots[out.statusSnapshots.length - 1];
+    const entry = last?.['peek-slack'];
+    expect(entry?.state).toBe('backing-off');
+    // nextRetryAtMs = 5000 + 1000 = 6000
+    expect(entry?.nextRetryAtMs).toBe(6000);
+  });
+
+  it('includes the restart count in backing-off status', () => {
+    const { sup, out, ft } = makeSupFromConnectors({
+      'peek-slack': { surface: 'slack', enabled: true },
+    });
+    sup.start();
+
+    // Exit once, fire timer, exit again
+    out.children.get('peek-slack')?.emitExit(1);
+    ft.timers.advanceNext(); // respawn
+    out.children.get('peek-slack')?.emitExit(1);
+
+    const last = out.statusSnapshots[out.statusSnapshots.length - 1];
+    const entry = last?.['peek-slack'];
+    expect(entry?.restarts).toBe(2);
+  });
+});
+
+// ── Task 5: shutdown ───────────────────────────────────────────────────────
+
+describe('Supervisor — shutdown() (Task 5)', () => {
+  it('kills each live child with SIGTERM on shutdown', () => {
+    const { sup, out } = makeSupFromConnectors({
+      'peek-slack': { surface: 'slack', enabled: true },
+      'peek-discord': { surface: 'discord', enabled: true },
+    });
+    sup.start();
+
+    const slack = out.children.get('peek-slack');
+    const discord = out.children.get('peek-discord');
+    expect(slack).toBeDefined();
+    expect(discord).toBeDefined();
+
+    sup.shutdown();
+
+    expect(slack?.killCalls).toContain('SIGTERM');
+    expect(discord?.killCalls).toContain('SIGTERM');
+  });
+
+  it('marks all connectors stopped after shutdown', () => {
+    const { sup, out } = makeSupFromConnectors({
+      'peek-slack': { surface: 'slack', enabled: true },
+    });
+    sup.start();
+
+    sup.shutdown();
+
+    const last = out.statusSnapshots[out.statusSnapshots.length - 1];
+    expect(last?.['peek-slack']?.state).toBe('stopped');
+  });
+
+  it('writes a final status snapshot after shutdown', () => {
+    const { sup, out } = makeSupFromConnectors({
+      'peek-slack': { surface: 'slack', enabled: true },
+    });
+    sup.start();
+
+    const snapshotsBefore = out.statusSnapshots.length;
+    sup.shutdown();
+
+    expect(out.statusSnapshots.length).toBeGreaterThan(snapshotsBefore);
+    const last = out.statusSnapshots[out.statusSnapshots.length - 1];
+    expect(last?.['peek-slack']?.state).toBe('stopped');
+  });
+
+  it('clears any pending restart timers on shutdown', () => {
+    const { sup, out, ft } = makeSupFromConnectors({
+      'peek-slack': { surface: 'slack', enabled: true },
+    });
+    sup.start();
+
+    // Trigger an exit → pending restart timer
+    out.children.get('peek-slack')?.emitExit(1);
+    const pendingBefore = ft.timers.scheduled.filter((t) => !t.cancelled);
+    expect(pendingBefore.length).toBeGreaterThanOrEqual(1);
+
+    sup.shutdown();
+
+    // The restart timer should be cancelled (not the SIGKILL grace timer)
+    const restartTimers = ft.timers.scheduled.filter((t) => t.cancelled && t.ms === 1000);
+    expect(restartTimers.length).toBeGreaterThanOrEqual(1);
+  });
+
+  it('does NOT restart a connector that exits AFTER shutdown', () => {
+    const { sup, out, ft } = makeSupFromConnectors({
+      'peek-slack': { surface: 'slack', enabled: true },
+    });
+    sup.start();
+    expect(out.spawnCalls).toHaveLength(1);
+
+    sup.shutdown();
+
+    // Child reports exit AFTER shutdown (e.g. delayed SIGTERM response)
+    out.children.get('peek-slack')?.emitExit(null);
+
+    // Advance any timers — no new spawns should happen
+    ft.timers.advanceAll();
+
+    expect(out.spawnCalls).toHaveLength(1); // still only the original spawn
+    // Status remains stopped (not backing-off)
+    const last = out.statusSnapshots[out.statusSnapshots.length - 1];
+    expect(last?.['peek-slack']?.state).toBe('stopped');
+  });
+
+  it('does NOT restart a connector in backing-off state when shutdown fires', () => {
+    const { sup, out, ft } = makeSupFromConnectors({
+      'peek-slack': { surface: 'slack', enabled: true },
+    });
+    sup.start();
+
+    // Exit → backing-off with pending timer
+    out.children.get('peek-slack')?.emitExit(1);
+
+    // Shutdown before the restart fires
+    sup.shutdown();
+
+    // The restart timer was cancelled — advancing timers should not respawn
+    ft.timers.advanceAll();
+
+    expect(out.spawnCalls).toHaveLength(1);
+    const last = out.statusSnapshots[out.statusSnapshots.length - 1];
+    expect(last?.['peek-slack']?.state).toBe('stopped');
   });
 });
