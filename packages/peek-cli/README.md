@@ -57,7 +57,8 @@ peek retention show                        # print the configured policy
 peek retention preview [overrides…]        # dry-run: what the policy would prune (non-destructive)
 peek retention apply [--yes] [--include-stale-active] [overrides…]  # prune per the policy (asks to confirm)
 peek audit log [--since <dur>] [--tool <name>] [--client <name>] [--json]  # act-tool audit log
-peek audit verify [--json]                 # verify the audit log hash chain (exit 0 ok, 1 anomaly, 2 tampered)
+peek audit verify [--dir <path>] [--bundle <file>] [--json]  # verify the audit log hash chain, or a received *.peekaudit archive (exit 0 ok, 1 anomaly, 2 tampered)
+peek audit bundle [--dir <path>] [--out <file>]  # package the audit log + head into a portable *.peekaudit evidence archive
 peek connect add <surface> [--name <n>] [--command <c>] [--args=<arg>]  # register a connector (surface: slack)
 peek connect list                          # list configured connectors
 peek connect remove <name>                 # remove a connector from the registry
@@ -86,7 +87,7 @@ A policy can prune by age (`--max-age`), by total event-blob size (`--max-size`,
 
 The audit log (`~/.peek/audit.log`) is hash-chained: each JSONL entry carries a `seq` counter and a `prevHash` field (SHA-256 of the previous line), written under a file lock. A small sidecar (`audit.head.json`) records the tail hash so that tail truncation is also detectable.
 
-`peek audit verify [--json]` recomputes the chain and reports:
+`peek audit verify [--dir <path>] [--bundle <file>] [--json]` recomputes the chain and reports:
 
 | Status | Meaning | Exit code |
 |---|---|:---:|
@@ -100,6 +101,8 @@ The audit log (`~/.peek/audit.log`) is hash-chained: each JSONL entry carries a 
 | `prefix-tampered` | pre-chain prelude was modified | 2 |
 
 The audit log is **tamper-evident, not tamper-proof.** It detects accidental corruption, truncation, reordering, and edits, but does not stop a determined local attacker who recomputes the whole chain. There are no keys, no external anchor, and no egress.
+
+`peek audit bundle [--dir <path>] [--out <file>]` packages the audit log and its head sidecar into a portable `*.peekaudit` evidence archive (with a SHA-256 integrity manifest); a recipient verifies it independently with `peek audit verify --bundle <file>`.
 
 ### Connector daemon
 
