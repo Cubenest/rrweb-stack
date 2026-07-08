@@ -46,6 +46,7 @@ Then you install the **Peek Chrome extension** — available on the [Chrome Web 
 peek init                                  # interactive install (see above)
 peek status                                # health check — extension connected? DB writable?
 peek sessions list [--origin <url>] [--limit <n>] [--json]  # list recent sessions
+peek sessions search [--q <text>] [--origin <url>] [--since <dur|iso>] [--until <dur|iso>] [--status <active|finalized>] [--errors <console|network|any>] [--limit <n>] [--json]  # search sessions by metadata/facets
 peek sessions show <id>                    # print one session as Markdown (metadata + errors)
 peek sessions export <id> [--format <markdown|json|playwright|bundle>] [--out <file>]  # export (default markdown); --format bundle writes a portable *.peekbundle
 peek sessions import <file> [--keep-id] [--force]  # import a *.peekbundle into the local store (local-first, masked-at-capture, no cloud)
@@ -56,7 +57,15 @@ peek retention show                        # print the configured policy
 peek retention preview [overrides…]        # dry-run: what the policy would prune (non-destructive)
 peek retention apply [--yes] [--include-stale-active] [overrides…]  # prune per the policy (asks to confirm)
 peek audit log [--since <dur>] [--tool <name>] [--client <name>] [--json]  # act-tool audit log
-peek audit verify [--json]                 # verify the audit log hash chain (exit 0 ok, 1 anomaly, 2 tampered)
+peek audit verify [--dir <path>] [--bundle <file>] [--json]  # verify the audit log hash chain, or a received *.peekaudit archive (exit 0 ok, 1 anomaly, 2 tampered)
+peek audit bundle [--dir <path>] [--out <file>]  # package the audit log + head into a portable *.peekaudit evidence archive
+peek connect add <surface> [--name <n>] [--command <c>] [--args=<arg>]  # register a connector (surface: slack)
+peek connect list                          # list configured connectors
+peek connect remove <name>                 # remove a connector from the registry
+peek connect start                         # start the detached supervisor daemon
+peek connect stop                          # stop the running supervisor daemon
+peek connect status [name]                 # show supervisor and per-connector status
+peek connect logs [name] [--follow] [--lines <n>]  # print or tail connector logs
 peek <cmd> --help                          # usage for any subcommand
 ```
 
@@ -78,7 +87,7 @@ A policy can prune by age (`--max-age`), by total event-blob size (`--max-size`,
 
 The audit log (`~/.peek/audit.log`) is hash-chained: each JSONL entry carries a `seq` counter and a `prevHash` field (SHA-256 of the previous line), written under a file lock. A small sidecar (`audit.head.json`) records the tail hash so that tail truncation is also detectable.
 
-`peek audit verify [--json]` recomputes the chain and reports:
+`peek audit verify [--dir <path>] [--bundle <file>] [--json]` recomputes the chain and reports:
 
 | Status | Meaning | Exit code |
 |---|---|:---:|
@@ -92,6 +101,28 @@ The audit log (`~/.peek/audit.log`) is hash-chained: each JSONL entry carries a 
 | `prefix-tampered` | pre-chain prelude was modified | 2 |
 
 The audit log is **tamper-evident, not tamper-proof.** It detects accidental corruption, truncation, reordering, and edits, but does not stop a determined local attacker who recomputes the whole chain. There are no keys, no external anchor, and no egress.
+
+`peek audit bundle [--dir <path>] [--out <file>]` packages the audit log and its head sidecar into a portable `*.peekaudit` evidence archive (with a SHA-256 integrity manifest); a recipient verifies it independently with `peek audit verify --bundle <file>`.
+
+### Connector daemon
+
+`peek connect` manages a supervised connector daemon — a long-running background process that spawns and monitors per-surface connector subprocesses (e.g. a Slack connector that streams workspace events into the local store). Connector registrations are stored in `~/.peek/connect/connectors.json`; the daemon runs detached and logs each connector's stdout/stderr to a per-connector file under `~/.peek/connect/logs/`.
+
+```sh
+# First, register a connector for a surface (currently: slack).
+# Run it interactively once to capture tokens and pair the connection,
+# then start the daemon so it supervises and auto-restarts it.
+peek connect add slack --name my-slack
+peek connect start            # spawns the detached supervisor
+
+# Ongoing management
+peek connect status            # show supervisor uptime + connector states
+peek connect logs my-slack     # last N lines of the connector's log
+peek connect logs my-slack --follow  # tail -f the log (Ctrl-C to stop)
+peek connect stop              # graceful SIGTERM to the supervisor
+```
+
+The `--args=<arg>` flag on `connect add` is repeatable — pass it multiple times to build the connector's argv. `--command` overrides the default binary for the surface (useful for a custom connector binary).
 
 ## Querying from an AI agent
 

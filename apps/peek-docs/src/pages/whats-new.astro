@@ -144,6 +144,61 @@ import Layout from '../layouts/Layout.astro';
     See it: <a href="/recipes/reproduce-bug-from-teammate-peek-session">Reproduce a bug from a teammate&rsquo;s peek session</a>.
   </p>
 
+  <h2>5. Find sessions and verify integrity from the CLI</h2>
+  <p>
+    Two CLI additions make the local store easier to triage and audit:
+  </p>
+  <ul>
+    <li>
+      <code>peek sessions search</code> lets your agent (or you) filter sessions
+      by text (<code>--q</code>), origin, time window (<code>--since</code> /
+      <code>--until</code>), status, and error type (<code>--errors
+      console|network|any</code>) &mdash; narrowing thousands of recorded
+      sessions down to the one that matters, without opening a viewer. The
+      <code>search_sessions</code> MCP tool exposes the same facets to agents
+      directly.
+    </li>
+    <li>
+      <code>peek audit verify</code> recomputes the hash chain of the action
+      audit log and exits non-zero on any gap, reorder, edit, or truncation.
+      The <code>verify_audit_log</code> MCP tool exposes the same check so an
+      agent can assert chain integrity as part of a workflow.
+    </li>
+    <li>
+      <code>peek audit bundle</code> / <code>peek audit verify</code> (the bundle
+      variant) packages the audit log alongside a session export so a recipient
+      can verify the chain independently.
+    </li>
+  </ul>
+
+  <h2>6. Delegated connectors &mdash; supervised background daemons</h2>
+  <p>
+    <code>peek connect</code> is a supervised connector daemon: register a
+    surface (currently <strong>Slack</strong>), run it once interactively to
+    capture tokens, then <code>peek connect start</code> spawns a detached
+    supervisor that keeps each connector alive and auto-restarts it on exit.
+    Per-connector logs stream to <code>~/.peek/connect/logs/</code>; the
+    supervisor PID and each connector&rsquo;s state are visible via
+    <code>peek connect status</code>. Connectors extend peek&rsquo;s reach
+    beyond the browser &mdash; a Slack connector turns channel messages into
+    queryable local sessions the same way the extension turns browser activity
+    into sessions.
+  </p>
+
+  <h2>7. Claude Code plugin</h2>
+  <p>
+    peek is now a one-line Claude Code plugin install:
+  </p>
+  <pre><code>/plugin install peekdev@peek</code></pre>
+  <p>
+    This drops the peek MCP server and the Claude Code skill into place in a
+    single command &mdash; no <code>peek init</code> required for MCP
+    configuration. The plugin is hosted in the
+    <a href="https://github.com/Cubenest/rrweb-stack/tree/main/plugins" rel="noopener">public repo</a>
+    and installable via the community catalog
+    (<code>/plugin marketplace add Cubenest/rrweb-stack</code>).
+  </p>
+
   <h2>The honest part</h2>
   <p>
     peek is local-first: <strong>peek uploads nothing &mdash; what your MCP
