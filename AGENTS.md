@@ -29,8 +29,8 @@ infrastructure, no telemetry, no cloud. See `docs/SUSTAINABILITY.md` for the
 maintenance posture and `docs/SECURITY-NOTES.md` for the threat model.
 
 The build is pnpm + Turbo + Changesets. WXT 0.20 for the Chrome MV3
-extension. Vitest 2 (cross-major-pinned via root override). Astro for the two
-docs sites. Lefthook for pre-commit lint (biome + custom checks).
+extension. Vitest 3. Astro 6 for the two docs sites (needs Node >=22.12).
+Lefthook for pre-commit lint (biome + custom checks).
 
 ## Build, test & dev commands
 
