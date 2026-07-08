@@ -63,6 +63,14 @@ describe('readConnectors', () => {
     writeFileSync(registryPath, JSON.stringify(withOpts));
     expect(readConnectors(registryPath)).toEqual(withOpts);
   });
+
+  it('returns a fresh object on each failure call — no shared sentinel', () => {
+    // ENOENT path: two calls must return distinct object references
+    const a = readConnectors(registryPath);
+    const b = readConnectors(registryPath);
+    expect(a).not.toBe(b);
+    expect(a.connectors).not.toBe(b.connectors);
+  });
 });
 
 describe('writeConnectors', () => {

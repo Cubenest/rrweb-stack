@@ -29,7 +29,7 @@ import { peekHomeDir } from '../lib/peek-home.js';
 const USAGE = `Usage: peek connect <subcommand> [options]
 
 Subcommands:
-  add <surface> [--name <n>] [--command <c>] [--args <a...>]
+  add <surface> [--name <n>] [--command <c>] [--args=<arg>] (repeatable)
                                Register a connector for a surface
   list                         List all configured connectors
   remove <name>                Remove a connector from the registry
@@ -260,19 +260,24 @@ export async function runSupervise(deps?: Partial<RunSuperviseDeps>): Promise<nu
     return 0;
   }
 
-  const { connectors } = readConnectors();
-  const realDeps = buildRealDeps();
-  const sup = supervisorFactory(connectors, realDeps);
-  sup.start();
+  try {
+    const { connectors } = readConnectors();
+    const realDeps = buildRealDeps();
+    const sup = supervisorFactory(connectors, realDeps);
+    sup.start();
 
-  const shutdown = (): void => {
-    sup.shutdown();
+    const shutdown = (): void => {
+      sup.shutdown();
+      lock.release();
+      process.exit(0);
+    };
+
+    onSignal('SIGTERM', shutdown);
+    onSignal('SIGINT', shutdown);
+  } catch (e) {
     lock.release();
-    process.exit(0);
-  };
-
-  onSignal('SIGTERM', shutdown);
-  onSignal('SIGINT', shutdown);
+    throw e;
+  }
 
   // The supervisor keeps this process alive through running child processes and
   // their 'exit' listeners (via deps.setTimer → setTimeout chains).  If no

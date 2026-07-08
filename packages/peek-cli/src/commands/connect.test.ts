@@ -327,6 +327,31 @@ describe('peek connect __supervise', () => {
     expect(releaseCalled).toBe(false);
   });
 
+  it('releases the lock when supervisorFactory start() throws', async () => {
+    silenced();
+    let releaseCalled = false;
+    const fakeLock = {
+      release: () => {
+        releaseCalled = true;
+      },
+    };
+
+    await expect(
+      runSupervise({
+        acquireLock: () => fakeLock,
+        supervisorFactory: () => ({
+          start: () => {
+            throw new Error('EACCES: permission denied');
+          },
+          shutdown: () => {},
+        }),
+        onSignal: () => {},
+      }),
+    ).rejects.toThrow('EACCES');
+
+    expect(releaseCalled).toBe(true);
+  });
+
   it('routes through runConnect correctly (__supervise → runSupervise)', async () => {
     const { out } = silenced();
 

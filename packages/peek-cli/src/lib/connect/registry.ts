@@ -44,37 +44,38 @@ export function connectorsPath(): string {
 
 // ── Read ───────────────────────────────────────────────────────────────────
 
-const EMPTY: ConnectorsFile = { connectors: {} };
-
 /**
  * Read and parse connectors.json from `path` (defaults to
  * {@link connectorsPath}). Malformed JSON, ENOENT, and zod-invalid content all
  * return `{ connectors: {} }` without throwing.
+ *
+ * Every failure path returns a FRESH object so callers that mutate the result
+ * cannot corrupt a shared sentinel reference.
  */
 export function readConnectors(path?: string): ConnectorsFile {
   const target = path ?? connectorsPath();
-  let raw: string;
+  let rawText: string;
   try {
-    raw = readFileSync(target, 'utf8');
+    rawText = readFileSync(target, 'utf8');
   } catch {
-    return EMPTY;
+    return { connectors: {} };
   }
   let parsed: unknown;
   try {
-    parsed = JSON.parse(raw);
+    parsed = JSON.parse(rawText);
   } catch {
-    return EMPTY;
+    return { connectors: {} };
   }
   const result = connectorsFileSchema.safeParse(parsed);
-  if (!result.success) return EMPTY;
+  if (!result.success) return { connectors: {} };
   // Re-map each entry so optional fields are absent (not `undefined`) to satisfy
   // `exactOptionalPropertyTypes` — zod's `.optional()` produces `T | undefined`
   // which is incompatible with the interface's `field?: T` under that flag.
   const connectors: Record<string, ConnectorEntry> = {};
-  for (const [name, raw] of Object.entries(result.data.connectors)) {
-    const entry: ConnectorEntry = { surface: raw.surface, enabled: raw.enabled };
-    if (raw.command !== undefined) entry.command = raw.command;
-    if (raw.args !== undefined) entry.args = raw.args;
+  for (const [name, rawEntry] of Object.entries(result.data.connectors)) {
+    const entry: ConnectorEntry = { surface: rawEntry.surface, enabled: rawEntry.enabled };
+    if (rawEntry.command !== undefined) entry.command = rawEntry.command;
+    if (rawEntry.args !== undefined) entry.args = rawEntry.args;
     connectors[name] = entry;
   }
   return { connectors };

@@ -107,7 +107,7 @@ export class Supervisor {
   shutdown(): void {
     this.#down = true;
 
-    for (const [name, slot] of this.#slots) {
+    for (const [_name, slot] of this.#slots) {
       // Cancel any pending restart timer for this connector.
       if (slot.restartTimer !== undefined) {
         this.#deps.clearTimer(slot.restartTimer);
@@ -134,14 +134,12 @@ export class Supervisor {
       }
 
       // Mark stopped immediately (we're done managing this connector).
+      // Mutate in place — slot is already the object stored in #slots.
       const stopped: ConnectorStatus = {
         state: 'stopped',
         restarts: slot.attempts,
       };
       slot.status = stopped;
-
-      // Update the slot name ref for the snapshot below.
-      this.#slots.set(name, slot);
     }
 
     this.#deps.writeStatus(this.#statusSnapshot());
