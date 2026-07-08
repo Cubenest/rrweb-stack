@@ -9,7 +9,13 @@ import { mkdirSync, openSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { parseArgs } from 'node:util';
 import { getDescriptor, resolveSpawn } from '../lib/connect/descriptors.js';
-import { connectorLogPath, supervisorLogPath } from '../lib/connect/logs.js';
+import {
+  type TailLogDeps,
+  connectorLogPath,
+  listLogs,
+  supervisorLogPath,
+  tailLog,
+} from '../lib/connect/logs.js';
 import { addConnector, readConnectors, removeConnector } from '../lib/connect/registry.js';
 import { readStatus, writeStatus } from '../lib/connect/status.js';
 import {
@@ -382,6 +388,85 @@ export async function runStatus(deps?: Partial<RunStatusDeps>): Promise<number> 
   return 0;
 }
 
+// ── logs ────────────────────────────────────────────────────────────────────
+
+/** Injectable side-effects for `runLogs` — lets tests drive the decision
+ * logic without real fs reads or file watchers. */
+export type RunLogsDeps = Partial<TailLogDeps>;
+
+const LOGS_FLAGS = {
+  follow: { type: 'boolean' },
+  lines: { type: 'string' },
+  help: { type: 'boolean' },
+} as const;
+
+/**
+ * `peek connect logs [name] [--follow] [--lines N]` — print (or tail -f) a
+ * per-connector log file.
+ *
+ * Without a name: lists the connector names for which log files exist, with
+ * guidance on how to view one.
+ *
+ * With a name: delegates to `tailLog` which handles both the one-shot tail
+ * (default) and the streaming `--follow` mode.
+ *
+ * All side-effecting operations are injectable via `deps`.
+ */
+export async function runLogs(rest: string[], deps?: RunLogsDeps): Promise<number> {
+  let values: { follow?: boolean; lines?: string; help?: boolean };
+  let positionals: string[];
+  try {
+    ({ values, positionals } = parseArgs({
+      args: rest,
+      options: LOGS_FLAGS,
+      allowPositionals: true,
+    }));
+  } catch (err) {
+    process.stderr.write(
+      `peek connect logs: ${err instanceof Error ? err.message : String(err)}\n`,
+    );
+    return 1;
+  }
+
+  if (values.help === true) {
+    process.stdout.write('Usage: peek connect logs [name] [--follow] [--lines N]\n');
+    return 0;
+  }
+
+  const name = positionals[0];
+
+  if (name === undefined) {
+    // No name: list available connector logs.
+    const available = listLogs();
+    if (available.length === 0) {
+      process.stdout.write(
+        'peek connect logs: no connector logs yet — start the daemon with `peek connect start`\n',
+      );
+    } else {
+      process.stdout.write('Available connector logs:\n');
+      for (const n of available) {
+        process.stdout.write(`  ${n}\n`);
+      }
+      process.stdout.write('\nRun `peek connect logs <name>` to view a log.\n');
+    }
+    return 0;
+  }
+
+  const linesRaw = values.lines;
+  const lines = linesRaw !== undefined ? Number.parseInt(linesRaw, 10) : undefined;
+
+  await tailLog(
+    name,
+    {
+      ...(values.follow !== undefined ? { follow: values.follow } : {}),
+      ...(lines !== undefined ? { lines } : {}),
+    },
+    deps,
+  );
+
+  return 0;
+}
+
 export async function runConnect(argv: string[]): Promise<number> {
   const sub = argv[0];
   const rest = argv.slice(1);
@@ -409,10 +494,8 @@ export async function runConnect(argv: string[]): Promise<number> {
         return runStop();
       case 'status':
         return runStatus();
-      // logs — stub; implemented by Task 9.
       case 'logs':
-        process.stdout.write(`peek connect ${sub}: not implemented yet (SP6b-2 Task 9)\n`);
-        return 0;
+        return runLogs(rest);
       default:
         process.stderr.write(`peek connect: unknown subcommand '${sub}'\n\n`);
         process.stdout.write(USAGE);

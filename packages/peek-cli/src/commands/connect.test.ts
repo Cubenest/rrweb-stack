@@ -4,12 +4,13 @@
 // pattern used in sessions.import.test.ts and lib/import-session.test.ts.
 
 import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdirSync as fsMkdirSync, writeFileSync as fsWriteFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { run } from '../index.js';
 import { readConnectors } from '../lib/connect/registry.js';
-import { runConnect, runStart, runStatus, runStop, runSupervise } from './connect.js';
+import { runConnect, runLogs, runStart, runStatus, runStop, runSupervise } from './connect.js';
 
 let home: string;
 let origHome: string | undefined;
@@ -499,13 +500,93 @@ describe('peek connect status', () => {
   });
 });
 
-// ── lifecycle stub (logs) ──────────────────────────────────────────────────
+// ── logs (Task 9) ──────────────────────────────────────────────────────────
 
-describe('peek connect lifecycle stubs', () => {
-  it('logs returns 0 (not-yet-implemented stub)', async () => {
-    silenced();
+describe('peek connect logs', () => {
+  it('with no name, lists available connector logs (returns 0)', async () => {
+    // Seed a couple of log files so listLogs() can find them.
+    const logsDir = join(home, 'connect', 'logs');
+    fsMkdirSync(logsDir, { recursive: true });
+    fsWriteFileSync(join(logsDir, 'peek-slack.log'), '');
+    fsWriteFileSync(join(logsDir, 'peek-discord.log'), '');
+
+    const { out } = silenced();
     const code = await runConnect(['logs']);
     expect(code).toBe(0);
+    const combined = out.join('');
+    expect(combined).toMatch(/peek-slack/);
+    expect(combined).toMatch(/peek-discord/);
+  });
+
+  it('with no name and no log files, prints guidance (returns 0)', async () => {
+    const { out } = silenced();
+    const code = await runConnect(['logs']);
+    expect(code).toBe(0);
+    expect(out.join('')).toMatch(/no connector logs yet/);
+  });
+
+  it('calls tailLog with the correct connector name (no-follow)', async () => {
+    const content = 'line1\nline2\nline3\n';
+    const written: string[] = [];
+
+    const code = await runLogs(['peek-slack'], {
+      readFile: async (_p: string) => content,
+      watch: () => {
+        throw new Error('watch must not be called');
+      },
+      stdout: {
+        write: (s: string) => {
+          written.push(s);
+          return true;
+        },
+      },
+    });
+
+    expect(code).toBe(0);
+    expect(written.join('')).toContain('line3');
+  });
+
+  it('calls tailLog with --follow flag and streams chunks via injected watcher', async () => {
+    const content = 'line1\nline2\n';
+    const written: string[] = [];
+
+    let emitChunk: ((chunk: Buffer) => void) | undefined;
+    const fakeWatcher = {
+      on: (_event: string, _cb: unknown) => fakeWatcher,
+      close: () => {},
+    };
+
+    const tailPromise = runLogs(['peek-slack', '--follow'], {
+      readFile: async (_p: string) => content,
+      watch: (_path: string, _startPos: number, onData: (chunk: Buffer) => void) => {
+        emitChunk = onData;
+        return fakeWatcher;
+      },
+      stdout: {
+        write: (s: string) => {
+          written.push(s);
+          return true;
+        },
+      },
+    });
+
+    await Promise.resolve();
+    await Promise.resolve();
+    emitChunk?.(Buffer.from('line3\n'));
+    fakeWatcher.close();
+    await tailPromise;
+
+    const combined = written.join('');
+    expect(combined).toContain('line1');
+    expect(combined).toContain('line3');
+  });
+
+  it('routes through runConnect correctly (logs → runLogs)', async () => {
+    const { out } = silenced();
+    const code = await runConnect(['logs']);
+    expect(code).toBe(0);
+    // Should NOT print the old "not implemented yet" stub message
+    expect(out.join('')).not.toMatch(/not implemented yet/);
   });
 });
 
