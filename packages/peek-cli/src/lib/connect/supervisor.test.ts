@@ -335,6 +335,25 @@ describe('Supervisor.shutdown()', () => {
     // No children → should resolve without needing to advance timers.
     await expect(sup.shutdown()).resolves.toBeUndefined();
   });
+
+  it('resolves immediately when the only connector is backing-off (no live child to await)', async () => {
+    const { sup, out, ft } = makeSupFromConnectors({
+      'peek-slack': { surface: 'slack', enabled: true },
+    });
+    sup.start();
+
+    const child = out.children.get('peek-slack');
+    if (!child) throw new Error('no child spawned');
+    child.emitExit(1); // → backing-off; its child process is now dead.
+
+    // A backing-off connector has no live child that will emit 'exit', so
+    // shutdown must NOT arm the SIGKILL grace timer for it and must resolve
+    // immediately — otherwise `peek connect stop` stalls ~5.5s per backoff.
+    const p = sup.shutdown();
+    const pending = ft.timers.scheduled.filter((t) => !t.cancelled);
+    expect(pending).toHaveLength(0); // fails fast if a grace timer was armed
+    await expect(p).resolves.toBeUndefined();
+  });
 });
 
 // ── Task 5: restart-with-backoff ───────────────────────────────────────────

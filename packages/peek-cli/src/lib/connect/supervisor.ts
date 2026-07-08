@@ -118,8 +118,12 @@ export class Supervisor {
   shutdown(): Promise<void> {
     this.#down = true;
 
-    // Collect the set of names of children that are currently alive (either
-    // running or in backing-off state with a live child handle).
+    // Collect the set of names of children that are actually running. Only a
+    // 'running' connector has a live child that will emit 'exit'; a
+    // 'backing-off' connector got there *because* its child already exited (and
+    // a dead ChildProcess won't emit 'exit' again), so awaiting it would stall
+    // shutdown until the SIGKILL grace + fallback timers fire. Its restart timer
+    // is cancelled below, so it's already effectively stopped.
     const alive = new Set<string>();
 
     for (const [name, slot] of this.#slots) {
@@ -129,7 +133,7 @@ export class Supervisor {
         slot.restartTimer = undefined;
       }
 
-      if (slot.status.state === 'running' || slot.status.state === 'backing-off') {
+      if (slot.status.state === 'running') {
         alive.add(name);
         try {
           slot.child.kill('SIGTERM');
