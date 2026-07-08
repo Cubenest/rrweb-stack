@@ -7,6 +7,33 @@ import { readFile as _readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { peekHomeDir } from '../peek-home.js';
 
+// ── Injectable seam for the default watchFn ───────────────────────────────────
+
+/**
+ * Injectable replacement for `fs.watch` used by the DEFAULT `watchFn`.
+ * Production code leaves this undefined (falls back to the real `fsWatch`).
+ * Tests inject a deterministic fake to exercise the real error-handling code
+ * paths (synchronous throws + async 'error' events) without relying on actual
+ * filesystem behaviour, which differs across Linux, macOS, and Windows.
+ *
+ * This seam is intentionally separate from the `watch` dep on `TailLogDeps`:
+ * that dep replaces the entire `watchFn`; this one only replaces the
+ * underlying `fs.watch` call *inside* the default `watchFn` so that the
+ * FIX-C/D error-handling code is still exercised by the test.
+ */
+export type FsWatchFn = typeof fsWatch;
+
+let _defaultFsWatch: FsWatchFn = fsWatch;
+
+/**
+ * Override the `fs.watch` implementation used by the default `watchFn`.
+ * Call with `undefined` to restore the real `fs.watch`.
+ * Intended for unit tests only.
+ */
+export function _setFsWatch(fn: FsWatchFn | undefined): void {
+  _defaultFsWatch = fn ?? fsWatch;
+}
+
 /** Absolute path to the supervisor process log: `~/.peek/connect/supervisor.log`. */
 export function supervisorLogPath(): string {
   return join(peekHomeDir(), 'connect', 'supervisor.log');
@@ -129,13 +156,36 @@ export async function tailLog(
         });
       };
 
-      // FIX D: register an 'error' listener on the fs.watch watcher so that
-      // a missing file (ENOENT) or other watch error does NOT crash the process
-      // with an unhandled 'error' event. The watcher stays open (follow remains
-      // alive) until close() is called — the error is silently swallowed.
-      const watcher = fsWatch(path, doRead);
+      // FIX D: guard against fs.watch errors on missing or inaccessible files.
+      // On Linux, fs.watch on a missing path can THROW synchronously; on other
+      // platforms it may instead emit an async 'error' event. We handle both:
+      //   • try/catch swallows a synchronous throw (FIX-D path A).
+      //   • on('error') swallows the async event    (FIX-D path B).
+      // In either case the follow promise stays pending until close() is called.
+      // FIX D: guard against fs.watch errors on missing or inaccessible files.
+      // On Linux, fs.watch on a missing path can THROW synchronously; on other
+      // platforms it may instead emit an async 'error' event. We handle both:
+      //   • try/catch swallows a synchronous throw (FIX-D path A).
+      //   • on('error') swallows the async event    (FIX-D path B).
+      // In either case the follow promise stays pending until close() is called.
+      let watcher: ReturnType<typeof fsWatch>;
+      try {
+        watcher = _defaultFsWatch(path, doRead);
+      } catch {
+        // Synchronous throw (e.g. ENOENT on Linux) — return a no-op watcher so
+        // the caller still gets a valid handle whose close() fires 'close'.
+        return {
+          on(event, cb) {
+            if (event === 'close') closeListeners.push(cb as () => void);
+            return this;
+          },
+          close() {
+            for (const fn of closeListeners) fn();
+          },
+        };
+      }
       watcher.on('error', (_err) => {
-        // Swallow watch errors (e.g. ENOENT on missing file in follow mode).
+        // Swallow async watch errors (e.g. ENOENT on missing file in follow mode).
         // The follow promise stays pending until close() is called.
       });
 

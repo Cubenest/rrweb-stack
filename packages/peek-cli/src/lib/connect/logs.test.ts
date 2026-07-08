@@ -2,11 +2,12 @@
 // listLogs. All fs/watcher deps are injected so tests don't need a real
 // filesystem or a live fs.watch() call.
 
+import { EventEmitter } from 'node:events';
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { connectorLogPath, listLogs, supervisorLogPath, tailLog } from './logs.js';
+import { _setFsWatch, connectorLogPath, listLogs, supervisorLogPath, tailLog } from './logs.js';
 
 let home: string;
 let origHome: string | undefined;
@@ -22,6 +23,8 @@ afterEach(() => {
   else process.env.PEEK_HOME = origHome;
   rmSync(home, { recursive: true, force: true });
   vi.restoreAllMocks();
+  // Always restore the real fs.watch after any test that injects a fake.
+  _setFsWatch(undefined);
 });
 
 // ── path helpers ─────────────────────────────────────────────────────────────
@@ -289,12 +292,14 @@ describe('tailLog (follow)', () => {
     expect(watchCalled).toBe(true);
   });
 
-  // FIX D/F: verify the default watcher's 'error' listener swallows fs.watch
-  // errors on absent files so the process does NOT crash. This test exercises
-  // the absent-file follow path through a fake watch dep that mimics what the
-  // real fs.watch() does when called on a missing path — it emits an 'error'
-  // event. The 'no logs yet' message must appear and the process must not throw.
-  it('default-watcher absent-file path: error event is swallowed — process does not crash, "no logs yet" printed', async () => {
+  // FIX D (guard proof): these two tests verify the default watchFn's error
+  // handling by injecting a fake fs.watch via the _setFsWatch seam. Unlike the
+  // outer `watch` dep on TailLogDeps (which replaces the ENTIRE watchFn and
+  // causes a tautology), _setFsWatch only replaces the underlying fs.watch call
+  // INSIDE the default watchFn — so the FIX-D try/catch + on('error') code
+  // actually runs.  Both tests FAIL when FIX-D is reverted and PASS with it.
+
+  it('default-watcher: synchronous fs.watch throw is caught — process does not crash, "no logs yet" printed, promise stays pending', async () => {
     const written: string[] = [];
     const fakeStdout = {
       write: (s: string) => {
@@ -303,56 +308,32 @@ describe('tailLog (follow)', () => {
       },
     };
 
-    // Build a fake watch dep that simulates the real fs.watch() behaviour on a
-    // missing file: it calls the 'error' listener that the code registers (if any),
-    // and has a close() that fires 'close' listeners. The test checks:
-    // (a) if the code registers an 'error' listener, calling it does NOT throw.
-    // (b) 'no logs yet' was printed.
-    // (c) close() settles the promise.
-    const closeListeners: Array<() => void> = [];
-    const registeredErrorListeners: Array<(err: Error) => void> = [];
-    let closeCalled = false;
-
-    const fakeWatcherWithError = {
-      on(event: string, cb: (() => void) | ((err: Error) => void) | ((chunk: Buffer) => void)) {
-        if (event === 'close') closeListeners.push(cb as () => void);
-        if (event === 'error') registeredErrorListeners.push(cb as (err: Error) => void);
-        return fakeWatcherWithError;
-      },
-      close() {
-        if (!closeCalled) {
-          closeCalled = true;
-          for (const fn of closeListeners) fn();
-        }
-      },
-    };
+    // Simulate Linux behaviour: fs.watch throws synchronously on a missing path.
+    // The _setFsWatch seam injects this throw INTO the default watchFn so the
+    // real try/catch (FIX-D path A) is exercised — the outer `watch` dep is NOT
+    // injected, so tailLog uses its default watchFn.
+    // readFile is injected to throw ENOENT immediately (deterministic).
+    _setFsWatch((_path, _listener) => {
+      throw Object.assign(new Error('ENOENT: no such file or directory'), { code: 'ENOENT' });
+    });
 
     const tailPromise = tailLog(
-      'peek-absent',
+      'peek-absent-sync',
       { follow: true },
       {
         readFile: async (_p: string) => {
           throw Object.assign(new Error('ENOENT'), { code: 'ENOENT' });
         },
-        watch: (_path: string, _startPos: number, _onData: (chunk: Buffer) => void) => {
-          return fakeWatcherWithError;
-        },
         stdout: fakeStdout,
       },
     );
 
-    // Give readFile a couple of ticks to complete.
+    // Give the async readFile a couple of ticks to settle (it rejects immediately).
     await Promise.resolve();
     await Promise.resolve();
 
-    // Simulate the 'error' event that fs.watch emits on a missing file.
-    // Call each registered error listener — must NOT throw.
-    const enoentErr = Object.assign(new Error('ENOENT'), { code: 'ENOENT' });
-    expect(() => {
-      for (const fn of registeredErrorListeners) fn(enoentErr);
-    }).not.toThrow();
-
-    // The promise must still be pending (watcher not closed yet — error was swallowed).
+    // The promise must still be PENDING — the no-op watcher from the catch block
+    // is alive; only close() will fire the 'close' listener.
     let tailResolved = false;
     void tailPromise.then(() => {
       tailResolved = true;
@@ -360,12 +341,65 @@ describe('tailLog (follow)', () => {
     await Promise.resolve();
     expect(tailResolved).toBe(false);
 
-    // Close the watcher — the promise must now settle.
-    fakeWatcherWithError.close();
-    await tailPromise;
+    // 'no logs yet' was printed (absent-file path taken before watchFn called).
+    expect(written.join('')).toMatch(/no logs yet for peek-absent-sync/);
+  });
 
-    // 'no logs yet' was printed (absent-file path was taken).
-    expect(written.join('')).toMatch(/no logs yet for peek-absent/);
-    expect(tailResolved).toBe(true);
+  it('default-watcher: async fs.watch "error" event is swallowed — process does not crash, "no logs yet" printed, promise stays pending', async () => {
+    const written: string[] = [];
+    const fakeStdout = {
+      write: (s: string) => {
+        written.push(s);
+        return true;
+      },
+    };
+
+    // Simulate macOS/Windows behaviour: fs.watch returns a watcher but emits an
+    // async 'error' event (no synchronous throw). The _setFsWatch seam returns
+    // a fake FSWatcher-like EventEmitter so the real on('error') handler
+    // (FIX-D path B) is exercised.
+    // readFile is injected to throw ENOENT immediately (deterministic).
+    let fakeWatcherEmitter: EventEmitter | undefined;
+    _setFsWatch((_path, _listener) => {
+      fakeWatcherEmitter = new EventEmitter();
+      // Attach a no-op close so the returned object satisfies FSWatcher's
+      // minimal interface (FSWatcher extends EventEmitter with a .close()).
+      (fakeWatcherEmitter as EventEmitter & { close: () => void }).close = () => {};
+      return fakeWatcherEmitter as ReturnType<typeof import('node:fs').watch>;
+    });
+
+    const tailPromise = tailLog(
+      'peek-absent-async',
+      { follow: true },
+      {
+        readFile: async (_p: string) => {
+          throw Object.assign(new Error('ENOENT'), { code: 'ENOENT' });
+        },
+        stdout: fakeStdout,
+      },
+    );
+
+    await Promise.resolve();
+    await Promise.resolve();
+
+    // Now emit the 'error' event that a real fs.watch would emit on a missing
+    // file (async path) — must NOT cause an unhandled error / crash.
+    expect(() => {
+      fakeWatcherEmitter?.emit(
+        'error',
+        Object.assign(new Error('ENOENT: no such file or directory'), { code: 'ENOENT' }),
+      );
+    }).not.toThrow();
+
+    // Promise must still be pending — error was swallowed, watcher not closed.
+    let tailResolved = false;
+    void tailPromise.then(() => {
+      tailResolved = true;
+    });
+    await Promise.resolve();
+    expect(tailResolved).toBe(false);
+
+    // 'no logs yet' was printed.
+    expect(written.join('')).toMatch(/no logs yet for peek-absent-async/);
   });
 });

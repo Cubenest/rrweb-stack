@@ -274,11 +274,20 @@ export async function runSupervise(deps?: Partial<RunSuperviseDeps>): Promise<nu
     // Make the signal handler async so we await shutdown() before releasing
     // the lock. This ensures children are confirmed down (or SIGKILLed) before
     // a new supervisor could start (lock released) and before the process exits.
+    // The .catch() path is insurance: shutdown() has no rejection path today,
+    // but if it ever rejects the lock must still be released so the daemon
+    // does not hang holding it, and we exit non-zero to signal the failure.
     const shutdown = (): void => {
-      void sup.shutdown().then(() => {
-        lock.release();
-        process.exit(0);
-      });
+      void sup
+        .shutdown()
+        .then(() => {
+          lock.release();
+          process.exit(0);
+        })
+        .catch(() => {
+          lock.release();
+          process.exit(1);
+        });
     };
 
     onSignal('SIGTERM', shutdown);
