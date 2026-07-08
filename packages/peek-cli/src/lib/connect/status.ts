@@ -79,9 +79,18 @@ export function readStatus(deps?: StatusDeps): Record<string, ConnectorStatus> {
       continue;
     }
 
-    // Cast is safe: we have validated state + restarts; optional fields are
-    // present in the JSON if the supervisor wrote them.
-    result[key] = value as ConnectorStatus;
+    // Validate optional numeric fields before including them. Drop any field
+    // whose value is present but not a number (malformed JSON) to satisfy
+    // exactOptionalPropertyTypes — use conditional-spread, never assign undefined.
+    const v = value as Record<string, unknown>;
+    const entry: ConnectorStatus = {
+      state: state as ConnectorStatus['state'],
+      restarts: v.restarts as number,
+      ...(typeof v.pid === 'number' ? { pid: v.pid } : {}),
+      ...(typeof v.lastExitCode === 'number' ? { lastExitCode: v.lastExitCode } : {}),
+      ...(typeof v.nextRetryAtMs === 'number' ? { nextRetryAtMs: v.nextRetryAtMs } : {}),
+    };
+    result[key] = entry;
   }
 
   return result;

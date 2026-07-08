@@ -97,15 +97,46 @@ export async function tailLog(
       // never sees future appends — fs.watch fires on each write).
       let pos = startPos;
       const closeListeners: Array<() => void> = [];
+      // FIX C: guard against overlapping reads from a burst of change events.
+      // While a read stream is active, skip starting a new one; when the stream
+      // ends, do one more read if a change arrived while we were busy.
+      let reading = false;
+      let pending = false;
 
-      const watcher = fsWatch(path, () => {
+      const doRead = (): void => {
+        if (reading) {
+          pending = true;
+          return;
+        }
+        reading = true;
+        pending = false;
         const stream = createReadStream(path, { start: pos });
         stream.on('data', (chunk) => {
           const buf = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
           pos += buf.length;
           onData(buf);
         });
-        stream.on('end', () => stream.destroy());
+        stream.on('end', () => {
+          stream.destroy();
+          reading = false;
+          // If another change arrived while we were reading, do one more pass.
+          if (pending) doRead();
+        });
+        stream.on('error', () => {
+          // Swallow read errors (e.g. transient ENOENT during rotation).
+          reading = false;
+          if (pending) doRead();
+        });
+      };
+
+      // FIX D: register an 'error' listener on the fs.watch watcher so that
+      // a missing file (ENOENT) or other watch error does NOT crash the process
+      // with an unhandled 'error' event. The watcher stays open (follow remains
+      // alive) until close() is called — the error is silently swallowed.
+      const watcher = fsWatch(path, doRead);
+      watcher.on('error', (_err) => {
+        // Swallow watch errors (e.g. ENOENT on missing file in follow mode).
+        // The follow promise stays pending until close() is called.
       });
 
       return {

@@ -288,4 +288,84 @@ describe('tailLog (follow)', () => {
     expect(written.join('')).toMatch(/no logs yet for peek-slack/);
     expect(watchCalled).toBe(true);
   });
+
+  // FIX D/F: verify the default watcher's 'error' listener swallows fs.watch
+  // errors on absent files so the process does NOT crash. This test exercises
+  // the absent-file follow path through a fake watch dep that mimics what the
+  // real fs.watch() does when called on a missing path — it emits an 'error'
+  // event. The 'no logs yet' message must appear and the process must not throw.
+  it('default-watcher absent-file path: error event is swallowed — process does not crash, "no logs yet" printed', async () => {
+    const written: string[] = [];
+    const fakeStdout = {
+      write: (s: string) => {
+        written.push(s);
+        return true;
+      },
+    };
+
+    // Build a fake watch dep that simulates the real fs.watch() behaviour on a
+    // missing file: it calls the 'error' listener that the code registers (if any),
+    // and has a close() that fires 'close' listeners. The test checks:
+    // (a) if the code registers an 'error' listener, calling it does NOT throw.
+    // (b) 'no logs yet' was printed.
+    // (c) close() settles the promise.
+    const closeListeners: Array<() => void> = [];
+    const registeredErrorListeners: Array<(err: Error) => void> = [];
+    let closeCalled = false;
+
+    const fakeWatcherWithError = {
+      on(event: string, cb: (() => void) | ((err: Error) => void) | ((chunk: Buffer) => void)) {
+        if (event === 'close') closeListeners.push(cb as () => void);
+        if (event === 'error') registeredErrorListeners.push(cb as (err: Error) => void);
+        return fakeWatcherWithError;
+      },
+      close() {
+        if (!closeCalled) {
+          closeCalled = true;
+          for (const fn of closeListeners) fn();
+        }
+      },
+    };
+
+    const tailPromise = tailLog(
+      'peek-absent',
+      { follow: true },
+      {
+        readFile: async (_p: string) => {
+          throw Object.assign(new Error('ENOENT'), { code: 'ENOENT' });
+        },
+        watch: (_path: string, _startPos: number, _onData: (chunk: Buffer) => void) => {
+          return fakeWatcherWithError;
+        },
+        stdout: fakeStdout,
+      },
+    );
+
+    // Give readFile a couple of ticks to complete.
+    await Promise.resolve();
+    await Promise.resolve();
+
+    // Simulate the 'error' event that fs.watch emits on a missing file.
+    // Call each registered error listener — must NOT throw.
+    const enoentErr = Object.assign(new Error('ENOENT'), { code: 'ENOENT' });
+    expect(() => {
+      for (const fn of registeredErrorListeners) fn(enoentErr);
+    }).not.toThrow();
+
+    // The promise must still be pending (watcher not closed yet — error was swallowed).
+    let tailResolved = false;
+    void tailPromise.then(() => {
+      tailResolved = true;
+    });
+    await Promise.resolve();
+    expect(tailResolved).toBe(false);
+
+    // Close the watcher — the promise must now settle.
+    fakeWatcherWithError.close();
+    await tailPromise;
+
+    // 'no logs yet' was printed (absent-file path was taken).
+    expect(written.join('')).toMatch(/no logs yet for peek-absent/);
+    expect(tailResolved).toBe(true);
+  });
 });

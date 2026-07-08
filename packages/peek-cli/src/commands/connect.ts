@@ -5,7 +5,7 @@
 // __supervise are implemented here (Task 7); stop/status are Task 8; logs Task 9.
 
 import { spawn as _realSpawn } from 'node:child_process';
-import { mkdirSync, openSync } from 'node:fs';
+import { closeSync, mkdirSync, openSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { parseArgs } from 'node:util';
 import { getDescriptor, resolveSpawn } from '../lib/connect/descriptors.js';
@@ -133,7 +133,7 @@ export interface RunSuperviseDeps {
   supervisorFactory: (
     connectors: ReturnType<typeof readConnectors>['connectors'],
     deps: SupervisorDeps,
-  ) => { start: () => void; shutdown: () => void };
+  ) => { start: () => void; shutdown: () => Promise<void> };
   /** Injectable signal registrar — defaults to `process.on`. */
   onSignal: (signal: string, handler: () => void) => void;
 }
@@ -211,10 +211,15 @@ function buildRealDeps(): SupervisorDeps {
       // Cast to ChildLike: ChildProcess.pid is `number | undefined` in @types/node
       // whereas ChildLike.pid is `pid?: number`; they are semantically identical
       // but differ under exactOptionalPropertyTypes — the cast is safe here.
-      return _realSpawn(command, args, {
+      const child = _realSpawn(command, args, {
         stdio: ['ignore', logFd, logFd],
         detached: false,
       }) as import('../lib/connect/supervisor.js').ChildLike;
+      // Close the parent's copy of the fd immediately after spawn. The child
+      // inherits its own dup of the fd (via dup2 at fork), so closing the
+      // parent copy is safe and prevents an unbounded fd leak on restarts.
+      closeSync(logFd);
+      return child;
     },
     now: () => Date.now(),
     setTimer: (fn, ms) => setTimeout(fn, ms),
@@ -266,10 +271,14 @@ export async function runSupervise(deps?: Partial<RunSuperviseDeps>): Promise<nu
     const sup = supervisorFactory(connectors, realDeps);
     sup.start();
 
+    // Make the signal handler async so we await shutdown() before releasing
+    // the lock. This ensures children are confirmed down (or SIGKILLed) before
+    // a new supervisor could start (lock released) and before the process exits.
     const shutdown = (): void => {
-      sup.shutdown();
-      lock.release();
-      process.exit(0);
+      void sup.shutdown().then(() => {
+        lock.release();
+        process.exit(0);
+      });
     };
 
     onSignal('SIGTERM', shutdown);

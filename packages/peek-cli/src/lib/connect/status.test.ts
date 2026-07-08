@@ -110,6 +110,40 @@ describe('readStatus()', () => {
     expect(result).toEqual({ good });
   });
 
+  it('drops pid when it is a non-numeric string in JSON', () => {
+    const raw = JSON.stringify({ foo: { state: 'running', restarts: 0, pid: 'not-a-number' } });
+    const result = readStatus({ readFile: () => raw });
+    // Entry is valid (state + restarts present); pid is malformed → dropped.
+    expect(result.foo).toBeDefined();
+    expect('pid' in (result.foo ?? {})).toBe(false);
+  });
+
+  it('drops lastExitCode when it is a boolean (non-number) in JSON', () => {
+    const raw = JSON.stringify({ foo: { state: 'stopped', restarts: 1, lastExitCode: true } });
+    const result = readStatus({ readFile: () => raw });
+    expect(result.foo).toBeDefined();
+    expect('lastExitCode' in (result.foo ?? {})).toBe(false);
+  });
+
+  it('drops nextRetryAtMs when it is a string in JSON', () => {
+    const raw = JSON.stringify({
+      foo: { state: 'backing-off', restarts: 2, nextRetryAtMs: '1700000000000' },
+    });
+    const result = readStatus({ readFile: () => raw });
+    expect(result.foo).toBeDefined();
+    expect('nextRetryAtMs' in (result.foo ?? {})).toBe(false);
+  });
+
+  it('includes all valid optional numeric fields when they are present and correctly typed', () => {
+    const raw = JSON.stringify({
+      foo: { state: 'backing-off', restarts: 3, pid: 42, lastExitCode: 1, nextRetryAtMs: 9999 },
+    });
+    const result = readStatus({ readFile: () => raw });
+    expect(result.foo?.pid).toBe(42);
+    expect(result.foo?.lastExitCode).toBe(1);
+    expect(result.foo?.nextRetryAtMs).toBe(9999);
+  });
+
   it('reads back what writeStatus writes (real round-trip via PEEK_HOME)', () => {
     // Use real fs: writeStatus creates the file; readStatus reads it back.
     const snapshot: Record<string, ConnectorStatus> = {

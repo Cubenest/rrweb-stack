@@ -324,17 +324,16 @@ describe('Supervisor — on child exit (Task-4 behavior)', () => {
 });
 
 describe('Supervisor.shutdown()', () => {
-  it('does not throw (stub behavior for Task 4)', () => {
+  it('returns a Promise and resolves immediately when no children are alive (no connectors)', async () => {
     const out = makeFakeDeps();
     const ft = makeFakeTimers();
     const deps = makeDeps(out, ft);
-    const connectors: Record<string, ConnectorEntry> = {
-      'peek-slack': { surface: 'slack', enabled: true },
-    };
+    const connectors: Record<string, ConnectorEntry> = {};
 
     const sup = new Supervisor(connectors, deps);
     sup.start();
-    expect(() => sup.shutdown()).not.toThrow();
+    // No children → should resolve without needing to advance timers.
+    await expect(sup.shutdown()).resolves.toBeUndefined();
   });
 });
 
@@ -488,7 +487,7 @@ describe('Supervisor — restart-with-backoff (Task 5)', () => {
 
 describe('Supervisor — shutdown() (Task 5)', () => {
   it('kills each live child with SIGTERM on shutdown', () => {
-    const { sup, out } = makeSupFromConnectors({
+    const { sup, out, ft } = makeSupFromConnectors({
       'peek-slack': { surface: 'slack', enabled: true },
       'peek-discord': { surface: 'discord', enabled: true },
     });
@@ -499,39 +498,53 @@ describe('Supervisor — shutdown() (Task 5)', () => {
     expect(slack).toBeDefined();
     expect(discord).toBeDefined();
 
-    sup.shutdown();
+    // Start shutdown (don't await — we drive resolution via fake timers below).
+    const p = sup.shutdown();
 
     expect(slack?.killCalls).toContain('SIGTERM');
     expect(discord?.killCalls).toContain('SIGTERM');
+
+    // Simulate children exiting (SIGTERM was acknowledged) so the promise settles.
+    slack?.emitExit(null);
+    discord?.emitExit(null);
+    ft.timers.advanceAll();
+    return p;
   });
 
-  it('marks all connectors stopped after shutdown', () => {
-    const { sup, out } = makeSupFromConnectors({
+  it('marks all connectors stopped after shutdown', async () => {
+    const { sup, out, ft } = makeSupFromConnectors({
       'peek-slack': { surface: 'slack', enabled: true },
     });
     sup.start();
 
-    sup.shutdown();
+    const p = sup.shutdown();
+    // Simulate child exit so promise resolves (clean SIGTERM path).
+    out.children.get('peek-slack')?.emitExit(null);
+    ft.timers.advanceAll();
+    await p;
 
     const last = out.statusSnapshots[out.statusSnapshots.length - 1];
     expect(last?.['peek-slack']?.state).toBe('stopped');
   });
 
-  it('writes a final status snapshot after shutdown', () => {
-    const { sup, out } = makeSupFromConnectors({
+  it('writes a final status snapshot after shutdown', async () => {
+    const { sup, out, ft } = makeSupFromConnectors({
       'peek-slack': { surface: 'slack', enabled: true },
     });
     sup.start();
 
     const snapshotsBefore = out.statusSnapshots.length;
-    sup.shutdown();
+    const p = sup.shutdown();
+    out.children.get('peek-slack')?.emitExit(null);
+    ft.timers.advanceAll();
+    await p;
 
     expect(out.statusSnapshots.length).toBeGreaterThan(snapshotsBefore);
     const last = out.statusSnapshots[out.statusSnapshots.length - 1];
     expect(last?.['peek-slack']?.state).toBe('stopped');
   });
 
-  it('clears any pending restart timers on shutdown', () => {
+  it('clears any pending restart timers on shutdown', async () => {
     const { sup, out, ft } = makeSupFromConnectors({
       'peek-slack': { surface: 'slack', enabled: true },
     });
@@ -542,51 +555,121 @@ describe('Supervisor — shutdown() (Task 5)', () => {
     const pendingBefore = ft.timers.scheduled.filter((t) => !t.cancelled);
     expect(pendingBefore.length).toBeGreaterThanOrEqual(1);
 
-    sup.shutdown();
+    const p = sup.shutdown();
+    // Advance all timers including SIGKILL grace + fallback to settle the promise.
+    ft.timers.advanceAll();
+    ft.timers.advanceAll();
+    await p;
 
-    // The restart timer should be cancelled (not the SIGKILL grace timer)
+    // The restart timer (1000ms) should be cancelled.
     const restartTimers = ft.timers.scheduled.filter((t) => t.cancelled && t.ms === 1000);
     expect(restartTimers.length).toBeGreaterThanOrEqual(1);
   });
 
-  it('does NOT restart a connector that exits AFTER shutdown', () => {
+  it('does NOT restart a connector that exits AFTER shutdown', async () => {
     const { sup, out, ft } = makeSupFromConnectors({
       'peek-slack': { surface: 'slack', enabled: true },
     });
     sup.start();
     expect(out.spawnCalls).toHaveLength(1);
 
-    sup.shutdown();
+    const p = sup.shutdown();
 
-    // Child reports exit AFTER shutdown (e.g. delayed SIGTERM response)
+    // Child reports exit AFTER shutdown (e.g. delayed SIGTERM response).
     out.children.get('peek-slack')?.emitExit(null);
-
-    // Advance any timers — no new spawns should happen
     ft.timers.advanceAll();
+    await p;
 
-    expect(out.spawnCalls).toHaveLength(1); // still only the original spawn
-    // Status remains stopped (not backing-off)
+    // No new spawns should happen.
+    expect(out.spawnCalls).toHaveLength(1);
+    // Status remains stopped (not backing-off).
     const last = out.statusSnapshots[out.statusSnapshots.length - 1];
     expect(last?.['peek-slack']?.state).toBe('stopped');
   });
 
-  it('does NOT restart a connector in backing-off state when shutdown fires', () => {
+  it('does NOT restart a connector in backing-off state when shutdown fires', async () => {
     const { sup, out, ft } = makeSupFromConnectors({
       'peek-slack': { surface: 'slack', enabled: true },
     });
     sup.start();
 
-    // Exit → backing-off with pending timer
+    // Exit → backing-off with pending timer.
     out.children.get('peek-slack')?.emitExit(1);
 
-    // Shutdown before the restart fires
-    sup.shutdown();
+    // Shutdown before the restart fires.
+    const p = sup.shutdown();
 
-    // The restart timer was cancelled — advancing timers should not respawn
+    // Advance all timers (SIGKILL grace + fallback).
     ft.timers.advanceAll();
+    ft.timers.advanceAll();
+    await p;
 
     expect(out.spawnCalls).toHaveLength(1);
     const last = out.statusSnapshots[out.statusSnapshots.length - 1];
     expect(last?.['peek-slack']?.state).toBe('stopped');
+  });
+
+  it('resolves immediately when there are no live children at shutdown time', async () => {
+    const { sup } = makeSupFromConnectors({
+      'peek-slack': { surface: 'slack', enabled: false }, // disabled — not spawned
+    });
+    sup.start();
+    // No alive children; shutdown promise must resolve without advancing timers.
+    await expect(sup.shutdown()).resolves.toBeUndefined();
+  });
+
+  it('escalates to SIGKILL after grace period for a child that ignores SIGTERM, then resolves', async () => {
+    const { sup, out, ft } = makeSupFromConnectors({
+      'peek-slack': { surface: 'slack', enabled: true },
+    });
+    sup.start();
+
+    const child = out.children.get('peek-slack');
+    expect(child).toBeDefined();
+    if (!child) return;
+
+    // Start shutdown — child does NOT exit on SIGTERM (ignores it).
+    const shutdownPromise = sup.shutdown();
+
+    expect(child.killCalls).toContain('SIGTERM');
+    // Promise is still pending (child hasn't exited yet).
+    let resolved = false;
+    void shutdownPromise.then(() => {
+      resolved = true;
+    });
+    await Promise.resolve();
+    expect(resolved).toBe(false);
+
+    // Advance the fake clock past SIGKILL_GRACE_MS (5000ms timer).
+    ft.timers.advanceNext(); // fires the SIGKILL grace timer
+    expect(child.killCalls).toContain('SIGKILL');
+
+    // Advance past the SIGKILL_FALLBACK_MS (500ms) bounded-resolve timer.
+    ft.timers.advanceNext(); // fires the fallback resolve timer
+    await shutdownPromise;
+
+    expect(resolved).toBe(true);
+  });
+
+  it('resolves via exit listener (clean SIGTERM path) — does NOT wait for grace timer', async () => {
+    const { sup, out } = makeSupFromConnectors({
+      'peek-slack': { surface: 'slack', enabled: true },
+    });
+    sup.start();
+
+    const child = out.children.get('peek-slack');
+    expect(child).toBeDefined();
+    if (!child) return;
+
+    const p = sup.shutdown();
+
+    // Child exits promptly in response to SIGTERM.
+    child.emitExit(0);
+    // Promise should resolve without needing the SIGKILL grace timer.
+    await p;
+
+    // SIGKILL grace timer was cleared (child exited before the grace elapsed)
+    // or fired and found no survivors. Either way, SIGKILL must NOT have been sent.
+    expect(child.killCalls).not.toContain('SIGKILL');
   });
 });

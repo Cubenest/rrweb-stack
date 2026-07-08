@@ -261,7 +261,7 @@ describe('peek connect __supervise', () => {
       acquireLock: () => null, // lock already held by another process
       supervisorFactory: () => {
         factoryCalled = true;
-        return { start: () => {}, shutdown: () => {} };
+        return { start: () => {}, shutdown: async () => {} };
       },
       onSignal: () => {},
     });
@@ -286,7 +286,7 @@ describe('peek connect __supervise', () => {
       start: () => {
         startCalled = true;
       },
-      shutdown: () => {
+      shutdown: async () => {
         shutdownCalled = true;
       },
     };
@@ -343,7 +343,7 @@ describe('peek connect __supervise', () => {
           start: () => {
             throw new Error('EACCES: permission denied');
           },
-          shutdown: () => {},
+          shutdown: async () => {},
         }),
         onSignal: () => {},
       }),

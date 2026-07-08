@@ -19,6 +19,9 @@ const BACKOFF_CAP_MS = 60_000;
 /** Grace period (ms) between SIGTERM and SIGKILL during shutdown. */
 const SIGKILL_GRACE_MS = 5_000;
 
+/** Fallback resolve delay (ms) after SIGKILL is sent, for unkillable children. */
+const SIGKILL_FALLBACK_MS = 500;
+
 // ── Public types ───────────────────────────────────────────────────────────
 
 /**
@@ -101,36 +104,38 @@ export class Supervisor {
 
   /**
    * Graceful shutdown: set the down flag, clear all pending restart timers,
-   * send SIGTERM to each live child (with a SIGKILL escalation after a grace
-   * period), mark all connectors stopped, and write a final status snapshot.
+   * send SIGTERM to each live child, and schedule a SIGKILL escalation via
+   * the injected setTimer after SIGKILL_GRACE_MS.
+   *
+   * Returns a Promise<void> that resolves when ALL of the following are true:
+   * - Every tracked child has emitted 'exit' (clean SIGTERM path), OR
+   * - The SIGKILL grace has elapsed, SIGKILL has been sent, and a short
+   *   fallback tick has elapsed (bounded — never hangs forever).
+   *
+   * Uses only the injected setTimer/clearTimer so tests with a fake clock
+   * can advance time and drive the promise to resolution without real timers.
    */
-  shutdown(): void {
+  shutdown(): Promise<void> {
     this.#down = true;
 
-    for (const [_name, slot] of this.#slots) {
+    // Collect the set of names of children that are currently alive (either
+    // running or in backing-off state with a live child handle).
+    const alive = new Set<string>();
+
+    for (const [name, slot] of this.#slots) {
       // Cancel any pending restart timer for this connector.
       if (slot.restartTimer !== undefined) {
         this.#deps.clearTimer(slot.restartTimer);
         slot.restartTimer = undefined;
       }
 
-      // Kill the live child if it is still running.
       if (slot.status.state === 'running' || slot.status.state === 'backing-off') {
+        alive.add(name);
         try {
           slot.child.kill('SIGTERM');
         } catch {
           // Ignore — child may already be gone.
         }
-
-        // Escalate to SIGKILL after the grace period (kept deterministic via
-        // injected setTimer so tests can advance the fake clock if needed).
-        this.#deps.setTimer(() => {
-          try {
-            slot.child.kill('SIGKILL');
-          } catch {
-            // Ignore.
-          }
-        }, SIGKILL_GRACE_MS);
       }
 
       // Mark stopped immediately (we're done managing this connector).
@@ -143,6 +148,72 @@ export class Supervisor {
     }
 
     this.#deps.writeStatus(this.#statusSnapshot());
+
+    // If there are no live children, resolve immediately.
+    if (alive.size === 0) {
+      return Promise.resolve();
+    }
+
+    // Otherwise, return a promise that resolves when all children have exited
+    // OR after the SIGKILL grace fires (and a short fallback tick).
+    return new Promise<void>((resolve) => {
+      let settled = false;
+      let sigkillTimer: unknown;
+      let fallbackTimer: unknown;
+
+      const tryResolve = (): void => {
+        if (settled) return;
+        // All tracked children have exited.
+        settled = true;
+        if (sigkillTimer !== undefined) this.#deps.clearTimer(sigkillTimer);
+        if (fallbackTimer !== undefined) this.#deps.clearTimer(fallbackTimer);
+        resolve();
+      };
+
+      // Listen for exit on each live child so we know when they're all gone.
+      for (const [name] of this.#slots) {
+        if (!alive.has(name)) continue;
+        const slot = this.#slots.get(name);
+        if (slot === undefined) continue;
+        slot.child.on('exit', () => {
+          alive.delete(name);
+          if (alive.size === 0) tryResolve();
+        });
+      }
+
+      // Arm the SIGKILL escalation timer. If it fires, SIGKILL survivors and
+      // then schedule a short fallback resolve (in case some children are truly
+      // unkillable — we do not hang forever).
+      sigkillTimer = this.#deps.setTimer(() => {
+        sigkillTimer = undefined;
+
+        // SIGKILL any children that are still in the alive set.
+        for (const name of alive) {
+          const slot = this.#slots.get(name);
+          if (slot === undefined) continue;
+          try {
+            slot.child.kill('SIGKILL');
+          } catch {
+            // Ignore.
+          }
+        }
+
+        if (alive.size === 0) {
+          tryResolve();
+          return;
+        }
+
+        // Bounded fallback: give children a short window to report exit after
+        // SIGKILL, then resolve regardless so the caller is never blocked forever.
+        fallbackTimer = this.#deps.setTimer(() => {
+          fallbackTimer = undefined;
+          if (!settled) {
+            settled = true;
+            resolve();
+          }
+        }, SIGKILL_FALLBACK_MS);
+      }, SIGKILL_GRACE_MS);
+    });
   }
 
   // ── Private ──────────────────────────────────────────────────────────────
