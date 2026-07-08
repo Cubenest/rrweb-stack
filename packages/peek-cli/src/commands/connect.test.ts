@@ -9,7 +9,7 @@ import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { run } from '../index.js';
 import { readConnectors } from '../lib/connect/registry.js';
-import { runConnect, runStart, runSupervise } from './connect.js';
+import { runConnect, runStart, runStatus, runStop, runSupervise } from './connect.js';
 
 let home: string;
 let origHome: string | undefined;
@@ -339,12 +339,172 @@ describe('peek connect __supervise', () => {
   });
 });
 
-// ── lifecycle stubs (stop, status, logs) ───────────────────────────────────
+// ── stop (Task 8) ──────────────────────────────────────────────────────────
+
+describe('peek connect stop', () => {
+  it('prints "not running" and returns 0 when no lock exists', async () => {
+    const { out } = silenced();
+    const code = await runStop({
+      readLock: () => null,
+      isRunning: () => false,
+      kill: () => {
+        throw new Error('kill must not be called');
+      },
+      sleep: async () => {},
+      now: () => Date.now(),
+    });
+    expect(code).toBe(0);
+    expect(out.join('')).toMatch(/not running/);
+  });
+
+  it('prints "not running" and returns 0 when lock exists but pid is dead', async () => {
+    const { out } = silenced();
+    const code = await runStop({
+      readLock: () => ({ pid: 99999, startedAtMs: Date.now() }),
+      isRunning: () => false,
+      kill: () => {
+        throw new Error('kill must not be called');
+      },
+      sleep: async () => {},
+      now: () => Date.now(),
+    });
+    expect(code).toBe(0);
+    expect(out.join('')).toMatch(/not running/);
+  });
+
+  it('kills the pid with SIGTERM, polls until lock clears, prints "stopped", returns 0', async () => {
+    const { out } = silenced();
+    const killCalls: Array<{ pid: number; signal: string }> = [];
+
+    // isRunning: first call (before kill) = true; poll round 1 = false (clears immediately)
+    let isRunningCallCount = 0;
+    const isRunning = (): boolean => {
+      isRunningCallCount += 1;
+      return isRunningCallCount === 1; // alive on first check, gone on second
+    };
+
+    const sleepCalls: number[] = [];
+
+    const code = await runStop({
+      readLock: () => ({ pid: 1234, startedAtMs: Date.now() - 5000 }),
+      isRunning,
+      kill: (pid, signal) => {
+        killCalls.push({ pid, signal });
+      },
+      sleep: async (ms) => {
+        sleepCalls.push(ms);
+      },
+      now: () => Date.now(),
+    });
+
+    expect(code).toBe(0);
+    expect(killCalls).toHaveLength(1);
+    expect(killCalls[0]).toEqual({ pid: 1234, signal: 'SIGTERM' });
+    // Polled once (lock cleared on first poll); sleep may or may not have been
+    // called depending on whether the lock already cleared at poll time.
+    expect(out.join('')).toMatch(/stopped/);
+  });
+
+  it('routes through runConnect correctly (stop → runStop)', async () => {
+    // Supervisor not running (no lock file in temp PEEK_HOME).
+    const { out } = silenced();
+    const code = await runConnect(['stop']);
+    expect(code).toBe(0);
+    expect(out.join('')).toMatch(/not running/);
+    expect(out.join('')).not.toMatch(/not implemented yet/);
+  });
+});
+
+// ── status (Task 8) ────────────────────────────────────────────────────────
+
+describe('peek connect status', () => {
+  it('prints "not running" and returns 0 when no live supervisor', async () => {
+    const { out } = silenced();
+    const code = await runStatus({
+      readLock: () => null,
+      isRunning: () => false,
+      readStatus: () => ({}),
+      now: () => Date.now(),
+    });
+    expect(code).toBe(0);
+    expect(out.join('')).toMatch(/not running/);
+  });
+
+  it('prints supervisor pid + uptime + connector rows when running', async () => {
+    const { out } = silenced();
+    const fixedNow = 1_700_000_010_000; // 10 seconds after start
+    const startedAtMs = fixedNow - 10_000;
+
+    const code = await runStatus({
+      readLock: () => ({ pid: 42, startedAtMs }),
+      isRunning: () => true,
+      readStatus: () => ({
+        slack: { state: 'running', pid: 101, restarts: 0 },
+      }),
+      now: () => fixedNow,
+    });
+
+    expect(code).toBe(0);
+    const combined = out.join('');
+    expect(combined).toMatch(/pid=42/);
+    expect(combined).toMatch(/uptime=10s/);
+    expect(combined).toMatch(/slack/);
+    expect(combined).toMatch(/running/);
+    expect(combined).toMatch(/pid=101/);
+    expect(combined).toMatch(/restarts=0/);
+  });
+
+  it('prints "connectors: none" when no connectors are registered in status.json', async () => {
+    const { out } = silenced();
+    const code = await runStatus({
+      readLock: () => ({ pid: 5, startedAtMs: Date.now() }),
+      isRunning: () => true,
+      readStatus: () => ({}),
+      now: () => Date.now(),
+    });
+    expect(code).toBe(0);
+    expect(out.join('')).toMatch(/none/);
+  });
+
+  it('shows backing-off connector with retry countdown', async () => {
+    const { out } = silenced();
+    const fixedNow = 1_700_000_000_000;
+    const code = await runStatus({
+      readLock: () => ({ pid: 7, startedAtMs: fixedNow - 3000 }),
+      isRunning: () => true,
+      readStatus: () => ({
+        slack: {
+          state: 'backing-off',
+          restarts: 2,
+          lastExitCode: 1,
+          nextRetryAtMs: fixedNow + 5000,
+        },
+      }),
+      now: () => fixedNow,
+    });
+    expect(code).toBe(0);
+    const combined = out.join('');
+    expect(combined).toMatch(/backing-off/);
+    expect(combined).toMatch(/exit=1/);
+    expect(combined).toMatch(/retry-in=5s/);
+  });
+
+  it('routes through runConnect correctly (status → runStatus)', async () => {
+    // No live supervisor in temp PEEK_HOME.
+    const { out } = silenced();
+    const code = await runConnect(['status']);
+    expect(code).toBe(0);
+    expect(out.join('')).toMatch(/not running/);
+    expect(out.join('')).not.toMatch(/not implemented yet/);
+  });
+});
+
+// ── lifecycle stub (logs) ──────────────────────────────────────────────────
 
 describe('peek connect lifecycle stubs', () => {
-  it.each(['stop', 'status', 'logs'])('%s returns 0 (not-yet-implemented stub)', async (sub) => {
+  it('logs returns 0 (not-yet-implemented stub)', async () => {
     silenced();
-    const code = await runConnect([sub]);
+    const code = await runConnect(['logs']);
     expect(code).toBe(0);
   });
 });

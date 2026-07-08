@@ -2,24 +2,22 @@
 // shell (SP6b-2). The connector registry lives in ~/.peek/connect/connectors.json
 // (written via Task 1 — src/lib/connect/registry.ts). Surface descriptors come
 // from Task 2 — src/lib/connect/descriptors.ts. Lifecycle verbs start +
-// __supervise are implemented here (Task 7); stop/status/logs are Tasks 8-9.
+// __supervise are implemented here (Task 7); stop/status are Task 8; logs Task 9.
 
 import { spawn as _realSpawn } from 'node:child_process';
-import { openSync } from 'node:fs';
-import { mkdirSync } from 'node:fs';
+import { mkdirSync, openSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { parseArgs } from 'node:util';
-import { getDescriptor } from '../lib/connect/descriptors.js';
-import { resolveSpawn } from '../lib/connect/descriptors.js';
+import { getDescriptor, resolveSpawn } from '../lib/connect/descriptors.js';
 import { connectorLogPath, supervisorLogPath } from '../lib/connect/logs.js';
 import { addConnector, readConnectors, removeConnector } from '../lib/connect/registry.js';
+import { readStatus, writeStatus } from '../lib/connect/status.js';
 import {
   acquireSupervisorLock,
   isSupervisorRunning,
   readSupervisorLock,
 } from '../lib/connect/supervisor-lock.js';
 import { Supervisor, type SupervisorDeps } from '../lib/connect/supervisor.js';
-import { atomicWriteFileSync } from '../lib/fs-atomic.js';
 import { peekHomeDir } from '../lib/peek-home.js';
 
 const USAGE = `Usage: peek connect <subcommand> [options]
@@ -62,6 +60,38 @@ export function cliEntryPath(): string {
 }
 
 // ── Injectable deps for runStart ─────────────────────────────────────────────
+
+// ── Injectable deps for runStop ──────────────────────────────────────────────
+
+/** Injectable side-effects for `runStop` — lets tests drive the decision
+ * logic without real OS signals or filesystem access. */
+export interface RunStopDeps {
+  /** Read the supervisor lock file — returns null if absent or malformed. */
+  readLock: (lockPath: string) => { pid: number; startedAtMs: number } | null;
+  /** Returns true if the process at `pid` is alive. */
+  isRunning: (lockPath: string) => boolean;
+  /** Send a signal to a process. */
+  kill: (pid: number, signal: 'SIGTERM') => void;
+  /** Sleep for `ms` milliseconds (async). */
+  sleep: (ms: number) => Promise<void>;
+  /** Wall-clock (for polling timeout). */
+  now: () => number;
+}
+
+// ── Injectable deps for runStatus ────────────────────────────────────────────
+
+/** Injectable side-effects for `runStatus` — lets tests drive the decision
+ * logic without a real lock file or status.json. */
+export interface RunStatusDeps {
+  /** Read the supervisor lock file — returns null if absent or malformed. */
+  readLock: (lockPath: string) => { pid: number; startedAtMs: number } | null;
+  /** Returns true if the process at `pid` is alive. */
+  isRunning: (lockPath: string) => boolean;
+  /** Read the connector status map from status.json. */
+  readStatus: () => ReturnType<typeof readStatus>;
+  /** Wall-clock in milliseconds (injectable for tests). */
+  now: () => number;
+}
 
 /** Injectable side-effects for `runStart` — lets tests assert the decision
  * logic without launching a real detached process. */
@@ -156,18 +186,6 @@ export async function runStart(deps?: Partial<RunStartDeps>): Promise<number> {
 
 // ── __supervise (hidden) ─────────────────────────────────────────────────────
 
-/** Status file path: `~/.peek/connect/status.json`.
- * Task 8 creates status.ts and will consolidate this. */
-function statusFilePath(): string {
-  return join(peekHomeDir(), 'connect', 'status.json');
-}
-
-/** Inline status writer — persists the status snapshot to `status.json`
- * atomically.  Task 8 will consolidate this into `status.ts`. */
-function writeStatusInline(status: Record<string, unknown>): void {
-  atomicWriteFileSync(statusFilePath(), JSON.stringify(status, null, 2));
-}
-
 /** Open (or create) the per-connector log file for append, returning a fd.
  * THIS is the per-connector log routing the Task-4 review flagged: the `name`
  * arg on SupervisorDeps.spawn exists precisely for this wiring. */
@@ -196,7 +214,7 @@ function buildRealDeps(): SupervisorDeps {
     setTimer: (fn, ms) => setTimeout(fn, ms),
     clearTimer: (t) => clearTimeout(t as ReturnType<typeof setTimeout>),
     resolveSpawn,
-    writeStatus: writeStatusInline,
+    writeStatus,
   };
 }
 
@@ -264,6 +282,106 @@ export async function runSupervise(deps?: Partial<RunSuperviseDeps>): Promise<nu
   return 0;
 }
 
+// ── stop ────────────────────────────────────────────────────────────────────
+
+/** Max ms to wait for the supervisor to release its lock after SIGTERM. */
+const STOP_TIMEOUT_MS = 5_000;
+/** Polling interval when waiting for the lock to clear after SIGTERM. */
+const STOP_POLL_MS = 100;
+
+/**
+ * `peek connect stop` — send SIGTERM to the running supervisor and wait for
+ * it to release its lock. Idempotent: prints "not running" and returns 0 if
+ * no live supervisor exists.
+ *
+ * All side-effecting operations are injectable via `deps` so tests can drive
+ * the decision logic without real OS signals or filesystem access.
+ */
+export async function runStop(deps?: Partial<RunStopDeps>): Promise<number> {
+  const lockPath = join(peekHomeDir(), 'connect', 'supervisor.lock');
+
+  const readLock = deps?.readLock ?? ((lp: string) => readSupervisorLock(lp));
+  const isRunning = deps?.isRunning ?? ((lp: string) => isSupervisorRunning(lp));
+  const kill = deps?.kill ?? ((pid: number, signal: 'SIGTERM') => process.kill(pid, signal));
+  const sleep = deps?.sleep ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)));
+  const now = deps?.now ?? (() => Date.now());
+
+  const info = readLock(lockPath);
+
+  if (info === null || !isRunning(lockPath)) {
+    process.stdout.write('peek connect: supervisor not running\n');
+    return 0;
+  }
+
+  kill(info.pid, 'SIGTERM');
+
+  // Poll until the lock clears or a timeout elapses.
+  const deadline = now() + STOP_TIMEOUT_MS;
+  while (isRunning(lockPath)) {
+    if (now() >= deadline) {
+      process.stderr.write('peek connect stop: timed out waiting for supervisor to stop\n');
+      return 1;
+    }
+    await sleep(STOP_POLL_MS);
+  }
+
+  process.stdout.write('peek connect: supervisor stopped\n');
+  return 0;
+}
+
+// ── status ──────────────────────────────────────────────────────────────────
+
+/**
+ * `peek connect status` — print the supervisor's running state and each
+ * connector's per-connector status from `~/.peek/connect/status.json`.
+ *
+ * Prints "not running" when no live supervisor lock is found. Otherwise
+ * shows a table: one row per connector with state / pid / restarts /
+ * lastExitCode / nextRetryAt.
+ *
+ * All side-effecting operations are injectable via `deps` for tests.
+ */
+export async function runStatus(deps?: Partial<RunStatusDeps>): Promise<number> {
+  const lockPath = join(peekHomeDir(), 'connect', 'supervisor.lock');
+
+  const readLock = deps?.readLock ?? ((lp: string) => readSupervisorLock(lp));
+  const isRunning = deps?.isRunning ?? ((lp: string) => isSupervisorRunning(lp));
+  const readStatusFn = deps?.readStatus ?? readStatus;
+  const now = deps?.now ?? (() => Date.now());
+
+  if (!isRunning(lockPath)) {
+    process.stdout.write('peek connect: supervisor not running\n');
+    return 0;
+  }
+
+  const info = readLock(lockPath);
+  const uptimeSec = info !== null ? Math.floor((now() - info.startedAtMs) / 1000) : 0;
+  const pidPart = info !== null ? ` pid=${info.pid}` : '';
+  process.stdout.write(`supervisor: running${pidPart} uptime=${uptimeSec}s\n`);
+
+  const connectors = readStatusFn();
+  const entries = Object.entries(connectors);
+
+  if (entries.length === 0) {
+    process.stdout.write('connectors: none\n');
+    return 0;
+  }
+
+  for (const [name, cs] of entries) {
+    const pidCol = cs.pid !== undefined ? ` pid=${cs.pid}` : '';
+    const exitCol = cs.lastExitCode !== undefined ? ` exit=${cs.lastExitCode}` : '';
+    const retryCol =
+      cs.nextRetryAtMs !== undefined
+        ? ` retry-in=${Math.max(0, Math.ceil((cs.nextRetryAtMs - now()) / 1000))}s`
+        : '';
+    process.stdout.write(
+      `  ${name}: ${cs.state}${pidCol} restarts=${cs.restarts}${exitCol}${retryCol}\n`,
+    );
+  }
+
+  return 0;
+}
+
 export async function runConnect(argv: string[]): Promise<number> {
   const sub = argv[0];
   const rest = argv.slice(1);
@@ -287,11 +405,13 @@ export async function runConnect(argv: string[]): Promise<number> {
         // Hidden subcommand — not shown in USAGE. Invoked by `runStart` as
         // the detached daemon entrypoint.
         return runSupervise();
-      // Lifecycle verbs — stubs; implemented by Tasks 8-9.
       case 'stop':
+        return runStop();
       case 'status':
+        return runStatus();
+      // logs — stub; implemented by Task 9.
       case 'logs':
-        process.stdout.write(`peek connect ${sub}: not implemented yet (SP6b-2 Tasks 8-9)\n`);
+        process.stdout.write(`peek connect ${sub}: not implemented yet (SP6b-2 Task 9)\n`);
         return 0;
       default:
         process.stderr.write(`peek connect: unknown subcommand '${sub}'\n\n`);
