@@ -73,7 +73,7 @@ afterEach(() => {
 });
 
 describe.skipIf(!built)('peek-mcp stdio smoke (built bin)', () => {
-  it('completes initialize + tools/list over real stdio, returning all 19 tools', async () => {
+  it('completes initialize + tools/list over real stdio, returning all 20 tools', async () => {
     child = spawn(process.execPath, [distEntry], {
       env: { ...process.env, PEEK_HOME: home },
       stdio: ['pipe', 'pipe', 'pipe'],
@@ -119,6 +119,8 @@ describe.skipIf(!built)('peek-mcp stdio smoke (built bin)', () => {
         'set_intent',
         // Audit-log integrity check (read-only; no args).
         'verify_audit_log',
+        // Consent-gated egress export (.peekbundle to a temp file).
+        'share_session',
       ].sort(),
     );
   });
