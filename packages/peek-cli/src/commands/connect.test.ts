@@ -102,6 +102,63 @@ describe('peek connect add', () => {
     const entry = Object.values(file.connectors)[0];
     expect(entry?.args).toEqual(['--token', 'xoxb-test']);
   });
+
+  it('--local resolves to absolute path, sets command=node and args=[absPath]', async () => {
+    silenced();
+    const relPath = 'packages/connector-slack/dist/index.js';
+    const code = await runConnect(['add', 'slack', `--local=${relPath}`]);
+    expect(code).toBe(0);
+
+    const file = readConnectors();
+    const entry = Object.values(file.connectors)[0];
+    expect(entry?.command).toBe('node');
+    // args must contain exactly the absolute resolved path
+    expect(entry?.args).toHaveLength(1);
+    const absPath = entry?.args?.[0];
+    expect(absPath).toBeDefined();
+    // must be absolute
+    expect(absPath?.startsWith('/')).toBe(true);
+    // must end with the relative tail
+    expect(absPath?.endsWith(relPath)).toBe(true);
+  });
+
+  it('--local + --command together returns 1 and prints conflict message', async () => {
+    const { err } = silenced();
+    const code = await runConnect([
+      'add',
+      'slack',
+      '--local=packages/connector-slack/dist/index.js',
+      '--command=my-bin',
+    ]);
+    expect(code).toBe(1);
+    expect(err.join('')).toMatch(/--local.*--command|--command.*--local|conflict/i);
+  });
+
+  it('--local + --args together returns 1 and prints conflict message', async () => {
+    const { err } = silenced();
+    const code = await runConnect([
+      'add',
+      'slack',
+      '--local=packages/connector-slack/dist/index.js',
+      '--args=--foo',
+    ]);
+    expect(code).toBe(1);
+    expect(err.join('')).toMatch(/--local.*--args|--args.*--local|conflict/i);
+  });
+
+  it('plain add slack (no --local) still works unchanged', async () => {
+    silenced();
+    const code = await runConnect(['add', 'slack']);
+    expect(code).toBe(0);
+
+    const file = readConnectors();
+    const entry = Object.values(file.connectors)[0];
+    // no command or args injected — descriptor default only
+    expect(entry?.surface).toBe('slack');
+    expect(entry?.enabled).toBe(true);
+    expect(entry?.command).toBeUndefined();
+    expect(entry?.args).toBeUndefined();
+  });
 });
 
 // ── list ───────────────────────────────────────────────────────────────────

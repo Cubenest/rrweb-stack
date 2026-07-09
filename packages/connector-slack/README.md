@@ -37,3 +37,38 @@ adapter.onMessage(async (msg) => {
 
 await adapter.start();
 ```
+
+## Run from a local build (no npm publish)
+
+`@peekdev/connector-slack` is not published to npm — it runs from a local
+build, spawned by the `peek connect` daemon.
+
+1. Build the connector:
+
+   ```sh
+   pnpm --filter @peekdev/connector-slack build
+   ```
+
+2. Register it with peek using the `--local` shorthand (resolves the path to
+   an absolute path and sets `command=node`):
+
+   ```sh
+   peek connect add slack --local <repo>/packages/connector-slack/dist/index.js
+   ```
+
+3. Start the daemon:
+
+   ```sh
+   peek connect start
+   ```
+
+**Notes:**
+
+- Slack tokens (`SLACK_BOT_TOKEN`, `SLACK_APP_TOKEN`) are captured
+  interactively on first run and stored in the system keychain (SP6b-1); you
+  do not need to set them manually after the first interactive run.
+- The daemon inherits `PEEK_LLM_*` and `PEEK_MCP_COMMAND` from the shell
+  that ran `peek connect start` — set those in your shell profile before
+  starting the daemon.
+- Pairing with the browser extension happens via the extension side panel
+  after the daemon is running.
