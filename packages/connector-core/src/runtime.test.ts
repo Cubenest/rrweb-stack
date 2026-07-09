@@ -1,3 +1,6 @@
+import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import type { AgentOutcome, Brain, Session } from './brain.js';
 import type { PeekMcp } from './mcp.js';
@@ -746,5 +749,194 @@ describe('ConnectorRuntime start() loads existing secret', () => {
     await runtime.start();
 
     expect(fakeMcp.setConnectorSecret).not.toHaveBeenCalled();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// share_session interception tests (Task 3)
+// ---------------------------------------------------------------------------
+
+/** Extend FakeAdapter with postFile tracking. */
+class FileAdapter extends FakeAdapter {
+  postFileCalls: Array<{
+    conversationId: string;
+    filePath: string;
+    filename: string;
+    comment: string;
+  }> = [];
+  async postFile(conversationId: string, filePath: string, filename: string, comment?: string) {
+    this.postFileCalls.push({ conversationId, filePath, filename, comment: comment ?? '' });
+  }
+}
+
+/** Build a scripted consent brain that suspends on the named tool. */
+function shareSessionBrain(toolName = 'share_session'): Brain {
+  let toolResultSeen = false;
+  return {
+    newSession: (): Session => ({ history: [] }),
+    appendUserText: () => {},
+    appendToolResult: () => {
+      toolResultSeen = true;
+    },
+    runTurn: async () =>
+      toolResultSeen
+        ? { kind: 'done', text: 'shared' }
+        : {
+            kind: 'consent',
+            action: {
+              toolUseId: 'tu-share-1',
+              toolName,
+              input: { sessionId: 's1', surface: 'slack' },
+              createdAt: 0,
+            },
+          },
+  };
+}
+
+describe('share_session interception — postFile + temp file delete', () => {
+  it('calls adapter.postFile with the right args and deletes the temp file on approval', async () => {
+    // Create a real temp file to assert deletion.
+    const dir = await mkdtemp(join(tmpdir(), 'peek-test-'));
+    const bundlePath = join(dir, 'session.peekbundle');
+    await writeFile(bundlePath, 'bundle-data');
+
+    const toolResult = JSON.stringify({
+      ok: true,
+      bundlePath,
+      filename: 'session.peekbundle',
+      sizeBytes: 11,
+      caveat: 'contains data',
+    });
+
+    const callTool = vi.fn().mockResolvedValue(toolResult);
+    const adapter = new FileAdapter();
+    const brain = shareSessionBrain();
+    const store = new SessionStore(brain.newSession);
+    const mcp = { callTool, onElicit: () => {} } as unknown as PeekMcp;
+    const runtime = new ConnectorRuntime({ adapter, brain, mcp, store });
+    await runtime.start();
+
+    adapter.msgHandler?.({ conversationId: 'c1', userId: 'u', text: 'share my session' });
+    await vi.waitFor(() => expect(adapter.consents).toHaveLength(1));
+
+    const correlationId = adapter.consents[0]?.[1].correlationId ?? '';
+    adapter.consentHandler?.({ conversationId: 'c1', correlationId, decision: 'approve' });
+    await vi.waitFor(() => expect(adapter.texts).toContainEqual(['c1', 'shared']));
+
+    // postFile must have been called with the correct args.
+    expect(adapter.postFileCalls).toHaveLength(1);
+    expect(adapter.postFileCalls[0]?.conversationId).toBe('c1');
+    expect(adapter.postFileCalls[0]?.filePath).toBe(bundlePath);
+    expect(adapter.postFileCalls[0]?.filename).toBe('session.peekbundle');
+
+    // The temp file must have been deleted.
+    await expect(rm(bundlePath, { force: false })).rejects.toThrow();
+
+    // Cleanup the temp dir (bundle already gone, just the dir remains).
+    await rm(dir, { recursive: true, force: true });
+  });
+
+  it('deletes the temp file even when upload (postFile) throws — try/finally guarantee', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'peek-test-'));
+    const bundlePath = join(dir, 'session.peekbundle');
+    await writeFile(bundlePath, 'bundle-data');
+
+    const toolResult = JSON.stringify({
+      ok: true,
+      bundlePath,
+      filename: 'session.peekbundle',
+      sizeBytes: 11,
+      caveat: '',
+    });
+    const callTool = vi.fn().mockResolvedValue(toolResult);
+
+    class ThrowingFileAdapter extends FakeAdapter {
+      async postFile(_c: string, _fp: string, _fn: string, _comment?: string): Promise<void> {
+        throw new Error('Slack upload failed');
+      }
+    }
+
+    const adapter = new ThrowingFileAdapter();
+    const brain = shareSessionBrain();
+    const store = new SessionStore(brain.newSession);
+    const mcp = { callTool, onElicit: () => {} } as unknown as PeekMcp;
+    const runtime = new ConnectorRuntime({ adapter, brain, mcp, store });
+    await runtime.start();
+
+    adapter.msgHandler?.({ conversationId: 'c1', userId: 'u', text: 'share' });
+    await vi.waitFor(() => expect(adapter.consents).toHaveLength(1));
+
+    const correlationId = adapter.consents[0]?.[1].correlationId ?? '';
+    // The postFile throws but the runtime should swallow it into the error path
+    // and the turn should still complete (error posted to brain, runLoop continues).
+    adapter.consentHandler?.({ conversationId: 'c1', correlationId, decision: 'approve' });
+
+    // Wait for the runtime to finish the turn (either postText or continuation).
+    await vi.waitFor(() =>
+      expect(adapter.texts.length + adapter.confirmations.length).toBeGreaterThan(0),
+    );
+
+    // The temp file must be deleted despite the upload failure.
+    await expect(rm(bundlePath, { force: false })).rejects.toThrow();
+
+    await rm(dir, { recursive: true, force: true });
+  });
+
+  it('does not call postFile and does not throw when result is { ok: false }', async () => {
+    const toolResult = JSON.stringify({ ok: false, result: 'denied', reason: 'user denied' });
+    const callTool = vi.fn().mockResolvedValue(toolResult);
+    const adapter = new FileAdapter();
+    const brain = shareSessionBrain();
+    const store = new SessionStore(brain.newSession);
+    const mcp = { callTool, onElicit: () => {} } as unknown as PeekMcp;
+    const runtime = new ConnectorRuntime({ adapter, brain, mcp, store });
+    await runtime.start();
+
+    adapter.msgHandler?.({ conversationId: 'c1', userId: 'u', text: 'share' });
+    await vi.waitFor(() => expect(adapter.consents).toHaveLength(1));
+
+    const correlationId = adapter.consents[0]?.[1].correlationId ?? '';
+    adapter.consentHandler?.({ conversationId: 'c1', correlationId, decision: 'approve' });
+    await vi.waitFor(() => expect(adapter.texts).toContainEqual(['c1', 'shared']));
+
+    // No postFile should have been called.
+    expect(adapter.postFileCalls).toHaveLength(0);
+  });
+
+  it('degrades to a text note (no crash) when adapter.postFile is undefined', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'peek-test-'));
+    const bundlePath = join(dir, 'session.peekbundle');
+    await writeFile(bundlePath, 'bundle-data');
+
+    const toolResult = JSON.stringify({
+      ok: true,
+      bundlePath,
+      filename: 'session.peekbundle',
+      sizeBytes: 11,
+      caveat: '',
+    });
+    const callTool = vi.fn().mockResolvedValue(toolResult);
+
+    // FakeAdapter has no postFile method.
+    const adapter = new FakeAdapter();
+    const brain = shareSessionBrain();
+    const store = new SessionStore(brain.newSession);
+    const mcp = { callTool, onElicit: () => {} } as unknown as PeekMcp;
+    const runtime = new ConnectorRuntime({ adapter, brain, mcp, store });
+    await runtime.start();
+
+    adapter.msgHandler?.({ conversationId: 'c1', userId: 'u', text: 'share' });
+    await vi.waitFor(() => expect(adapter.consents).toHaveLength(1));
+
+    const correlationId = adapter.consents[0]?.[1].correlationId ?? '';
+    adapter.consentHandler?.({ conversationId: 'c1', correlationId, decision: 'approve' });
+
+    // Should complete without crash.
+    await vi.waitFor(() => expect(adapter.texts).toContainEqual(['c1', 'shared']));
+
+    // Temp file should still be deleted.
+    await expect(rm(bundlePath, { force: false })).rejects.toThrow();
+
+    await rm(dir, { recursive: true, force: true });
   });
 });

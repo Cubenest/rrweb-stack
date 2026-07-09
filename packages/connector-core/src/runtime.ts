@@ -1,3 +1,4 @@
+import { rm } from 'node:fs/promises';
 import type { AgentOutcome, Brain } from './brain.js';
 import type { PeekMcp } from './mcp.js';
 import type { SecretStore } from './secret-store.js';
@@ -280,6 +281,38 @@ export class ConnectorRuntime {
         text = `Tool call failed: ${String(err)}`;
         isError = true;
       }
+
+      // share_session interception: upload the temp bundle and delete it.
+      // The temp file is always deleted (try/finally) so session data is never
+      // left on disk, even if the upload fails. Upload errors are caught so the
+      // turn continues; the error is fed back to the brain as an error result.
+      if (pending.toolName === 'share_session' && !isError) {
+        let parsed: { ok: boolean; bundlePath?: string; filename?: string } | null = null;
+        try {
+          parsed = JSON.parse(text) as { ok: boolean; bundlePath?: string; filename?: string };
+        } catch {
+          // Not valid JSON — leave text as-is and fall through.
+        }
+        if (parsed?.ok && parsed.bundlePath && parsed.filename) {
+          const { bundlePath, filename } = parsed;
+          try {
+            if (adapter.postFile) {
+              await adapter.postFile(r.conversationId, bundlePath, filename, 'peek session bundle');
+              text = `Session bundle "${filename}" shared successfully.`;
+            } else {
+              text = `Session bundle ready at ${bundlePath} (filename: "${filename}"). The surface adapter does not support file upload.`;
+            }
+          } catch (uploadErr) {
+            // Upload failed: surface a descriptive error to the brain so the
+            // conversation can continue. The finally block still deletes the file.
+            text = `Session bundle export failed during upload: ${String(uploadErr)}`;
+            isError = true;
+          } finally {
+            await rm(bundlePath, { force: true });
+          }
+        }
+      }
+
       brain.appendToolResult(stored.session, pending.toolUseId, text, isError);
       await adapter.postConfirmation(r.conversationId, 'Approved — acting…');
     } else {
