@@ -1,5 +1,16 @@
 # @peekdev/cli
 
+## 0.1.0-alpha.30
+
+### Minor Changes
+
+- 5260d54: Add `peek connect add --local <path>` to register a locally-built connector (sugar for `--command node --args=<abs path>`).
+
+### Patch Changes
+
+- Updated dependencies [8947f44]
+  - @peekdev/mcp@0.1.0-alpha.24
+
 ## 0.1.0-alpha.29
 
 ### Minor Changes
