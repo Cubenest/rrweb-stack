@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { SlackAdapter } from './slack-adapter.js';
+import { SlackAdapter, stripMention } from './slack-adapter.js';
 import { parseConsentValue, suggestedPrompts } from './slack-adapter.js';
 
 describe('parseConsentValue', () => {
@@ -116,5 +116,173 @@ describe('SlackAdapter thinking status', () => {
     ).emit('cmd-C1-u1', 'C1', undefined, 'u1', 'hi');
     await new Promise((r) => setTimeout(r, 20));
     expect(setStatus).not.toHaveBeenCalled();
+  });
+});
+
+describe('stripMention', () => {
+  it('removes the bot mention token(s) and collapses whitespace', () => {
+    expect(stripMention('<@U0BOT> what failed?', 'U0BOT')).toBe('what failed?');
+    expect(stripMention('hey <@U0BOT>  make a repro', 'U0BOT')).toBe('hey make a repro');
+    expect(stripMention('<@U0BOT> <@U0BOT> show errors', 'U0BOT')).toBe('show errors');
+  });
+  it('leaves text without the bot mention unchanged (trimmed)', () => {
+    expect(stripMention('  what failed?  ', 'U0BOT')).toBe('what failed?');
+  });
+  it('returns empty string for a mention-only message', () => {
+    expect(stripMention('<@U0BOT>', 'U0BOT')).toBe('');
+  });
+});
+
+// Helper to extract the Nth handler registered with app.event/app.message/app.command/app.action.
+// After wire() runs:
+//   listeners[0] = app_mention handler
+//   listeners[1] = app.message handler
+//   listeners[2] = /peek command handler
+//   listeners[3] = peek_approve action handler
+//   listeners[4] = peek_deny action handler
+// Each listeners[N] is a chain; the last element is the actual user-supplied callback.
+function getBoltHandler(adapter: SlackAdapter, index: number) {
+  const boltApp = (adapter as unknown as { app: { listeners: Array<Array<unknown>> } }).app;
+  // biome-ignore lint/style/noNonNullAssertion: test seam — index is always in bounds
+  const chain = boltApp.listeners[index]!;
+  // biome-ignore lint/style/noNonNullAssertion: last element is the user-supplied callback
+  return chain[chain.length - 1]! as (args: Record<string, unknown>) => Promise<void>;
+}
+
+describe('SlackAdapter app_mention handler', () => {
+  it('emits once with conversationId === ts and stripped query on a top-level mention', async () => {
+    const { adapter } = makeAdapter();
+    const received: Array<{ conversationId: string; userId: string; text: string }> = [];
+    adapter.onMessage((m) =>
+      received.push({ conversationId: m.conversationId, userId: m.userId, text: m.text }),
+    );
+    const handler = getBoltHandler(adapter, 0);
+    await handler({
+      event: {
+        text: '<@U0BOT> what failed?',
+        ts: 'TS1',
+        thread_ts: undefined,
+        user: 'U1',
+        channel: 'C1',
+      },
+      context: { botUserId: 'U0BOT' },
+    });
+    expect(received).toHaveLength(1);
+    expect(received[0]).toEqual({ conversationId: 'TS1', userId: 'U1', text: 'what failed?' });
+  });
+
+  it('activates the thread so a follow-up app.message reply also emits', async () => {
+    const { adapter } = makeAdapter();
+    const received: string[] = [];
+    adapter.onMessage((m) => received.push(m.text));
+    const mentionHandler = getBoltHandler(adapter, 0);
+    await mentionHandler({
+      event: {
+        text: '<@U0BOT> show errors',
+        ts: 'TS2',
+        thread_ts: undefined,
+        user: 'U1',
+        channel: 'C1',
+      },
+      context: { botUserId: 'U0BOT' },
+    });
+    received.length = 0; // reset — only care about the follow-up
+    // Verify thread is now active by checking that a reply emits
+    const msgHandler = getBoltHandler(adapter, 1);
+    await msgHandler({
+      message: {
+        ts: 'TS2-reply',
+        thread_ts: 'TS2',
+        text: 'a follow-up',
+        user: 'U1',
+        channel: 'C1',
+        channel_type: 'channel',
+      },
+      context: { botUserId: 'U0BOT' },
+    });
+    expect(received).toEqual(['a follow-up']);
+  });
+});
+
+describe('SlackAdapter app.message handler (firehose fix)', () => {
+  it('emits for a DM message (channel_type: im)', async () => {
+    const { adapter } = makeAdapter();
+    const received: string[] = [];
+    adapter.onMessage((m) => received.push(m.text));
+    const handler = getBoltHandler(adapter, 1);
+    await handler({
+      message: { ts: 'TS3', text: 'hello peek', user: 'U1', channel: 'C2', channel_type: 'im' },
+      context: { botUserId: 'U0BOT' },
+    });
+    expect(received).toEqual(['hello peek']);
+  });
+
+  it('does NOT emit for a channel message that is not in an active thread', async () => {
+    const { adapter } = makeAdapter();
+    const received: string[] = [];
+    adapter.onMessage((m) => received.push(m.text));
+    const handler = getBoltHandler(adapter, 1);
+    await handler({
+      message: {
+        ts: 'TS4',
+        text: 'some channel chatter',
+        user: 'U1',
+        channel: 'C1',
+        channel_type: 'channel',
+      },
+      context: { botUserId: 'U0BOT' },
+    });
+    expect(received).toHaveLength(0);
+  });
+
+  it('emits for a channel thread reply when that thread was activated by app_mention', async () => {
+    const { adapter } = makeAdapter();
+    const received: string[] = [];
+    adapter.onMessage((m) => received.push(m.text));
+    // Activate the thread via app_mention
+    const mentionHandler = getBoltHandler(adapter, 0);
+    await mentionHandler({
+      event: {
+        text: '<@U0BOT> what failed?',
+        ts: 'TS5',
+        thread_ts: undefined,
+        user: 'U1',
+        channel: 'C1',
+      },
+      context: { botUserId: 'U0BOT' },
+    });
+    received.length = 0; // reset — only care about the follow-up
+    // Now send a reply in the same thread
+    const msgHandler = getBoltHandler(adapter, 1);
+    await msgHandler({
+      message: {
+        ts: 'TS5-reply',
+        thread_ts: 'TS5',
+        text: 'follow-up question',
+        user: 'U1',
+        channel: 'C1',
+        channel_type: 'channel',
+      },
+      context: { botUserId: 'U0BOT' },
+    });
+    expect(received).toEqual(['follow-up question']);
+  });
+
+  it('does NOT emit when the message text contains the bot mention (dedupe with app_mention)', async () => {
+    const { adapter } = makeAdapter();
+    const received: string[] = [];
+    adapter.onMessage((m) => received.push(m.text));
+    const handler = getBoltHandler(adapter, 1);
+    await handler({
+      message: {
+        ts: 'TS6',
+        text: '<@U0BOT> what broke?',
+        user: 'U1',
+        channel: 'C1',
+        channel_type: 'channel',
+      },
+      context: { botUserId: 'U0BOT' },
+    });
+    expect(received).toHaveLength(0);
   });
 });
