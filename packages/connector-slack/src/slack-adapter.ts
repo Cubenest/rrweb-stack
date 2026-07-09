@@ -172,8 +172,12 @@ export class SlackAdapter implements SurfaceAdapter {
           channel?: string;
         };
         if (!m.text || !m.channel) return;
-        // Thread title is handler-scoped and safe to set synchronously before emit.
-        await setTitle(m.text.slice(0, 75));
+        // Thread title is a nicety; never block the message on it.
+        try {
+          await setTitle(m.text.slice(0, 75));
+        } catch {
+          // Title failure must never drop the user's message.
+        }
         const cid = m.thread_ts ?? m.ts;
         this.emit(cid, m.channel, cid, m.user ?? 'unknown', m.text);
       },

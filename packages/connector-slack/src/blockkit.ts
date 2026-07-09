@@ -186,9 +186,14 @@ export function codeBlock(text: string): KnownBlock[] {
   return [{ type: 'section', text: { type: 'mrkdwn', text: `\`\`\`\n${code}\n\`\`\`` } }];
 }
 
-/** Route an LLM result to a code block or a prose section. */
+/** Route an LLM result to a code block or a prose section.
+ *  Already-fenced text (mixed prose + code, or fully-fenced) is rendered as
+ *  mrkdwn directly — Slack handles ``` natively and re-wrapping produces
+ *  nested fences that close the outer fence early. Only bare Playwright code
+ *  (no existing fence) is sent through codeBlock for a single fence wrap. */
 export function resultBlocks(text: string): KnownBlock[] {
-  return looksLikeCode(text) ? codeBlock(text) : textBlocks(text);
+  if (text.includes('```')) return textBlocks(text); // already fenced → Slack mrkdwn renders it; never re-wrap
+  return looksLikeCode(text) ? codeBlock(text) : textBlocks(text); // bare Playwright code → fence once
 }
 
 export function confirmation(text: string): KnownBlock[] {

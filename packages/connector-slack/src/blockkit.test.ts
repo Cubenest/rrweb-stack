@@ -142,6 +142,26 @@ describe('resultBlocks', () => {
       { type: 'section', text: { type: 'mrkdwn', text: 'Just some prose.' } },
     ]);
   });
+  it('passes mixed prose+fenced text through as mrkdwn without double-fencing', () => {
+    // Simulates an LLM reply like "Here's the repro:\n```ts\nconst a=1;\n```"
+    const mixed = "Here's the repro:\n```ts\nconst a = 1;\n```";
+    const blocks = resultBlocks(mixed);
+    // Must route to textBlocks (a single mrkdwn section), not codeBlock
+    expect(blocks).toEqual([{ type: 'section', text: { type: 'mrkdwn', text: mixed } }]);
+    // Exactly one fence pair in the rendered text — not double-fenced
+    const rendered = (blocks[0] as { text: { text: string } }).text.text;
+    expect(rendered.split('```').length).toBe(3);
+  });
+  it('routes bare Playwright code (no fence) through codeBlock — single fence wrap', () => {
+    const bare =
+      "import { test } from '@playwright/test';\ntest('x', async ({ page }) => { await page.goto('/'); })";
+    const blocks = resultBlocks(bare);
+    const rendered = (blocks[0] as { text: { text: string } }).text.text;
+    // Wrapped in exactly one fence pair
+    expect(rendered.startsWith('```')).toBe(true);
+    expect(rendered.endsWith('```')).toBe(true);
+    expect(rendered.split('```').length).toBe(3);
+  });
 });
 
 describe('consentCard suspend path (Action details → structured fields)', () => {

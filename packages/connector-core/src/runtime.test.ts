@@ -507,6 +507,12 @@ describe('runLoop error legibility', () => {
     adapter.msgHandler?.({ conversationId: 't1', userId: 'u', text: 'hi' });
     await vi.waitFor(() => expect(adapter.texts).toHaveLength(1));
     expect(adapter.texts[0]?.[0]).toBe('t1');
+    // The composed text must contain the classified headline AND hint for the unknown kind.
+    // classifyError('boom') → kind:'unknown', headline:'Something went wrong reaching peek',
+    // hint:'Please try again. If it keeps happening, check the connector logs.'
+    const postedText = adapter.texts[0]?.[1] ?? '';
+    expect(postedText).toContain('Something went wrong reaching peek');
+    expect(postedText).toContain('Please try again');
   });
 });
 
