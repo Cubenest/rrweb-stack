@@ -6,7 +6,7 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { create, extract } from 'tar';
-import { sha256Hex } from './audit-chain.js';
+import { sha256Hex } from './native-host/audit-chain.js';
 
 export const BUNDLE_FORMAT_VERSION = 1;
 

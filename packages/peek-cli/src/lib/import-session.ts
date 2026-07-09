@@ -6,9 +6,9 @@ import { randomUUID } from 'node:crypto';
 import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { gzipSync } from 'node:zlib';
+import type { UnpackedBundle } from '@peekdev/mcp/session-bundle';
 import type { Database } from 'better-sqlite3';
 import { rrwebEventsDir } from './peek-home.js';
-import type { UnpackedBundle } from './session-bundle.js';
 
 export interface ImportOptions {
   /** true (default): mint a fresh id; false: keep originalSessionId. */

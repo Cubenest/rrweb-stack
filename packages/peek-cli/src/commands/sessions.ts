@@ -17,6 +17,12 @@ import { writeFileSync } from 'node:fs';
 import { parseArgs } from 'node:util';
 import { openDb } from '@peekdev/mcp/db';
 import { loadSessionEvents } from '@peekdev/mcp/mcp/event-blobs';
+import {
+  FULLSNAPSHOT_CAVEAT,
+  packBundle,
+  unpackBundle,
+  verifyBundle,
+} from '@peekdev/mcp/session-bundle';
 import type { Database } from 'better-sqlite3';
 import {
   deleteSession,
@@ -39,12 +45,6 @@ import {
 import { importSessionBundle } from '../lib/import-session.js';
 import { formatBytes, pad } from '../lib/output.js';
 import { defaultDbPath, rrwebEventsDir } from '../lib/peek-home.js';
-import {
-  FULLSNAPSHOT_CAVEAT,
-  packBundle,
-  unpackBundle,
-  verifyBundle,
-} from '../lib/session-bundle.js';
 
 /** Open the shared DB for reading (migrations applied so a fresh DB is valid). */
 function open(): Database {

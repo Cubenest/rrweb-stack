@@ -1,14 +1,14 @@
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
   BUNDLE_FORMAT_VERSION,
   FULLSNAPSHOT_CAVEAT,
   packBundle,
   unpackBundle,
   verifyBundle,
-} from './session-bundle.js';
+} from '@peekdev/mcp/session-bundle';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 let dir: string;
 beforeEach(() => {

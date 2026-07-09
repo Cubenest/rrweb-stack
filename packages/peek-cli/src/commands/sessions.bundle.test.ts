@@ -3,8 +3,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { gzipSync } from 'node:zlib';
 import { openDb } from '@peekdev/mcp/db';
+import { unpackBundle, verifyBundle } from '@peekdev/mcp/session-bundle';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { unpackBundle, verifyBundle } from '../lib/session-bundle.js';
 import { runSessions } from './sessions.js';
 
 let home: string;
