@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { confirmation, consentCard, humanizeAction, maskValue, textBlocks } from './blockkit.js';
+import {
+  confirmation,
+  consentCard,
+  errorBlock,
+  humanizeAction,
+  maskValue,
+  textBlocks,
+} from './blockkit.js';
 
 describe('blockkit', () => {
   it('textBlocks wraps a mrkdwn section', () => {
@@ -68,6 +75,21 @@ describe('consentCard delegated path (summary only, empty details)', () => {
     });
     // No raw JSON code block on the delegated path.
     expect(section?.text.text).not.toContain('```');
+  });
+});
+
+describe('errorBlock', () => {
+  it('renders a warning headline + context hint', () => {
+    const blocks = errorBlock('Lost the connection to peek', 'Is the peek daemon running?');
+    const section = blocks.find((b) => b.type === 'section') as
+      | { text: { text: string } }
+      | undefined;
+    expect(section?.text.text).toContain(':warning:');
+    expect(section?.text.text).toContain('Lost the connection to peek');
+    const context = blocks.find((b) => b.type === 'context') as
+      | { elements: Array<{ text: string }> }
+      | undefined;
+    expect(context?.elements[0]?.text).toContain('Is the peek daemon running?');
   });
 });
 

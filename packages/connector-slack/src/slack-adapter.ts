@@ -6,7 +6,7 @@ import type {
 } from '@peekdev/connector-core';
 import { App, Assistant } from '@slack/bolt';
 import type { BlockAction } from '@slack/bolt';
-import { confirmation, consentCard, textBlocks } from './blockkit.js';
+import { confirmation, consentCard, errorBlock, textBlocks } from './blockkit.js';
 import type { SlackConfig } from './config.js';
 
 interface Route {
@@ -117,6 +117,20 @@ export class SlackAdapter implements SurfaceAdapter {
 
   async postConfirmation(conversationId: string, text: string): Promise<void> {
     await this.post(conversationId, confirmation(text));
+  }
+
+  async postError(
+    conversationId: string,
+    err: { kind: string; headline: string; hint: string },
+  ): Promise<void> {
+    const r = this.route(conversationId);
+    await this.app.client.chat.postMessage({
+      channel: r.channel,
+      ...(r.threadTs ? { thread_ts: r.threadTs } : {}),
+      // biome-ignore lint/suspicious/noExplicitAny: Bolt's postMessage accepts KnownBlock[] but its typings require `any[]` here
+      blocks: errorBlock(err.headline, err.hint) as any,
+      text: err.headline, // meaningful mobile push
+    });
   }
 
   async postConsentRequest(conversationId: string, req: ConsentRequest): Promise<void> {

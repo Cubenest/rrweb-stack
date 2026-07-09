@@ -163,3 +163,10 @@ export function textBlocks(text: string): KnownBlock[] {
 export function confirmation(text: string): KnownBlock[] {
   return [{ type: 'section', text: { type: 'mrkdwn', text: `✅ ${text}` } }];
 }
+
+export function errorBlock(headline: string, hint: string): KnownBlock[] {
+  return [
+    { type: 'section', text: { type: 'mrkdwn', text: `:warning: *${headline}*` } },
+    { type: 'context', elements: [{ type: 'mrkdwn', text: hint }] },
+  ];
+}

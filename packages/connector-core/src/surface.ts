@@ -24,4 +24,10 @@ export interface SurfaceAdapter {
   postText(conversationId: string, text: string): Promise<void>;
   postConsentRequest(conversationId: string, req: ConsentRequest): Promise<void>;
   postConfirmation(conversationId: string, text: string): Promise<void>;
+  /** Optional: post a classified, legible error. Runtime null-checks it, so an
+   *  adapter that doesn't implement it degrades to postText. */
+  postError?(
+    conversationId: string,
+    err: { kind: string; headline: string; hint: string },
+  ): Promise<void>;
 }

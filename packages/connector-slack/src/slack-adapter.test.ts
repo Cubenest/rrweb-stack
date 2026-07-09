@@ -55,6 +55,25 @@ function makeAdapter(): {
   return { adapter, setStatus, postMessage };
 }
 
+describe('SlackAdapter.postError', () => {
+  it('posts an errorBlock with the headline as the push fallback text', async () => {
+    const { adapter, postMessage } = makeAdapter();
+    // Record a route so post() can resolve a channel.
+    (
+      adapter as unknown as { routes: Map<string, { channel: string; threadTs?: string }> }
+    ).routes.set('t1', { channel: 'C1', threadTs: 'T1' });
+    await adapter.postError('t1', {
+      kind: 'mcp-connection-lost',
+      headline: 'Lost peek',
+      hint: 'restart it',
+    });
+    expect(postMessage).toHaveBeenCalledTimes(1);
+    const arg = postMessage.mock.calls[0]?.[0] as { text: string; blocks: unknown[] };
+    expect(arg.text).toBe('Lost peek'); // meaningful mobile push
+    expect(Array.isArray(arg.blocks)).toBe(true);
+  });
+});
+
 describe('SlackAdapter thinking status', () => {
   it('sets a thread status at message receipt when a thread is present', async () => {
     const { adapter, setStatus } = makeAdapter();
