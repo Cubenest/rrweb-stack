@@ -98,7 +98,10 @@ export function consentCard(
   const value = APPROVE_BUTTON_VALUE(correlationId, conversationId);
   const header: KnownBlock = {
     type: 'header',
-    text: { type: 'plain_text', text: 'peek wants to act on your browser' },
+    // Neutral header: one consent card serves acting on the browser, delegated
+    // acts, AND data egress (share_session). The summary sentence below always
+    // carries the specific request, so the header stays action-agnostic.
+    text: { type: 'plain_text', text: 'peek wants your approval' },
   };
   const context: KnownBlock = {
     type: 'context',

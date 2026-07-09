@@ -58,7 +58,8 @@ describe('consentCard delegated path (summary only, empty details)', () => {
     const header = blocks.find((b) => b.type === 'header') as
       | { text: { text: string } }
       | undefined;
-    expect(header?.text.text).toContain('peek wants to act');
+    // Neutral header (serves act, delegated-act, AND egress); the summary carries specifics.
+    expect(header?.text.text).toBe('peek wants your approval');
     const section = blocks.find((b) => b.type === 'section') as
       | { text: { text: string } }
       | undefined;
