@@ -46,9 +46,20 @@ async function main(): Promise<void> {
     apiKey: brainConfig.apiKey,
     baseURL: brainConfig.baseURL,
   });
+  // Forward-reference the runtime so the brain's callTool routes through
+  // runtime.interceptCallTool. share_session is 'read'-classified, so SdkBrain
+  // runs it inline via this callTool (never as a consent outcome) — the runtime
+  // wrapper is where the bundle upload + temp-file cleanup happens on the real
+  // path. The runtime is assigned below, before start(), so the reference is
+  // Forward reference: the brain's callTool closes over runtimeRef, but the runtime needs the
+  // brain at construction (dependency cycle). Assigned once below, before start(), so it is
+  // always resolved by the time any tool call fires.
+  // biome-ignore lint/style/useConst: forward reference for a construction-time dependency cycle
+  let runtimeRef: ConnectorRuntime;
   const brain = new SdkBrain({
     createMessage: (req) => anthropic.messages.create(req),
-    callTool: (name, input) => mcp.callTool(name, input),
+    callTool: (name, input) =>
+      runtimeRef.interceptCallTool(name, input, (n, i) => mcp.callTool(n, i)),
     tools,
     model: brainConfig.model,
     extendedReasoning: !brainConfig.baseURL,
@@ -58,6 +69,7 @@ async function main(): Promise<void> {
   const sessionStore = new SessionStore(() => brain.newSession());
   const adapter = new SlackAdapter(slackConfig);
   const runtime = new ConnectorRuntime({ adapter, brain, mcp, store: sessionStore, secretStore });
+  runtimeRef = runtime;
 
   // Determine paired-state before start() so we can decide whether to run the
   // first-run pairing flow. start() re-reads the same secret to arm the MCP

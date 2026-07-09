@@ -1,10 +1,12 @@
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import type Anthropic from '@anthropic-ai/sdk';
 import { describe, expect, it, vi } from 'vitest';
 import type { AgentOutcome, Brain, Session } from './brain.js';
 import type { PeekMcp } from './mcp.js';
 import { ConnectorRuntime, classifyError } from './runtime.js';
+import { SdkBrain } from './sdk-brain.js';
 import type { SecretStore } from './secret-store.js';
 import { SessionStore } from './store.js';
 import type { ConsentResponse, InboundMessage, SurfaceAdapter } from './surface.js';
@@ -769,33 +771,88 @@ class FileAdapter extends FakeAdapter {
   }
 }
 
-/** Build a scripted consent brain that suspends on the named tool. */
-function shareSessionBrain(toolName = 'share_session'): Brain {
-  let toolResultSeen = false;
+function anthropicMsg(
+  content: Anthropic.ContentBlock[],
+  stop: Anthropic.Message['stop_reason'],
+): Anthropic.Message {
   return {
-    newSession: (): Session => ({ history: [] }),
-    appendUserText: () => {},
-    appendToolResult: () => {
-      toolResultSeen = true;
-    },
-    runTurn: async () =>
-      toolResultSeen
-        ? { kind: 'done', text: 'shared' }
-        : {
-            kind: 'consent',
-            action: {
-              toolUseId: 'tu-share-1',
-              toolName,
-              input: { sessionId: 's1', surface: 'slack' },
-              createdAt: 0,
-            },
-          },
-  };
+    id: 'm',
+    type: 'message',
+    role: 'assistant',
+    model: 'x',
+    content,
+    stop_reason: stop,
+    stop_sequence: null,
+    usage: { input_tokens: 0, output_tokens: 0 },
+  } as Anthropic.Message;
 }
 
-describe('share_session interception — postFile + temp file delete', () => {
-  it('calls adapter.postFile with the right args and deletes the temp file on approval', async () => {
-    // Create a real temp file to assert deletion.
+/** A createMessage mock that first emits a `share_session` tool_use (a READ tool,
+ *  so SdkBrain runs it INLINE via its injected callTool — never as a consent
+ *  outcome), then a plain text end_turn once the tool result is fed back. */
+function shareSessionCreateMessage(): (
+  req: Anthropic.MessageCreateParamsNonStreaming,
+) => Promise<Anthropic.Message> {
+  return vi
+    .fn()
+    .mockResolvedValueOnce(
+      anthropicMsg(
+        [
+          {
+            type: 'tool_use',
+            id: 'tu-share-1',
+            name: 'share_session',
+            input: { sessionId: 's1', surface: 'slack' },
+            caller: { type: 'direct' },
+          } as Anthropic.ContentBlock,
+        ],
+        'tool_use',
+      ),
+    )
+    .mockResolvedValueOnce(
+      anthropicMsg([{ type: 'text', text: 'shared', citations: [] }], 'end_turn'),
+    );
+}
+
+/**
+ * Build a runtime wired to a REAL SdkBrain whose injected callTool routes through
+ * `runtime.interceptCallTool(...)` — exactly as the connector-slack composition
+ * root does. `innerCallTool` is the mocked low-level MCP callTool. This is the
+ * production path: share_session is read-classified, so SdkBrain calls it inline
+ * and the result flows through interceptCallTool, NOT handleConsentResponse.
+ *
+ * This mirroring is the whole point of the Critical fix — a test that drove a
+ * synthetic {kind:'consent'} brain (as commit 09219fc's tests did) would exercise
+ * the WRONG path and pass even though the interception never fires in production.
+ */
+function makeRealBrainRuntime(deps: {
+  adapter: SurfaceAdapter;
+  innerCallTool: (name: string, input: unknown) => Promise<string>;
+}): { runtime: ConnectorRuntime } {
+  // Forward reference — mirrors the connector-slack composition root's construction-time
+  // dependency cycle (the brain's callTool closes over the runtime).
+  // biome-ignore lint/style/useConst: forward reference for a construction-time dependency cycle
+  let runtimeRef: ConnectorRuntime;
+  const brain = new SdkBrain({
+    createMessage: shareSessionCreateMessage(),
+    callTool: (name, input) =>
+      runtimeRef.interceptCallTool(name, input, (n, i) => deps.innerCallTool(n, i)),
+    tools: [],
+    model: 'm',
+    extendedReasoning: false,
+  });
+  const store = new SessionStore(() => brain.newSession());
+  // The runtime only touches mcp.callTool on the consent path; on the read path
+  // it is never called. A stub keeps the type happy.
+  const mcp = { callTool: vi.fn(), onElicit: () => {} } as unknown as PeekMcp;
+  const runtime = new ConnectorRuntime({ adapter: deps.adapter, brain, mcp, store });
+  runtimeRef = runtime;
+  return { runtime };
+}
+
+describe('share_session interception — REAL SdkBrain inline (read) routing', () => {
+  it('MANDATORY: an approved share_session from the real SdkBrain triggers postFile + temp-file delete', async () => {
+    // Real temp file so deletion is observable.
     const dir = await mkdtemp(join(tmpdir(), 'peek-test-'));
     const bundlePath = join(dir, 'session.peekbundle');
     await writeFile(bundlePath, 'bundle-data');
@@ -807,32 +864,34 @@ describe('share_session interception — postFile + temp file delete', () => {
       sizeBytes: 11,
       caveat: 'contains data',
     });
+    // Low-level MCP callTool the brain drives INLINE (share_session is read).
+    const innerCallTool = vi.fn().mockResolvedValue(toolResult);
 
-    const callTool = vi.fn().mockResolvedValue(toolResult);
     const adapter = new FileAdapter();
-    const brain = shareSessionBrain();
-    const store = new SessionStore(brain.newSession);
-    const mcp = { callTool, onElicit: () => {} } as unknown as PeekMcp;
-    const runtime = new ConnectorRuntime({ adapter, brain, mcp, store });
+    const { runtime } = makeRealBrainRuntime({ adapter, innerCallTool });
     await runtime.start();
 
+    // Drive a real turn end-to-end: message -> SdkBrain.runTurn -> inline
+    // callTool(share_session) -> interceptCallTool -> postFile + delete.
     adapter.msgHandler?.({ conversationId: 'c1', userId: 'u', text: 'share my session' });
-    await vi.waitFor(() => expect(adapter.consents).toHaveLength(1));
-
-    const correlationId = adapter.consents[0]?.[1].correlationId ?? '';
-    adapter.consentHandler?.({ conversationId: 'c1', correlationId, decision: 'approve' });
     await vi.waitFor(() => expect(adapter.texts).toContainEqual(['c1', 'shared']));
 
-    // postFile must have been called with the correct args.
+    // The brain ran share_session inline (never a consent outcome).
+    expect(innerCallTool).toHaveBeenCalledWith('share_session', {
+      sessionId: 's1',
+      surface: 'slack',
+    });
+    // No consent card was ever posted (proves the read/inline path, not consent).
+    expect(adapter.consents).toHaveLength(0);
+
+    // postFile fired with the active conversationId + bundle args.
     expect(adapter.postFileCalls).toHaveLength(1);
     expect(adapter.postFileCalls[0]?.conversationId).toBe('c1');
     expect(adapter.postFileCalls[0]?.filePath).toBe(bundlePath);
     expect(adapter.postFileCalls[0]?.filename).toBe('session.peekbundle');
 
-    // The temp file must have been deleted.
+    // Temp file deleted.
     await expect(rm(bundlePath, { force: false })).rejects.toThrow();
-
-    // Cleanup the temp dir (bundle already gone, just the dir remains).
     await rm(dir, { recursive: true, force: true });
   });
 
@@ -848,7 +907,7 @@ describe('share_session interception — postFile + temp file delete', () => {
       sizeBytes: 11,
       caveat: '',
     });
-    const callTool = vi.fn().mockResolvedValue(toolResult);
+    const innerCallTool = vi.fn().mockResolvedValue(toolResult);
 
     class ThrowingFileAdapter extends FakeAdapter {
       async postFile(_c: string, _fp: string, _fn: string, _comment?: string): Promise<void> {
@@ -857,53 +916,33 @@ describe('share_session interception — postFile + temp file delete', () => {
     }
 
     const adapter = new ThrowingFileAdapter();
-    const brain = shareSessionBrain();
-    const store = new SessionStore(brain.newSession);
-    const mcp = { callTool, onElicit: () => {} } as unknown as PeekMcp;
-    const runtime = new ConnectorRuntime({ adapter, brain, mcp, store });
+    const { runtime } = makeRealBrainRuntime({ adapter, innerCallTool });
     await runtime.start();
 
     adapter.msgHandler?.({ conversationId: 'c1', userId: 'u', text: 'share' });
-    await vi.waitFor(() => expect(adapter.consents).toHaveLength(1));
+    // The upload error is surfaced to the brain as the tool result; the brain's
+    // second createMessage still returns end_turn 'shared', so the turn completes.
+    await vi.waitFor(() => expect(adapter.texts).toContainEqual(['c1', 'shared']));
 
-    const correlationId = adapter.consents[0]?.[1].correlationId ?? '';
-    // The postFile throws but the runtime should swallow it into the error path
-    // and the turn should still complete (error posted to brain, runLoop continues).
-    adapter.consentHandler?.({ conversationId: 'c1', correlationId, decision: 'approve' });
-
-    // Wait for the runtime to finish the turn (either postText or continuation).
-    await vi.waitFor(() =>
-      expect(adapter.texts.length + adapter.confirmations.length).toBeGreaterThan(0),
-    );
-
-    // The temp file must be deleted despite the upload failure.
+    // Temp file deleted despite the upload failure.
     await expect(rm(bundlePath, { force: false })).rejects.toThrow();
-
     await rm(dir, { recursive: true, force: true });
   });
 
   it('does not call postFile and does not throw when result is { ok: false }', async () => {
     const toolResult = JSON.stringify({ ok: false, result: 'denied', reason: 'user denied' });
-    const callTool = vi.fn().mockResolvedValue(toolResult);
+    const innerCallTool = vi.fn().mockResolvedValue(toolResult);
     const adapter = new FileAdapter();
-    const brain = shareSessionBrain();
-    const store = new SessionStore(brain.newSession);
-    const mcp = { callTool, onElicit: () => {} } as unknown as PeekMcp;
-    const runtime = new ConnectorRuntime({ adapter, brain, mcp, store });
+    const { runtime } = makeRealBrainRuntime({ adapter, innerCallTool });
     await runtime.start();
 
     adapter.msgHandler?.({ conversationId: 'c1', userId: 'u', text: 'share' });
-    await vi.waitFor(() => expect(adapter.consents).toHaveLength(1));
-
-    const correlationId = adapter.consents[0]?.[1].correlationId ?? '';
-    adapter.consentHandler?.({ conversationId: 'c1', correlationId, decision: 'approve' });
     await vi.waitFor(() => expect(adapter.texts).toContainEqual(['c1', 'shared']));
 
-    // No postFile should have been called.
     expect(adapter.postFileCalls).toHaveLength(0);
   });
 
-  it('degrades to a text note (no crash) when adapter.postFile is undefined', async () => {
+  it('degrades to a filename-only text note (no raw temp path) when adapter.postFile is undefined, and still deletes the temp file', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'peek-test-'));
     const bundlePath = join(dir, 'session.peekbundle');
     await writeFile(bundlePath, 'bundle-data');
@@ -915,28 +954,68 @@ describe('share_session interception — postFile + temp file delete', () => {
       sizeBytes: 11,
       caveat: '',
     });
-    const callTool = vi.fn().mockResolvedValue(toolResult);
 
-    // FakeAdapter has no postFile method.
-    const adapter = new FakeAdapter();
-    const brain = shareSessionBrain();
-    const store = new SessionStore(brain.newSession);
-    const mcp = { callTool, onElicit: () => {} } as unknown as PeekMcp;
+    // Capture the tool-result text fed back to the brain so we can assert the
+    // degrade note references the filename only and never the raw OS temp path.
+    let feedbackText = '';
+    const innerCallTool = vi.fn().mockResolvedValue(toolResult);
+
+    // FakeAdapter has no postFile. The second createMessage captures the
+    // tool_result the interception fed back to the brain, so we can assert the
+    // degrade note references the filename only (never the raw OS temp path).
+    // biome-ignore lint/style/useConst: forward reference (dependency cycle — see makeRealBrainRuntime).
+    let runtimeRef: ConnectorRuntime;
+    const createMessage = vi
+      .fn()
+      .mockResolvedValueOnce(
+        anthropicMsg(
+          [
+            {
+              type: 'tool_use',
+              id: 'tu-share-1',
+              name: 'share_session',
+              input: { sessionId: 's1', surface: 'slack' },
+              caller: { type: 'direct' },
+            } as Anthropic.ContentBlock,
+          ],
+          'tool_use',
+        ),
+      )
+      .mockImplementationOnce((req: Anthropic.MessageCreateParamsNonStreaming) => {
+        // The last user message carries the tool_result the interception produced.
+        const last = req.messages.at(-1) as { content: Anthropic.ToolResultBlockParam[] };
+        const block = last.content.find((b) => b.tool_use_id === 'tu-share-1');
+        feedbackText = typeof block?.content === 'string' ? block.content : '';
+        return Promise.resolve(
+          anthropicMsg([{ type: 'text', text: 'shared', citations: [] }], 'end_turn'),
+        );
+      });
+
+    const adapter = new FakeAdapter(); // no postFile
+    const brain = new SdkBrain({
+      createMessage,
+      callTool: (name, input) =>
+        runtimeRef.interceptCallTool(name, input, (n, i) => innerCallTool(n, i)),
+      tools: [],
+      model: 'm',
+      extendedReasoning: false,
+    });
+    const store = new SessionStore(() => brain.newSession());
+    const mcp = { callTool: vi.fn(), onElicit: () => {} } as unknown as PeekMcp;
     const runtime = new ConnectorRuntime({ adapter, brain, mcp, store });
+    runtimeRef = runtime;
     await runtime.start();
 
     adapter.msgHandler?.({ conversationId: 'c1', userId: 'u', text: 'share' });
-    await vi.waitFor(() => expect(adapter.consents).toHaveLength(1));
-
-    const correlationId = adapter.consents[0]?.[1].correlationId ?? '';
-    adapter.consentHandler?.({ conversationId: 'c1', correlationId, decision: 'approve' });
-
-    // Should complete without crash.
     await vi.waitFor(() => expect(adapter.texts).toContainEqual(['c1', 'shared']));
 
-    // Temp file should still be deleted.
-    await expect(rm(bundlePath, { force: false })).rejects.toThrow();
+    // The degrade note references the filename, never the raw OS temp path.
+    expect(feedbackText).toContain('session.peekbundle');
+    expect(feedbackText).not.toContain(bundlePath);
+    expect(feedbackText).not.toContain(dir);
 
+    // Temp file still deleted.
+    await expect(rm(bundlePath, { force: false })).rejects.toThrow();
     await rm(dir, { recursive: true, force: true });
   });
 });
