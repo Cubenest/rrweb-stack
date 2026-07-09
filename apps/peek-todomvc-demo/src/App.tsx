@@ -6,11 +6,14 @@ import { ThemeToggle } from './components/ThemeToggle'
 import { TodoList } from './components/TodoList'
 import { useTheme } from './hooks/useTheme'
 import { useTodos } from './hooks/useTodos'
+import { isBugMode } from './lib/bugMode'
+import { sortByPriority } from './lib/sortByPriority'
 
 function App() {
   const todos = useTodos()
   const { theme, toggle } = useTheme()
   const inputRef = useRef<HTMLInputElement>(null)
+  const bugMode = isBugMode(window.location.search)
 
   // Keyboard shortcuts: "/" focuses the input, 1/2/3 switch filters.
   useEffect(() => {
@@ -74,6 +77,18 @@ function App() {
             onFilter={todos.setFilter}
             onClearCompleted={todos.clearCompleted}
           />
+        )}
+        {bugMode && todos.todos.length > 0 && (
+          <div className="flex justify-center border-t border-border px-4 py-2">
+            <button
+              type="button"
+              // Intentional demo bug (see sortByPriority): throws in this handler.
+              onClick={() => todos.reorder(sortByPriority(todos.todos))}
+              className="text-sm text-muted-foreground underline decoration-dotted hover:text-foreground"
+            >
+              Sort by priority
+            </button>
+          </div>
         )}
       </motion.main>
 
