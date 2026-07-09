@@ -233,6 +233,7 @@ export class SlackAdapter implements SurfaceAdapter {
       const inActiveThread = m.thread_ts !== undefined && this.#activeThreads.has(m.thread_ts);
       if (!isDM && !inActiveThread) return; // ignore unrelated channel chatter
       const cid = m.thread_ts ?? m.ts;
+      // Idempotent no-op when cid is already in the set — kept as a defensive keep-alive for threaded replies.
       if (inActiveThread) this.#activeThreads.add(cid);
       this.emit(cid, m.channel, cid, m.user ?? 'unknown', m.text);
     });

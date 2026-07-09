@@ -141,13 +141,43 @@ describe('stripMention', () => {
 //   listeners[3] = peek_approve action handler
 //   listeners[4] = peek_deny action handler
 // Each listeners[N] is a chain; the last element is the actual user-supplied callback.
+//
+// IMPORTANT: This mapping is positional and depends on Bolt's internal listener layout.
+// The tripwire test below ("Bolt internal listener layout tripwire") asserts that
+// listeners.length === 5. If a Bolt version bump shifts the layout, that test fails
+// loudly rather than silently exercising the wrong handler.
 function getBoltHandler(adapter: SlackAdapter, index: number) {
   const boltApp = (adapter as unknown as { app: { listeners: Array<Array<unknown>> } }).app;
-  // biome-ignore lint/style/noNonNullAssertion: test seam — index is always in bounds
-  const chain = boltApp.listeners[index]!;
-  // biome-ignore lint/style/noNonNullAssertion: last element is the user-supplied callback
-  return chain[chain.length - 1]! as (args: Record<string, unknown>) => Promise<void>;
+  if (index < 0 || index >= boltApp.listeners.length) {
+    throw new Error(
+      `getBoltHandler: index ${index} is out of range (listeners.length = ${boltApp.listeners.length}). If a Bolt version bump changed the listener layout, update the index mapping above.`,
+    );
+  }
+  const chain = boltApp.listeners[index];
+  if (!chain || chain.length === 0) {
+    throw new Error(
+      `getBoltHandler: listeners[${index}] is empty or undefined. The Bolt internal listener layout may have changed — re-check the index mapping.`,
+    );
+  }
+  const cb = chain[chain.length - 1];
+  if (cb === undefined || cb === null) {
+    throw new Error(
+      `getBoltHandler: last element of listeners[${index}] chain is ${cb}. Expected the user-supplied callback but got nothing — re-check the index mapping.`,
+    );
+  }
+  return cb as (args: Record<string, unknown>) => Promise<void>;
 }
+
+// Tripwire: if Bolt's internal listener layout changes and the index mapping above becomes
+// stale, this assertion fails loudly (instead of silently exercising the wrong handler).
+describe('Bolt internal listener layout tripwire', () => {
+  it('boltApp.listeners has exactly 5 entries after wire() — one per registered handler', () => {
+    const { adapter } = makeAdapter();
+    const boltApp = (adapter as unknown as { app: { listeners: Array<Array<unknown>> } }).app;
+    // If this count changes, re-verify the positional index mapping in getBoltHandler.
+    expect(boltApp.listeners).toHaveLength(5);
+  });
+});
 
 describe('SlackAdapter app_mention handler', () => {
   it('emits once with conversationId === ts and stripped query on a top-level mention', async () => {
@@ -284,5 +314,27 @@ describe('SlackAdapter app.message handler (firehose fix)', () => {
       context: { botUserId: 'U0BOT' },
     });
     expect(received).toHaveLength(0);
+  });
+
+  it('does NOT dedupe when botUserId is absent — a message with a mention token falls through to normal gating', async () => {
+    // When botId is empty/absent, the dedupe guard `botId && text.includes('<@...>')` short-circuits
+    // on the falsy botId and does NOT suppress the message. A DM with a mention-looking token must
+    // still emit (it reaches the isDM / inActiveThread gate instead).
+    const { adapter } = makeAdapter();
+    const received: string[] = [];
+    adapter.onMessage((m) => received.push(m.text));
+    const handler = getBoltHandler(adapter, 1);
+    await handler({
+      message: {
+        ts: 'TS7',
+        text: '<@SOMEONE> what broke?', // looks like a mention, but botUserId is absent
+        user: 'U1',
+        channel: 'C3',
+        channel_type: 'im', // DM — passes the isDM gate
+      },
+      context: { botUserId: '' }, // absent / empty → dedupe check is skipped
+    });
+    // Falls through the (skipped) dedupe guard → hits isDM gate → emits
+    expect(received).toEqual(['<@SOMEONE> what broke?']);
   });
 });
