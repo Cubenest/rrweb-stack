@@ -55,6 +55,23 @@ function makeAdapter(): {
   return { adapter, setStatus, postMessage };
 }
 
+describe('SlackAdapter construction', () => {
+  it('does not throw or reject synchronously when constructed with fake tokens (no network call)', async () => {
+    // Guard: constructing must be network-free. With deferInitialization:true the
+    // Bolt App skips the construct-time auth.test() call, so no unhandled rejection fires.
+    let adapter: SlackAdapter | undefined;
+    expect(() => {
+      adapter = new SlackAdapter({
+        slackBotToken: 'xoxb-test',
+        slackAppToken: 'xapp-test',
+      } as never);
+    }).not.toThrow();
+    // Flush microtasks to surface any immediate promise rejection.
+    await Promise.resolve();
+    expect(adapter).toBeDefined();
+  });
+});
+
 describe('SlackAdapter.postError', () => {
   it('posts an errorBlock with the headline as the push fallback text', async () => {
     const { adapter, postMessage } = makeAdapter();
