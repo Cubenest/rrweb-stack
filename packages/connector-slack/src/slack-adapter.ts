@@ -58,6 +58,10 @@ export class SlackAdapter implements SurfaceAdapter {
       token: config.slackBotToken,
       appToken: config.slackAppToken,
       socketMode: true,
+      // deferInitialization prevents the Bolt App constructor from making a
+      // construct-time auth.test() network call. start() calls app.init()
+      // before app.start() to run the deferred initialization at the right time.
+      deferInitialization: true,
     });
     this.wire();
   }
@@ -71,6 +75,9 @@ export class SlackAdapter implements SurfaceAdapter {
   }
 
   async start(): Promise<void> {
+    // init() runs the deferred auth.test() that was skipped in the constructor
+    // (because deferInitialization:true); start() throws if init() was not called.
+    await this.app.init();
     await this.app.start();
   }
 
