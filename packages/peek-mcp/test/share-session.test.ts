@@ -397,6 +397,42 @@ describe('share_session — approve', () => {
       await close();
     }
   });
+
+  it('(c) approved unknown session → audit entry with result:error, approver:connector-elicit, no bundle bytes', async () => {
+    // CodeRabbit MAJOR 3: approved-but-errored calls must write an audit entry
+    // so the log never misses a record that consent was granted.
+    const { dbPath, eventsDir } = seedSessionWithData(dir);
+    const auditLogPath = join(dir, 'audit.log');
+    const { client, peek, close } = await connectClient({ dbPath, eventsDir, auditLogPath });
+    try {
+      stubElicitation(peek, 'accept');
+
+      await client.callTool({
+        name: 'share_session',
+        arguments: { sessionId: 's_does-not-exist', surface: 'Slack' },
+      });
+
+      // An audit entry must have been written even though the operation failed.
+      const contents = readFileSync(auditLogPath, 'utf8');
+      const lines = contents.split('\n').filter((l) => l.length > 0);
+      expect(lines.length).toBeGreaterThanOrEqual(1);
+      const entry = JSON.parse(lines[0] as string) as Record<string, unknown>;
+
+      // Must record the consent was granted (approver=connector-elicit) and that it errored.
+      expect(entry.tool).toBe('share_session');
+      expect(entry.result).toBe('error');
+      expect(entry.approver).toBe('connector-elicit');
+      expect(entry.sessionId).toBe('s_does-not-exist');
+
+      // Must not contain any bundle bytes.
+      const entryStr = JSON.stringify(entry);
+      expect(entryStr).not.toContain('events.json');
+      expect(entryStr).not.toContain('session.json');
+      expect(entryStr).not.toContain('FullSnapshot');
+    } finally {
+      await close();
+    }
+  });
 });
 
 describe('share_session — tool is registered', () => {

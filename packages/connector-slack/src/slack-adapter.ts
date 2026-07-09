@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs';
+import { readFile } from 'node:fs/promises';
 import type {
   ConsentRequest,
   ConsentResponse,
@@ -160,7 +160,7 @@ export class SlackAdapter implements SurfaceAdapter {
     comment?: string,
   ): Promise<void> {
     const r = this.route(conversationId);
-    const file = readFileSync(filePath);
+    const file = await readFile(filePath);
     // files.uploadV2 uses a discriminated union on thread_ts (exactOptionalPropertyTypes):
     //   FileThreadDestinationArgument — channel_id required + thread_ts required (string)
     //   FileChannelDestinationArgument — channel_id optional + thread_ts must be ABSENT (never)

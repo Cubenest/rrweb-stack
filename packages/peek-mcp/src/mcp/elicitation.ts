@@ -113,9 +113,13 @@ export function buildEgressConsentMessage(sessionId: string, surface: string): s
   // Sanitize sessionId for display: strip control characters (incl. newlines) so
   // a crafted id cannot inject into the consent card text.
   const safeSessionId = sessionId.replace(/[^\x20-\x7E]/g, '_');
+  // Sanitize surface the same way: it is caller-supplied and interpolated into
+  // the consent card, so a crafted value could inject newlines/control chars to
+  // spoof the approval prompt.
+  const safeSurface = surface.replace(/[^\x20-\x7E]/g, '_').slice(0, 60);
   return (
     `peek wants to upload this session's bundle (${safeSessionId} — recorded DOM + ` +
-    `console/network, masked) to ${surface}. This data leaves your local-first peek store. Approve?`
+    `console/network, masked) to ${safeSurface}. This data leaves your local-first peek store. Approve?`
   );
 }
 

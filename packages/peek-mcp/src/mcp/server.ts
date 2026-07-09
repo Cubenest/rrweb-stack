@@ -1157,11 +1157,14 @@ export function createPeekMcpServer(options: CreatePeekMcpServerOptions = {}): P
           'Export a session as a portable .peekbundle file to share with teammates (e.g. upload to a Slack thread). ' +
           'Requires explicit egress consent — a card naming what is exported and where; deny produces no file. ' +
           'On approve, returns the temp file path and size; the bundle never leaves your machine without consent. ' +
-          'The bundle contains the masked session recording (DOM + console/network); review the caveat before sharing.',
+          'The bundle contains the masked session recording (DOM + console/network); review the caveat before sharing. ' +
+          'The returned bundlePath is a temp file: a connector (e.g. connector-core) uploads it and deletes it automatically; ' +
+          'a direct MCP caller (Claude Desktop, MCP Inspector) is responsible for reading and deleting the returned path.',
         inputSchema: {
           sessionId: z.string().describe('Session id from list_recent_sessions.'),
           surface: z
             .string()
+            .max(60)
             .default('Slack')
             .describe(
               "The surface the bundle will be shared to (e.g. 'Slack', 'Discord'). Shown in the consent card.",
@@ -1428,20 +1431,72 @@ export function createPeekMcpServer(options: CreatePeekMcpServerOptions = {}): P
     // Approved — load session data and build the bundle.
     const handle = getDb();
     if (!handle) {
+      const noDbDraft: DraftAuditEntry = {
+        ts: new Date(requestStartedAtMs).toISOString(),
+        tool: 'share_session',
+        args: { sessionId: input.sessionId, surface: input.surface },
+        approver: 'connector-elicit',
+        client,
+        sessionId: input.sessionId,
+        result: 'error',
+        error: NO_DB_MESSAGE,
+      };
+      try {
+        appendAuditEntry(noDbDraft, auditWriteOptions);
+      } catch (auditErr) {
+        console.error(
+          `peek-mcp: share_session audit log write failed — ${auditErr instanceof Error ? auditErr.message : String(auditErr)}`,
+        );
+      }
       return jsonResult({ ok: false, result: 'error', error: NO_DB_MESSAGE });
     }
     const row = getSessionSummaryRow(handle, input.sessionId);
     if (!row) {
+      const notFoundError = `No session found with id '${input.sessionId}'.`;
+      const notFoundDraft: DraftAuditEntry = {
+        ts: new Date(requestStartedAtMs).toISOString(),
+        tool: 'share_session',
+        args: { sessionId: input.sessionId, surface: input.surface },
+        approver: 'connector-elicit',
+        client,
+        sessionId: input.sessionId,
+        result: 'error',
+        error: notFoundError,
+      };
+      try {
+        appendAuditEntry(notFoundDraft, auditWriteOptions);
+      } catch (auditErr) {
+        console.error(
+          `peek-mcp: share_session audit log write failed — ${auditErr instanceof Error ? auditErr.message : String(auditErr)}`,
+        );
+      }
       return jsonResult({
         ok: false,
         result: 'error',
-        error: `No session found with id '${input.sessionId}'.`,
+        error: notFoundError,
       });
     }
 
     // Load events (same path as generate_playwright_repro).
     const ev = eventsFor(input.sessionId);
     if (!ev.ok) {
+      const evLoadDraft: DraftAuditEntry = {
+        ts: new Date(requestStartedAtMs).toISOString(),
+        tool: 'share_session',
+        args: { sessionId: input.sessionId, surface: input.surface },
+        approver: 'connector-elicit',
+        client,
+        sessionId: input.sessionId,
+        result: 'error',
+        error: ev.message,
+      };
+      try {
+        appendAuditEntry(evLoadDraft, auditWriteOptions);
+      } catch (auditErr) {
+        console.error(
+          `peek-mcp: share_session audit log write failed — ${auditErr instanceof Error ? auditErr.message : String(auditErr)}`,
+        );
+      }
       return jsonResult({ ok: false, result: 'error', error: ev.message });
     }
 
@@ -1518,10 +1573,28 @@ export function createPeekMcpServer(options: CreatePeekMcpServerOptions = {}): P
       // { ok:false } with an audit entry rather than propagating as an unhandled throw.
       sizeBytes = statSync(bundlePath).size;
     } catch (err) {
+      const packError = `Failed to pack bundle: ${err instanceof Error ? err.message : String(err)}`;
+      const packFailDraft: DraftAuditEntry = {
+        ts: new Date(requestStartedAtMs).toISOString(),
+        tool: 'share_session',
+        args: { sessionId: input.sessionId, surface: input.surface },
+        approver: 'connector-elicit',
+        client,
+        sessionId: input.sessionId,
+        result: 'error',
+        error: packError,
+      };
+      try {
+        appendAuditEntry(packFailDraft, auditWriteOptions);
+      } catch (auditErr) {
+        console.error(
+          `peek-mcp: share_session audit log write failed — ${auditErr instanceof Error ? auditErr.message : String(auditErr)}`,
+        );
+      }
       return jsonResult({
         ok: false,
         result: 'error',
-        error: `Failed to pack bundle: ${err instanceof Error ? err.message : String(err)}`,
+        error: packError,
       });
     }
 

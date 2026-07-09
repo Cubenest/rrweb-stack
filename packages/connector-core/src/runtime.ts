@@ -191,7 +191,15 @@ export class ConnectorRuntime {
       // conversation can continue. The finally block still deletes the file.
       return `Session bundle export failed during upload: ${String(uploadErr)}`;
     } finally {
-      await rm(bundlePath, { force: true });
+      try {
+        await rm(bundlePath, { force: true });
+      } catch (cleanupErr) {
+        // Cleanup errors (e.g. EACCES, EBUSY) must never clobber the real return
+        // value from the try/catch above. Log and swallow.
+        console.error(
+          `peek connector: failed to delete temp bundle ${bundlePath} — ${cleanupErr instanceof Error ? cleanupErr.message : String(cleanupErr)}`,
+        );
+      }
     }
   }
 

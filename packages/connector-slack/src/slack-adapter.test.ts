@@ -2,9 +2,9 @@ import { describe, expect, it, vi } from 'vitest';
 import { SlackAdapter, stripMention } from './slack-adapter.js';
 import { parseConsentValue, suggestedPrompts } from './slack-adapter.js';
 
-// Mock node:fs so readFileSync is controllable in tests — must be hoisted before imports
-vi.mock('node:fs', () => ({
-  readFileSync: vi.fn(),
+// Mock node:fs/promises so readFile is controllable in tests — must be hoisted before imports
+vi.mock('node:fs/promises', () => ({
+  readFile: vi.fn(),
 }));
 
 describe('parseConsentValue', () => {
@@ -426,9 +426,9 @@ describe('SlackAdapter.postFile', () => {
   // We use a dynamic import inside each test so the mock is in scope.
 
   it('reads the file and calls files.uploadV2 with channel, thread_ts, bytes, filename, and initial_comment', async () => {
-    const { readFileSync } = await import('node:fs');
+    const { readFile } = await import('node:fs/promises');
     const fakeBytes = Buffer.from('bundle-bytes');
-    vi.mocked(readFileSync).mockReturnValue(fakeBytes);
+    vi.mocked(readFile).mockResolvedValue(fakeBytes);
 
     const uploadV2 = vi.fn().mockResolvedValue({});
     const { adapter } = makeAdapter();
@@ -450,7 +450,7 @@ describe('SlackAdapter.postFile', () => {
       'peek session bundle',
     );
 
-    expect(vi.mocked(readFileSync)).toHaveBeenCalledWith('/tmp/bundle.peekbundle');
+    expect(vi.mocked(readFile)).toHaveBeenCalledWith('/tmp/bundle.peekbundle');
     expect(uploadV2).toHaveBeenCalledTimes(1);
     const arg = uploadV2.mock.calls[0]?.[0] as Record<string, unknown>;
     expect(arg.channel_id).toBe('C10');
@@ -461,8 +461,8 @@ describe('SlackAdapter.postFile', () => {
   });
 
   it('omits thread_ts from the uploadV2 call when the route has no threadTs (slash path)', async () => {
-    const { readFileSync } = await import('node:fs');
-    vi.mocked(readFileSync).mockReturnValue(Buffer.from('bytes'));
+    const { readFile } = await import('node:fs/promises');
+    vi.mocked(readFile).mockResolvedValue(Buffer.from('bytes'));
 
     const uploadV2 = vi.fn().mockResolvedValue({});
     const { adapter } = makeAdapter();
@@ -486,8 +486,8 @@ describe('SlackAdapter.postFile', () => {
   });
 
   it('rejects when files.uploadV2 rejects (surfaces the error)', async () => {
-    const { readFileSync } = await import('node:fs');
-    vi.mocked(readFileSync).mockReturnValue(Buffer.from('bytes'));
+    const { readFile } = await import('node:fs/promises');
+    vi.mocked(readFile).mockResolvedValue(Buffer.from('bytes'));
 
     const uploadErr = new Error('network error');
     const uploadV2 = vi.fn().mockRejectedValue(uploadErr);
