@@ -4,7 +4,6 @@ import type { SecretStore } from './secret-store.js';
 import type { SessionStore } from './store.js';
 import type { ConsentResponse, InboundMessage, SurfaceAdapter } from './surface.js';
 
-const ERROR_TEXT = '⚠️ Something went wrong reaching peek. Please try again.';
 const DENY_RESULT =
   'The user denied this action. Do not retry it; explain or suggest an alternative.';
 
@@ -12,6 +11,90 @@ let correlationCounter = 0;
 function mintCorrelationId(): string {
   correlationCounter += 1;
   return `pc-${Date.now()}-${correlationCounter}`;
+}
+
+/** Defensively classify a caught turn error into a small, legible set. The default
+ *  {kind:'unknown'} branch ensures a provider swap (whose error strings differ)
+ *  can never break error handling — classification is provider-coupled, so it is
+ *  best-effort and always falls through to a safe generic. Hints are SUGGESTIVE,
+ *  not authoritative.
+ *
+ *  Substring grounding (verified against mcp.ts + sdk-brain.ts + @anthropic-ai/sdk):
+ *  - 'mcp connect' → withTimeout label 'mcp connect' → "mcp connect timed out after Nms"
+ *  - 'mcp calltool' → withTimeout label `mcp callTool(${name})` → "mcp callTool(X) timed out after Nms"
+ *    (checked BEFORE generic timeout branches so a callTool-timeout → tool-error, not consent-timeout)
+ *  - '401' → AuthenticationError.makeMessage → "401 {error message from API}"
+ *  - 'connection error' → APIConnectionError → "Connection error." (case-insensitive)
+ *  - 'tool-use turns' → SdkBrain → "SdkBrain exceeded N tool-use turns"
+ *    (brief used 'maxturns'/'max turns' which do NOT appear in the real message — fixed)
+ *  - 'timeout' + ('elicit'|'consent') → peek-mcp elicitation deny/timeout text */
+export function classifyError(err: unknown): { kind: string; headline: string; hint: string } {
+  const msg = err instanceof Error ? err.message : typeof err === 'string' ? err : '';
+  const m = msg.toLowerCase();
+  if (m.includes('mcp connect')) {
+    return {
+      kind: 'mcp-connection-lost',
+      headline: 'Lost the connection to peek',
+      hint: 'The peek daemon may have stopped. Check that it is running, then try again.',
+    };
+  }
+  if (m.includes('mcp calltool')) {
+    return {
+      kind: 'tool-error',
+      headline: 'A peek tool call failed',
+      hint: 'The action or query did not complete. Try rephrasing or ask again.',
+    };
+  }
+  if (
+    m.includes('401') ||
+    m.includes('unauthorized') ||
+    m.includes('x-api-key') ||
+    m.includes('invalid api key')
+  ) {
+    return {
+      kind: 'llm-key-rejected',
+      headline: 'The AI provider rejected the API key',
+      hint: 'Check the model API key configured for the connector.',
+    };
+  }
+  if (
+    m.includes('econnrefused') ||
+    m.includes('connection error') ||
+    m.includes('fetch failed') ||
+    m.includes('enotfound')
+  ) {
+    return {
+      kind: 'llm-endpoint-error',
+      headline: "Couldn't reach the AI provider",
+      hint: 'The model endpoint may be down or the base URL misconfigured. Try again shortly.',
+    };
+  }
+  if (m.includes('no recording') || m.includes('not recording') || m.includes('no session')) {
+    return {
+      kind: 'not-recording',
+      headline: 'No recorded session to work with',
+      hint: 'Open the peek extension and record a browser session first.',
+    };
+  }
+  if (m.includes('timeout') && (m.includes('elicit') || m.includes('consent'))) {
+    return {
+      kind: 'consent-timeout',
+      headline: 'The approval request timed out',
+      hint: 'No Approve/Deny was received in time. Send your request again.',
+    };
+  }
+  if (m.includes('tool-use turns')) {
+    return {
+      kind: 'max-turns',
+      headline: 'The turn ran out of steps',
+      hint: 'peek reached its per-turn step limit. Narrow the request and try again.',
+    };
+  }
+  return {
+    kind: 'unknown',
+    headline: 'Something went wrong reaching peek',
+    hint: 'Please try again. If it keeps happening, check the connector logs.',
+  };
 }
 
 export interface RuntimeDeps {
@@ -161,7 +244,12 @@ export class ConnectorRuntime {
       }
     } catch (err) {
       console.error('connector loop error:', err);
-      await adapter.postText(conversationId, ERROR_TEXT);
+      const classified = classifyError(err);
+      if (adapter.postError) {
+        await adapter.postError(conversationId, classified);
+      } else {
+        await adapter.postText(conversationId, `${classified.headline}. ${classified.hint}`);
+      }
     }
   }
 

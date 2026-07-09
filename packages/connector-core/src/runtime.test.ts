@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { AgentOutcome, Brain, Session } from './brain.js';
 import type { PeekMcp } from './mcp.js';
-import { ConnectorRuntime } from './runtime.js';
+import { ConnectorRuntime, classifyError } from './runtime.js';
 import type { SecretStore } from './secret-store.js';
 import { SessionStore } from './store.js';
 import type { ConsentResponse, InboundMessage, SurfaceAdapter } from './surface.js';
@@ -427,6 +427,86 @@ describe('ConnectorRuntime turn serialization (concurrency clobber fix)', () => 
     // Now unblock turn 1 so the chain can proceed.
     unblockFirst();
     await vi.waitFor(() => expect(adapter.texts).toHaveLength(2));
+  });
+});
+
+describe('classifyError', () => {
+  // Real thrown-message grounding (verified against source before writing fixtures):
+  // - mcp connect: withTimeout label='mcp connect' → "mcp connect timed out after 10000ms"
+  // - mcp callTool: withTimeout label=`mcp callTool(${name})` → "mcp callTool(list_recent_sessions) timed out after 30000ms"
+  // - 401 auth: AuthenticationError.makeMessage → "401 {message from API}" (contains '401')
+  // - connection error: APIConnectionError → "Connection error." (contains 'connection error')
+  // - max-turns: SdkBrain → "SdkBrain exceeded 16 tool-use turns" (contains 'tool-use turns')
+  //   NOTE: brief fixtures used 'Exceeded maxTurns (16) without a final answer' — WRONG.
+  //   Real message does NOT contain 'maxturns', 'max turns', or 'max-turns'. Fixed here.
+  const cases: Array<[unknown, string]> = [
+    [new Error('mcp connect timed out after 10000ms'), 'mcp-connection-lost'],
+    [new Error('mcp callTool(list_recent_sessions) timed out after 30000ms'), 'tool-error'],
+    [
+      new Error('401 {"message":"invalid x-api-key","type":"authentication_error"}'),
+      'llm-key-rejected',
+    ],
+    [new Error('Connection error.'), 'llm-endpoint-error'],
+    [new Error('No recording found for this browser session'), 'not-recording'],
+    [new Error('elicitInput deny reason: timeout'), 'consent-timeout'],
+    [new Error('SdkBrain exceeded 16 tool-use turns'), 'max-turns'],
+    ['a bare string with no signal', 'unknown'],
+    [{ weird: true }, 'unknown'],
+  ];
+  for (const [err, kind] of cases) {
+    it(`classifies ${kind}`, () => {
+      const out = classifyError(err);
+      expect(out.kind).toBe(kind);
+      expect(out.headline.length).toBeGreaterThan(0);
+      expect(out.hint.length).toBeGreaterThan(0);
+    });
+  }
+});
+
+describe('runLoop error legibility', () => {
+  it('calls postError with a classified kind when a turn throws', async () => {
+    const brain: Brain = {
+      newSession: (): Session => ({ history: [] }),
+      appendUserText: () => {},
+      appendToolResult: () => {},
+      runTurn: async () => {
+        throw new Error('401 {"message":"invalid x-api-key","type":"authentication_error"}');
+      },
+    };
+    class ErrAdapter extends FakeAdapter {
+      errors: Array<[string, { kind: string; headline: string; hint: string }]> = [];
+      async postError(c: string, e: { kind: string; headline: string; hint: string }) {
+        this.errors.push([c, e]);
+      }
+    }
+    const adapter = new ErrAdapter();
+    const store = new SessionStore(brain.newSession);
+    const mcp = { callTool: vi.fn(), onElicit: () => {} } as unknown as PeekMcp;
+    const runtime = new ConnectorRuntime({ adapter, brain, mcp, store });
+    await runtime.start();
+    adapter.msgHandler?.({ conversationId: 't1', userId: 'u', text: 'hi' });
+    await vi.waitFor(() => expect(adapter.errors).toHaveLength(1));
+    expect(adapter.errors[0]?.[1].kind).toBe('llm-key-rejected');
+    expect(adapter.texts).toHaveLength(0); // used postError, not plain text
+  });
+
+  it('falls back to postText when the adapter has no postError', async () => {
+    const brain: Brain = {
+      newSession: (): Session => ({ history: [] }),
+      appendUserText: () => {},
+      appendToolResult: () => {},
+      runTurn: async () => {
+        throw new Error('boom');
+      },
+    };
+    const adapter = new FakeAdapter(); // no postError
+    const store = new SessionStore(brain.newSession);
+    const mcp = { callTool: vi.fn(), onElicit: () => {} } as unknown as PeekMcp;
+    const runtime = new ConnectorRuntime({ adapter, brain, mcp, store });
+    await runtime.start();
+    adapter.msgHandler?.({ conversationId: 't1', userId: 'u', text: 'hi' });
+    await vi.waitFor(() => expect(adapter.texts).toHaveLength(1));
+    expect(adapter.texts[0]?.[0]).toBe('t1');
   });
 });
 
