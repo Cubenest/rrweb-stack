@@ -6,7 +6,7 @@
 import { mkdtempSync, rmSync } from 'node:fs';
 import { mkdirSync as fsMkdirSync, writeFileSync as fsWriteFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { isAbsolute, join, resolve } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { run } from '../index.js';
 import { readConnectors } from '../lib/connect/registry.js';
@@ -117,9 +117,9 @@ describe('peek connect add', () => {
     const absPath = entry?.args?.[0];
     expect(absPath).toBeDefined();
     // must be absolute
-    expect(absPath?.startsWith('/')).toBe(true);
-    // must end with the relative tail
-    expect(absPath?.endsWith(relPath)).toBe(true);
+    expect(isAbsolute(absPath ?? '')).toBe(true);
+    // must end with the relative tail (separator-agnostic)
+    expect(absPath).toBe(resolve(process.cwd(), relPath));
   });
 
   it('--local + --command together returns 1 and prints conflict message', async () => {
