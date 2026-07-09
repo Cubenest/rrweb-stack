@@ -6,7 +6,7 @@
 
 import { spawn as _realSpawn } from 'node:child_process';
 import { closeSync, mkdirSync, openSync } from 'node:fs';
-import { dirname, join } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 import { parseArgs } from 'node:util';
 import { getDescriptor, resolveSpawn } from '../lib/connect/descriptors.js';
 import {
@@ -31,6 +31,8 @@ const USAGE = `Usage: peek connect <subcommand> [options]
 Subcommands:
   add <surface> [--name <n>] [--command <c>] [--args=<arg>] (repeatable)
                                Register a connector for a surface
+  add <surface> --local <path> Run a locally-built connector: sugar for
+                               --command node --args=<abs path>
   list                         List all configured connectors
   remove <name>                Remove a connector from the registry
   start                        Start the connector supervisor daemon
@@ -568,6 +570,7 @@ const ADD_FLAGS = {
   name: { type: 'string' },
   command: { type: 'string' },
   args: { type: 'string', multiple: true },
+  local: { type: 'string' },
   help: { type: 'boolean' },
 } as const;
 
@@ -583,6 +586,7 @@ function runAdd(rest: string[]): number {
     name?: string;
     command?: string;
     args?: string[];
+    local?: string;
     help?: boolean;
   };
   try {
@@ -596,22 +600,50 @@ function runAdd(rest: string[]): number {
     return 0;
   }
 
+  // Mutual exclusion: --local cannot be combined with --command or --args.
+  if (values.local !== undefined) {
+    if (values.command !== undefined) {
+      process.stderr.write(
+        'peek connect add: --local and --command conflict — use one or the other\n',
+      );
+      return 1;
+    }
+    if (values.args !== undefined && values.args.length > 0) {
+      process.stderr.write(
+        'peek connect add: --local and --args conflict — use one or the other\n',
+      );
+      return 1;
+    }
+  }
+
   const descriptor = getDescriptor(surface);
-  if (descriptor === undefined && values.command === undefined) {
+  if (descriptor === undefined && values.command === undefined && values.local === undefined) {
     process.stderr.write(
-      `peek connect add: unknown surface '${surface}' — pass --command to use a custom connector binary\n`,
+      `peek connect add: unknown surface '${surface}' — pass --command or --local to use a custom connector binary\n`,
     );
     return 1;
   }
 
   const name = values.name ?? surface;
 
+  // --local <path>: desugar to command=node, args=[absPath].
+  let effectiveCommand: string | undefined;
+  let effectiveArgs: string[] | undefined;
+
+  if (values.local !== undefined) {
+    effectiveCommand = 'node';
+    effectiveArgs = [resolve(process.cwd(), values.local)];
+  } else {
+    effectiveCommand = values.command;
+    effectiveArgs = values.args !== undefined && values.args.length > 0 ? values.args : undefined;
+  }
+
   // Build entry conditionally to satisfy exactOptionalPropertyTypes.
   const entry = {
     surface,
     enabled: true,
-    ...(values.command !== undefined ? { command: values.command } : {}),
-    ...(values.args !== undefined && values.args.length > 0 ? { args: values.args } : {}),
+    ...(effectiveCommand !== undefined ? { command: effectiveCommand } : {}),
+    ...(effectiveArgs !== undefined ? { args: effectiveArgs } : {}),
   };
 
   addConnector(name, entry);
