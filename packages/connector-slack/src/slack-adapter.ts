@@ -34,10 +34,7 @@ export function suggestedPrompts(): {
 
 /** Strip every `<@BOTID>` token for the connector's own bot user id, collapse whitespace. */
 export function stripMention(text: string, botUserId: string): string {
-  return text
-    .replace(new RegExp(`<@${botUserId}>`, 'g'), ' ')
-    .replace(/\s+/g, ' ')
-    .trim();
+  return text.replaceAll(`<@${botUserId}>`, ' ').replace(/\s+/g, ' ').trim();
 }
 
 export function parseConsentValue(
@@ -61,6 +58,7 @@ export class SlackAdapter implements SurfaceAdapter {
   private msgHandler?: (m: InboundMessage) => void;
   private consentHandler?: (r: ConsentResponse) => void;
   #activeThreads = new Set<string>();
+  readonly #MAX_ACTIVE_THREADS = 1000;
 
   constructor(config: SlackConfig) {
     this.app = new App({
@@ -169,6 +167,16 @@ export class SlackAdapter implements SurfaceAdapter {
     this.msgHandler?.({ conversationId, userId, text });
   }
 
+  #trackThread(cid: string): void {
+    // Bounded to avoid unbounded growth on a long-running socket process.
+    // Simple insertion-order eviction (oldest first); a TTL is deferred past alpha.
+    if (this.#activeThreads.size >= this.#MAX_ACTIVE_THREADS && !this.#activeThreads.has(cid)) {
+      const oldest = this.#activeThreads.values().next().value;
+      if (oldest !== undefined) this.#activeThreads.delete(oldest);
+    }
+    this.#activeThreads.add(cid);
+  }
+
   private wire(): void {
     const assistant = new Assistant({
       threadStarted: async ({ say, setSuggestedPrompts }) => {
@@ -212,7 +220,7 @@ export class SlackAdapter implements SurfaceAdapter {
       const query = e.text ? stripMention(e.text, botId) : '';
       if (!query || !e.channel) return;
       const cid = e.thread_ts ?? e.ts;
-      this.#activeThreads.add(cid);
+      this.#trackThread(cid);
       this.emit(cid, e.channel, cid, e.user ?? 'unknown', query);
     });
 
@@ -228,13 +236,14 @@ export class SlackAdapter implements SurfaceAdapter {
       };
       if (m.subtype || !m.text || !m.channel) return;
       const botId = context.botUserId ?? '';
-      if (botId && m.text.includes(`<@${botId}>`)) return; // mentions handled by app_mention (dedupe)
       const isDM = m.channel_type === 'im';
+      // Dedupe only in channels: a channel mention fires BOTH app_mention and message,
+      // so skip it here (app_mention handles it). DMs never emit app_mention, so a DM
+      // whose text contains a mention token must NOT be dropped.
+      if (!isDM && botId && m.text.includes(`<@${botId}>`)) return;
       const inActiveThread = m.thread_ts !== undefined && this.#activeThreads.has(m.thread_ts);
       if (!isDM && !inActiveThread) return; // ignore unrelated channel chatter
       const cid = m.thread_ts ?? m.ts;
-      // Idempotent no-op when cid is already in the set — kept as a defensive keep-alive for threaded replies.
-      if (inActiveThread) this.#activeThreads.add(cid);
       this.emit(cid, m.channel, cid, m.user ?? 'unknown', m.text);
     });
 

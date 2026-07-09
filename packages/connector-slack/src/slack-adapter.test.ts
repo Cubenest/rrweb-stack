@@ -317,9 +317,9 @@ describe('SlackAdapter app.message handler (firehose fix)', () => {
   });
 
   it('does NOT dedupe when botUserId is absent — a message with a mention token falls through to normal gating', async () => {
-    // When botId is empty/absent, the dedupe guard `botId && text.includes('<@...>')` short-circuits
-    // on the falsy botId and does NOT suppress the message. A DM with a mention-looking token must
-    // still emit (it reaches the isDM / inActiveThread gate instead).
+    // When botId is empty/absent, the dedupe guard `!isDM && botId && text.includes('<@...>')`
+    // short-circuits on the falsy botId and does NOT suppress the message. A DM with a
+    // mention-looking token must still emit (it reaches the isDM gate instead).
     const { adapter } = makeAdapter();
     const received: string[] = [];
     adapter.onMessage((m) => received.push(m.text));
@@ -336,5 +336,82 @@ describe('SlackAdapter app.message handler (firehose fix)', () => {
     });
     // Falls through the (skipped) dedupe guard → hits isDM gate → emits
     expect(received).toEqual(['<@SOMEONE> what broke?']);
+  });
+
+  it('emits for a DM whose text contains the bot mention token (Fix 1 regression: DM + mention was incorrectly dropped)', async () => {
+    // Bug: the old code ran the mention-dedupe guard BEFORE isDM. Slack never emits
+    // app_mention for DMs, so a DM with "<@BOTID>" was silently dropped — nothing handled it.
+    // Fix: dedupe guard is now gated on `!isDM`, so DMs always fall through to the isDM check.
+    const { adapter } = makeAdapter();
+    const received: string[] = [];
+    adapter.onMessage((m) => received.push(m.text));
+    const handler = getBoltHandler(adapter, 1);
+    await handler({
+      message: {
+        ts: 'TS8',
+        text: '<@UBOT> what broke?',
+        user: 'U1',
+        channel: 'D1',
+        channel_type: 'im', // DM — app_mention never fires here
+      },
+      context: { botUserId: 'UBOT' }, // non-empty botUserId — was the exact trigger of the bug
+    });
+    // Must emit: DMs with a mention token must NOT be deduped
+    expect(received).toEqual(['<@UBOT> what broke?']);
+  });
+});
+
+describe('SlackAdapter #activeThreads cap (Fix 4)', () => {
+  it('stays at or below 1000 entries after more than 1000 distinct app_mention events', async () => {
+    const { adapter } = makeAdapter();
+    const mentionHandler = getBoltHandler(adapter, 0);
+
+    // Fire 1005 distinct top-level mentions (each gets a unique ts → unique cid)
+    for (let i = 0; i < 1005; i++) {
+      await mentionHandler({
+        event: {
+          text: `<@U0BOT> query ${i}`,
+          ts: `TS-cap-${i}`,
+          thread_ts: undefined,
+          user: 'U1',
+          channel: 'C1',
+        },
+        context: { botUserId: 'U0BOT' },
+      });
+    }
+
+    // #activeThreads is private — verify the observable cap effect:
+    // the oldest thread (TS-cap-0) should have been evicted, so a follow-up
+    // reply in that thread is NOT treated as an active thread and does NOT emit.
+    const received: string[] = [];
+    adapter.onMessage((m) => received.push(m.text));
+    const msgHandler = getBoltHandler(adapter, 1);
+    await msgHandler({
+      message: {
+        ts: 'TS-cap-0-reply',
+        thread_ts: 'TS-cap-0', // oldest — should be evicted
+        text: 'evicted thread reply',
+        user: 'U1',
+        channel: 'C1',
+        channel_type: 'channel',
+      },
+      context: { botUserId: 'U0BOT' },
+    });
+    // If eviction worked correctly, the oldest thread is gone → no emit
+    expect(received).toHaveLength(0);
+
+    // Sanity: a recent thread (TS-cap-1004) is still active → emits
+    await msgHandler({
+      message: {
+        ts: 'TS-cap-1004-reply',
+        thread_ts: 'TS-cap-1004',
+        text: 'recent thread reply',
+        user: 'U1',
+        channel: 'C1',
+        channel_type: 'channel',
+      },
+      context: { botUserId: 'U0BOT' },
+    });
+    expect(received).toEqual(['recent thread reply']);
   });
 });
