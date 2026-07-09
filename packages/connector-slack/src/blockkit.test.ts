@@ -1,10 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import {
+  codeBlock,
   confirmation,
   consentCard,
   errorBlock,
   humanizeAction,
+  looksLikeCode,
   maskValue,
+  resultBlocks,
   textBlocks,
 } from './blockkit.js';
 
@@ -90,6 +93,54 @@ describe('errorBlock', () => {
       | { elements: Array<{ text: string }> }
       | undefined;
     expect(context?.elements[0]?.text).toContain('Is the peek daemon running?');
+  });
+});
+
+describe('looksLikeCode', () => {
+  it('detects a fenced block', () => {
+    expect(looksLikeCode('here you go:\n```ts\nconst a = 1;\n```')).toBe(true);
+  });
+  it('detects a Playwright test without a fence', () => {
+    expect(
+      looksLikeCode(
+        "import { test, expect } from '@playwright/test';\ntest('x', async ({ page }) => {})",
+      ),
+    ).toBe(true);
+  });
+  it('treats plain forensic prose as non-code', () => {
+    expect(looksLikeCode('The button click failed because the network request 500ed.')).toBe(false);
+  });
+});
+
+describe('codeBlock', () => {
+  it('wraps bare code in a single fence', () => {
+    const blocks = codeBlock("test('x', async ({ page }) => {})");
+    const section = blocks[0] as { text: { text: string } };
+    expect(section.text.text.startsWith('```')).toBe(true);
+    expect(section.text.text.endsWith('```')).toBe(true);
+    // not double-fenced
+    expect(section.text.text.split('```').length).toBe(3);
+  });
+  it('does not double-fence already-fenced input', () => {
+    const blocks = codeBlock('```\nconst a = 1;\n```');
+    const section = blocks[0] as { text: { text: string } };
+    expect(section.text.text.split('```').length).toBe(3);
+  });
+});
+
+describe('resultBlocks', () => {
+  it('routes code to a fenced block', () => {
+    const blocks = resultBlocks(
+      "import { test } from '@playwright/test';\ntest('x', async ({ page }) => {})",
+    );
+    const section = blocks[0] as { text: { text: string } };
+    expect(section.text.text).toContain('```');
+  });
+  it('routes prose to a plain mrkdwn section', () => {
+    const blocks = resultBlocks('Just some prose.');
+    expect(blocks).toEqual([
+      { type: 'section', text: { type: 'mrkdwn', text: 'Just some prose.' } },
+    ]);
   });
 });
 

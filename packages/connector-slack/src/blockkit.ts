@@ -160,6 +160,37 @@ export function textBlocks(text: string): KnownBlock[] {
   return [{ type: 'section', text: { type: 'mrkdwn', text } }];
 }
 
+const SECTION_LIMIT = 2900; // Slack section text hard limit is 3000; leave fence room.
+
+/** Heuristic: does this LLM narrative read as code the user would want fenced?
+ *  True when it already carries a fenced block, or reads as a Playwright test. */
+export function looksLikeCode(text: string): boolean {
+  if (text.includes('```')) return true;
+  const hasPlaywright = text.includes('@playwright/test');
+  const hasTestCall = /\btest\(|\bimport\s*\{\s*test\b/.test(text);
+  const hasPageApi = text.includes('page.');
+  return hasPlaywright && (hasTestCall || hasPageApi);
+}
+
+/** Wrap text in a single fenced mrkdwn block. Strips an existing outer fence so
+ *  the output is never double-fenced; truncates to the Slack section limit. */
+export function codeBlock(text: string): KnownBlock[] {
+  let code = text.trim();
+  if (code.startsWith('```') && code.endsWith('```')) {
+    code = code
+      .slice(3, -3)
+      .replace(/^[a-zA-Z]*\n/, '')
+      .trim(); // drop fence + optional lang tag
+  }
+  if (code.length > SECTION_LIMIT) code = `${code.slice(0, SECTION_LIMIT)}\n… (truncated)`;
+  return [{ type: 'section', text: { type: 'mrkdwn', text: `\`\`\`\n${code}\n\`\`\`` } }];
+}
+
+/** Route an LLM result to a code block or a prose section. */
+export function resultBlocks(text: string): KnownBlock[] {
+  return looksLikeCode(text) ? codeBlock(text) : textBlocks(text);
+}
+
 export function confirmation(text: string): KnownBlock[] {
   return [{ type: 'section', text: { type: 'mrkdwn', text: `✅ ${text}` } }];
 }

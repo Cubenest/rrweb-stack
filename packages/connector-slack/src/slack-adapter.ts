@@ -6,7 +6,7 @@ import type {
 } from '@peekdev/connector-core';
 import { App, Assistant } from '@slack/bolt';
 import type { BlockAction } from '@slack/bolt';
-import { confirmation, consentCard, errorBlock, textBlocks } from './blockkit.js';
+import { confirmation, consentCard, errorBlock, resultBlocks } from './blockkit.js';
 import type { SlackConfig } from './config.js';
 
 interface Route {
@@ -112,7 +112,7 @@ export class SlackAdapter implements SurfaceAdapter {
   }
 
   async postText(conversationId: string, text: string): Promise<void> {
-    await this.post(conversationId, textBlocks(text));
+    await this.post(conversationId, resultBlocks(text));
   }
 
   async postConfirmation(conversationId: string, text: string): Promise<void> {
