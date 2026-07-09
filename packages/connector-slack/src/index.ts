@@ -30,7 +30,16 @@ async function main(): Promise<void> {
   const slackConfig = await buildSlackConfig(secretStore);
 
   const mcp = new PeekMcp(mcpConfig, 'peek-slack');
-  await mcp.connect();
+  try {
+    await mcp.connect();
+  } catch (err) {
+    console.error(
+      '[peek-slack] Could not start the peek MCP server. ' +
+        'Check that the peek daemon/CLI is installed and the spawn command is correct.',
+    );
+    console.error(err);
+    process.exit(1);
+  }
   const tools = await mcp.listTools();
 
   const anthropic = new Anthropic({

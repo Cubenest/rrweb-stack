@@ -6,12 +6,30 @@ import type {
 } from '@peekdev/connector-core';
 import { App, Assistant } from '@slack/bolt';
 import type { BlockAction } from '@slack/bolt';
-import { confirmation, consentCard, textBlocks } from './blockkit.js';
+import { confirmation, consentCard, errorBlock, resultBlocks } from './blockkit.js';
 import type { SlackConfig } from './config.js';
 
 interface Route {
   channel: string;
   threadTs: string | undefined;
+}
+
+export function suggestedPrompts(): {
+  title: string;
+  prompts: Array<{ title: string; message: string }>;
+} {
+  return {
+    title: 'Try asking peek:',
+    prompts: [
+      { title: 'What just failed?', message: 'What failed in my last browser session?' },
+      { title: 'Show console errors', message: 'List the console errors from my last session' },
+      { title: 'What caused it?', message: 'What did I do right before the last error?' },
+      {
+        title: 'Make a Playwright repro',
+        message: 'Generate a Playwright test for my last session',
+      },
+    ],
+  };
 }
 
 export function parseConsentValue(
@@ -66,6 +84,22 @@ export class SlackAdapter implements SurfaceAdapter {
     return r;
   }
 
+  private async postStatus(conversationId: string, status: string): Promise<void> {
+    const r = this.routes.get(conversationId);
+    // Status requires a thread; the /peek slash path has none — skip there.
+    if (!r || !r.threadTs) return;
+    try {
+      await this.app.client.assistant.threads.setStatus({
+        channel_id: r.channel,
+        thread_ts: r.threadTs,
+        status,
+      });
+    } catch {
+      // Status is a nicety; a failure (e.g. missing chat:write scope on an
+      // un-migrated app) must never break the turn. Swallow.
+    }
+  }
+
   private async post(conversationId: string, blocks: unknown): Promise<void> {
     const r = this.route(conversationId);
     await this.app.client.chat.postMessage({
@@ -78,11 +112,25 @@ export class SlackAdapter implements SurfaceAdapter {
   }
 
   async postText(conversationId: string, text: string): Promise<void> {
-    await this.post(conversationId, textBlocks(text));
+    await this.post(conversationId, resultBlocks(text));
   }
 
   async postConfirmation(conversationId: string, text: string): Promise<void> {
     await this.post(conversationId, confirmation(text));
+  }
+
+  async postError(
+    conversationId: string,
+    err: { kind: string; headline: string; hint: string },
+  ): Promise<void> {
+    const r = this.route(conversationId);
+    await this.app.client.chat.postMessage({
+      channel: r.channel,
+      ...(r.threadTs ? { thread_ts: r.threadTs } : {}),
+      // biome-ignore lint/suspicious/noExplicitAny: Bolt's postMessage accepts KnownBlock[] but its typings require `any[]` here
+      blocks: errorBlock(err.headline, err.hint) as any,
+      text: err.headline, // meaningful mobile push
+    });
   }
 
   async postConsentRequest(conversationId: string, req: ConsentRequest): Promise<void> {
@@ -98,17 +146,23 @@ export class SlackAdapter implements SurfaceAdapter {
     text: string,
   ): void {
     this.routes.set(conversationId, { channel, threadTs });
+    // Show a "thinking…" status immediately; Slack auto-clears it when the next
+    // message posts (postText/postConsentRequest). Fire-and-forget — never awaited,
+    // never allowed to block or throw into the message handler.
+    void this.postStatus(conversationId, 'peek is thinking…');
     this.msgHandler?.({ conversationId, userId, text });
   }
 
   private wire(): void {
     const assistant = new Assistant({
-      threadStarted: async ({ say }) => {
+      threadStarted: async ({ say, setSuggestedPrompts }) => {
         await say(
           "Hi — I'm peek. Ask what failed in your last browser session, or tell me to act on the page you have open.",
         );
+        const { title, prompts } = suggestedPrompts();
+        await setSuggestedPrompts({ title, prompts });
       },
-      userMessage: async ({ message }) => {
+      userMessage: async ({ message, setTitle }) => {
         // Bolt types message as GenericMessageEvent but the actual payload has these fields
         const m = message as {
           thread_ts?: string;
@@ -118,6 +172,12 @@ export class SlackAdapter implements SurfaceAdapter {
           channel?: string;
         };
         if (!m.text || !m.channel) return;
+        // Thread title is a nicety; never block the message on it.
+        try {
+          await setTitle(m.text.slice(0, 75));
+        } catch {
+          // Title failure must never drop the user's message.
+        }
         const cid = m.thread_ts ?? m.ts;
         this.emit(cid, m.channel, cid, m.user ?? 'unknown', m.text);
       },

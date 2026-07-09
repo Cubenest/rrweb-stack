@@ -9,6 +9,8 @@
 // destructive-override remain the backstop; elicitation is an ADDITIONAL delegated
 // prompt for the execute_action tool only.
 
+import type { Action } from './action-schema.js';
+
 /** The subset of `McpServer.server` this module needs (structurally loose so the
  *  SDK's richer types assign under exactOptionalPropertyTypes). */
 export interface ElicitCapableServer {
@@ -87,8 +89,68 @@ export async function elicitConsent(
     : { elicited: true, verdict: 'deny', reason: 'declined' };
 }
 
-/** Human-facing card text for an action. peek-mcp does not classify the action —
- *  it just names it. */
-export function buildElicitMessage(action: { type: string }): string {
-  return `peek wants to run "${action.type}" on your live browser. Approve?`;
+/** Mask a sensitive value for a consent card: keep the first and last visible
+ *  character, replace the middle with a fixed 3-char bullet run (never
+ *  length-proportional — length must not leak). Values of length ≤ 2 mask
+ *  wholly, so a 1- or 2-char secret is never shown. */
+export function maskValue(value: string): string {
+  if (value.length <= 2) return '•••';
+  const first = value[0];
+  const last = value[value.length - 1];
+  // Both indices are defined: length > 2 guarantees [0] and [length-1] exist.
+  return `${first ?? ''}•••${last ?? ''}`;
+}
+
+/** Human-facing consent-card text for an action. peek-mcp does NOT classify the
+ *  action as destructive/act (that lives in the SW gate) — it only describes it,
+ *  masking any literal value that would otherwise persist in the client's chat
+ *  history. Widening the parameter to the Action union is peek-mcp-internal: the
+ *  caller (server.ts dispatchActTool) already passes the full typed input.action,
+ *  so the MCP contract is unchanged. */
+export function buildElicitMessage(action: Action): string {
+  const tail = 'on your live browser. Approve?';
+  const target = (ref?: string, selector?: string, nth?: number): string => {
+    const base = ref ?? selector ?? '(active element)';
+    return nth !== undefined ? `\`${base}\` #${nth}` : `\`${base}\``;
+  };
+  switch (action.type) {
+    case 'click':
+      return `peek wants to Click ${target(action.ref, action.selector, action.nth)} ${tail}`;
+    case 'dblclick':
+      return `peek wants to Double-click ${target(action.ref, action.selector, action.nth)} ${tail}`;
+    case 'type':
+      return `peek wants to Type "${maskValue(action.text)}" into ${target(action.ref, action.selector)} ${tail}`;
+    case 'enter':
+      return `peek wants to press Enter on ${target(action.ref, action.selector)} ${tail}`;
+    case 'navigate':
+      return `peek wants to Navigate to ${action.url} ${tail}`;
+    case 'back':
+      return `peek wants to go back ${tail}`;
+    case 'forward':
+      return `peek wants to go forward ${tail}`;
+    case 'reload':
+      return `peek wants to Reload the page ${tail}`;
+    case 'scroll':
+      return action.ref !== undefined || action.selector !== undefined
+        ? `peek wants to Scroll ${target(action.ref, action.selector)} into view ${tail}`
+        : `peek wants to Scroll the page ${tail}`;
+    case 'screenshot':
+      return `peek wants to take a screenshot ${tail}`;
+    case 'waitFor':
+      return action.selector !== undefined
+        ? `peek wants to wait for ${target(undefined, action.selector)} ${tail}`
+        : `peek wants to wait ${tail}`;
+    case 'highlight':
+      return `peek wants to Highlight ${target(undefined, action.selector)} ${tail}`;
+    case 'clear_highlight':
+      return `peek wants to clear the highlight ${tail}`;
+    case 'set_intent':
+      return `peek wants to set its intent banner ${tail}`;
+    case 'request_user_input':
+      return `peek wants to ask you: "${maskValue(action.prompt)}" ${tail}`;
+    default:
+      // Unmodeled/read verbs (page_view, element_detail) or a future type —
+      // name it generically. `action` narrows to the remaining union members.
+      return `peek wants to run "${action.type}" ${tail}`;
+  }
 }

@@ -1,5 +1,11 @@
 import { describe, expect, it, vi } from 'vitest';
-import { type ElicitCapableServer, buildElicitMessage, elicitConsent } from './elicitation.js';
+import type { Action } from './action-schema.js';
+import {
+  type ElicitCapableServer,
+  buildElicitMessage,
+  elicitConsent,
+  maskValue,
+} from './elicitation.js';
 
 function server(
   caps: unknown,
@@ -70,8 +76,67 @@ describe('elicitConsent', () => {
   });
 });
 
+describe('maskValue', () => {
+  it('keeps first + last char, hides the middle with a fixed bullet run', () => {
+    expect(maskValue('mail@example.com')).toBe('m•••m');
+    expect(maskValue('abcd')).toBe('a•••d');
+  });
+  it('never reveals a 1- or 2-char secret whole', () => {
+    expect(maskValue('')).toBe('•••');
+    expect(maskValue('x')).toBe('•••');
+    expect(maskValue('ab')).toBe('•••');
+  });
+});
+
 describe('buildElicitMessage', () => {
-  it('names the action type', () => {
-    expect(buildElicitMessage({ type: 'click' })).toContain('click');
+  const on = 'on your live browser';
+  it('click by selector', () => {
+    const a: Action = { type: 'click', selector: '#submit', button: 'left' };
+    const m = buildElicitMessage(a);
+    expect(m).toContain('Click');
+    expect(m).toContain('#submit');
+    expect(m).toContain(on);
+  });
+  it('click by ref with nth', () => {
+    const a: Action = { type: 'click', ref: 'e12', nth: 2, button: 'left' };
+    const m = buildElicitMessage(a);
+    expect(m).toContain('e12');
+    expect(m).toContain('#2');
+  });
+  it('type masks the text value to first/last char', () => {
+    const a: Action = { type: 'type', selector: '#email', text: 'mail@example.com', delay: 40 };
+    const m = buildElicitMessage(a);
+    expect(m).toContain('Type');
+    expect(m).toContain('m•••m');
+    expect(m).not.toContain('mail@example.com');
+    expect(m).toContain('#email');
+  });
+  it('navigate names the url', () => {
+    const a: Action = { type: 'navigate', url: 'https://example.com/app' };
+    expect(buildElicitMessage(a)).toContain('https://example.com/app');
+  });
+  it('request_user_input masks the prompt', () => {
+    const a: Action = {
+      type: 'request_user_input',
+      prompt: 'Enter your one-time code',
+      scope: 'field',
+      readBack: false,
+      timeoutMs: 120000,
+    };
+    const m = buildElicitMessage(a);
+    expect(m).not.toContain('Enter your one-time code');
+    expect(m).toContain('E•••e');
+  });
+  it('screenshot / reload / back / forward read cleanly', () => {
+    expect(buildElicitMessage({ type: 'screenshot' })).toContain('screenshot');
+    expect(buildElicitMessage({ type: 'reload' })).toContain('Reload');
+    expect(buildElicitMessage({ type: 'back' })).toContain('back');
+    expect(buildElicitMessage({ type: 'forward' })).toContain('forward');
+  });
+  it('unknown verb falls back to the generic sentence', () => {
+    // Cast an unmodeled type to exercise the default branch defensively.
+    const m = buildElicitMessage({ type: 'page_view', maxElements: 200 } as Action);
+    expect(m).toContain('page_view');
+    expect(m).toContain(on);
   });
 });
