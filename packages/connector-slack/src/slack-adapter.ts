@@ -32,6 +32,11 @@ export function suggestedPrompts(): {
   };
 }
 
+/** Strip every `<@BOTID>` token for the connector's own bot user id, collapse whitespace. */
+export function stripMention(text: string, botUserId: string): string {
+  return text.replaceAll(`<@${botUserId}>`, ' ').replace(/\s+/g, ' ').trim();
+}
+
 export function parseConsentValue(
   raw: string | undefined,
 ): { correlationId: string; conversationId: string } | null {
@@ -52,6 +57,8 @@ export class SlackAdapter implements SurfaceAdapter {
   private routes = new Map<string, Route>();
   private msgHandler?: (m: InboundMessage) => void;
   private consentHandler?: (r: ConsentResponse) => void;
+  #activeThreads = new Set<string>();
+  readonly #MAX_ACTIVE_THREADS = 1000;
 
   constructor(config: SlackConfig) {
     this.app = new App({
@@ -160,6 +167,16 @@ export class SlackAdapter implements SurfaceAdapter {
     this.msgHandler?.({ conversationId, userId, text });
   }
 
+  #trackThread(cid: string): void {
+    // Bounded to avoid unbounded growth on a long-running socket process.
+    // Simple insertion-order eviction (oldest first); a TTL is deferred past alpha.
+    if (this.#activeThreads.size >= this.#MAX_ACTIVE_THREADS && !this.#activeThreads.has(cid)) {
+      const oldest = this.#activeThreads.values().next().value;
+      if (oldest !== undefined) this.#activeThreads.delete(oldest);
+    }
+    this.#activeThreads.add(cid);
+  }
+
   private wire(): void {
     const assistant = new Assistant({
       threadStarted: async ({ say, setSuggestedPrompts }) => {
@@ -191,8 +208,23 @@ export class SlackAdapter implements SurfaceAdapter {
     });
     this.app.assistant(assistant);
 
-    this.app.message(async ({ message }) => {
-      // message payload shape — subtype discriminates bot/system messages
+    this.app.event('app_mention', async ({ event, context }) => {
+      const e = event as {
+        text?: string;
+        ts: string;
+        thread_ts?: string;
+        user?: string;
+        channel: string;
+      };
+      const botId = context.botUserId ?? '';
+      const query = e.text ? stripMention(e.text, botId) : '';
+      if (!query || !e.channel) return;
+      const cid = e.thread_ts ?? e.ts;
+      this.#trackThread(cid);
+      this.emit(cid, e.channel, cid, e.user ?? 'unknown', query);
+    });
+
+    this.app.message(async ({ message, context }) => {
       const m = message as {
         thread_ts?: string;
         ts: string;
@@ -200,8 +232,17 @@ export class SlackAdapter implements SurfaceAdapter {
         subtype?: string;
         user?: string;
         channel?: string;
+        channel_type?: string;
       };
       if (m.subtype || !m.text || !m.channel) return;
+      const botId = context.botUserId ?? '';
+      const isDM = m.channel_type === 'im';
+      // Dedupe only in channels: a channel mention fires BOTH app_mention and message,
+      // so skip it here (app_mention handles it). DMs never emit app_mention, so a DM
+      // whose text contains a mention token must NOT be dropped.
+      if (!isDM && botId && m.text.includes(`<@${botId}>`)) return;
+      const inActiveThread = m.thread_ts !== undefined && this.#activeThreads.has(m.thread_ts);
+      if (!isDM && !inActiveThread) return; // ignore unrelated channel chatter
       const cid = m.thread_ts ?? m.ts;
       this.emit(cid, m.channel, cid, m.user ?? 'unknown', m.text);
     });
