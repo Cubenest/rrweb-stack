@@ -136,16 +136,18 @@ describe('share_session — deny', () => {
       expect(body.result).toBe('denied');
 
       // No bundle file should have been written to tmpdir.
+      const { readdirSync } = await import('node:fs');
       const safeId = sessionId.replace(/[^a-zA-Z0-9_-]/g, '_');
-      const expectedPath = join(tmpdir(), `${safeId}.peekbundle`);
-      // Clean up the file if it somehow got written (shouldn't happen).
-      expect(existsSync(expectedPath)).toBe(false);
+      const tmpFiles = readdirSync(tmpdir()).filter(
+        (f) => f.startsWith(safeId) && f.endsWith('.peekbundle'),
+      );
+      expect(tmpFiles).toHaveLength(0);
     } finally {
       await close();
     }
   });
 
-  it('(a) cancel → { ok: false, result: denied } too', async () => {
+  it('(a) cancel → { ok: false, result: denied }, no bundle file written', async () => {
     const { dbPath, eventsDir, sessionId } = seedSessionWithData(dir);
     const auditLogPath = join(dir, 'audit.log');
     const { client, peek, close } = await connectClient({ dbPath, eventsDir, auditLogPath });
@@ -160,6 +162,48 @@ describe('share_session — deny', () => {
       const body = parseJson(res as never) as Record<string, unknown>;
       expect(body.ok).toBe(false);
       expect(body.result).toBe('denied');
+
+      // No bundle file should have been written (cancel is fail-closed).
+      expect(body.bundlePath).toBeUndefined();
+      // Verify no .peekbundle files for this session exist in tmpdir.
+      const { readdirSync } = await import('node:fs');
+      const safeId = sessionId.replace(/[^a-zA-Z0-9_-]/g, '_');
+      const tmpFiles = readdirSync(tmpdir()).filter(
+        (f) => f.startsWith(safeId) && f.endsWith('.peekbundle'),
+      );
+      expect(tmpFiles).toHaveLength(0);
+    } finally {
+      await close();
+    }
+  });
+
+  it('(a) unknown/malformed elicit action → { ok: false, result: denied }, no bundle file written', async () => {
+    const { dbPath, eventsDir, sessionId } = seedSessionWithData(dir);
+    const auditLogPath = join(dir, 'audit.log');
+    const { client, peek, close } = await connectClient({ dbPath, eventsDir, auditLogPath });
+    try {
+      // Stub an unknown action value to verify fail-closed behavior for unrecognized responses.
+      const sdkServer = peek.server.server as unknown as Record<string, unknown>;
+      sdkServer.getClientCapabilities = () => ({ elicitation: { form: {} } });
+      sdkServer.elicitInput = async () => ({ action: 'something-unknown' });
+
+      const res = await client.callTool({
+        name: 'share_session',
+        arguments: { sessionId, surface: 'Slack' },
+      });
+
+      const body = parseJson(res as never) as Record<string, unknown>;
+      expect(body.ok).toBe(false);
+      expect(body.result).toBe('denied');
+
+      // No bundle file should have been written (unknown action is fail-closed).
+      expect(body.bundlePath).toBeUndefined();
+      const { readdirSync } = await import('node:fs');
+      const safeId = sessionId.replace(/[^a-zA-Z0-9_-]/g, '_');
+      const tmpFiles = readdirSync(tmpdir()).filter(
+        (f) => f.startsWith(safeId) && f.endsWith('.peekbundle'),
+      );
+      expect(tmpFiles).toHaveLength(0);
     } finally {
       await close();
     }

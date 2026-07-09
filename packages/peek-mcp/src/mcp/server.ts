@@ -1399,11 +1399,17 @@ export function createPeekMcpServer(options: CreatePeekMcpServerOptions = {}): P
       const denyReason = !elicitOutcome.elicited
         ? 'elicitation not supported by client'
         : elicitOutcome.reason;
+      // Fix 4: distinguish a system/no-capability deny (user was never asked)
+      // from a genuine user decline/cancel — 'connector-elicit' signals the deny
+      // came from the infrastructure layer, not from a user decision.
+      const denyApprover: import('../native-host/audit.js').AuditApprover = !elicitOutcome.elicited
+        ? 'connector-elicit'
+        : 'user';
       const draft: DraftAuditEntry = {
         ts: new Date(requestStartedAtMs).toISOString(),
         tool: 'share_session',
         args: { sessionId: input.sessionId, surface: input.surface },
-        approver: 'user',
+        approver: denyApprover,
         client,
         sessionId: input.sessionId,
         result: 'denied',
@@ -1485,10 +1491,13 @@ export function createPeekMcpServer(options: CreatePeekMcpServerOptions = {}): P
     }));
 
     // Pack the bundle to a temp file named for the session.
+    // Fix 1: append a per-call timestamp nonce so two concurrent approved exports
+    // of the same session produce distinct files and cannot overwrite each other.
     const safeId = input.sessionId.replace(/[^a-zA-Z0-9_-]/g, '_');
-    const filename = `${safeId}.peekbundle`;
+    const filename = `${safeId}-${Date.now()}.peekbundle`;
     const bundlePath = join(tmpdir(), filename);
 
+    let sizeBytes: number;
     try {
       packBundle(bundlePath, {
         session: {
@@ -1505,6 +1514,9 @@ export function createPeekMcpServer(options: CreatePeekMcpServerOptions = {}): P
         networkEvents,
         events: ev.events,
       });
+      // Fix 2: statSync is inside the try so a post-approve file-system error returns
+      // { ok:false } with an audit entry rather than propagating as an unhandled throw.
+      sizeBytes = statSync(bundlePath).size;
     } catch (err) {
       return jsonResult({
         ok: false,
@@ -1512,8 +1524,6 @@ export function createPeekMcpServer(options: CreatePeekMcpServerOptions = {}): P
         error: `Failed to pack bundle: ${err instanceof Error ? err.message : String(err)}`,
       });
     }
-
-    const sizeBytes = statSync(bundlePath).size;
 
     // Audit-log the approved export. Args record tool + sessionId + surface
     // (never the bundle content or bytes).

@@ -110,8 +110,11 @@ export function maskValue(value: string): string {
  * @param surface    Where the bundle will go (e.g. `Slack`, `Discord`).
  */
 export function buildEgressConsentMessage(sessionId: string, surface: string): string {
+  // Sanitize sessionId for display: strip control characters (incl. newlines) so
+  // a crafted id cannot inject into the consent card text.
+  const safeSessionId = sessionId.replace(/[^\x20-\x7E]/g, '_');
   return (
-    `peek wants to upload this session's bundle (${sessionId} — recorded DOM + ` +
+    `peek wants to upload this session's bundle (${safeSessionId} — recorded DOM + ` +
     `console/network, masked) to ${surface}. This data leaves your local-first peek store. Approve?`
   );
 }
