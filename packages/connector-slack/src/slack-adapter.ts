@@ -1,3 +1,4 @@
+import { readFile } from 'node:fs/promises';
 import type {
   ConsentRequest,
   ConsentResponse,
@@ -150,6 +151,37 @@ export class SlackAdapter implements SurfaceAdapter {
   async postConsentRequest(conversationId: string, req: ConsentRequest): Promise<void> {
     const { blocks } = consentCard(req.summary, req.details, req.correlationId, conversationId);
     await this.post(conversationId, blocks);
+  }
+
+  async postFile(
+    conversationId: string,
+    filePath: string,
+    filename: string,
+    comment?: string,
+  ): Promise<void> {
+    const r = this.route(conversationId);
+    const file = await readFile(filePath);
+    // files.uploadV2 uses a discriminated union on thread_ts (exactOptionalPropertyTypes):
+    //   FileThreadDestinationArgument — channel_id required + thread_ts required (string)
+    //   FileChannelDestinationArgument — channel_id optional + thread_ts must be ABSENT (never)
+    // We must not spread a maybe-undefined thread_ts; branch explicitly so each call
+    // path satisfies exactly one union arm with no optional keys in the wrong positions.
+    if (r.threadTs !== undefined) {
+      await this.app.client.files.uploadV2({
+        channel_id: r.channel,
+        thread_ts: r.threadTs,
+        file,
+        filename,
+        ...(comment !== undefined ? { initial_comment: comment } : {}),
+      });
+    } else {
+      await this.app.client.files.uploadV2({
+        channel_id: r.channel,
+        file,
+        filename,
+        ...(comment !== undefined ? { initial_comment: comment } : {}),
+      });
+    }
   }
 
   private emit(

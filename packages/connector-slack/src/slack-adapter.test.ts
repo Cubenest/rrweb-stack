@@ -2,6 +2,11 @@ import { describe, expect, it, vi } from 'vitest';
 import { SlackAdapter, stripMention } from './slack-adapter.js';
 import { parseConsentValue, suggestedPrompts } from './slack-adapter.js';
 
+// Mock node:fs/promises so readFile is controllable in tests — must be hoisted before imports
+vi.mock('node:fs/promises', () => ({
+  readFile: vi.fn(),
+}));
+
 describe('parseConsentValue', () => {
   it('parses a well-formed correlation payload', () => {
     expect(
@@ -413,5 +418,91 @@ describe('SlackAdapter #activeThreads cap (Fix 4)', () => {
       context: { botUserId: 'U0BOT' },
     });
     expect(received).toEqual(['recent thread reply']);
+  });
+});
+
+describe('SlackAdapter.postFile', () => {
+  // Import the mocked readFileSync after vi.mock hoisting resolves.
+  // We use a dynamic import inside each test so the mock is in scope.
+
+  it('reads the file and calls files.uploadV2 with channel, thread_ts, bytes, filename, and initial_comment', async () => {
+    const { readFile } = await import('node:fs/promises');
+    const fakeBytes = Buffer.from('bundle-bytes');
+    vi.mocked(readFile).mockResolvedValue(fakeBytes);
+
+    const uploadV2 = vi.fn().mockResolvedValue({});
+    const { adapter } = makeAdapter();
+    // Extend the mocked client with files.uploadV2
+    (adapter as unknown as { app: { client: unknown } }).app.client = {
+      chat: { postMessage: vi.fn().mockResolvedValue({}) },
+      assistant: { threads: { setStatus: vi.fn().mockResolvedValue({}) } },
+      files: { uploadV2 },
+    };
+    // Seed the route so postFile can resolve channel + threadTs
+    (
+      adapter as unknown as { routes: Map<string, { channel: string; threadTs?: string }> }
+    ).routes.set('conv-1', { channel: 'C10', threadTs: 'T10' });
+
+    await adapter.postFile(
+      'conv-1',
+      '/tmp/bundle.peekbundle',
+      'bundle.peekbundle',
+      'peek session bundle',
+    );
+
+    expect(vi.mocked(readFile)).toHaveBeenCalledWith('/tmp/bundle.peekbundle');
+    expect(uploadV2).toHaveBeenCalledTimes(1);
+    const arg = uploadV2.mock.calls[0]?.[0] as Record<string, unknown>;
+    expect(arg.channel_id).toBe('C10');
+    expect(arg.thread_ts).toBe('T10');
+    expect(arg.file).toBe(fakeBytes);
+    expect(arg.filename).toBe('bundle.peekbundle');
+    expect(arg.initial_comment).toBe('peek session bundle');
+  });
+
+  it('omits thread_ts from the uploadV2 call when the route has no threadTs (slash path)', async () => {
+    const { readFile } = await import('node:fs/promises');
+    vi.mocked(readFile).mockResolvedValue(Buffer.from('bytes'));
+
+    const uploadV2 = vi.fn().mockResolvedValue({});
+    const { adapter } = makeAdapter();
+    (adapter as unknown as { app: { client: unknown } }).app.client = {
+      chat: { postMessage: vi.fn().mockResolvedValue({}) },
+      assistant: { threads: { setStatus: vi.fn().mockResolvedValue({}) } },
+      files: { uploadV2 },
+    };
+    // Route without threadTs (slash command path) — omit the key entirely (exactOptionalPropertyTypes)
+    (
+      adapter as unknown as { routes: Map<string, { channel: string; threadTs?: string }> }
+    ).routes.set('cmd-C2-u1', { channel: 'C2' });
+
+    await adapter.postFile('cmd-C2-u1', '/tmp/a.peekbundle', 'a.peekbundle');
+
+    expect(uploadV2).toHaveBeenCalledTimes(1);
+    const arg = uploadV2.mock.calls[0]?.[0] as Record<string, unknown>;
+    expect(arg.channel_id).toBe('C2');
+    expect('thread_ts' in arg).toBe(false); // must be absent, not undefined
+    expect('initial_comment' in arg).toBe(false); // no comment → key must be absent
+  });
+
+  it('rejects when files.uploadV2 rejects (surfaces the error)', async () => {
+    const { readFile } = await import('node:fs/promises');
+    vi.mocked(readFile).mockResolvedValue(Buffer.from('bytes'));
+
+    const uploadErr = new Error('network error');
+    const uploadV2 = vi.fn().mockRejectedValue(uploadErr);
+    const { adapter } = makeAdapter();
+    (adapter as unknown as { app: { client: unknown } }).app.client = {
+      chat: { postMessage: vi.fn().mockResolvedValue({}) },
+      assistant: { threads: { setStatus: vi.fn().mockResolvedValue({}) } },
+      files: { uploadV2 },
+    };
+    (
+      adapter as unknown as { routes: Map<string, { channel: string; threadTs?: string }> }
+    ).routes.set('conv-err', { channel: 'C3', threadTs: 'T3' });
+
+    await expect(adapter.postFile('conv-err', '/tmp/b.peekbundle', 'b.peekbundle')).rejects.toThrow(
+      'network error',
+    );
   });
 });

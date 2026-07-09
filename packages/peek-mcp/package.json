@@ -45,6 +45,10 @@
     "./mcp/event-blobs": {
       "types": "./dist/mcp/event-blobs.d.ts",
       "import": "./dist/mcp/event-blobs.js"
+    },
+    "./session-bundle": {
+      "types": "./dist/session-bundle.d.ts",
+      "import": "./dist/session-bundle.js"
     }
   },
   "files": [
@@ -65,6 +69,7 @@
     "@cubenest/rrweb-core": "workspace:*",
     "@modelcontextprotocol/sdk": "^1.29.0",
     "better-sqlite3": "^12.11.1",
+    "tar": "^7.4.3",
     "zod": "^3.25.76"
   },
   "devDependencies": {

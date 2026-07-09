@@ -1,3 +1,4 @@
+import { rm } from 'node:fs/promises';
 import type { AgentOutcome, Brain } from './brain.js';
 import type { PeekMcp } from './mcp.js';
 import type { SecretStore } from './secret-store.js';
@@ -118,6 +119,89 @@ export class ConnectorRuntime {
   #turnChain: Promise<void> = Promise.resolve();
 
   constructor(private readonly deps: RuntimeDeps) {}
+
+  /**
+   * Wrap a low-level `callTool` (typically `mcp.callTool`) so an approved
+   * `share_session` result is post-processed on the REAL path the brain
+   * actually takes.
+   *
+   * `share_session` is classified `'read'` by `classify()`, so `SdkBrain.runTurn`
+   * runs it INLINE via its injected `callTool` and feeds the result straight back
+   * into the tool-use loop — it never emits a `{kind:'consent'}` outcome and so
+   * never flows through `handleConsentResponse`. The bundle upload + temp-file
+   * cleanup therefore has to happen at THIS boundary (the callTool the brain
+   * consumes), not in the consent handler.
+   *
+   * The interception needs the surface adapter (`postFile`), which `PeekMcp`
+   * does not hold — the runtime does. So the runtime owns the wrapper and the
+   * composition root hands the brain `runtime.interceptCallTool(name, input, inner)`
+   * instead of the bare `mcp.callTool`. This keeps `PeekMcp` a pure transport and
+   * preserves the brain/runtime separation (the brain still only sees a plain
+   * `(name, input) => Promise<string>`).
+   *
+   * The `conversationId` for the upload is read from `#activeConversationId`,
+   * which is set for the duration of the turn in `runLoop`.
+   */
+  async interceptCallTool(
+    name: string,
+    input: unknown,
+    inner: (name: string, input: unknown) => Promise<string>,
+  ): Promise<string> {
+    const text = await inner(name, input);
+    if (name !== 'share_session') return text;
+    return this.#postProcessShareSession(this.#activeConversationId, text);
+  }
+
+  /**
+   * Given a `share_session` tool-result string, upload the temp bundle via the
+   * surface adapter and delete it. Returns the (possibly rewritten) text to feed
+   * back to the brain.
+   *
+   * - `{ok:true, bundlePath, filename}` → `adapter.postFile(...)` inside `try`,
+   *   temp bundle deleted in `finally` (success AND failure).
+   * - `{ok:false}` (or unparseable / missing fields) → returned unchanged; no
+   *   upload, no throw, no delete (there is no temp file to remove).
+   * - adapter without `postFile` → degrade to a text note (referencing the
+   *   `filename` only, never the raw OS temp path) and still delete the file.
+   * - upload error → surfaced to the brain as an error note; the turn continues.
+   */
+  async #postProcessShareSession(
+    conversationId: string | undefined,
+    text: string,
+  ): Promise<string> {
+    const { adapter } = this.deps;
+    let parsed: { ok: boolean; bundlePath?: string; filename?: string } | null = null;
+    try {
+      parsed = JSON.parse(text) as { ok: boolean; bundlePath?: string; filename?: string };
+    } catch {
+      return text; // not valid JSON — leave as-is
+    }
+    if (!parsed?.ok || !parsed.bundlePath || !parsed.filename) return text;
+    const { bundlePath, filename } = parsed;
+    try {
+      if (adapter.postFile && conversationId) {
+        await adapter.postFile(conversationId, bundlePath, filename, 'peek session bundle');
+        return `Session bundle "${filename}" shared successfully.`;
+      }
+      // No file-upload support (or no active conversation to post into): reference
+      // the filename only — never leak the raw OS temp path back to the model/user.
+      return `Session bundle "${filename}" is ready, but this surface cannot upload files, so it was not shared.`;
+    } catch (uploadErr) {
+      // Upload failed: surface a descriptive error to the brain so the
+      // conversation can continue. The finally block still deletes the file.
+      return `Session bundle export failed during upload: ${String(uploadErr)}`;
+    } finally {
+      try {
+        await rm(bundlePath, { force: true });
+      } catch (cleanupErr) {
+        // Cleanup errors (e.g. EACCES, EBUSY) must never clobber the real return
+        // value from the try/catch above. Log and swallow.
+        console.error(
+          `peek connector: failed to delete temp bundle ${bundlePath} — ${cleanupErr instanceof Error ? cleanupErr.message : String(cleanupErr)}`,
+        );
+      }
+    }
+  }
 
   async start(): Promise<void> {
     const { adapter, mcp, secretStore } = this.deps;
@@ -280,6 +364,13 @@ export class ConnectorRuntime {
         text = `Tool call failed: ${String(err)}`;
         isError = true;
       }
+
+      // NOTE: share_session is NOT intercepted here. It is classified 'read' by
+      // classify(), so SdkBrain runs it inline via its injected callTool and it
+      // never becomes a {kind:'consent'} outcome — so it never reaches this
+      // consent handler on the real path. The upload + temp-file cleanup lives at
+      // the callTool boundary in interceptCallTool()/#postProcessShareSession().
+
       brain.appendToolResult(stored.session, pending.toolUseId, text, isError);
       await adapter.postConfirmation(r.conversationId, 'Approved — acting…');
     } else {
