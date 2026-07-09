@@ -42,6 +42,10 @@ project's pre-launch supply-chain hygiene controls (see
 8. **Chrome Web Store update channel** — once published, CWS pushes
    updates to all installs. Trust boundary: Cubenest publisher account
    → all extension users.
+9. **`share_session` connector upload** — the one path where a recorded
+   session bundle leaves the local store and is uploaded to a third-party
+   cloud (e.g. Slack via `files.uploadV2`). Trust boundary: peek local
+   store → third-party cloud service.
 
 ## Mitigations already in place
 
@@ -182,6 +186,83 @@ independently auditable.
 |---|---|---|---|
 | `consentDelegated` flag on local socket | Malicious local process forges flag to bypass Level-3 local banner for non-destructive actions | `mitigated` (SP4 pairing) | SW now also requires a valid pairing secret; an unpaired process falls through to the local banner. Unconditional destructive guard + TOCTOU re-check + Level ≥ 3 precondition still apply. |
 | Connector secret at rest (OS keychain by default; `0600` file fallback) | Local attacker reads the keychain entry / fallback file and presents the secret | `accepted` (local-peer-trust class) | Defends against unpaired processes, not a fully compromised user account. SP6a moved the secret to the OS keychain by default; `--insecure-store` selects the `0600` file. |
+
+## Session egress — `share_session` (SP5 / connector upload)
+
+SP5 introduces the **one path where recorded session data leaves peek's
+local-first store for a third-party cloud**. The `share_session` MCP tool
+exports a recorded session as a `.peekbundle` and hands it to the active
+connector for upload to its chat surface (e.g. a Slack thread via
+`files.uploadV2`).
+
+### What the bundle contains
+
+A `.peekbundle` is a portable archive of the session's rrweb event stream —
+DOM snapshots, console events, and network events. The content is **masked
+at capture time** by `peek-extension/src/relay/mask.ts` before it ever reaches
+the local store. The masking is a capture-time transformation, not a security
+redaction: the bundle contains real session activity, just with PII fields
+replaced per the masking rules in effect when the session was recorded. It is
+not a sanitised summary.
+
+### Consent gate
+
+`share_session` never runs silently. Before producing any file the tool
+presents an explicit egress consent card naming what is being exported and
+where. The card uses the same elicitation consent mechanism as
+`execute_action` (SP3b) and is independent of the Level-3 act gate: a user
+at Level 1 can deny `execute_action` entirely and still encounter the
+`share_session` consent card when the connector requests an upload. On
+deny, no file is written and the tool returns `{ ok: false, result: 'denied' }`.
+
+### Slack upload path
+
+When the connector is `@peekdev/connector-slack`, the approved bundle is
+uploaded to Slack via the `files.uploadV2` API. This requires the
+`files:write` OAuth scope on the Slack app. The upload is made by the
+connector process using the `xoxb` bot token stored in the OS keychain
+(SP6b-1). peek itself does not hold or transmit the Slack token; the
+connector receives the `bundlePath` from `share_session` and performs the
+upload independently.
+
+### Temp-file lifecycle
+
+The `.peekbundle` is written to a process-scoped temp path with a random
+nonce suffix. After the connector reports upload success or failure, the
+connector-core layer deletes the temp file. The deletion is best-effort on
+failure paths, and the temp path is in the OS temp directory (not
+`~/.peek/`), so it is subject to normal OS temp-dir cleanup if the process
+exits abnormally before deletion.
+
+### Audit log
+
+Every approved export is recorded to `~/.peek/audit.log` (mode `0600`) as
+`tool: share_session`, including the session ID, the surface destination,
+and the approver tag (e.g. `connector-elicit` for a delegated-consent
+approval). The bundle bytes and the bundle path are never written to the
+audit log.
+
+### Residual limits (honest framing)
+
+- **Once the bundle is in Slack it is under Slack's retention and access
+  controls**, not peek's. peek's local-first guarantees do not extend past
+  the upload boundary. Workspace admins, eDiscovery exports, and Slack's
+  own data-retention policies apply to the uploaded file.
+- **Masking is capture-time, not security redaction.** If the masking
+  configuration at record time was incomplete (e.g. a custom input field
+  not covered by the default mask rules), the unmasked value may be in the
+  bundle. Users should treat the uploaded bundle with the same care as the
+  original session.
+- **The consent card names the destination surface but not every downstream
+  recipient.** In a public Slack channel the uploaded file is visible to all
+  channel members. peek cannot enumerate channel membership at upload time.
+
+### Attack surface rows
+
+| Surface | Threat | Grade | Notes |
+|---|---|---|---|
+| `share_session` egress to Slack | Recorded session data (masked DOM + console/network) leaves the local store and enters Slack's cloud | `accepted` (explicit consent required) | Gated by an elicitation consent card before any file is written. Temp file deleted after upload. Audit log records the export. Residual: Slack retention applies post-upload; masking completeness depends on capture-time config. |
+| Temp `.peekbundle` file on disk | Brief window between bundle write and upload deletion; a local process could read the file | `accepted` (local-peer-trust class) | Temp file has a random-nonce suffix. Sits in OS temp dir with normal umask. Deleted on success and on failure (best-effort). The window is bounded by the upload round-trip latency. |
 
 ## Cross-references
 
