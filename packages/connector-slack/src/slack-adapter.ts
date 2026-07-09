@@ -14,6 +14,24 @@ interface Route {
   threadTs: string | undefined;
 }
 
+export function suggestedPrompts(): {
+  title: string;
+  prompts: Array<{ title: string; message: string }>;
+} {
+  return {
+    title: 'Try asking peek:',
+    prompts: [
+      { title: 'What just failed?', message: 'What failed in my last browser session?' },
+      { title: 'Show console errors', message: 'List the console errors from my last session' },
+      { title: 'What caused it?', message: 'What did I do right before the last error?' },
+      {
+        title: 'Make a Playwright repro',
+        message: 'Generate a Playwright test for my last session',
+      },
+    ],
+  };
+}
+
 export function parseConsentValue(
   raw: string | undefined,
 ): { correlationId: string; conversationId: string } | null {
@@ -103,12 +121,14 @@ export class SlackAdapter implements SurfaceAdapter {
 
   private wire(): void {
     const assistant = new Assistant({
-      threadStarted: async ({ say }) => {
+      threadStarted: async ({ say, setSuggestedPrompts }) => {
         await say(
           "Hi — I'm peek. Ask what failed in your last browser session, or tell me to act on the page you have open.",
         );
+        const { title, prompts } = suggestedPrompts();
+        await setSuggestedPrompts({ title, prompts });
       },
-      userMessage: async ({ message }) => {
+      userMessage: async ({ message, setTitle }) => {
         // Bolt types message as GenericMessageEvent but the actual payload has these fields
         const m = message as {
           thread_ts?: string;
@@ -118,6 +138,8 @@ export class SlackAdapter implements SurfaceAdapter {
           channel?: string;
         };
         if (!m.text || !m.channel) return;
+        // Thread title is handler-scoped and safe to set synchronously before emit.
+        await setTitle(m.text.slice(0, 75));
         const cid = m.thread_ts ?? m.ts;
         this.emit(cid, m.channel, cid, m.user ?? 'unknown', m.text);
       },
