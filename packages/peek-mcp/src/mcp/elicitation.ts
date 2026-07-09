@@ -101,6 +101,21 @@ export function maskValue(value: string): string {
   return `${first ?? ''}•••${last ?? ''}`;
 }
 
+/**
+ * Human-facing egress consent-card text for a session bundle export. Distinct
+ * from {@link buildElicitMessage} (which is for live-browser actions): this
+ * describes a *data-egress* event — the bundle leaving the local-first store.
+ *
+ * @param sessionId  The session being exported (e.g. `s_acme-orders-0001`).
+ * @param surface    Where the bundle will go (e.g. `Slack`, `Discord`).
+ */
+export function buildEgressConsentMessage(sessionId: string, surface: string): string {
+  return (
+    `peek wants to upload this session's bundle (${sessionId} — recorded DOM + ` +
+    `console/network, masked) to ${surface}. This data leaves your local-first peek store. Approve?`
+  );
+}
+
 /** Human-facing consent-card text for an action. peek-mcp does NOT classify the
  *  action as destructive/act (that lives in the SW gate) — it only describes it,
  *  masking any literal value that would otherwise persist in the client's chat

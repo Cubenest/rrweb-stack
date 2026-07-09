@@ -358,9 +358,9 @@ describe('peek MCP server: graceful no-DB', () => {
       eventsDir: join(dir, 'rrweb-events'),
     });
     try {
-      // tools/list still works (8 read + search_sessions + get_page_view + get_element_detail + 2 write + 2 suggest + 1 handoff + set_intent + verify_audit_log + request_pairing).
+      // tools/list still works (8 read + search_sessions + get_page_view + get_element_detail + 2 write + 2 suggest + 1 handoff + set_intent + verify_audit_log + request_pairing + share_session).
       const { tools } = await client.listTools();
-      expect(tools).toHaveLength(19);
+      expect(tools).toHaveLength(20);
       // and a call returns the friendly message rather than erroring.
       const res = await client.callTool({ name: 'list_recent_sessions', arguments: {} });
       expect(textOf(res as never)).toContain('No sessions recorded yet');

@@ -17,10 +17,13 @@
 //     §B3 token budgets (counts not dumps; truncated fields; capped lists).
 
 import { createRequire } from 'node:module';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { Database } from 'better-sqlite3';
 import { z } from 'zod';
 import { openReadonlyDb } from '../db/open.js';
+import { FULLSNAPSHOT_CAVEAT, packBundle } from '../session-bundle.js';
 
 // Read version at runtime from this package's package.json so the MCP
 // `serverInfo.version` reply always matches what npm shipped. The relative
@@ -28,7 +31,7 @@ import { openReadonlyDb } from '../db/open.js';
 const _require = createRequire(import.meta.url);
 const _pkg = _require('../../package.json') as { version: string };
 export const SERVER_VERSION = _pkg.version;
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readFileSync, statSync } from 'node:fs';
 import { verifyAuditChain, verifySummary } from '../native-host/audit-chain.js';
 import { auditHeadPath, readHead } from '../native-host/audit-head.js';
 import {
@@ -42,7 +45,7 @@ import {
 } from '../native-host/audit.js';
 import { ActionSchema } from './action-schema.js';
 import { buildCausalChain } from './causal-chain.js';
-import { buildElicitMessage, elicitConsent } from './elicitation.js';
+import { buildEgressConsentMessage, buildElicitMessage, elicitConsent } from './elicitation.js';
 import { SessionEventsError, loadEventsUpToTs, loadSessionEvents } from './event-blobs.js';
 import {
   extractDomMutationsInWindow,
@@ -1136,6 +1139,45 @@ export function createPeekMcpServer(options: CreatePeekMcpServerOptions = {}): P
         return await dispatchPairingRequest({ code });
       },
     );
+
+    // 19. share_session (consent-gated egress export) -------------------------
+    // Produces a .peekbundle temp file from a recorded session ONLY after an
+    // explicit egress consent card (MCP elicitInput). Does NOT gate on Level 3
+    // — exporting already-recorded data is distinct from acting on the live
+    // browser. On deny → { ok: false, result: 'denied' }, no file written.
+    // On approve → { ok: true, bundlePath, filename, sizeBytes, caveat }.
+    // Every approved export is audit-logged (tool + sessionId + approver; NOT
+    // the bundle bytes or content). Temp file ownership is the caller's —
+    // connector-core deletes it after upload.
+    server.registerTool(
+      'share_session',
+      {
+        title: 'Export a session bundle for sharing',
+        description:
+          'Export a session as a portable .peekbundle file to share with teammates (e.g. upload to a Slack thread). ' +
+          'Requires explicit egress consent — a card naming what is exported and where; deny produces no file. ' +
+          'On approve, returns the temp file path and size; the bundle never leaves your machine without consent. ' +
+          'The bundle contains the masked session recording (DOM + console/network); review the caveat before sharing.',
+        inputSchema: {
+          sessionId: z.string().describe('Session id from list_recent_sessions.'),
+          surface: z
+            .string()
+            .default('Slack')
+            .describe(
+              "The surface the bundle will be shared to (e.g. 'Slack', 'Discord'). Shown in the consent card.",
+            ),
+        },
+        annotations: {
+          readOnlyHint: false,
+          destructiveHint: false,
+          idempotentHint: false,
+          openWorldHint: true,
+        },
+      },
+      async ({ sessionId, surface }) => {
+        return await dispatchShareSession({ sessionId, surface });
+      },
+    );
   }
 
   // --- Act-tool dispatch (shared between execute_action + request_authorization) ---
@@ -1329,6 +1371,177 @@ export function createPeekMcpServer(options: CreatePeekMcpServerOptions = {}): P
       ...(response.approved && response.secret !== undefined ? { secret: response.secret } : {}),
     });
   }
+
+  // --- share_session dispatch (consent-gated egress export) ---
+  //
+  // 1. Probe elicitation capability — if the client supports it, elicit an
+  //    egress consent card. If the client does NOT support elicitation, deny
+  //    unconditionally: egress without explicit consent is not allowed.
+  // 2. On deny → audit-log + return { ok: false, result: 'denied' }, no file.
+  // 3. On approve → load the session from the DB + blob, packBundle to a temp
+  //    file, audit-log the export, return { ok: true, bundlePath, ... }.
+  async function dispatchShareSession(input: {
+    sessionId: string;
+    surface: string;
+  }): Promise<ReturnType<typeof jsonResult>> {
+    const requestStartedAtMs = Date.now();
+    const clientImpl = server.server.getClientVersion();
+    const client = clientImpl?.name ?? 'unknown';
+    const auditWriteOptions: AuditWriteOptions =
+      options.auditLogPath !== undefined ? { path: options.auditLogPath } : {};
+
+    const consentMsg = buildEgressConsentMessage(input.sessionId, input.surface);
+    const elicitOutcome = await elicitConsent(server.server, consentMsg);
+
+    // Egress without consent is not allowed. If the client lacks elicitation
+    // capability we cannot obtain consent → deny unconditionally.
+    if (!elicitOutcome.elicited || elicitOutcome.verdict === 'deny') {
+      const denyReason = !elicitOutcome.elicited
+        ? 'elicitation not supported by client'
+        : elicitOutcome.reason;
+      const draft: DraftAuditEntry = {
+        ts: new Date(requestStartedAtMs).toISOString(),
+        tool: 'share_session',
+        args: { sessionId: input.sessionId, surface: input.surface },
+        approver: 'user',
+        client,
+        sessionId: input.sessionId,
+        result: 'denied',
+        error: denyReason,
+      };
+      try {
+        appendAuditEntry(draft, auditWriteOptions);
+      } catch (err) {
+        console.error(
+          `peek-mcp: share_session audit log write failed — ${err instanceof Error ? err.message : String(err)}`,
+        );
+      }
+      return jsonResult({ ok: false, result: 'denied', reason: denyReason });
+    }
+
+    // Approved — load session data and build the bundle.
+    const handle = getDb();
+    if (!handle) {
+      return jsonResult({ ok: false, result: 'error', error: NO_DB_MESSAGE });
+    }
+    const row = getSessionSummaryRow(handle, input.sessionId);
+    if (!row) {
+      return jsonResult({
+        ok: false,
+        result: 'error',
+        error: `No session found with id '${input.sessionId}'.`,
+      });
+    }
+
+    // Load events (same path as generate_playwright_repro).
+    const ev = eventsFor(input.sessionId);
+    if (!ev.ok) {
+      return jsonResult({ ok: false, result: 'error', error: ev.message });
+    }
+
+    // Load console + network rows for the bundle payload (all rows, not just errors).
+    const consoleEvents = (
+      handle
+        .prepare(
+          'SELECT ts_ms, level, message, stack FROM console_events WHERE session_id = ? ORDER BY ts_ms ASC',
+        )
+        .all(input.sessionId) as Array<{
+        ts_ms: number;
+        level: string;
+        message: string;
+        stack: string | null;
+      }>
+    ).map((r) => ({
+      ts: r.ts_ms,
+      level: r.level,
+      message: r.message,
+      ...(r.stack !== null ? { stack: r.stack } : {}),
+    }));
+
+    const networkEvents = (
+      handle
+        .prepare(
+          'SELECT ts_ms, method, url, status, status_text, resource_type, duration_ms, error_text FROM network_events WHERE session_id = ? ORDER BY ts_ms ASC',
+        )
+        .all(input.sessionId) as Array<{
+        ts_ms: number;
+        method: string;
+        url: string;
+        status: number | null;
+        status_text: string | null;
+        resource_type: string | null;
+        duration_ms: number | null;
+        error_text: string | null;
+      }>
+    ).map((r) => ({
+      ts: r.ts_ms,
+      method: r.method,
+      url: r.url,
+      ...(r.status !== null ? { status: r.status } : {}),
+      ...(r.status_text !== null ? { statusText: r.status_text } : {}),
+      ...(r.resource_type !== null ? { resourceType: r.resource_type } : {}),
+      ...(r.duration_ms !== null ? { durationMs: r.duration_ms } : {}),
+      ...(r.error_text !== null ? { errorText: r.error_text } : {}),
+    }));
+
+    // Pack the bundle to a temp file named for the session.
+    const safeId = input.sessionId.replace(/[^a-zA-Z0-9_-]/g, '_');
+    const filename = `${safeId}.peekbundle`;
+    const bundlePath = join(tmpdir(), filename);
+
+    try {
+      packBundle(bundlePath, {
+        session: {
+          id: row.id,
+          origin: row.origin,
+          url: row.url,
+          title: row.title,
+          startedAt: row.startedAt,
+          durationMs: row.durationMs,
+          eventCount: row.eventCount,
+          errorCount: row.errorCount,
+        },
+        consoleEvents,
+        networkEvents,
+        events: ev.events,
+      });
+    } catch (err) {
+      return jsonResult({
+        ok: false,
+        result: 'error',
+        error: `Failed to pack bundle: ${err instanceof Error ? err.message : String(err)}`,
+      });
+    }
+
+    const sizeBytes = statSync(bundlePath).size;
+
+    // Audit-log the approved export. Args record tool + sessionId + surface
+    // (never the bundle content or bytes).
+    const draft: DraftAuditEntry = {
+      ts: new Date(requestStartedAtMs).toISOString(),
+      tool: 'share_session',
+      args: { sessionId: input.sessionId, surface: input.surface },
+      approver: 'connector-elicit',
+      client,
+      sessionId: input.sessionId,
+      result: 'ok',
+    };
+    try {
+      appendAuditEntry(draft, auditWriteOptions);
+    } catch (err) {
+      console.error(
+        `peek-mcp: share_session audit log write failed — ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
+
+    return jsonResult({
+      ok: true,
+      bundlePath,
+      filename,
+      sizeBytes,
+      caveat: FULLSNAPSHOT_CAVEAT,
+    });
+  }
 }
 
 /** The tool names this server registers, for smoke tests / docs. */
@@ -1361,4 +1574,6 @@ export const PEEK_MCP_TOOLS = [
   'verify_audit_log',
   // SP4: connector pairing handshake.
   'request_pairing',
+  // Consent-gated egress export (.peekbundle to a temp file).
+  'share_session',
 ] as const;
