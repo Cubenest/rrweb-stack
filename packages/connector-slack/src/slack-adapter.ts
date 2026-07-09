@@ -84,6 +84,22 @@ export class SlackAdapter implements SurfaceAdapter {
     return r;
   }
 
+  private async postStatus(conversationId: string, status: string): Promise<void> {
+    const r = this.routes.get(conversationId);
+    // Status requires a thread; the /peek slash path has none — skip there.
+    if (!r || !r.threadTs) return;
+    try {
+      await this.app.client.assistant.threads.setStatus({
+        channel_id: r.channel,
+        thread_ts: r.threadTs,
+        status,
+      });
+    } catch {
+      // Status is a nicety; a failure (e.g. missing chat:write scope on an
+      // un-migrated app) must never break the turn. Swallow.
+    }
+  }
+
   private async post(conversationId: string, blocks: unknown): Promise<void> {
     const r = this.route(conversationId);
     await this.app.client.chat.postMessage({
@@ -116,6 +132,10 @@ export class SlackAdapter implements SurfaceAdapter {
     text: string,
   ): void {
     this.routes.set(conversationId, { channel, threadTs });
+    // Show a "thinking…" status immediately; Slack auto-clears it when the next
+    // message posts (postText/postConsentRequest). Fire-and-forget — never awaited,
+    // never allowed to block or throw into the message handler.
+    void this.postStatus(conversationId, 'peek is thinking…');
     this.msgHandler?.({ conversationId, userId, text });
   }
 
