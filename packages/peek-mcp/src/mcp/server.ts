@@ -1,10 +1,11 @@
-// The peek MCP server. Builds an `McpServer` and registers the full 17-tool
+// The peek MCP server. Builds an `McpServer` and registers the full 21-tool
 // surface: read-only session/query tools (incl. the Playwright repro
-// generator) plus the Level-1 live read tools (get_page_view,
-// get_element_detail), the act tools (execute_action, request_authorization),
-// the Level-2 Suggest tools (suggest_element, clear_highlight), the Level-4
-// control tools (set_intent, request_user_input), and the audit-log integrity
-// checker (verify_audit_log). All write tools are gated at dispatch by the
+// generator and render_session_journey) plus the Level-1 live read tools
+// (get_page_view, get_element_detail), the act tools (execute_action,
+// request_authorization), the Level-2 Suggest tools (suggest_element,
+// clear_highlight), the Level-4 control tools (set_intent,
+// request_user_input), and the audit-log integrity checker
+// (verify_audit_log). All write tools are gated at dispatch by the
 // per-origin permission model — see `registerTools` + `dispatchActTool`.
 //
 // Design notes:
@@ -58,6 +59,7 @@ import { generatePlaywrightRepro } from './playwright-repro.js';
 import {
   getConsoleErrorById,
   getConsoleErrors,
+  getLatestConsoleError,
   getNetworkErrors,
   getNetworkErrorsInWindow,
   getSessionBlobRef,
@@ -537,6 +539,74 @@ export function createPeekMcpServer(options: CreatePeekMcpServerOptions = {}): P
         if (error === undefined) {
           return textResult(`No console error with id ${errorId} in session '${sessionId}'.`);
         }
+        const ev = eventsFor(sessionId);
+        if (!ev.ok) return textResult(ev.message);
+        const fromTs = error.ts - windowMs;
+        const actions = userActionsBeforeError(ev.events, error.ts, window);
+        const domMutations = extractDomMutationsInWindow(ev.events, fromTs, error.ts);
+        const networkErrors = getNetworkErrorsInWindow(handle, sessionId, fromTs, error.ts);
+        return jsonResult(
+          buildCausalChain({ error, windowMs, actions, domMutations, networkErrors }),
+        );
+      },
+    );
+
+    // 5b. render_session_journey -------------------------------------------
+    server.registerTool(
+      'render_session_journey',
+      {
+        title: 'Rebuild the session journey',
+        description:
+          "Reconstruct the full causal journey for a session — the ordered path of user actions, DOM mutations, and network errors leading up to a console error, merged into a time-ordered timeline with a narrative. Returns JSON { errorId, errorTs, error, windowMs, actions, domMutations, networkErrors, timeline, narrative, truncated } — the same CausalChain shape as get_user_action_before_error, under a dedicated tool name so a connector can intercept only journey results for canvas rendering. If errorId is omitted, the session's latest console error is selected automatically. If the session has no console errors, a clear text message is returned instead.",
+        inputSchema: {
+          sessionId: z.string().describe('Session id from list_recent_sessions.'),
+          errorId: z
+            .number()
+            .int()
+            .optional()
+            .describe(
+              "Console error id (from get_session_console_errors) to anchor the journey. Omit to auto-select the session's latest console error.",
+            ),
+          window: z
+            .number()
+            .int()
+            .min(1)
+            .max(50)
+            .default(10)
+            .describe('How many preceding user actions to return (1-50; default 10).'),
+          windowMs: z
+            .number()
+            .int()
+            .min(100)
+            .max(60000)
+            .default(5000)
+            .describe(
+              'Time window (ms) before the error for correlated DOM mutations + network errors (100-60000; default 5000).',
+            ),
+        },
+        annotations: { readOnlyHint: true, openWorldHint: false },
+      },
+      ({ sessionId, errorId, window, windowMs }) => {
+        const handle = getDb();
+        if (!handle) return textResult(NO_DB_MESSAGE);
+
+        let error: ReturnType<typeof getConsoleErrorById>;
+        if (errorId !== undefined) {
+          // Explicit errorId — look it up directly.
+          error = getConsoleErrorById(handle, sessionId, errorId);
+          if (error === undefined) {
+            return textResult(`No console error with id ${errorId} in session '${sessionId}'.`);
+          }
+        } else {
+          // Auto-select the session's latest console error (highest ts, id tiebreak).
+          error = getLatestConsoleError(handle, sessionId);
+          if (error === undefined) {
+            return textResult(
+              `Session '${sessionId}' has no console errors to anchor a journey. Record a session that captures a console error, then call this tool again.`,
+            );
+          }
+        }
+
         const ev = eventsFor(sessionId);
         if (!ev.ok) return textResult(ev.message);
         const fromTs = error.ts - windowMs;
@@ -1636,6 +1706,7 @@ export const PEEK_MCP_TOOLS = [
   'get_session_console_errors',
   'get_session_network_errors',
   'get_user_action_before_error',
+  'render_session_journey',
   'generate_playwright_repro',
   'get_dom_snapshot',
   'query_dom_history',

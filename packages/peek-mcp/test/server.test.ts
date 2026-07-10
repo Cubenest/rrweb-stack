@@ -152,7 +152,7 @@ function textOf(result: { content: Array<{ type: string; text?: string }> }): st
 }
 
 describe('peek MCP server: tools/list', () => {
-  it('lists exactly the documented tool surface (8 read + search_sessions + 2 live read + 2 write + 2 suggest + 1 handoff + set_intent + verify_audit_log)', async () => {
+  it('lists exactly the documented tool surface (8 read + search_sessions + render_session_journey + 2 live read + 2 write + 2 suggest + 1 handoff + set_intent + verify_audit_log)', async () => {
     const { dbPath, eventsDir } = seedStore(dir, [loginSession()]);
     const { client, close } = await connectClient({ dbPath, eventsDir });
     try {
@@ -358,9 +358,9 @@ describe('peek MCP server: graceful no-DB', () => {
       eventsDir: join(dir, 'rrweb-events'),
     });
     try {
-      // tools/list still works (8 read + search_sessions + get_page_view + get_element_detail + 2 write + 2 suggest + 1 handoff + set_intent + verify_audit_log + request_pairing + share_session).
+      // tools/list still works (8 read + search_sessions + render_session_journey + get_page_view + get_element_detail + 2 write + 2 suggest + 1 handoff + set_intent + verify_audit_log + request_pairing + share_session).
       const { tools } = await client.listTools();
-      expect(tools).toHaveLength(20);
+      expect(tools).toHaveLength(21);
       // and a call returns the friendly message rather than erroring.
       const res = await client.callTool({ name: 'list_recent_sessions', arguments: {} });
       expect(textOf(res as never)).toContain('No sessions recorded yet');

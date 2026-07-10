@@ -148,8 +148,13 @@ export class ConnectorRuntime {
     inner: (name: string, input: unknown) => Promise<string>,
   ): Promise<string> {
     const text = await inner(name, input);
-    if (name !== 'share_session') return text;
-    return this.#postProcessShareSession(this.#activeConversationId, text);
+    if (name === 'share_session') {
+      return this.#postProcessShareSession(this.#activeConversationId, text);
+    }
+    if (name === 'render_session_journey') {
+      return this.#postProcessRenderJourney(this.#activeConversationId, text);
+    }
+    return text;
   }
 
   /**
@@ -201,6 +206,53 @@ export class ConnectorRuntime {
         );
       }
     }
+  }
+
+  /**
+   * Given a `render_session_journey` tool-result string, hand the CausalChain to
+   * the surface adapter and return a short confirmation string to the brain.
+   *
+   * - Valid journey JSON (has `timeline` and `narrative`) AND `adapter.renderJourney`
+   *   AND an active `conversationId` exist → `adapter.renderJourney(conversationId, journey)`
+   *   is called; its return value (a short confirmation, e.g. a canvas link) is returned
+   *   to the brain instead of the full CausalChain JSON — keeping the timeline out of
+   *   LLM context.
+   * - `adapter.renderJourney` absent OR no active conversationId → degrade to a brief
+   *   text note (no throw); the journey data is NOT leaked back to the brain.
+   * - Unparseable JSON or missing `timeline`/`narrative` fields → returned unchanged so
+   *   the brain receives the raw text (e.g. "no console errors found" plain-text messages).
+   */
+  async #postProcessRenderJourney(
+    conversationId: string | undefined,
+    text: string,
+  ): Promise<string> {
+    const { adapter } = this.deps;
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(text);
+    } catch {
+      return text; // not valid JSON (e.g. "no console errors" plain text) — pass through
+    }
+    // Only intercept if it looks like a valid CausalChain (has timeline + narrative).
+    if (
+      typeof parsed !== 'object' ||
+      parsed === null ||
+      !('timeline' in parsed) ||
+      !('narrative' in parsed)
+    ) {
+      return text;
+    }
+    if (adapter.renderJourney && conversationId) {
+      try {
+        return await adapter.renderJourney(conversationId, parsed);
+      } catch {
+        // renderJourney must never throw into the tool loop — degrade to a safe note.
+        // (Do NOT echo `text`/`parsed` — that would leak the full CausalChain JSON.)
+        return 'Session journey is ready, but this surface could not render it.';
+      }
+    }
+    // Degrade: no renderJourney support or no active conversation — return a brief note.
+    return 'Session journey is ready, but this surface cannot render it.';
   }
 
   async start(): Promise<void> {

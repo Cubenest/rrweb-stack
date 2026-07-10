@@ -9,6 +9,7 @@ import { App, Assistant } from '@slack/bolt';
 import type { BlockAction } from '@slack/bolt';
 import { confirmation, consentCard, errorBlock, resultBlocks } from './blockkit.js';
 import type { SlackConfig } from './config.js';
+import { isJourneyCausalChain, journeyBlocks, journeyMarkdown } from './journey.js';
 
 interface Route {
   channel: string;
@@ -181,6 +182,93 @@ export class SlackAdapter implements SurfaceAdapter {
         filename,
         ...(comment !== undefined ? { initial_comment: comment } : {}),
       });
+    }
+  }
+
+  async renderJourney(conversationId: string, journey: unknown): Promise<string> {
+    const r = this.route(conversationId);
+    if (!isJourneyCausalChain(journey)) {
+      throw new Error('renderJourney: journey is not a valid CausalChain');
+    }
+
+    const markdown = journeyMarkdown(journey);
+    const title = `Session journey — ${journey.error.level.toUpperCase()}: ${journey.error.message.slice(0, 60)}`;
+
+    // Primary path: create a channel-linked Slack canvas.
+    // conversations.canvases.create({ channel_id, title, document_content }) creates a canvas
+    // that channel members can see and open. Returns { canvas_id } (no URL field in the API).
+    // On any canvas error (free team, canvas_disabled_user_team, etc.) fall back to Block Kit.
+    let canvasId: string | undefined;
+    try {
+      const result = await this.app.client.conversations.canvases.create({
+        channel_id: r.channel,
+        title,
+        document_content: { type: 'markdown', markdown },
+      });
+      canvasId = result.canvas_id;
+    } catch (err) {
+      console.warn('[peek/connector-slack] canvas unavailable:', err);
+      // Canvas unavailable — fall through to Block Kit fallback
+    }
+
+    if (canvasId !== undefined) {
+      // Resolve the permalink via files.info so we can post a clickable mrkdwn link.
+      // The conversations.canvases.create response has canvas_id only (no URL).
+      let permalink: string | undefined;
+      try {
+        const info = await this.app.client.files.info({ file: canvasId });
+        permalink = info.file?.permalink;
+      } catch (err) {
+        console.warn('[peek/connector-slack] files.info failed for canvas permalink:', err);
+      }
+
+      // Only post a canvas confirmation if we have a clickable link.
+      // A bare canvas_id is NOT openable — treat a missing permalink as canvas-failure
+      // and fall through to the Block Kit summary below (never post a dead id).
+      if (permalink) {
+        const text = `🗺 Session journey canvas created. <${permalink}|Session journey>`;
+        // Guard the confirmation post: a Slack API error here must not throw out of
+        // renderJourney. On failure, fall through to the Block Kit fallback below so
+        // the team still gets the journey.
+        try {
+          await this.app.client.chat.postMessage({
+            channel: r.channel,
+            ...(r.threadTs !== undefined ? { thread_ts: r.threadTs } : {}),
+            // biome-ignore lint/suspicious/noExplicitAny: Bolt's postMessage accepts KnownBlock[] but its typings require `any[]` here
+            blocks: confirmation(text) as any,
+            text,
+          });
+          return permalink;
+        } catch (err) {
+          console.warn(
+            '[peek/connector-slack] canvas confirmation post failed — using Block Kit fallback:',
+            err,
+          );
+          // fall through to the Block Kit fallback
+        }
+      } else {
+        console.warn(
+          '[peek/connector-slack] canvas created but no permalink resolved — using Block Kit fallback',
+        );
+      }
+    }
+
+    // Fallback: Block Kit timeline summary posted directly to the thread. Guard the
+    // post so a Slack API error never throws out of renderJourney — the caller
+    // (connector-core) treats renderJourney as total.
+    const fallbackBlocks = journeyBlocks(journey);
+    try {
+      await this.app.client.chat.postMessage({
+        channel: r.channel,
+        ...(r.threadTs !== undefined ? { thread_ts: r.threadTs } : {}),
+        // biome-ignore lint/suspicious/noExplicitAny: Bolt's postMessage accepts KnownBlock[] but its typings require `any[]` here
+        blocks: fallbackBlocks as any,
+        text: 'Session journey (canvas unavailable — showing summary)',
+      });
+      return 'Session journey posted as a message (Slack canvas unavailable on this workspace).';
+    } catch (err) {
+      console.warn('[peek/connector-slack] Block Kit fallback post failed:', err);
+      return 'Session journey is ready, but posting it to Slack failed.';
     }
   }
 

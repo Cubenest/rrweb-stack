@@ -46,6 +46,12 @@ project's pre-launch supply-chain hygiene controls (see
    session bundle leaves the local store and is uploaded to a third-party
    cloud (e.g. Slack via `files.uploadV2`). Trust boundary: peek local
    store → third-party cloud service.
+10. **`render_session_journey` canvas render** — a second egress path where a
+    session's derived CausalChain (timeline, narrative, error tables) is sent to a
+    channel-linked Slack canvas (`conversations.canvases.create`) or Block Kit
+    message. Triggered by explicit `@peek rebuild the journey` mention. Trust
+    boundary: peek local store → Slack's cloud (wider than a one-line answer,
+    narrower than the raw bundle).
 
 ## Mitigations already in place
 
@@ -263,6 +269,80 @@ audit log.
 |---|---|---|---|
 | `share_session` egress to Slack | Recorded session data (masked DOM + console/network) leaves the local store and enters Slack's cloud | `accepted` (explicit consent required) | Gated by an elicitation consent card before any file is written. Temp file deleted after upload. Audit log records the export. Residual: Slack retention applies post-upload; masking completeness depends on capture-time config. |
 | Temp `.peekbundle` file on disk | Brief window between bundle write and upload deletion; a local process could read the file | `accepted` (local-peer-trust class) | Temp file has a random-nonce suffix. Sits in OS temp dir with normal umask. Deleted on success and on failure (best-effort). The window is bounded by the upload round-trip latency. |
+
+## Session egress — `render_session_journey` (session-journey / canvas render)
+
+SP7 introduces a second egress path: the `render_session_journey` MCP tool returns a
+session's **derived CausalChain** to the active connector for rich rendering
+(e.g. a channel-linked Slack canvas). Like `share_session` it sends session-derived
+content to a third-party cloud, but the nature of the egress is different.
+
+### What the journey contains
+
+A CausalChain is a **summarised, structured representation** of a session: an
+ordered timeline of user actions, DOM mutations, network events, and console
+errors; a human-readable narrative; masked field values; and error tables. It is
+generated at render time from the locally stored session by the same pipeline as
+`get_user_action_before_error`. It is **not** the raw rrweb event stream. No
+additional masking is applied by the connector — masking is a capture-time
+transformation applied by `peek-extension/src/relay/mask.ts` before any event
+reaches the local store.
+
+### Consent gate
+
+`render_session_journey` is initiated by an explicit **`@peek rebuild the journey`**
+mention in a Slack channel. The user's mention is the consent event — there is no
+separate consent card. This distinguishes the journey path from `share_session`,
+which always presents an explicit elicitation consent card before writing any file.
+The design rationale is that the command is narrowly scoped (the journey is a
+summarised read-path output, not the raw bundle) and the user explicitly named the
+action. If the user does not send the command, the canvas is never created.
+
+### Slack render path
+
+When the connector is `@peekdev/connector-slack`, the CausalChain is rendered to
+a **channel-linked canvas** via `conversations.canvases.create`. This requires the
+`canvases:write` OAuth scope on the Slack app (in addition to the scopes already
+required by SP3b/SP5). A clickable permalink to the canvas is posted in the same
+Slack thread. When `conversations.canvases.create` is unavailable (e.g. the scope
+is absent or the API returns an error), the connector falls back to a Block Kit
+message in the thread containing the journey narrative and key timeline entries.
+
+Neither path writes a temp file to disk — the CausalChain is serialised in memory
+and transmitted directly to Slack's API.
+
+### How this differs from `share_session`
+
+| Property | `share_session` | `render_session_journey` |
+|---|---|---|
+| Content | Raw `.peekbundle` (full rrweb event stream) | Derived CausalChain (timeline + narrative + error tables) |
+| Consent | Explicit elicitation card before any data leaves | User-initiated `@peek rebuild the journey` mention |
+| Slack surface | File upload (`files.uploadV2`) | Channel-linked canvas (`conversations.canvases.create`) or Block Kit fallback |
+| Temp file on disk | Yes (deleted after upload) | No |
+| Egress breadth | Full session (masked) | Derived summary (masked) — wider than a one-line answer, narrower than the raw bundle |
+
+### Residual limits (honest framing)
+
+- **Once the canvas is in Slack it is under Slack's retention and access
+  controls**, not peek's. peek's local-first guarantees do not extend past
+  the API call boundary. Channel-linked canvases are visible to all channel
+  members. Workspace admins, eDiscovery exports, and Slack's own data-retention
+  policies apply.
+- **Masking is capture-time, not security redaction.** If the masking
+  configuration at record time was incomplete (e.g. a custom input field not
+  covered by the default mask rules), the unmasked value may appear in the
+  CausalChain. Users should treat the canvas content with the same care as the
+  original session.
+- **The journey is broader than a one-line answer.** A full timeline + narrative
+  for a complex session may contain more detail than a user expects. Users should
+  use the command only in channels where the session content is appropriate to share.
+
+### Attack surface rows
+
+| Surface | Threat | Grade | Notes |
+|---|---|---|---|
+| `render_session_journey` egress to Slack canvas | Derived session data (timeline, narrative, error tables) leaves the local store and enters Slack's cloud | `accepted` (user-initiated command) | Gated by the user explicitly sending `@peek rebuild the journey`. Canvas is channel-linked; visible to channel members. Audit log records the render. Residual: Slack retention applies post-render; masking completeness depends on capture-time config. |
+| Block Kit fallback | Journey narrative posted as a Slack message when canvas API is unavailable | `accepted` (same user-initiation gate) | Same consent and content as the canvas path; narrower surface (message vs. canvas) but equally persistent under Slack retention. |
 
 ## Cross-references
 
