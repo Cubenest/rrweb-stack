@@ -243,7 +243,13 @@ export class ConnectorRuntime {
       return text;
     }
     if (adapter.renderJourney && conversationId) {
-      return await adapter.renderJourney(conversationId, parsed);
+      try {
+        return await adapter.renderJourney(conversationId, parsed);
+      } catch {
+        // renderJourney must never throw into the tool loop — degrade to a safe note.
+        // (Do NOT echo `text`/`parsed` — that would leak the full CausalChain JSON.)
+        return 'Session journey is ready, but this surface could not render it.';
+      }
     }
     // Degrade: no renderJourney support or no active conversation — return a brief note.
     return 'Session journey is ready, but this surface cannot render it.';

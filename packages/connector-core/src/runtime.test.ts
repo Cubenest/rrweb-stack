@@ -1446,4 +1446,51 @@ describe('render_session_journey interception — REAL SdkBrain inline (read) ro
     // renderJourney was NOT called.
     expect(adapter.renderJourneyCalls).toHaveLength(0);
   });
+
+  it('(g) adapter.renderJourney throws → interceptCallTool degrades to a safe note, no throw, no data leak', async () => {
+    // renderJourney must never throw into the tool loop (Fix #1). A throwing
+    // adapter must degrade to a brief note that does NOT echo the CausalChain JSON.
+    const toolResult = JSON.stringify(CAUSAL_CHAIN_FIXTURE);
+
+    // An adapter whose renderJourney rejects (e.g. Slack canvas AND fallback both fail).
+    class ThrowingJourneyAdapter extends JourneyAdapter {
+      override async renderJourney(): Promise<string> {
+        throw new Error('slack canvas + fallback both failed');
+      }
+    }
+    const adapter = new ThrowingJourneyAdapter();
+
+    // Drive interception through a started runtime so #activeConversationId is set
+    // for the duration of the turn — the throwing branch is only reachable with an
+    // active conversationId. The tracking brain intercepts inside its runTurn.
+    let result = '';
+    // biome-ignore lint/style/useConst: forward reference for a construction-time dependency cycle
+    let runtimeRef: ConnectorRuntime;
+    const trackingBrain: Brain = {
+      newSession: (): Session => ({ history: [] }),
+      appendUserText: () => {},
+      appendToolResult: () => {},
+      runTurn: async () => {
+        result = await runtimeRef.interceptCallTool(
+          'render_session_journey',
+          { sessionId: 's1', errorId: 42 },
+          async () => toolResult,
+        );
+        return { kind: 'done' as const, text: 'ok' };
+      },
+    };
+    const store = new SessionStore(() => trackingBrain.newSession());
+    const mcp = { callTool: vi.fn(), onElicit: () => {} } as unknown as PeekMcp;
+    const runtime = new ConnectorRuntime({ adapter, brain: trackingBrain, mcp, store });
+    runtimeRef = runtime;
+    await runtime.start();
+
+    adapter.msgHandler?.({ conversationId: 'c1', userId: 'u', text: 'journey' });
+    await vi.waitFor(() => expect(result.length).toBeGreaterThan(0));
+
+    // Degraded safely: no throw, brief note, no CausalChain fields leaked.
+    expect(result).toContain('could not render');
+    expect(result).not.toContain('"timeline"');
+    expect(result).not.toContain('"narrative"');
+  });
 });

@@ -92,6 +92,38 @@ function sessionWithTwoErrors() {
   };
 }
 
+/**
+ * Build a session fixture with MANY (>200) error-level console events with
+ * strictly increasing ts. The very last one (highest ts) is the true "latest".
+ * Regression fixture for the auto-select bug: an ASC LIMIT 200 query would miss
+ * the real latest error in a session with more than 200 errors.
+ */
+function sessionWithManyErrors(count: number) {
+  freshIds();
+  const btn = el('button', { attributes: { id: 'many' } });
+  const root = documentWith([btn]);
+  const consoleErrors = Array.from({ length: count }, (_, i) => ({
+    ts: 2000 + i, // strictly increasing; the last (i === count-1) has the highest ts
+    message: `error #${i}`,
+    stack: null,
+  }));
+  return {
+    id: 's_many_errors',
+    createdAt: '2026-07-10T00:00:00.000Z',
+    updatedAt: '2026-07-10T00:02:00.000Z',
+    url: 'https://app.test/many',
+    title: 'Many errors',
+    origin: 'https://app.test',
+    events: [
+      metaNav('https://app.test/many', 1000),
+      fullSnapshot(root, 1000),
+      clickEvent(btn.id, 1100),
+    ],
+    consoleErrors,
+    networkErrors: [],
+  };
+}
+
 /** Build a session fixture with NO console errors. */
 function sessionWithNoErrors() {
   freshIds();
@@ -199,6 +231,40 @@ describe('render_session_journey: auto-select latest error', () => {
       await close();
     }
   });
+
+  it('auto-selects the true latest error even when a session has >200 console errors', async () => {
+    // Regression for the ASC-LIMIT-200 bug: with 205 errors, the old auto-select
+    // read the 200 OLDEST (ORDER BY ts ASC LIMIT 200) and took the 200th, missing
+    // the real latest. The dedicated getLatestConsoleError query fixes this.
+    const COUNT = 205;
+    const { dbPath, eventsDir } = seedStore(dir, [sessionWithManyErrors(COUNT)]);
+    const { client, close } = await connectClient({ dbPath, eventsDir });
+    try {
+      // The true latest error id: seed inserts in order, ids are 1..COUNT.
+      const errs = parseJson(
+        (await client.callTool({
+          name: 'get_session_console_errors',
+          arguments: { sessionId: 's_many_errors', limit: 200, since: 2000 + (COUNT - 1) },
+        })) as never,
+      ) as Array<{ id: number; message: string }>;
+      // Only the single latest error has ts === 2000 + COUNT-1.
+      expect(errs).toHaveLength(1);
+      const latestId = errs[0]?.id ?? -1;
+      const latestMessage = errs[0]?.message ?? '';
+      expect(latestMessage).toBe(`error #${COUNT - 1}`);
+
+      // Auto-select (no errorId): must pick the true latest, NOT the 200th oldest.
+      const res = await client.callTool({
+        name: 'render_session_journey',
+        arguments: { sessionId: 's_many_errors' },
+      });
+      const chain = parseJson(res as never) as CausalChain;
+      expect(chain.errorId).toBe(latestId);
+      expect(chain.error.message).toBe(`error #${COUNT - 1}`);
+    } finally {
+      await close();
+    }
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -236,7 +302,13 @@ describe('render_session_journey: unknown session / no DB', () => {
         arguments: { sessionId: 's_does_not_exist' },
       });
       const text = textOf(res as never);
+      // peek-mcp has NO session-existence concept: an unknown sessionId and an
+      // existing-but-empty session both flow through the auto-select branch and
+      // return the SAME "no console errors" message. Assert the specific message
+      // (not just the id echo), and that it is plain text, not a CausalChain JSON.
       expect(text).toContain('s_does_not_exist');
+      expect(text).toContain('has no console errors to anchor a journey');
+      expect(() => JSON.parse(text)).toThrow();
     } finally {
       await close();
     }

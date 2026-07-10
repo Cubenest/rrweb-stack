@@ -219,11 +219,15 @@ export function journeyBlocks(journey: JourneyCausalChain): KnownBlock[] {
 
   const blocks: KnownBlock[] = [];
 
-  // Header
-  const headline = cap(error.message, 150);
+  // Header — Slack `header` blocks hard-limit plain_text to 150 chars, so reserve
+  // the level-prefix budget before capping the message (prefix + headline <= 150).
+  // `cap` appends a 1-char "…" on truncation, so a header block never overflows
+  // even when the capped headline hits the boundary.
+  const prefix = `${error.level.toUpperCase()}: `;
+  const headline = cap(error.message, Math.max(0, 150 - prefix.length - 1));
   blocks.push({
     type: 'header',
-    text: { type: 'plain_text', text: `${error.level.toUpperCase()}: ${headline}` },
+    text: { type: 'plain_text', text: `${prefix}${headline}` },
   });
 
   // Narrative section
@@ -276,6 +280,25 @@ export function journeyBlocks(journey: JourneyCausalChain): KnownBlock[] {
 // Type guard — validate that an `unknown` value looks like a CausalChain
 // ---------------------------------------------------------------------------
 
+/** A timeline entry the renderers can safely dereference (kind/summary/relMs/ts). */
+function isTimelineEntry(v: unknown): boolean {
+  if (typeof v !== 'object' || v === null) return false;
+  const t = v as Record<string, unknown>;
+  return (
+    typeof t.kind === 'string' &&
+    typeof t.summary === 'string' &&
+    typeof t.relMs === 'number' &&
+    typeof t.ts === 'number'
+  );
+}
+
+/** A network-error row the renderers can safely dereference (method/url; status/errorText optional). */
+function isNetworkError(v: unknown): boolean {
+  if (typeof v !== 'object' || v === null) return false;
+  const n = v as Record<string, unknown>;
+  return typeof n.method === 'string' && typeof n.url === 'string';
+}
+
 export function isJourneyCausalChain(v: unknown): v is JourneyCausalChain {
   if (typeof v !== 'object' || v === null) return false;
   const o = v as Record<string, unknown>;
@@ -290,5 +313,11 @@ export function isJourneyCausalChain(v: unknown): v is JourneyCausalChain {
   const e = err as Record<string, unknown>;
   // `level` is dereferenced (`.toUpperCase()`) by the renderers, so guard it
   // too — not just `message` — to keep renderJourney total on malformed input.
-  return typeof e.message === 'string' && typeof e.level === 'string';
+  if (typeof e.message !== 'string' || typeof e.level !== 'string') return false;
+  // The renderers dereference every timeline entry (kind/summary/relMs) and every
+  // networkErrors row (method/url via cap()) — deep-validate both so an invalid
+  // payload is rejected here, before any cap() call, keeping renderJourney total.
+  if (!o.timeline.every(isTimelineEntry)) return false;
+  if (!Array.isArray(o.networkErrors) || !o.networkErrors.every(isNetworkError)) return false;
+  return true;
 }

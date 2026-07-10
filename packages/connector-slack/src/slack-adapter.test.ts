@@ -763,3 +763,67 @@ describe('SlackAdapter.renderJourney — Block Kit fallback path', () => {
     );
   });
 });
+
+describe('SlackAdapter.renderJourney — delivery guards (total renderer)', () => {
+  it('(a) canvas confirmation postMessage rejects → does not throw and falls back to Block Kit', async () => {
+    // Canvas created + permalink resolved, but the confirmation post fails. The
+    // renderer must not throw — it falls through to the Block Kit fallback so the
+    // team still gets the journey. First postMessage rejects; second succeeds.
+    const postMessage = vi
+      .fn()
+      .mockRejectedValueOnce(new Error('chat.postMessage failed'))
+      .mockResolvedValue({});
+    const conversationsCanvasesCreate = vi.fn().mockResolvedValue({ canvas_id: 'Fcanvas-guard' });
+    const filesInfo = vi
+      .fn()
+      .mockResolvedValue({ file: { permalink: 'https://slack.com/canvas/Fcanvas-guard' } });
+    const adapter = new SlackAdapter({
+      slackBotToken: 'xoxb-test',
+      slackAppToken: 'xapp-test',
+    } as never);
+    (adapter as unknown as { app: { client: unknown } }).app.client = {
+      chat: { postMessage },
+      assistant: { threads: { setStatus: vi.fn().mockResolvedValue({}) } },
+      conversations: { canvases: { create: conversationsCanvasesCreate } },
+      files: { info: filesInfo, uploadV2: vi.fn().mockResolvedValue({}) },
+    };
+    (
+      adapter as unknown as { routes: Map<string, { channel: string; threadTs?: string }> }
+    ).routes.set('t-conf-fail', { channel: 'C80', threadTs: 'T80' });
+
+    const result = await adapter.renderJourney('t-conf-fail', sampleJourney);
+
+    // Both posts attempted: the failing confirmation, then the Block Kit fallback.
+    expect(postMessage).toHaveBeenCalledTimes(2);
+    const fallbackArg = postMessage.mock.calls[1]?.[0] as Record<string, unknown>;
+    expect(Array.isArray(fallbackArg.blocks)).toBe(true);
+    // Fallback confirmation string returned (not the canvas permalink).
+    expect(result).toContain('canvas unavailable');
+  });
+
+  it('(b) Block Kit fallback postMessage rejects → returns a string and does not throw', async () => {
+    // Canvas unavailable AND the fallback post fails: renderJourney must return a
+    // clean status string, never throw.
+    const postMessage = vi.fn().mockRejectedValue(new Error('fallback post failed'));
+    const conversationsCanvasesCreate = vi.fn().mockRejectedValue(new Error('canvas_disabled'));
+    const adapter = new SlackAdapter({
+      slackBotToken: 'xoxb-test',
+      slackAppToken: 'xapp-test',
+    } as never);
+    (adapter as unknown as { app: { client: unknown } }).app.client = {
+      chat: { postMessage },
+      assistant: { threads: { setStatus: vi.fn().mockResolvedValue({}) } },
+      conversations: { canvases: { create: conversationsCanvasesCreate } },
+      files: { info: vi.fn(), uploadV2: vi.fn().mockResolvedValue({}) },
+    };
+    (
+      adapter as unknown as { routes: Map<string, { channel: string; threadTs?: string }> }
+    ).routes.set('t-fallback-fail', { channel: 'C90', threadTs: 'T90' });
+
+    const result = await adapter.renderJourney('t-fallback-fail', sampleJourney);
+
+    // Did not throw; returned a clean status string.
+    expect(typeof result).toBe('string');
+    expect(result).toContain('posting it to Slack failed');
+  });
+});

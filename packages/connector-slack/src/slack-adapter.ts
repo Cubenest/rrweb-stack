@@ -227,30 +227,49 @@ export class SlackAdapter implements SurfaceAdapter {
       // and fall through to the Block Kit summary below (never post a dead id).
       if (permalink) {
         const text = `🗺 Session journey canvas created. <${permalink}|Session journey>`;
-        await this.app.client.chat.postMessage({
-          channel: r.channel,
-          ...(r.threadTs !== undefined ? { thread_ts: r.threadTs } : {}),
-          // biome-ignore lint/suspicious/noExplicitAny: Bolt's postMessage accepts KnownBlock[] but its typings require `any[]` here
-          blocks: confirmation(text) as any,
-          text,
-        });
-        return permalink;
+        // Guard the confirmation post: a Slack API error here must not throw out of
+        // renderJourney. On failure, fall through to the Block Kit fallback below so
+        // the team still gets the journey.
+        try {
+          await this.app.client.chat.postMessage({
+            channel: r.channel,
+            ...(r.threadTs !== undefined ? { thread_ts: r.threadTs } : {}),
+            // biome-ignore lint/suspicious/noExplicitAny: Bolt's postMessage accepts KnownBlock[] but its typings require `any[]` here
+            blocks: confirmation(text) as any,
+            text,
+          });
+          return permalink;
+        } catch (err) {
+          console.warn(
+            '[peek/connector-slack] canvas confirmation post failed — using Block Kit fallback:',
+            err,
+          );
+          // fall through to the Block Kit fallback
+        }
+      } else {
+        console.warn(
+          '[peek/connector-slack] canvas created but no permalink resolved — using Block Kit fallback',
+        );
       }
-      console.warn(
-        '[peek/connector-slack] canvas created but no permalink resolved — using Block Kit fallback',
-      );
     }
 
-    // Fallback: Block Kit timeline summary posted directly to the thread.
+    // Fallback: Block Kit timeline summary posted directly to the thread. Guard the
+    // post so a Slack API error never throws out of renderJourney — the caller
+    // (connector-core) treats renderJourney as total.
     const fallbackBlocks = journeyBlocks(journey);
-    await this.app.client.chat.postMessage({
-      channel: r.channel,
-      ...(r.threadTs !== undefined ? { thread_ts: r.threadTs } : {}),
-      // biome-ignore lint/suspicious/noExplicitAny: Bolt's postMessage accepts KnownBlock[] but its typings require `any[]` here
-      blocks: fallbackBlocks as any,
-      text: 'Session journey (canvas unavailable — showing summary)',
-    });
-    return 'Session journey posted as a message (Slack canvas unavailable on this workspace).';
+    try {
+      await this.app.client.chat.postMessage({
+        channel: r.channel,
+        ...(r.threadTs !== undefined ? { thread_ts: r.threadTs } : {}),
+        // biome-ignore lint/suspicious/noExplicitAny: Bolt's postMessage accepts KnownBlock[] but its typings require `any[]` here
+        blocks: fallbackBlocks as any,
+        text: 'Session journey (canvas unavailable — showing summary)',
+      });
+      return 'Session journey posted as a message (Slack canvas unavailable on this workspace).';
+    } catch (err) {
+      console.warn('[peek/connector-slack] Block Kit fallback post failed:', err);
+      return 'Session journey is ready, but posting it to Slack failed.';
+    }
   }
 
   private emit(

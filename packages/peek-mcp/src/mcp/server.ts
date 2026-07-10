@@ -59,6 +59,7 @@ import { generatePlaywrightRepro } from './playwright-repro.js';
 import {
   getConsoleErrorById,
   getConsoleErrors,
+  getLatestConsoleError,
   getNetworkErrors,
   getNetworkErrorsInWindow,
   getSessionBlobRef,
@@ -597,15 +598,13 @@ export function createPeekMcpServer(options: CreatePeekMcpServerOptions = {}): P
             return textResult(`No console error with id ${errorId} in session '${sessionId}'.`);
           }
         } else {
-          // Auto-select the session's latest console error (highest ts).
-          const allErrors = getConsoleErrors(handle, sessionId, { limit: 200 });
-          if (allErrors.length === 0) {
+          // Auto-select the session's latest console error (highest ts, id tiebreak).
+          error = getLatestConsoleError(handle, sessionId);
+          if (error === undefined) {
             return textResult(
               `Session '${sessionId}' has no console errors to anchor a journey. Record a session that captures a console error, then call this tool again.`,
             );
           }
-          // getConsoleErrors returns oldest-first; the last entry is the latest.
-          error = allErrors[allErrors.length - 1] as NonNullable<typeof error>;
         }
 
         const ev = eventsFor(sessionId);

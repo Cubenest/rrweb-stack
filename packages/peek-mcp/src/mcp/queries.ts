@@ -231,6 +231,20 @@ export function getConsoleErrorById(
     : undefined;
 }
 
+/** The single most-recent console error row for a session (the default causal-chain seed). */
+export function getLatestConsoleError(db: Database, id: string): ConsoleErrorRow | undefined {
+  const r = db
+    .prepare(
+      "SELECT id, ts_ms, level, message, stack FROM console_events WHERE session_id = ? AND level = 'error' ORDER BY ts_ms DESC, id DESC LIMIT 1",
+    )
+    .get(id) as
+    | { id: number; ts_ms: number; level: string; message: string; stack: string | null }
+    | undefined;
+  return r
+    ? { id: r.id, ts: r.ts_ms, level: r.level, message: r.message, stack: r.stack }
+    : undefined;
+}
+
 /** Error-ish network rows (status >= statusGte OR error_text) within [fromTs, toTs], ascending by ts. */
 export function getNetworkErrorsInWindow(
   db: Database,

@@ -277,6 +277,24 @@ describe('journeyBlocks', () => {
     );
     expect(hasTruncation).toBe(false);
   });
+
+  it('keeps the header plain_text within Slack’s 150-char limit for a very long error message', () => {
+    // Slack `header` blocks hard-limit plain_text to 150 chars. The prefix
+    // ("ERROR: ") plus the capped message must fit, so a 300-char message must
+    // not push the combined header text over 150.
+    const longMessage = 'X'.repeat(300);
+    const journey = makeJourney({
+      error: { id: 1, ts: 2000, level: 'error', message: longMessage },
+    });
+    const blocks = journeyBlocks(journey);
+    const header = blocks.find((b) => b.type === 'header') as
+      | { text: { text: string } }
+      | undefined;
+    expect(header).toBeDefined();
+    expect(header?.text.text.length).toBeLessThanOrEqual(150);
+    // The prefix is preserved even when the message is capped.
+    expect(header?.text.text.startsWith('ERROR: ')).toBe(true);
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -317,5 +335,48 @@ describe('isJourneyCausalChain', () => {
       error: { id: 1, ts: 2000, message: 'boom' }, // no level
     };
     expect(isJourneyCausalChain(malformed)).toBe(false);
+  });
+
+  it('returns false when a timeline entry has a non-string summary (renderers cap() it)', () => {
+    const journey = makeJourney();
+    const malformed = {
+      ...journey,
+      timeline: [
+        { ts: 1000, relMs: -500, kind: 'action', summary: 42 }, // summary not a string
+        ...journey.timeline,
+      ],
+    };
+    expect(isJourneyCausalChain(malformed)).toBe(false);
+  });
+
+  it('returns false when a timeline entry is missing relMs (renderers read it)', () => {
+    const journey = makeJourney();
+    const malformed = {
+      ...journey,
+      timeline: [{ ts: 1000, kind: 'action', summary: 'click #x' }], // no relMs
+    };
+    expect(isJourneyCausalChain(malformed)).toBe(false);
+  });
+
+  it('returns false when networkErrors is missing', () => {
+    const { networkErrors: _removed, ...rest } = makeJourney();
+    expect(isJourneyCausalChain(rest)).toBe(false);
+  });
+
+  it('returns false when networkErrors is not an array', () => {
+    expect(isJourneyCausalChain({ ...makeJourney(), networkErrors: 'nope' })).toBe(false);
+  });
+
+  it('returns false when a networkError row lacks a string url (renderers cap() it)', () => {
+    const journey = makeJourney();
+    const malformed = {
+      ...journey,
+      networkErrors: [{ ts: 1200, method: 'POST', status: 500 }], // no url
+    };
+    expect(isJourneyCausalChain(malformed)).toBe(false);
+  });
+
+  it('returns true when networkErrors is an empty array (well-formed)', () => {
+    expect(isJourneyCausalChain(makeJourney({ networkErrors: [] }))).toBe(true);
   });
 });
