@@ -8,10 +8,21 @@ slash commands to the connector core.
 
 ### Required scopes
 
+Bot token scopes the connector actually uses:
+
 | Scope | Why |
 |---|---|
-| `assistant:write` | Required to register the app as an AI assistant in Slack |
-| `chat:write` | Required to post messages and set the "thinking…" status |
+| `assistant:write` | Register the app as an AI assistant + set suggested prompts |
+| `chat:write` | Post replies, consent cards, journey summaries, and the "thinking…" status |
+| `files:write` | `files.uploadV2` — `share_session` + journey artifacts |
+| `files:read` | `files.info` — resolve the session-journey canvas permalink |
+| `canvases:write` | `conversations.canvases.create` — session journey as a Slack canvas |
+| `im:history` | Read the user's messages in the assistant thread / DM |
+| `app_mentions:read` | `@peek` in a channel (team debugging) |
+| `commands` | Receive the `/peek` slash command |
+
+Event subscriptions: `assistant_thread_started`, `assistant_thread_context_changed`,
+`message.im`, `app_mention`.
 
 ### Slack app scope — `chat:write`
 
@@ -38,10 +49,25 @@ adapter.onMessage(async (msg) => {
 await adapter.start();
 ```
 
-## Run from a local build (no npm publish)
+## Run it (recommended: via the peek CLI)
 
-`@peekdev/connector-slack` is not published to npm — it runs from a local
-build, spawned by the `peek connect` daemon.
+This connector ships **pre-bundled inside `@peekdev/cli`**, so the fastest path
+needs no clone and no build:
+
+```sh
+npm i -g @peekdev/cli
+peek connect add slack      # resolves the bundled connector — no --local needed
+peek connect start
+```
+
+`peek connect add slack` spawns `node <cli>/dist/connectors/slack.js` (a single
+esbuild bundle of this package). The only external is the native keychain module
+`@napi-rs/keyring`, which `@peekdev/cli` installs as a dependency.
+
+## Run from a local build (development)
+
+For working on the connector itself, run it from a local build, spawned by the
+`peek connect` daemon.
 
 1. Build the connector:
 

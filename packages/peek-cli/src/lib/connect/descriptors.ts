@@ -3,7 +3,15 @@
 // each surface's connector as a subprocess.  `resolveSpawn` merges the
 // per-entry overrides from connectors.json with the defaults defined here.
 
+import { fileURLToPath } from 'node:url';
 import type { ConnectorEntry } from './registry.js';
+
+// The Slack connector ships pre-bundled inside this package at
+// dist/connectors/slack.js (built from source by scripts/bundle-connectors.mjs).
+// We spawn it with the same Node binary that runs the CLI, so `peek connect add
+// slack` needs no separate npm install or local build. The path is resolved
+// relative to this module so it works from the installed dist regardless of cwd.
+const BUNDLED_SLACK = fileURLToPath(new URL('../../connectors/slack.js', import.meta.url));
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
@@ -20,8 +28,8 @@ export const DESCRIPTORS: Record<string, ConnectorDescriptor> = {
   slack: {
     surface: 'slack',
     displayName: 'Slack',
-    defaultCommand: 'peek-connector-slack',
-    defaultArgs: [],
+    defaultCommand: process.execPath,
+    defaultArgs: [BUNDLED_SLACK],
   },
 };
 
