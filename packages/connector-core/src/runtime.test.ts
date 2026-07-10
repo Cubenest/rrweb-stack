@@ -1118,12 +1118,6 @@ describe('render_session_journey interception — REAL SdkBrain inline (read) ro
     const { runtime } = makeJourneyBrainRuntime({ adapter, innerCallTool });
     await runtime.start();
 
-    // Capture what the brain receives as the tool_result so we can assert it is NOT the full JSON.
-    let feedbackText = '';
-    // We need a custom createMessage to intercept the tool result fed back.
-    // Instead, use the adapter texts to verify the brain's final output is the confirmation.
-    // The brain's second createMessage turns end_turn 'journey rendered' — we check
-    // that the turn completes and renderJourney was called.
     adapter.msgHandler?.({ conversationId: 'c1', userId: 'u', text: 'show session journey' });
     await vi.waitFor(() => expect(adapter.texts).toContainEqual(['c1', 'journey rendered']));
 
@@ -1147,12 +1141,6 @@ describe('render_session_journey interception — REAL SdkBrain inline (read) ro
     });
     // No consent card posted (proves the read/inline path).
     expect(adapter.consents).toHaveLength(0);
-
-    feedbackText =
-      adapter.renderJourneyCalls[0] !== undefined ? 'https://canvas.example.com/journey/42' : '';
-    // The returned confirmation is NOT the raw timeline JSON.
-    expect(feedbackText).not.toContain('"timeline"');
-    expect(feedbackText).toBe('https://canvas.example.com/journey/42');
   });
 
   it('(a-confirm) brain receives confirmation string, NOT the raw CausalChain JSON — verified via createMessage inspection', async () => {
@@ -1366,5 +1354,96 @@ describe('render_session_journey interception — REAL SdkBrain inline (read) ro
     // Temp file deleted.
     await expect(rm(bundlePath, { force: false })).rejects.toThrow();
     await rm(dir, { recursive: true, force: true });
+  });
+
+  it('(e) plain-text result for render_session_journey passes through unchanged, renderJourney NOT called', async () => {
+    // peek-mcp returns plain text (e.g. "no console errors found") when there is
+    // nothing to render. interceptCallTool must return that text as-is — no JSON
+    // parse attempt, no renderJourney call, no throw.
+    const plainText = 'No console errors found for this session.';
+    const innerCallTool = vi.fn().mockResolvedValue(plainText);
+
+    let feedbackToModel = '';
+    // biome-ignore lint/style/useConst: forward reference for a construction-time dependency cycle
+    let runtimeRef5: ConnectorRuntime;
+    const createMsg = vi
+      .fn()
+      .mockResolvedValueOnce(
+        anthropicMsg(
+          [
+            {
+              type: 'tool_use',
+              id: 'tu-journey-plain',
+              name: 'render_session_journey',
+              input: { sessionId: 's1', errorId: 0 },
+              caller: { type: 'direct' },
+            } as Anthropic.ContentBlock,
+          ],
+          'tool_use',
+        ),
+      )
+      .mockImplementationOnce((req: Anthropic.MessageCreateParamsNonStreaming) => {
+        const last = req.messages.at(-1) as { content: Anthropic.ToolResultBlockParam[] };
+        const block = last.content.find((b) => b.tool_use_id === 'tu-journey-plain');
+        feedbackToModel = typeof block?.content === 'string' ? block.content : '';
+        return Promise.resolve(
+          anthropicMsg([{ type: 'text', text: 'done', citations: [] }], 'end_turn'),
+        );
+      });
+
+    const adapter = new JourneyAdapter(); // has renderJourney, but must NOT be called
+    const brain = new SdkBrain({
+      createMessage: createMsg,
+      callTool: (name, input) =>
+        runtimeRef5.interceptCallTool(name, input, (n, i) => innerCallTool(n, i)),
+      tools: [],
+      model: 'm',
+      extendedReasoning: false,
+    });
+    const store = new SessionStore(() => brain.newSession());
+    const mcp = { callTool: vi.fn(), onElicit: () => {} } as unknown as PeekMcp;
+    const runtime5 = new ConnectorRuntime({ adapter, brain, mcp, store });
+    runtimeRef5 = runtime5;
+    await runtime5.start();
+
+    adapter.msgHandler?.({ conversationId: 'c1', userId: 'u', text: 'journey' });
+    await vi.waitFor(() => expect(adapter.texts).toContainEqual(['c1', 'done']));
+
+    // Plain text passed through unchanged.
+    expect(feedbackToModel).toBe(plainText);
+    // renderJourney was NOT called.
+    expect(adapter.renderJourneyCalls).toHaveLength(0);
+  });
+
+  it('(f) no active conversationId at interception time → degrades to brief note, renderJourney NOT called, no throw', async () => {
+    // When interceptCallTool is invoked outside a runLoop turn (no active
+    // conversationId), a valid CausalChain JSON result must degrade gracefully:
+    // return the brief note, never call renderJourney, never throw.
+    const toolResult = JSON.stringify(CAUSAL_CHAIN_FIXTURE);
+
+    const adapter = new JourneyAdapter('canvas-link');
+    const store = new SessionStore(() => ({ history: [] }));
+    const mcp = { callTool: vi.fn(), onElicit: () => {} } as unknown as PeekMcp;
+    const brain: Brain = {
+      newSession: (): Session => ({ history: [] }),
+      appendUserText: () => {},
+      appendToolResult: () => {},
+      runTurn: async () => ({ kind: 'done' as const, text: 'ok' }),
+    };
+    const runtime = new ConnectorRuntime({ adapter, brain, mcp, store });
+    // Do NOT start the runtime or fire any message — #activeConversationId stays undefined.
+
+    // Call interceptCallTool directly: no active turn means no conversationId.
+    const result = await runtime.interceptCallTool(
+      'render_session_journey',
+      { sessionId: 's1', errorId: 42 },
+      async () => toolResult,
+    );
+
+    // Should return the degrade note, not the raw JSON.
+    expect(result).toContain('cannot render');
+    expect(result).not.toContain('"timeline"');
+    // renderJourney was NOT called.
+    expect(adapter.renderJourneyCalls).toHaveLength(0);
   });
 });
