@@ -222,16 +222,23 @@ export class SlackAdapter implements SurfaceAdapter {
         console.warn('[peek/connector-slack] files.info failed for canvas permalink:', err);
       }
 
-      const linkText = permalink ? `<${permalink}|Session journey>` : `Canvas ID: \`${canvasId}\``;
-      const text = `🗺 Session journey canvas created. ${linkText}`;
-      await this.app.client.chat.postMessage({
-        channel: r.channel,
-        ...(r.threadTs !== undefined ? { thread_ts: r.threadTs } : {}),
-        // biome-ignore lint/suspicious/noExplicitAny: Bolt's postMessage accepts KnownBlock[] but its typings require `any[]` here
-        blocks: confirmation(text) as any,
-        text,
-      });
-      return permalink ?? text;
+      // Only post a canvas confirmation if we have a clickable link.
+      // A bare canvas_id is NOT openable — treat a missing permalink as canvas-failure
+      // and fall through to the Block Kit summary below (never post a dead id).
+      if (permalink) {
+        const text = `🗺 Session journey canvas created. <${permalink}|Session journey>`;
+        await this.app.client.chat.postMessage({
+          channel: r.channel,
+          ...(r.threadTs !== undefined ? { thread_ts: r.threadTs } : {}),
+          // biome-ignore lint/suspicious/noExplicitAny: Bolt's postMessage accepts KnownBlock[] but its typings require `any[]` here
+          blocks: confirmation(text) as any,
+          text,
+        });
+        return permalink;
+      }
+      console.warn(
+        '[peek/connector-slack] canvas created but no permalink resolved — using Block Kit fallback',
+      );
     }
 
     // Fallback: Block Kit timeline summary posted directly to the thread.

@@ -637,6 +637,60 @@ describe('SlackAdapter.renderJourney — canvas path', () => {
     // Confirmation string indicates fallback was used
     expect(result).toContain('canvas unavailable');
   });
+
+  it('falls back to Block Kit when canvas is created but files.info yields no permalink', async () => {
+    // files.info resolves but returns a file object with no permalink field
+    const { adapter, postMessage, conversationsCanvasesCreate, filesInfo } = makeAdapterWithCanvas({
+      canvas_id: 'Fx',
+    });
+    filesInfo.mockResolvedValue({ file: {} }); // no permalink
+    (
+      adapter as unknown as { routes: Map<string, { channel: string; threadTs?: string }> }
+    ).routes.set('t-no-permalink', { channel: 'C60', threadTs: 'T60' });
+
+    const result = await adapter.renderJourney('t-no-permalink', sampleJourney);
+
+    // conversations.canvases.create and files.info were both called
+    expect(conversationsCanvasesCreate).toHaveBeenCalledTimes(1);
+    expect(filesInfo).toHaveBeenCalledTimes(1);
+    // Must fall through to Block Kit — one postMessage with blocks array
+    expect(postMessage).toHaveBeenCalledTimes(1);
+    const msgArg = postMessage.mock.calls[0]?.[0] as Record<string, unknown>;
+    expect(Array.isArray(msgArg.blocks)).toBe(true);
+    // Must NOT post a bare canvas id
+    const msgText = msgArg.text as string;
+    expect(msgText).not.toContain('Canvas ID:');
+    expect(msgText).not.toContain('Fx');
+    // Return value indicates canvas unavailable, not the raw canvas id
+    expect(result).toContain('canvas unavailable');
+    expect(result).not.toContain('Fx');
+  });
+
+  it('falls back to Block Kit when canvas is created but files.info rejects (throws)', async () => {
+    // files.info throws — same Block Kit fallback must fire, no dead id posted
+    const { adapter, postMessage, conversationsCanvasesCreate, filesInfo } = makeAdapterWithCanvas({
+      canvas_id: 'Fx',
+    });
+    filesInfo.mockRejectedValue(new Error('files.info network error'));
+    (
+      adapter as unknown as { routes: Map<string, { channel: string; threadTs?: string }> }
+    ).routes.set('t-filesinfo-throws', { channel: 'C70', threadTs: 'T70' });
+
+    const result = await adapter.renderJourney('t-filesinfo-throws', sampleJourney);
+
+    expect(conversationsCanvasesCreate).toHaveBeenCalledTimes(1);
+    expect(filesInfo).toHaveBeenCalledTimes(1);
+    // Must fall through to Block Kit — one postMessage with blocks array
+    expect(postMessage).toHaveBeenCalledTimes(1);
+    const msgArg = postMessage.mock.calls[0]?.[0] as Record<string, unknown>;
+    expect(Array.isArray(msgArg.blocks)).toBe(true);
+    // Must NOT post a bare canvas id
+    const msgText = msgArg.text as string;
+    expect(msgText).not.toContain('Canvas ID:');
+    expect(msgText).not.toContain('Fx');
+    expect(result).toContain('canvas unavailable');
+    expect(result).not.toContain('Fx');
+  });
 });
 
 describe('SlackAdapter.renderJourney — Block Kit fallback path', () => {
