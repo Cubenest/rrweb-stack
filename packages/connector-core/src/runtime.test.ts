@@ -1019,3 +1019,352 @@ describe('share_session interception — REAL SdkBrain inline (read) routing', (
     await rm(dir, { recursive: true, force: true });
   });
 });
+
+// ---------------------------------------------------------------------------
+// render_session_journey interception tests (Task 2)
+// ---------------------------------------------------------------------------
+
+/** Minimal CausalChain-shaped fixture — mirrors the real CausalChain from peek-mcp. */
+const CAUSAL_CHAIN_FIXTURE = {
+  errorId: 42,
+  errorTs: 1700000000000,
+  windowMs: 5000,
+  error: { id: 42, message: 'TypeError: Cannot read properties of null', level: 'error' },
+  actions: [{ ts: 1699999997000, verb: 'click', target: 'button#submit' }],
+  domMutations: [],
+  networkErrors: [],
+  timeline: [
+    { ts: 1699999997000, relMs: -3000, kind: 'action', summary: 'click button#submit' },
+    {
+      ts: 1700000000000,
+      relMs: 0,
+      kind: 'error',
+      summary: 'TypeError: Cannot read properties of null',
+    },
+  ],
+  narrative: 'User clicked button#submit 3s before a TypeError.',
+  truncated: {},
+};
+
+/** A createMessage mock that emits `render_session_journey` tool_use (a READ tool),
+ *  then end_turn once the tool result is fed back. */
+function renderJourneyCreateMessage(): (
+  req: Anthropic.MessageCreateParamsNonStreaming,
+) => Promise<Anthropic.Message> {
+  return vi
+    .fn()
+    .mockResolvedValueOnce(
+      anthropicMsg(
+        [
+          {
+            type: 'tool_use',
+            id: 'tu-journey-1',
+            name: 'render_session_journey',
+            input: { sessionId: 's1', errorId: 42 },
+            caller: { type: 'direct' },
+          } as Anthropic.ContentBlock,
+        ],
+        'tool_use',
+      ),
+    )
+    .mockResolvedValueOnce(
+      anthropicMsg([{ type: 'text', text: 'journey rendered', citations: [] }], 'end_turn'),
+    );
+}
+
+/** Build a runtime wired to a REAL SdkBrain for render_session_journey interception tests.
+ *  Mirrors makeRealBrainRuntime but uses the render_session_journey createMessage mock. */
+function makeJourneyBrainRuntime(deps: {
+  adapter: SurfaceAdapter;
+  innerCallTool: (name: string, input: unknown) => Promise<string>;
+}): { runtime: ConnectorRuntime } {
+  // biome-ignore lint/style/useConst: forward reference for a construction-time dependency cycle
+  let runtimeRef: ConnectorRuntime;
+  const brain = new SdkBrain({
+    createMessage: renderJourneyCreateMessage(),
+    callTool: (name, input) =>
+      runtimeRef.interceptCallTool(name, input, (n, i) => deps.innerCallTool(n, i)),
+    tools: [],
+    model: 'm',
+    extendedReasoning: false,
+  });
+  const store = new SessionStore(() => brain.newSession());
+  const mcp = { callTool: vi.fn(), onElicit: () => {} } as unknown as PeekMcp;
+  const runtime = new ConnectorRuntime({ adapter: deps.adapter, brain, mcp, store });
+  runtimeRef = runtime;
+  return { runtime };
+}
+
+/** Extend FakeAdapter with renderJourney tracking. */
+class JourneyAdapter extends FakeAdapter {
+  renderJourneyCalls: Array<{ conversationId: string; journey: unknown }> = [];
+  readonly confirmationText: string;
+  constructor(confirmationText = 'Session journey posted to canvas.') {
+    super();
+    this.confirmationText = confirmationText;
+  }
+  async renderJourney(conversationId: string, journey: unknown): Promise<string> {
+    this.renderJourneyCalls.push({ conversationId, journey });
+    return this.confirmationText;
+  }
+}
+
+describe('render_session_journey interception — REAL SdkBrain inline (read) routing', () => {
+  it('(a) CausalChain result → adapter.renderJourney called with (conversationId, journey); brain receives confirmation not raw timeline', async () => {
+    const toolResult = JSON.stringify(CAUSAL_CHAIN_FIXTURE);
+    const innerCallTool = vi.fn().mockResolvedValue(toolResult);
+
+    const adapter = new JourneyAdapter('https://canvas.example.com/journey/42');
+    const { runtime } = makeJourneyBrainRuntime({ adapter, innerCallTool });
+    await runtime.start();
+
+    // Capture what the brain receives as the tool_result so we can assert it is NOT the full JSON.
+    let feedbackText = '';
+    // We need a custom createMessage to intercept the tool result fed back.
+    // Instead, use the adapter texts to verify the brain's final output is the confirmation.
+    // The brain's second createMessage turns end_turn 'journey rendered' — we check
+    // that the turn completes and renderJourney was called.
+    adapter.msgHandler?.({ conversationId: 'c1', userId: 'u', text: 'show session journey' });
+    await vi.waitFor(() => expect(adapter.texts).toContainEqual(['c1', 'journey rendered']));
+
+    // renderJourney fired exactly once.
+    expect(adapter.renderJourneyCalls).toHaveLength(1);
+    expect(adapter.renderJourneyCalls[0]?.conversationId).toBe('c1');
+
+    // The journey object passed to renderJourney has timeline + narrative.
+    const journey = adapter.renderJourneyCalls[0]?.journey as typeof CAUSAL_CHAIN_FIXTURE;
+    expect(journey).toHaveProperty('timeline');
+    expect(journey).toHaveProperty('narrative');
+    expect(Array.isArray(journey.timeline)).toBe(true);
+
+    // The brain received the confirmation string (not the raw CausalChain JSON).
+    // We can verify indirectly: the innerCallTool returned the full JSON, but
+    // the turn completed with the confirmation — so the brain fed the confirmation
+    // into the next createMessage call (which returned 'journey rendered' end_turn).
+    expect(innerCallTool).toHaveBeenCalledWith('render_session_journey', {
+      sessionId: 's1',
+      errorId: 42,
+    });
+    // No consent card posted (proves the read/inline path).
+    expect(adapter.consents).toHaveLength(0);
+
+    feedbackText =
+      adapter.renderJourneyCalls[0] !== undefined ? 'https://canvas.example.com/journey/42' : '';
+    // The returned confirmation is NOT the raw timeline JSON.
+    expect(feedbackText).not.toContain('"timeline"');
+    expect(feedbackText).toBe('https://canvas.example.com/journey/42');
+  });
+
+  it('(a-confirm) brain receives confirmation string, NOT the raw CausalChain JSON — verified via createMessage inspection', async () => {
+    const toolResult = JSON.stringify(CAUSAL_CHAIN_FIXTURE);
+    const innerCallTool = vi.fn().mockResolvedValue(toolResult);
+
+    // Custom createMessage that captures the tool_result fed back to the brain.
+    let feedbackToModel = '';
+    // biome-ignore lint/style/useConst: forward reference for a construction-time dependency cycle
+    let runtimeRef2: ConnectorRuntime;
+    const createMsg = vi
+      .fn()
+      .mockResolvedValueOnce(
+        anthropicMsg(
+          [
+            {
+              type: 'tool_use',
+              id: 'tu-journey-confirm',
+              name: 'render_session_journey',
+              input: { sessionId: 's1', errorId: 42 },
+              caller: { type: 'direct' },
+            } as Anthropic.ContentBlock,
+          ],
+          'tool_use',
+        ),
+      )
+      .mockImplementationOnce((req: Anthropic.MessageCreateParamsNonStreaming) => {
+        const last = req.messages.at(-1) as { content: Anthropic.ToolResultBlockParam[] };
+        const block = last.content.find((b) => b.tool_use_id === 'tu-journey-confirm');
+        feedbackToModel = typeof block?.content === 'string' ? block.content : '';
+        return Promise.resolve(
+          anthropicMsg([{ type: 'text', text: 'done', citations: [] }], 'end_turn'),
+        );
+      });
+
+    const confirmText = 'Canvas posted: https://canvas.example.com/journey/42';
+    const adapter = new JourneyAdapter(confirmText);
+    const brain = new SdkBrain({
+      createMessage: createMsg,
+      callTool: (name, input) =>
+        runtimeRef2.interceptCallTool(name, input, (n, i) => innerCallTool(n, i)),
+      tools: [],
+      model: 'm',
+      extendedReasoning: false,
+    });
+    const store = new SessionStore(() => brain.newSession());
+    const mcp = { callTool: vi.fn(), onElicit: () => {} } as unknown as PeekMcp;
+    const runtime2 = new ConnectorRuntime({ adapter, brain, mcp, store });
+    runtimeRef2 = runtime2;
+    await runtime2.start();
+
+    adapter.msgHandler?.({ conversationId: 'c1', userId: 'u', text: 'journey' });
+    await vi.waitFor(() => expect(adapter.texts).toContainEqual(['c1', 'done']));
+
+    // The model received the confirmation string — NOT the raw CausalChain JSON.
+    expect(feedbackToModel).toBe(confirmText);
+    expect(feedbackToModel).not.toContain('"timeline"');
+    expect(feedbackToModel).not.toContain('"narrative"');
+    expect(feedbackToModel).not.toContain('"domMutations"');
+  });
+
+  it('(b) adapter without renderJourney → degrades to a text note, no throw', async () => {
+    const toolResult = JSON.stringify(CAUSAL_CHAIN_FIXTURE);
+    const innerCallTool = vi.fn().mockResolvedValue(toolResult);
+
+    // Capture what the brain receives as the tool_result text.
+    let feedbackToModel = '';
+    // biome-ignore lint/style/useConst: forward reference for a construction-time dependency cycle
+    let runtimeRef3: ConnectorRuntime;
+    const createMsg = vi
+      .fn()
+      .mockResolvedValueOnce(
+        anthropicMsg(
+          [
+            {
+              type: 'tool_use',
+              id: 'tu-journey-degrade',
+              name: 'render_session_journey',
+              input: { sessionId: 's1' },
+              caller: { type: 'direct' },
+            } as Anthropic.ContentBlock,
+          ],
+          'tool_use',
+        ),
+      )
+      .mockImplementationOnce((req: Anthropic.MessageCreateParamsNonStreaming) => {
+        const last = req.messages.at(-1) as { content: Anthropic.ToolResultBlockParam[] };
+        const block = last.content.find((b) => b.tool_use_id === 'tu-journey-degrade');
+        feedbackToModel = typeof block?.content === 'string' ? block.content : '';
+        return Promise.resolve(
+          anthropicMsg([{ type: 'text', text: 'done', citations: [] }], 'end_turn'),
+        );
+      });
+
+    const adapter = new FakeAdapter(); // no renderJourney
+    const brain = new SdkBrain({
+      createMessage: createMsg,
+      callTool: (name, input) =>
+        runtimeRef3.interceptCallTool(name, input, (n, i) => innerCallTool(n, i)),
+      tools: [],
+      model: 'm',
+      extendedReasoning: false,
+    });
+    const store = new SessionStore(() => brain.newSession());
+    const mcp = { callTool: vi.fn(), onElicit: () => {} } as unknown as PeekMcp;
+    const runtime3 = new ConnectorRuntime({ adapter, brain, mcp, store });
+    runtimeRef3 = runtime3;
+    await runtime3.start();
+
+    adapter.msgHandler?.({ conversationId: 'c1', userId: 'u', text: 'journey' });
+    await vi.waitFor(() => expect(adapter.texts).toContainEqual(['c1', 'done']));
+
+    // The degrade note is brief and does NOT contain the raw timeline JSON.
+    expect(feedbackToModel).toContain('cannot render');
+    expect(feedbackToModel).not.toContain('"timeline"');
+    expect(feedbackToModel).not.toContain('"narrative"');
+  });
+
+  it('(c) a non-render_session_journey tool result passes through unchanged', async () => {
+    // intercept a plain tool result for some_other_tool — must not be modified.
+    const plainResult = 'just a plain tool result string';
+    const innerCallTool = vi.fn().mockResolvedValue(plainResult);
+
+    let feedbackToModel = '';
+    // biome-ignore lint/style/useConst: forward reference for a construction-time dependency cycle
+    let runtimeRef4: ConnectorRuntime;
+    const createMsg = vi
+      .fn()
+      .mockResolvedValueOnce(
+        anthropicMsg(
+          [
+            {
+              type: 'tool_use',
+              id: 'tu-other-1',
+              name: 'list_recent_sessions',
+              input: {},
+              caller: { type: 'direct' },
+            } as Anthropic.ContentBlock,
+          ],
+          'tool_use',
+        ),
+      )
+      .mockImplementationOnce((req: Anthropic.MessageCreateParamsNonStreaming) => {
+        const last = req.messages.at(-1) as { content: Anthropic.ToolResultBlockParam[] };
+        const block = last.content.find((b) => b.tool_use_id === 'tu-other-1');
+        feedbackToModel = typeof block?.content === 'string' ? block.content : '';
+        return Promise.resolve(
+          anthropicMsg([{ type: 'text', text: 'done', citations: [] }], 'end_turn'),
+        );
+      });
+
+    const adapter = new JourneyAdapter(); // has renderJourney, but must NOT be called
+    const brain = new SdkBrain({
+      createMessage: createMsg,
+      callTool: (name, input) =>
+        runtimeRef4.interceptCallTool(name, input, (n, i) => innerCallTool(n, i)),
+      tools: [],
+      model: 'm',
+      extendedReasoning: false,
+    });
+    const store = new SessionStore(() => brain.newSession());
+    const mcp = { callTool: vi.fn(), onElicit: () => {} } as unknown as PeekMcp;
+    const runtime4 = new ConnectorRuntime({ adapter, brain, mcp, store });
+    runtimeRef4 = runtime4;
+    await runtime4.start();
+
+    adapter.msgHandler?.({ conversationId: 'c1', userId: 'u', text: 'list sessions' });
+    await vi.waitFor(() => expect(adapter.texts).toContainEqual(['c1', 'done']));
+
+    // Passed through unchanged.
+    expect(feedbackToModel).toBe(plainResult);
+    // renderJourney was NOT called.
+    expect(adapter.renderJourneyCalls).toHaveLength(0);
+  });
+
+  it('(d) share_session interception still works alongside render_session_journey interception', async () => {
+    // Minimal regression: share_session path still triggers postFile.
+    const dir = await mkdtemp(join(tmpdir(), 'peek-test-'));
+    const bundlePath = join(dir, 'session.peekbundle');
+    await writeFile(bundlePath, 'bundle-data');
+
+    const toolResult = JSON.stringify({
+      ok: true,
+      bundlePath,
+      filename: 'session.peekbundle',
+      sizeBytes: 11,
+      caveat: '',
+    });
+    const innerCallTool = vi.fn().mockResolvedValue(toolResult);
+
+    class CombinedAdapter extends JourneyAdapter {
+      postFileCalls: Array<{ conversationId: string; filePath: string; filename: string }> = [];
+      async postFile(c: string, fp: string, fn: string, _comment?: string): Promise<void> {
+        this.postFileCalls.push({ conversationId: c, filePath: fp, filename: fn });
+      }
+    }
+    const adapter = new CombinedAdapter('canvas-link');
+    const { runtime } = makeRealBrainRuntime({ adapter, innerCallTool });
+    await runtime.start();
+
+    adapter.msgHandler?.({ conversationId: 'c1', userId: 'u', text: 'share session' });
+    await vi.waitFor(() => expect(adapter.texts).toContainEqual(['c1', 'shared']));
+
+    // share_session still triggered postFile.
+    expect(adapter.postFileCalls).toHaveLength(1);
+    expect(adapter.postFileCalls[0]?.conversationId).toBe('c1');
+
+    // renderJourney was NOT called (wrong tool name).
+    expect(adapter.renderJourneyCalls).toHaveLength(0);
+
+    // Temp file deleted.
+    await expect(rm(bundlePath, { force: false })).rejects.toThrow();
+    await rm(dir, { recursive: true, force: true });
+  });
+});

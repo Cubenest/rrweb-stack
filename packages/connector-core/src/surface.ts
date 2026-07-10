@@ -40,4 +40,11 @@ export interface SurfaceAdapter {
     filename: string,
     comment?: string,
   ): Promise<void>;
+  /** Optional: render a CausalChain journey to the surface (e.g. post a Slack canvas with
+   *  the session timeline). Returns a short human-readable confirmation string for the brain
+   *  (e.g. a canvas link or a brief note). Adapters that do not support journey rendering may
+   *  omit this method; the runtime degrades to a brief text note so no crash occurs.
+   *  The runtime calls this during render_session_journey interception — the full CausalChain
+   *  JSON is never passed back to the brain to keep the timeline out of LLM context. */
+  renderJourney?(conversationId: string, journey: unknown): Promise<string>;
 }
