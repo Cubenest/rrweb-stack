@@ -31,7 +31,9 @@ export interface JourneyNetworkError {
   readonly ts: number;
   readonly method: string;
   readonly url: string;
-  readonly status?: number;
+  // Producer (peek-mcp) emits `number | null` — a net-level failure with no
+  // HTTP status serializes as JSON `null`, not absent. Accept both.
+  readonly status?: number | null;
   readonly errorText?: string;
 }
 
@@ -162,7 +164,10 @@ export function journeyMarkdown(journey: JourneyCausalChain): string {
     const hiddenNet = networkErrors.length - visibleNet.length;
 
     for (const n of visibleNet) {
-      const status = n.status !== undefined ? String(n.status) : (n.errorText ?? 'error');
+      // `!= null` catches both undefined (absent) and null (net-level failure,
+      // no HTTP status) — a `null` row must fall through to errorText, not
+      // render the literal "null".
+      const status = n.status != null ? String(n.status) : (n.errorText ?? 'error');
       const url = cap(n.url, 80);
       lines.push(`| ${n.method} | ${url} | ${status} |`);
     }
@@ -283,5 +288,7 @@ export function isJourneyCausalChain(v: unknown): v is JourneyCausalChain {
   const err = o.error;
   if (typeof err !== 'object' || err === null) return false;
   const e = err as Record<string, unknown>;
-  return typeof e.message === 'string';
+  // `level` is dereferenced (`.toUpperCase()`) by the renderers, so guard it
+  // too — not just `message` — to keep renderJourney total on malformed input.
+  return typeof e.message === 'string' && typeof e.level === 'string';
 }

@@ -168,6 +168,25 @@ describe('journeyMarkdown', () => {
     expect(md).toContain('#btn-149');
   });
 
+  it('renders errorText for a net-level failure with null status (not literal "null")', () => {
+    // peek-mcp emits `status: null` for a net-level failure (no HTTP status);
+    // JSON round-trips it as null, so the renderer must fall through to errorText.
+    const journey = makeJourney({
+      networkErrors: [
+        {
+          ts: 1200,
+          method: 'GET',
+          url: '/api/data',
+          status: null,
+          errorText: 'ERR_CONNECTION_REFUSED',
+        },
+      ],
+    });
+    const md = journeyMarkdown(journey);
+    expect(md).toContain('| GET | /api/data | ERR_CONNECTION_REFUSED |');
+    expect(md).not.toContain('| null |');
+  });
+
   it('caps network error table at MAX_TABLE_ROWS (25) with a "+N more" row', () => {
     const manyNet = Array.from({ length: 40 }, (_, i) => ({
       ts: 1000 + i,
@@ -289,5 +308,14 @@ describe('isJourneyCausalChain', () => {
 
   it('returns false when timeline is not an array', () => {
     expect(isJourneyCausalChain({ ...makeJourney(), timeline: 'not-array' })).toBe(false);
+  });
+
+  it('returns false when error.level is missing (renderers dereference it)', () => {
+    const journey = makeJourney();
+    const malformed = {
+      ...journey,
+      error: { id: 1, ts: 2000, message: 'boom' }, // no level
+    };
+    expect(isJourneyCausalChain(malformed)).toBe(false);
   });
 });
