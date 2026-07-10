@@ -1,6 +1,6 @@
 {
   "name": "@peekdev/cli",
-  "version": "0.1.0-alpha.30",
+  "version": "0.1.0-alpha.31",
   "description": "peek command-line tool for the local-first browser-session forensics workflow — a thin read-mostly client of ~/.peek/sessions.db: status, sessions list/show/export/delete, the `peek init` MCP-client wizard, `peek audit log`, and `peek audit verify`.",
   "keywords": [
     "peek",
