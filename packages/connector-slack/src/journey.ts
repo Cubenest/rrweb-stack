@@ -194,8 +194,9 @@ export function journeyMarkdown(journey: JourneyCausalChain): string {
 // ---------------------------------------------------------------------------
 
 /** Maximum timeline entries in the Block Kit fallback message.
- *  3 blocks per entry (section + divider + breathing room) × ~15 = ~45 blocks;
- *  leaves room for the header + narrative + footer blocks. */
+ *  1 section block per entry × 12 entries = 12 entry blocks;
+ *  plus ~4 fixed blocks (header + narrative + divider + "The path" label) = ~16 total,
+ *  well within SLACK_BLOCK_LIMIT (50). */
 const MAX_BK_TIMELINE_ENTRIES = 12;
 
 /**
@@ -273,11 +274,14 @@ export function journeyBlocks(journey: JourneyCausalChain): KnownBlock[] {
 export function isJourneyCausalChain(v: unknown): v is JourneyCausalChain {
   if (typeof v !== 'object' || v === null) return false;
   const o = v as Record<string, unknown>;
-  return (
-    typeof o.errorId === 'number' &&
-    typeof o.narrative === 'string' &&
-    Array.isArray(o.timeline) &&
-    typeof o.error === 'object' &&
-    o.error !== null
-  );
+  if (
+    typeof o.errorId !== 'number' ||
+    typeof o.narrative !== 'string' ||
+    !Array.isArray(o.timeline)
+  )
+    return false;
+  const err = o.error;
+  if (typeof err !== 'object' || err === null) return false;
+  const e = err as Record<string, unknown>;
+  return typeof e.message === 'string';
 }

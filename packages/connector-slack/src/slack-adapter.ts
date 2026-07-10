@@ -194,24 +194,36 @@ export class SlackAdapter implements SurfaceAdapter {
     const markdown = journeyMarkdown(journey);
     const title = `Session journey — ${journey.error.level.toUpperCase()}: ${journey.error.message.slice(0, 60)}`;
 
-    // Primary path: create a Slack canvas.
-    // canvases.create returns { canvas_id } (no URL field in the API).
+    // Primary path: create a channel-linked Slack canvas.
+    // conversations.canvases.create({ channel_id, title, document_content }) creates a canvas
+    // that channel members can see and open. Returns { canvas_id } (no URL field in the API).
     // On any canvas error (free team, canvas_disabled_user_team, etc.) fall back to Block Kit.
     let canvasId: string | undefined;
     try {
-      const result = await this.app.client.canvases.create({
+      const result = await this.app.client.conversations.canvases.create({
+        channel_id: r.channel,
         title,
         document_content: { type: 'markdown', markdown },
       });
       canvasId = result.canvas_id;
-    } catch {
+    } catch (err) {
+      console.warn('[peek/connector-slack] canvas unavailable:', err);
       // Canvas unavailable — fall through to Block Kit fallback
     }
 
     if (canvasId !== undefined) {
-      // Post a confirmation message referencing the canvas id into the thread.
-      // Slack renders canvas references when the canvas_id is mentioned.
-      const text = `🗺 Session journey canvas created. Canvas ID: \`${canvasId}\``;
+      // Resolve the permalink via files.info so we can post a clickable mrkdwn link.
+      // The conversations.canvases.create response has canvas_id only (no URL).
+      let permalink: string | undefined;
+      try {
+        const info = await this.app.client.files.info({ file: canvasId });
+        permalink = info.file?.permalink;
+      } catch (err) {
+        console.warn('[peek/connector-slack] files.info failed for canvas permalink:', err);
+      }
+
+      const linkText = permalink ? `<${permalink}|Session journey>` : `Canvas ID: \`${canvasId}\``;
+      const text = `🗺 Session journey canvas created. ${linkText}`;
       await this.app.client.chat.postMessage({
         channel: r.channel,
         ...(r.threadTs !== undefined ? { thread_ts: r.threadTs } : {}),
@@ -219,7 +231,7 @@ export class SlackAdapter implements SurfaceAdapter {
         blocks: confirmation(text) as any,
         text,
       });
-      return text;
+      return permalink ?? text;
     }
 
     // Fallback: Block Kit timeline summary posted directly to the thread.
