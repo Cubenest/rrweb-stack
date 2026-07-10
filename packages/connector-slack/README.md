@@ -1,24 +1,48 @@
 # @peekdev/connector-slack
 
-Slack surface adapter for the peek connector platform. Connects a peek agent
-to Slack via Bolt's Socket Mode, routing Assistant thread messages and `/peek`
-slash commands to the connector core.
+Slack surface adapter for the peek connector platform. Connects a peek agent to
+Slack via Bolt's Socket Mode, routing Assistant-pane threads, `@peek` channel
+mentions, DMs, and the `/peek` slash command to the connector core.
 
 ## Slack app setup
 
-### Required scopes
+The connector runs over **Socket Mode**, so it needs a bot token (`xoxb-…`) and an
+app-level token (`xapp-…`, scope `connections:write`). Each capability maps to a
+specific bot-token scope below.
 
-| Scope | Why |
+### Bot token scopes
+
+| Scope | Why it's needed |
 |---|---|
-| `assistant:write` | Required to register the app as an AI assistant in Slack |
-| `chat:write` | Required to post messages and set the "thinking…" status |
+| `chat:write` | Post every reply, consent card, and the "thinking…" status (`chat.postMessage`, `assistant.threads.setStatus`). |
+| `assistant:write` | Register the app as an AI assistant and set thread status / title / suggested prompts. |
+| `app_mentions:read` | Receive `@peek …` mentions in a channel (the shared-debugging surface). |
+| `channels:history` | Receive public-channel message events so a peek thread auto-continues without re-mentioning. |
+| `groups:history` | Same, for private channels. |
+| `im:history` | Receive direct-message events (the DM / Assistant 1:1 surface). |
+| `files:write` | Upload a session bundle to the thread (`share_session` → `files.uploadV2`). |
+| `canvases:write` | Create the session-journey canvas (`render_session_journey` → `conversations.canvases.create`). |
+| `files:read` | Resolve the canvas permalink (`files.info`) so the journey posts a clickable link. Without it the journey silently falls back to a Block Kit summary. |
+| `commands` | The `/peek` slash command. |
 
-### Slack app scope — `chat:write`
+> Scope changes only take effect after you **reinstall** the app to the workspace.
 
-The assistant "thinking…" status calls `assistant.threads.setStatus`. Slack is
-migrating this capability from the `assistant:write` scope to `chat:write`. Add
-**`chat:write`** to the bot token scopes in your Slack app manifest. Without it
-the status is silently skipped (the turn still works); every other message uses
+### Event subscriptions (bot events)
+
+Subscribe the bot to:
+
+- `app_mention` — `@peek` in a channel.
+- `message.channels` / `message.groups` — channel / private-channel messages (thread auto-continue).
+- `message.im` — direct messages.
+
+Assistant-thread events come with the **Agents & Assistants** feature — enable it if you
+use the Assistant pane.
+
+### Note — `chat:write` vs `assistant:write`
+
+The assistant "thinking…" status calls `assistant.threads.setStatus`. Slack is migrating
+this capability from `assistant:write` to `chat:write`, so keep **both**. Without
+`chat:write` the status is silently skipped (the turn still works); every reply uses
 `chat.postMessage`, which also requires `chat:write`.
 
 ## Usage
