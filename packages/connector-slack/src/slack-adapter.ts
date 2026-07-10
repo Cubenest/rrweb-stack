@@ -9,6 +9,7 @@ import { App, Assistant } from '@slack/bolt';
 import type { BlockAction } from '@slack/bolt';
 import { confirmation, consentCard, errorBlock, resultBlocks } from './blockkit.js';
 import type { SlackConfig } from './config.js';
+import { isJourneyCausalChain, journeyBlocks, journeyMarkdown } from './journey.js';
 
 interface Route {
   channel: string;
@@ -182,6 +183,55 @@ export class SlackAdapter implements SurfaceAdapter {
         ...(comment !== undefined ? { initial_comment: comment } : {}),
       });
     }
+  }
+
+  async renderJourney(conversationId: string, journey: unknown): Promise<string> {
+    const r = this.route(conversationId);
+    if (!isJourneyCausalChain(journey)) {
+      throw new Error('renderJourney: journey is not a valid CausalChain');
+    }
+
+    const markdown = journeyMarkdown(journey);
+    const title = `Session journey — ${journey.error.level.toUpperCase()}: ${journey.error.message.slice(0, 60)}`;
+
+    // Primary path: create a Slack canvas.
+    // canvases.create returns { canvas_id } (no URL field in the API).
+    // On any canvas error (free team, canvas_disabled_user_team, etc.) fall back to Block Kit.
+    let canvasId: string | undefined;
+    try {
+      const result = await this.app.client.canvases.create({
+        title,
+        document_content: { type: 'markdown', markdown },
+      });
+      canvasId = result.canvas_id;
+    } catch {
+      // Canvas unavailable — fall through to Block Kit fallback
+    }
+
+    if (canvasId !== undefined) {
+      // Post a confirmation message referencing the canvas id into the thread.
+      // Slack renders canvas references when the canvas_id is mentioned.
+      const text = `🗺 Session journey canvas created. Canvas ID: \`${canvasId}\``;
+      await this.app.client.chat.postMessage({
+        channel: r.channel,
+        ...(r.threadTs !== undefined ? { thread_ts: r.threadTs } : {}),
+        // biome-ignore lint/suspicious/noExplicitAny: Bolt's postMessage accepts KnownBlock[] but its typings require `any[]` here
+        blocks: confirmation(text) as any,
+        text,
+      });
+      return text;
+    }
+
+    // Fallback: Block Kit timeline summary posted directly to the thread.
+    const fallbackBlocks = journeyBlocks(journey);
+    await this.app.client.chat.postMessage({
+      channel: r.channel,
+      ...(r.threadTs !== undefined ? { thread_ts: r.threadTs } : {}),
+      // biome-ignore lint/suspicious/noExplicitAny: Bolt's postMessage accepts KnownBlock[] but its typings require `any[]` here
+      blocks: fallbackBlocks as any,
+      text: 'Session journey (canvas unavailable — showing summary)',
+    });
+    return 'Session journey posted as a message (Slack canvas unavailable on this workspace).';
   }
 
   private emit(

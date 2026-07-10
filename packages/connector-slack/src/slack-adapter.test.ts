@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
+import type { JourneyCausalChain } from './journey.js';
 import { SlackAdapter, stripMention } from './slack-adapter.js';
 import { parseConsentValue, suggestedPrompts } from './slack-adapter.js';
 
@@ -503,6 +504,166 @@ describe('SlackAdapter.postFile', () => {
 
     await expect(adapter.postFile('conv-err', '/tmp/b.peekbundle', 'b.peekbundle')).rejects.toThrow(
       'network error',
+    );
+  });
+});
+
+// ---------------------------------------------------------------------------
+// SlackAdapter.renderJourney
+// ---------------------------------------------------------------------------
+
+/** Minimal CausalChain fixture for renderJourney tests. */
+const sampleJourney: JourneyCausalChain = {
+  errorId: 1,
+  errorTs: 2000,
+  error: {
+    id: 1,
+    ts: 2000,
+    level: 'error',
+    message: 'TypeError: Cannot read properties of undefined',
+    stack: 'Error: TypeError\n  at foo (bar.js:5:10)',
+  },
+  windowMs: 5000,
+  narrative:
+    'In the 5000ms before console error #1: 1 user action(s), 1 network error(s), 0 DOM mutation(s).',
+  timeline: [
+    { ts: 1000, relMs: -1000, kind: 'action', summary: 'click `#submit`' },
+    { ts: 1500, relMs: -500, kind: 'network', summary: 'POST /api/save → 500' },
+    { ts: 2000, relMs: 0, kind: 'error', summary: 'console error: TypeError' },
+  ],
+  networkErrors: [{ ts: 1500, method: 'POST', url: '/api/save', status: 500 }],
+  truncated: {},
+};
+
+/** Build an adapter with a full client mock including canvases.create. */
+function makeAdapterWithCanvas(canvasResult?: { canvas_id?: string }): {
+  adapter: SlackAdapter;
+  postMessage: ReturnType<typeof vi.fn>;
+  canvasCreate: ReturnType<typeof vi.fn>;
+} {
+  const postMessage = vi.fn().mockResolvedValue({});
+  const canvasCreate = vi.fn().mockResolvedValue(canvasResult ?? { canvas_id: 'Fcanvas123' });
+  const adapter = new SlackAdapter({
+    slackBotToken: 'xoxb-test',
+    slackAppToken: 'xapp-test',
+  } as never);
+  (adapter as unknown as { app: { client: unknown } }).app.client = {
+    chat: { postMessage },
+    assistant: { threads: { setStatus: vi.fn().mockResolvedValue({}) } },
+    canvases: { create: canvasCreate },
+  };
+  return { adapter, postMessage, canvasCreate };
+}
+
+describe('SlackAdapter.renderJourney — canvas path', () => {
+  it('calls canvases.create with title + document_content markdown, then posts a confirmation', async () => {
+    const { adapter, postMessage, canvasCreate } = makeAdapterWithCanvas({
+      canvas_id: 'Fcanvas001',
+    });
+    (
+      adapter as unknown as { routes: Map<string, { channel: string; threadTs?: string }> }
+    ).routes.set('t-canvas', { channel: 'C10', threadTs: 'T10' });
+
+    const result = await adapter.renderJourney('t-canvas', sampleJourney);
+
+    // canvases.create was called with a title + document_content
+    expect(canvasCreate).toHaveBeenCalledTimes(1);
+    const createArg = canvasCreate.mock.calls[0]?.[0] as Record<string, unknown>;
+    expect(typeof createArg.title).toBe('string');
+    const content = createArg.document_content as { type: string; markdown: string };
+    expect(content.type).toBe('markdown');
+    expect(typeof content.markdown).toBe('string');
+    // Markdown must contain the narrative and timeline entry
+    expect(content.markdown).toContain('5000ms before console error');
+    expect(content.markdown).toContain('click `#submit`');
+
+    // chat.postMessage was called to post the confirmation into the thread
+    expect(postMessage).toHaveBeenCalledTimes(1);
+    const msgArg = postMessage.mock.calls[0]?.[0] as Record<string, unknown>;
+    expect(msgArg.channel).toBe('C10');
+    expect(msgArg.thread_ts).toBe('T10');
+
+    // Returned confirmation string references the canvas id
+    expect(result).toContain('Fcanvas001');
+  });
+
+  it('omits thread_ts from chat.postMessage when the route has no threadTs (slash path)', async () => {
+    const { adapter, postMessage } = makeAdapterWithCanvas({ canvas_id: 'Fcanvas002' });
+    (
+      adapter as unknown as { routes: Map<string, { channel: string; threadTs?: string }> }
+    ).routes.set('cmd-canvas', { channel: 'C20' });
+
+    await adapter.renderJourney('cmd-canvas', sampleJourney);
+
+    const msgArg = postMessage.mock.calls[0]?.[0] as Record<string, unknown>;
+    expect(msgArg.channel).toBe('C20');
+    expect('thread_ts' in msgArg).toBe(false);
+  });
+});
+
+describe('SlackAdapter.renderJourney — Block Kit fallback path', () => {
+  it('falls back to journeyBlocks + chat.postMessage when canvases.create rejects', async () => {
+    const postMessage = vi.fn().mockResolvedValue({});
+    const canvasCreate = vi.fn().mockRejectedValue(new Error('canvas_disabled_user_team'));
+    const adapter = new SlackAdapter({
+      slackBotToken: 'xoxb-test',
+      slackAppToken: 'xapp-test',
+    } as never);
+    (adapter as unknown as { app: { client: unknown } }).app.client = {
+      chat: { postMessage },
+      assistant: { threads: { setStatus: vi.fn().mockResolvedValue({}) } },
+      canvases: { create: canvasCreate },
+    };
+    (
+      adapter as unknown as { routes: Map<string, { channel: string; threadTs?: string }> }
+    ).routes.set('t-fallback', { channel: 'C30', threadTs: 'T30' });
+
+    const result = await adapter.renderJourney('t-fallback', sampleJourney);
+
+    // canvases.create was attempted
+    expect(canvasCreate).toHaveBeenCalledTimes(1);
+    // chat.postMessage was called with fallback blocks
+    expect(postMessage).toHaveBeenCalledTimes(1);
+    const msgArg = postMessage.mock.calls[0]?.[0] as Record<string, unknown>;
+    expect(msgArg.channel).toBe('C30');
+    expect(msgArg.thread_ts).toBe('T30');
+    // blocks must be an array (the fallback journeyBlocks output)
+    expect(Array.isArray(msgArg.blocks)).toBe(true);
+    const blocks = msgArg.blocks as Array<{ type: string }>;
+    expect(blocks.length).toBeGreaterThan(0);
+    expect(blocks.length).toBeLessThanOrEqual(50);
+
+    // Confirmation string indicates fallback was used
+    expect(result).toContain('canvas unavailable');
+  });
+
+  it('does not throw even when both canvases.create and chat.postMessage succeed on fallback', async () => {
+    const postMessage = vi.fn().mockResolvedValue({});
+    const canvasCreate = vi.fn().mockRejectedValue(new Error('not_allowed'));
+    const adapter = new SlackAdapter({
+      slackBotToken: 'xoxb-test',
+      slackAppToken: 'xapp-test',
+    } as never);
+    (adapter as unknown as { app: { client: unknown } }).app.client = {
+      chat: { postMessage },
+      assistant: { threads: { setStatus: vi.fn().mockResolvedValue({}) } },
+      canvases: { create: canvasCreate },
+    };
+    (
+      adapter as unknown as { routes: Map<string, { channel: string; threadTs?: string }> }
+    ).routes.set('t-no-throw', { channel: 'C40', threadTs: 'T40' });
+
+    await expect(adapter.renderJourney('t-no-throw', sampleJourney)).resolves.not.toThrow();
+  });
+
+  it('throws when journey is not a valid CausalChain', async () => {
+    const { adapter } = makeAdapterWithCanvas();
+    (
+      adapter as unknown as { routes: Map<string, { channel: string; threadTs?: string }> }
+    ).routes.set('t-bad', { channel: 'C50', threadTs: 'T50' });
+
+    await expect(adapter.renderJourney('t-bad', { not: 'a chain' })).rejects.toThrow(
+      'not a valid CausalChain',
     );
   });
 });
