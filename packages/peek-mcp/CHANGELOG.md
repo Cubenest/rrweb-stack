@@ -1,5 +1,25 @@
 # @peekdev/mcp
 
+## 0.1.0-alpha.25
+
+### Minor Changes
+
+- 22743c0: Add `share_session` MCP tool — consent-gated session bundle export.
+
+  `share_session(sessionId, surface?)` elicits an explicit egress consent card
+  (naming what is exported and where) before producing a portable `.peekbundle`
+  temp file from a recorded session. On deny → `{ ok: false, result: 'denied' }`,
+  no file written. On approve → `{ ok: true, bundlePath, filename, sizeBytes, caveat }`.
+  The bundle contains the masked session recording (DOM + console/network events).
+  Every approved export is recorded to `~/.peek/audit.log` as `tool: share_session`
+  (session ID + surface; bundle bytes are never written to the audit log).
+  Designed for connector-driven upload flows (e.g. Slack `@peek share this session`);
+  the connector is responsible for uploading and deleting the temp file.
+
+- 99d7e1e: peek-mcp: add `render_session_journey` tool for connector canvas rendering
+
+  New read tool `render_session_journey({ sessionId, errorId? })` returns the full `CausalChain` (timeline, narrative, error, actions, DOM mutations, network errors) for a session — the same data path as `get_user_action_before_error`, under a dedicated tool name so a connector can intercept only journey results for rich rendering (e.g. a Slack canvas). When `errorId` is omitted, the session's latest console error is selected automatically. Returns a clear text message when the session has no console errors.
+
 ## 0.1.0-alpha.24
 
 ### Patch Changes
