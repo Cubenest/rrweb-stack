@@ -3,14 +3,15 @@ import { getDescriptor, resolveSpawn } from './descriptors.js';
 import type { ConnectorEntry } from './registry.js';
 
 describe('getDescriptor', () => {
-  it('returns the slack descriptor for known surface', () => {
+  it('spawns the pre-bundled slack connector with the running Node binary', () => {
     const desc = getDescriptor('slack');
-    expect(desc).toEqual({
-      surface: 'slack',
-      displayName: 'Slack',
-      defaultCommand: 'peek-connector-slack',
-      defaultArgs: [],
-    });
+    if (!desc) throw new Error('slack descriptor missing');
+    expect(desc.surface).toBe('slack');
+    expect(desc.displayName).toBe('Slack');
+    // Bundled connector is run via the same Node that runs the CLI.
+    expect(desc.defaultCommand).toBe(process.execPath);
+    expect(desc.defaultArgs).toHaveLength(1);
+    expect((desc.defaultArgs[0] ?? '').replace(/\\/g, '/')).toMatch(/\/connectors\/slack\.js$/);
   });
 
   it('returns undefined for unknown surface', () => {
@@ -21,10 +22,10 @@ describe('getDescriptor', () => {
 describe('resolveSpawn', () => {
   it('uses descriptor defaults when entry has no overrides', () => {
     const entry: ConnectorEntry = { surface: 'slack', enabled: true };
-    expect(resolveSpawn(entry)).toEqual({
-      command: 'peek-connector-slack',
-      args: [],
-    });
+    const { command, args } = resolveSpawn(entry);
+    expect(command).toBe(process.execPath);
+    expect(args).toHaveLength(1);
+    expect((args[0] ?? '').replace(/\\/g, '/')).toMatch(/\/connectors\/slack\.js$/);
   });
 
   it('uses entry overrides when command and args are set', () => {
